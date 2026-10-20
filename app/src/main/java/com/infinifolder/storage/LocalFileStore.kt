@@ -39,6 +39,16 @@ class LocalFileStore(root: File) {
         return created
     }
 
+    fun createFile(parent: File, name: String): File {
+        validateName(name)
+        val created = resolve(components(parent) + name)
+        if (created.exists()) {
+            created.delete()
+        }
+        Files.createFile(created.toPath())
+        return created
+    }
+
     fun rename(file: File, name: String): File {
         require(file != root) { "Cannot rename the storage root" }
         validateName(name)

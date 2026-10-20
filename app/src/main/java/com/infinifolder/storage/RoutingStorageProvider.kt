@@ -11,6 +11,7 @@ class RoutingStorageProvider(vararg providers: StorageProvider) : StorageProvide
     override fun openRead(ref: ResourceRef) = provider(ref).openRead(ref)
     override fun openWrite(ref: ResourceRef) = provider(ref).openWrite(ref)
     override fun createDirectory(parent: ResourceRef, name: String) = provider(parent).createDirectory(parent, name)
+    override fun createFile(parent: ResourceRef, name: String, mimeType: String) = provider(parent).createFile(parent, name, mimeType)
     override fun rename(ref: ResourceRef, name: String) = provider(ref).rename(ref, name)
     override fun delete(ref: ResourceRef) = provider(ref).delete(ref)
     override fun copy(source: ResourceRef, destination: ResourceRef): ProviderResult<ResourceRef> =

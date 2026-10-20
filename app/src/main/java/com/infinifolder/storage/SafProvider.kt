@@ -56,6 +56,7 @@ class SafProvider(private val resolver: ContentResolver) : StorageProvider {
     override fun openWrite(ref: ResourceRef) = try { ProviderResult.Success(resolver.openOutputStream(Uri.parse(ref.documentId), "wt")!!) }
         catch (e: Exception) { ProviderResult.Failure(e.message ?: "Could not write file", e) }
     override fun createDirectory(parent: ResourceRef, name: String): ProviderResult<ResourceEntry> = create(parent, name, DocumentsContract.Document.MIME_TYPE_DIR)
+    override fun createFile(parent: ResourceRef, name: String, mimeType: String): ProviderResult<ResourceEntry> = create(parent, name, mimeType)
     override fun rename(ref: ResourceRef, name: String): ProviderResult<ResourceEntry> = try {
         val renamed = DocumentsContract.renameDocument(resolver, Uri.parse(ref.documentId), name)
             ?: return ProviderResult.Failure("Provider did not rename the item")

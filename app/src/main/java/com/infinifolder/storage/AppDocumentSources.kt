@@ -21,7 +21,7 @@ class AppDocumentSources(private val context: Context) {
     companion object {
         private val systemStorageAuthorities = setOf(
             "com.android.externalstorage.documents", "com.android.providers.downloads.documents",
-            "com.android.providers.media.documents"
+            "com.android.providers.media.documents", "installed", "category", "package"
         )
         fun isAppAuthority(authority: String?): Boolean = authority != null && authority !in systemStorageAuthorities
     }

@@ -9,6 +9,7 @@ interface StorageProvider {
     fun openRead(ref: ResourceRef): ProviderResult<java.io.InputStream>
     fun openWrite(ref: ResourceRef): ProviderResult<java.io.OutputStream>
     fun createDirectory(parent: ResourceRef, name: String): ProviderResult<ResourceEntry>
+    fun createFile(parent: ResourceRef, name: String, mimeType: String = "application/octet-stream"): ProviderResult<ResourceEntry>
     fun rename(ref: ResourceRef, name: String): ProviderResult<ResourceEntry>
     fun delete(ref: ResourceRef): ProviderResult<Unit>
     fun copy(source: ResourceRef, destination: ResourceRef): ProviderResult<ResourceRef>

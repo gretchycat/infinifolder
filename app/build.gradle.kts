@@ -5,12 +5,17 @@ plugins {
 
 dependencies {
     implementation("androidx.core:core:1.15.0")
+    implementation("com.caverock:androidsvg-aar:1.4")
+    implementation("io.github.awxkee:jxl-coder:2.6.1")
+    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("org.tukaani:xz:1.10")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
 
 android {
     namespace = "com.infinifolder"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.infinifolder"
@@ -24,4 +29,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
