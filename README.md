@@ -1,0 +1,36 @@
+# InfiniFolder
+
+InfiniFolder is an Android file browser that works alongside the user's launcher. The browser supports Android SAF sources and direct access to primary shared storage after an explicit system permission. SAF URIs remain opaque and are never converted into filesystem paths.
+
+## Current build
+
+- Native Kotlin Android app, package `com.infinifolder`.
+- Minimum Android API: 26 (Android 8.0). This keeps the initial platform floor compatible with persisted SAF tree grants and modern notification/background execution work planned next.
+- `compileSdk` 35, `targetSdk` 35.
+- Choose a local folder or removable volume with Android's system folder picker. The grant is persisted across app restarts.
+- Browse directories in grid or list mode; sort by name or modification time; open files through `ACTION_VIEW`; inspect properties; copy and move through a destination-folder chooser; rename and delete where the SAF provider permits them.
+- Image files show sampled previews in grid and list views, decoded off the UI thread and held in a bounded memory cache. Files the Android bitmap decoder cannot read retain the image placeholder icon.
+- Theme preference, grid icon size (32–96 dp), view mode, sort order, and last chosen storage location are retained. Grid columns and spacing adapt to the configured icon size. Theme follows the in-app light/dark selection; follow-system is a planned option.
+- The **Virtual root** presents internal shared storage, mounted removable volumes, saved network connections, and **Application public** for app-provided SAF sources. Tapping Virtual root or Internal shared in the tree opens that logical directory in the file pane. Application public discovers apps that expose Android SAF document sources, such as Termux Monet. Select an app and grant its folder in Android’s picker; InfiniFolder opens the exact returned URI and reuses saved grants. If the provider hides root metadata until permission is granted, choose that app from the picker’s sidebar. App sources also appear under Application public in the tree.
+- Open **Internal shared storage** to request storage access and see its actual directories and files, including custom folders and Downloads. Android 11+ requires the optional **Allow access to manage all files** setting because its folder picker blocks the storage root and Downloads; Android 8–10 uses runtime storage permissions. After access is granted, both panes use the real listing and saved SAF grants are not repeated as extra folders. If access is declined, the page clearly labels its limited list of previously granted SAF folders. Removable-volume locations stay at Virtual root. Other persisted SAF grants remain in the tree without duplicate root cards. InfiniFolder checks existing grants off the UI thread before opening Android's picker, and a small lock badge marks a folder that still needs a grant. Long-press a saved location for Properties or Remove from list; removal releases InfiniFolder's saved access and leaves files unchanged.
+- The hamburger button toggles a file-system style tree rooted at Virtual root. Its root entries match the Virtual root grid/list, including ordering; the full row, icon, label, and guide line are clickable. Locked SAF entries open the Android access picker when their row or plus is tapped; Internal shared opens the storage-access explanation and settings flow, and lock badges refresh after grant checks and when returning to InfiniFolder. The 18 dp boxed plus/minus control expands or collapses folders, and folder children load on demand to any depth. The directory shown in the file pane is highlighted in the tree. On compact portrait screens, the tree fills the screen; selecting a folder returns to the full-width file pane, and a successful permission grant does the same. Landscape and wider screens retain the split view. Guide lines use a 24 dp step between disclosure-box centers, attach to the parent box, and stop at the child box edge.
+- At Virtual root, the toolbar plus saves a connection definition (SMB, FTP, SFTP/SSH, NFS, WebDAV, or cloud) with a display name and optional endpoint. These definitions are listed at the root, but remote browsing and credential storage are not implemented. Inside an authorized directory, the toolbar folder-plus creates a directory when the provider allows it.
+- The breadcrumb always begins with **Virtual root**, which returns to the virtual source directory from any browsed location.
+
+## Build
+
+Open this directory in Android Studio or run `gradle :app:assembleDebug` with Android SDK platform 35 and Android Gradle Plugin 8.9.2 available. On ARM Termux, AGP's bundled AAPT2 is x86_64, so use the installed ARM binary: `gradle :app:assembleDebug -Pandroid.aapt2FromMavenOverride="$PREFIX/bin/aapt2"`. Other environments can use the standard command. No emulator/device is connected in the development environment used for this increment.
+
+## Verification
+
+Run `gradle :app:testDebugUnitTest :app:assembleDebug` (with the AAPT2 override above on Termux). Regression tests cover virtual and locked tree activation, destination exclusions, actual local listings, traversal/symlink rejection, copy conflicts and cleanup, and rename preservation. Tests also cover opaque app-provider grant identities and unavailable, loading, partial, and complete folder results. Device permission screens and physical touch behavior still need a connected device.
+
+## Known limitations
+
+Direct storage is limited to the primary shared-storage volume. Android still restricts other apps’ private data. Local files are opened through temporary FileProvider read grants. Transfers between the local and SAF backends report unsupported; recursive copy/move within either backend is supported. Local copies use temporary destinations and SHA-256 verification; SAF copies do not yet verify content.
+
+This is an early Phase 1 slice, not yet the full acceptance milestone. The transfer coordinator is bounded and independent of the activity, but the current SAF copy runs synchronously on its worker and does not yet provide durable queue recovery, foreground-service notifications, progress bytes, pause, or cancellation during a provider stream. Copy creates a collision-free “(2)” name; replace/skip/keep-both conflict choices and recursive recovery reporting remain to be implemented. Provider capability differences are surfaced as failures, but the UI does not yet have a full capability-aware action model. The inline tree currently expands authorized SAF roots and browsed child directories; additional document roots and provider-specific tree behavior need validation. Remote providers and write-back staging are not implemented; only the durable staging identity schema/interface exists.
+
+See [architecture](docs/architecture.md), [roadmap](docs/roadmap.md), and [file formats](docs/file-formats.md).
+
+SAF read failures and incomplete provider results are shown separately from a completed empty directory. Loading providers are retried up to eight times, with Refresh available afterward. Returning from a permission picker commits the selected location before metadata loads, preserving navigation through Activity resume.
