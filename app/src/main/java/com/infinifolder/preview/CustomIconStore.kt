@@ -18,6 +18,7 @@ class CustomIconStore(baseDir: File) {
     private val iconsDir = File(baseDir, "mime_icons").apply { mkdirs() }
     private val indexFile = File(iconsDir, "index.json")
     private val mimeToFileName = ConcurrentHashMap<String, String>()
+    private val mimeBitmaps = ConcurrentHashMap<String, Bitmap>()
 
     init {
         loadIndex()
@@ -41,6 +42,7 @@ class CustomIconStore(baseDir: File) {
     @Synchronized
     private fun saveIndex() {
         try {
+            iconsDir.mkdirs()
             val json = JSONObject()
             for ((k, v) in mimeToFileName) {
                 json.put(k, v)
@@ -50,20 +52,46 @@ class CustomIconStore(baseDir: File) {
     }
 
     @Synchronized
-    fun setMimeIcon(mimeKey: String, extension: String, bytes: ByteArray): File {
+    fun setMimeIcon(mimeKey: String, extension: String, bytes: ByteArray, decodedBitmap: Bitmap? = null): File {
+        iconsDir.mkdirs()
         val normalizedMime = normalizeMimeKey(mimeKey)
         val cleanExt = extension.lowercase().trimStart('.').ifEmpty { "png" }
         val safeStem = normalizedMime.replace(Regex("[^a-z0-9._-]"), "_")
+        val fileName = "${safeStem}.${cleanExt}"
         val previousName = mimeToFileName[normalizedMime]
-        if (previousName != null) {
+        if (previousName != null && previousName != fileName) {
             try { File(iconsDir, previousName).delete() } catch (_: Exception) {}
         }
-        val fileName = "${safeStem}.${cleanExt}"
         val outFile = File(iconsDir, fileName)
         outFile.writeBytes(bytes)
         mimeToFileName[normalizedMime] = fileName
+        if (decodedBitmap != null) {
+            mimeBitmaps[normalizedMime] = decodedBitmap
+        } else {
+            val bmp = try { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) } catch (_: Throwable) { null }
+            if (bmp != null) {
+                mimeBitmaps[normalizedMime] = bmp
+            } else {
+                mimeBitmaps.remove(normalizedMime)
+            }
+        }
         saveIndex()
         return outFile
+    }
+
+    fun getCachedMimeBitmap(mimeKey: String): Bitmap? =
+        mimeBitmaps[normalizeMimeKey(mimeKey)]
+
+    fun getMimeIconBitmap(mimeKey: String, fallbackDecoder: ((File) -> Bitmap?)? = null): Bitmap? {
+        val normalizedMime = normalizeMimeKey(mimeKey)
+        mimeBitmaps[normalizedMime]?.let { return it }
+        val file = getMimeIconFile(normalizedMime) ?: return null
+        val decoded = (try { BitmapFactory.decodeFile(file.absolutePath) } catch (_: Throwable) { null })
+            ?: fallbackDecoder?.invoke(file)
+        if (decoded != null) {
+            mimeBitmaps[normalizedMime] = decoded
+        }
+        return decoded
     }
 
     fun getMimeIconFile(mimeKey: String): File? {
@@ -73,7 +101,10 @@ class CustomIconStore(baseDir: File) {
         return if (file.isFile) file else null
     }
 
-    fun hasMimeIcon(mimeKey: String): Boolean = getMimeIconFile(mimeKey) != null
+    fun hasMimeIcon(mimeKey: String): Boolean {
+        val normalizedMime = normalizeMimeKey(mimeKey)
+        return mimeBitmaps.containsKey(normalizedMime) || getMimeIconFile(normalizedMime) != null
+    }
 
     companion object {
         fun normalizeMimeKey(mimeType: String): String =
@@ -99,15 +130,18 @@ class CustomIconStore(baseDir: File) {
             return if (ext.isNotEmpty()) "application/x-$ext" else "application/octet-stream"
         }
 
-        fun encodeBitmapToBase64Png(bitmap: Bitmap): String? = try {
+        fun encodeBitmapToPngBytes(bitmap: Bitmap): ByteArray? = try {
             val out = ByteArrayOutputStream()
             if (bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) {
                 val bytes = out.toByteArray()
-                if (bytes.isNotEmpty()) Base64.getEncoder().encodeToString(bytes) else null
+                bytes.takeIf { it.isNotEmpty() }
             } else null
         } catch (_: Exception) {
             null
         }
+
+        fun encodeBitmapToBase64Png(bitmap: Bitmap): String? =
+            encodeBitmapToPngBytes(bitmap)?.let { Base64.getEncoder().encodeToString(it) }
 
         fun encodeBytesToBase64(bytes: ByteArray): String =
             Base64.getEncoder().encodeToString(bytes)

@@ -62,7 +62,12 @@ class ThumbnailDecoder(
     }
 
     private fun decodePlatform(uri: Uri, targetPx: Int): Bitmap? {
-        return if (Build.VERSION.SDK_INT >= 28 && (uri.scheme == "content" || uri.scheme == "android.resource")) {
+        val canUseImageDecoder = Build.VERSION.SDK_INT >= 28 && (
+            uri.scheme == "content" ||
+            uri.scheme == "android.resource" ||
+            (uri.scheme == "file" && !uri.path.isNullOrEmpty())
+        )
+        return if (canUseImageDecoder) {
             try { decodeWithImageDecoder(uri, targetPx) }
             catch (oversized: OversizedImage) { throw oversized }
             catch (_: Exception) { decodeWithBitmapFactory(uri, targetPx) }
@@ -160,7 +165,11 @@ class ThumbnailDecoder(
 
     @RequiresApi(28)
     private fun decodeWithImageDecoder(uri: Uri, targetPx: Int): Bitmap {
-        val source = ImageDecoder.createSource(resolver, uri)
+        val source = if (uri.scheme == "file" && !uri.path.isNullOrEmpty()) {
+            ImageDecoder.createSource(java.io.File(uri.path!!))
+        } else {
+            ImageDecoder.createSource(resolver, uri)
+        }
         return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             val width = info.size.width
             val height = info.size.height

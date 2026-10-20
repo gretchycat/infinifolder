@@ -27,6 +27,7 @@ import com.infinifolder.archive.ArchiveStorageProvider
 import com.infinifolder.archive.ArchiveUri
 import com.infinifolder.archive.ArchiveWriter
 import com.infinifolder.shortcut.ShortcutInfo
+import com.infinifolder.shortcut.WebMetadataResolver
 import java.io.File
 import com.infinifolder.model.*
 import com.infinifolder.preview.CustomIconStore
@@ -99,6 +100,7 @@ class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var toolbar: LinearLayout
     private lateinit var createButton: TextView
+    private lateinit var createLinkButton: TextView
     private lateinit var content: LinearLayout
     private lateinit var browserArea: LinearLayout
     private lateinit var fileScroll: ScrollView
@@ -155,6 +157,7 @@ class MainActivity : Activity() {
     private var pendingIconTargetType: String? = null
     private var pendingIconTargetUri: Uri? = null
     private var pendingIconTargetMime: String? = null
+    private var pendingCreateLinkIconCallback: ((Bitmap, String) -> Unit)? = null
     private var applicationSourceGeneration = 0
     private var permissionQueryGeneration = 0
     private var accessRequestGeneration = 0
@@ -298,6 +301,7 @@ class MainActivity : Activity() {
         toolbar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; orientation = LinearLayout.HORIZONTAL }
         button("☰", fg) { showSidebar() }; button("Home", fg) { showHomeRoot() }
         createButton = button("＋", fg) { onCreateAction() }
+        createLinkButton = button("🔗+", fg) { showCreateUriLinkDialog() }
         button("↻", fg) {
             if (homeMode) when (homePage) {
                 "internal_shared" -> showInternalShared(false)
@@ -366,10 +370,18 @@ class MainActivity : Activity() {
             }
         }
         root.addView(status)
-        content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            isLongClickable = true
+            setOnLongClickListener { onEmptyAreaLongPress() }
+        }
         fileScroll = ScrollView(this).apply {
-            addView(content)
+            isFillViewport = true
+            isLongClickable = true
+            setOnLongClickListener { onEmptyAreaLongPress() }
+            addView(content, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             viewTreeObserver.addOnScrollChangedListener { scheduleVisibleProbe() }
+            viewTreeObserver.addOnGlobalLayoutListener { scheduleVisibleProbe() }
         }
         browserArea = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         treePanel = LinearLayout(this).apply {
@@ -388,14 +400,25 @@ class MainActivity : Activity() {
         root.addView(browserArea, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
         root.requestApplyInsets()
+        updateCreateAction()
         updateBrowserPanes()
         rebuildTreeRoots()
     }
 
     private fun button(label: String, color: Int, click: () -> Unit): TextView {
         val view = TextView(this).apply {
-            text = label; textSize = if (label == "InfiniFolder") 16f else 21f; setTextColor(color); gravity = Gravity.CENTER
-            setPadding(dp(8), dp(10), dp(8), dp(10)); minWidth = dp(if (label == "InfiniFolder") 112 else 44); minimumHeight = dp(48); contentDescription = label
+            text = label
+            textSize = when {
+                label == "InfiniFolder" || label == "Home" -> 16f
+                label == "📁+" || label == "🔗+" -> 17f
+                else -> 21f
+            }
+            setTextColor(color)
+            gravity = Gravity.CENTER
+            setPadding(dp(6), dp(10), dp(6), dp(10))
+            minWidth = dp(if (label == "InfiniFolder") 112 else 40)
+            minimumHeight = dp(48)
+            contentDescription = label
             setOnClickListener { click() }
         }
         toolbar.addView(view)
@@ -405,13 +428,490 @@ class MainActivity : Activity() {
         if (!::createButton.isInitialized) return
         val inArchive = current?.let { ArchiveUri.isArchiveUri(it) } ?: false
         val inApps = current?.let { AppsUri.isAppsUri(it) } ?: false
+        val canWriteDir = !homeMode && current != null && !inArchive && !inApps
         createButton.visibility = if ((homeMode && homePage != "root") || inArchive || inApps) View.GONE else View.VISIBLE
         createButton.text = if (homeMode) "＋" else "📁+"
         createButton.contentDescription = if (homeMode) "Add saved connection" else "Create directory"
+        if (::createLinkButton.isInitialized) {
+            createLinkButton.visibility = if (canWriteDir) View.VISIBLE else View.GONE
+            createLinkButton.text = "🔗+"
+            createLinkButton.contentDescription = "Create link"
+        }
     }
     private fun onCreateAction() {
         if (current?.let { AppsUri.isAppsUri(it) } == true) return
         if (homeMode && homePage == "root") showAddConnectionDialog() else if (!homeMode) showCreateDirectoryDialog()
+    }
+    private fun onEmptyAreaLongPress(): Boolean {
+        if (homeMode) return false
+        val dirUri = current ?: return false
+        if (selectionMode) {
+            showBatchActionMenu()
+            return true
+        }
+        showCurrentDirectoryMenu(dirUri)
+        return true
+    }
+    private fun showCurrentDirectoryMenu(dirUri: Uri? = current) {
+        val targetDirUri = dirUri ?: return
+        val dirName = historyNames.lastOrNull() ?: displayNameFor(targetDirUri) ?: "Current directory"
+        val writable = !ArchiveUri.isArchiveUri(targetDirUri) && !AppsUri.isAppsUri(targetDirUri)
+        val createGroup = if (writable) listOf("Create folder", "Create link") else emptyList()
+        val propertiesGroup = listOf("Properties")
+        showGroupedMenuDialog(
+            title = dirName,
+            groups = listOf(createGroup, propertiesGroup)
+        ) { action ->
+            when (action) {
+                "Create folder" -> showCreateDirectoryDialog()
+                "Create link" -> showCreateUriLinkDialog(targetDirUri)
+                "Properties" -> showCurrentDirectoryProperties(targetDirUri, dirName)
+            }
+        }
+    }
+    private fun showCurrentDirectoryProperties(dirUri: Uri, dirName: String) {
+        val modified = if (localProvider.owns(dirUri)) {
+            runCatching { localProvider.fileFor(dirUri).lastModified().takeIf { it > 0 } }.getOrNull()
+        } else null
+        val entry = ResourceEntry(
+            ref = resourceRef(dirUri),
+            metadata = ResourceMetadata(dirName, "vnd.android.document/directory", null, modified, true),
+            uri = dirUri
+        )
+        showPropertiesDialog(entry)
+    }
+    private fun showCreateUriLinkDialog(initialFolderUri: Uri? = current) {
+        val defaultTargetFolder = initialFolderUri?.takeIf { !ArchiveUri.isArchiveUri(it) && !AppsUri.isAppsUri(it) }
+            ?: current?.takeIf { !ArchiveUri.isArchiveUri(it) && !AppsUri.isAppsUri(it) }
+            ?: defaultWritableFolderUri()
+        if (defaultTargetFolder == null) {
+            Toast.makeText(this, "No writable folder available to create a link.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        var targetFolderUri: Uri = defaultTargetFolder
+        val context = dialogContext()
+        val layout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(14), dp(20), dp(10))
+        }
+
+        var isDialogClosed = false
+        var detectGeneration = 0
+        var detectedTitle: String? = null
+        var detectedFaviconBase64: String? = null
+        var detectedForUrl: String? = null
+        var customSelectedIconBase64: String? = null
+        var nameManuallyEdited = false
+        var programmaticNameChange = false
+
+        // Header Row: Icon preview (tap to customize) + Status
+        val headerRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(10))
+        }
+        val iconBoxPx = dp(56)
+        val iconBox = FrameLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(iconBoxPx, iconBoxPx)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(if (dark) 0xFF252A24.toInt() else 0xFFEAECE7.toInt())
+                setStroke(dp(1), if (dark) 0xFF4E5B49.toInt() else 0xFFB8C2B3.toInt())
+            }
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+            isClickable = true
+            isFocusable = true
+        }
+        val iconPlaceholder = TextView(context).apply {
+            text = "🔗"
+            setTextSize(TypedValue.COMPLEX_UNIT_DIP, 28f)
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
+        }
+        val iconImage = ImageView(context).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
+        }
+        iconBox.addView(iconPlaceholder)
+        iconBox.addView(iconImage)
+
+        val headerInfoCol = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        }
+        val headerHintTitle = TextView(context).apply {
+            text = "Any URI or Web URL"
+            textSize = 15f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setTextColor(setTextColorForTheme())
+        }
+        val detectStatusView = TextView(context).apply {
+            text = "Web URLs auto-detect title & favicon · Tap icon to customize"
+            textSize = 12f
+            setTextColor(if (dark) 0xFF9BA994.toInt() else 0xFF687363.toInt())
+            setPadding(0, dp(2), 0, 0)
+        }
+        headerInfoCol.addView(headerHintTitle)
+        headerInfoCol.addView(detectStatusView)
+        headerRow.addView(iconBox)
+        headerRow.addView(headerInfoCol)
+        layout.addView(headerRow)
+
+        iconBox.setOnClickListener {
+            pendingIconTargetType = "create_link"
+            pendingIconTargetUri = null
+            pendingIconTargetMime = null
+            pendingCreateLinkIconCallback = { bmp, base64 ->
+                if (!isDialogClosed) {
+                    customSelectedIconBase64 = base64
+                    iconImage.setImageBitmap(bmp)
+                    iconPlaceholder.visibility = View.GONE
+                    detectStatusView.text = "Custom icon selected"
+                }
+            }
+            launchCustomIconPicker()
+        }
+
+        val uriLabel = TextView(context).apply {
+            text = "Target URI:"
+            textSize = 12f
+            setTextColor(if (dark) 0xFFB8CCAF.toInt() else 0xFF52644F.toInt())
+            setPadding(0, dp(4), 0, dp(2))
+        }
+        val uriInput = EditText(context).apply {
+            hint = "https://example.com, content://…, file://…, apps://…"
+            setHintTextColor(if (dark) 0xFF888888.toInt() else 0xFFAAAAAA.toInt())
+            setTextColor(setTextColorForTheme())
+            textSize = 14f
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+        }
+
+        val quickActionsRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(2), 0, dp(6))
+        }
+
+        fun quickActionBtn(label: String, onClick: () -> Unit): TextView = TextView(context).apply {
+            text = label
+            textSize = 12f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setTextColor(if (dark) 0xFF81C784.toInt() else 0xFF2E7D32.toInt())
+            setPadding(dp(6), dp(4), dp(12), dp(4))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+        }
+
+        val nameLabel = TextView(context).apply {
+            text = "Link name:"
+            textSize = 12f
+            setTextColor(if (dark) 0xFFB8CCAF.toInt() else 0xFF52644F.toInt())
+            setPadding(0, dp(6), 0, dp(2))
+        }
+        val nameInput = EditText(context).apply {
+            hint = "Leave empty to auto-detect from URI / web title"
+            setHintTextColor(if (dark) 0xFF888888.toInt() else 0xFFAAAAAA.toInt())
+            setTextColor(setTextColorForTheme())
+            textSize = 14f
+        }
+        nameInput.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: android.text.Editable?) {
+                if (!programmaticNameChange) {
+                    nameManuallyEdited = !s.isNullOrBlank()
+                }
+            }
+        })
+
+        val isFolderCheck = CheckBox(context).apply {
+            text = "Target is a folder"
+            setTextColor(setTextColorForTheme())
+        }
+
+        fun updatePlaceholderIcon(rawUri: String) {
+            if (customSelectedIconBase64 != null) return
+            val normalized = WebMetadataResolver.normalizeInputUri(rawUri)
+            val parsed = runCatching { Uri.parse(normalized) }.getOrNull()
+            if (detectedFaviconBase64 == null) {
+                iconImage.setImageDrawable(null)
+                iconPlaceholder.visibility = View.VISIBLE
+                iconPlaceholder.text = when {
+                    WebMetadataResolver.isWebUri(normalized) -> "🌐"
+                    isFolderCheck.isChecked -> "📁"
+                    parsed != null && AppsUri.isAppUri(parsed) -> "📱"
+                    else -> "🔗"
+                }
+            }
+        }
+
+        fun triggerWebDetection(rawUri: String) {
+            val normalized = WebMetadataResolver.normalizeInputUri(rawUri)
+            if (!WebMetadataResolver.isWebUri(normalized)) {
+                detectedTitle = null
+                detectedFaviconBase64 = null
+                detectedForUrl = null
+                updatePlaceholderIcon(rawUri)
+                detectStatusView.text = if (normalized.isEmpty()) {
+                    "Web URLs auto-detect title & favicon · Tap icon to customize"
+                } else {
+                    "URI ready (${normalized.substringBefore(':')}://)"
+                }
+                return
+            }
+            val gen = ++detectGeneration
+            updatePlaceholderIcon(normalized)
+            detectStatusView.text = "Detecting web title & favicon…"
+            imageIo.execute {
+                val meta = WebMetadataResolver.fetchWebMetadata(normalized, dp(128))
+                runOnUiThread {
+                    if (isDialogClosed || gen != detectGeneration || isFinishing || isDestroyed) return@runOnUiThread
+                    detectedForUrl = normalized
+                    detectedTitle = meta.title
+                    detectedFaviconBase64 = meta.faviconBase64
+                    if (!meta.title.isNullOrBlank() && (!nameManuallyEdited || nameInput.text.toString().isBlank())) {
+                        programmaticNameChange = true
+                        nameInput.setText(meta.title)
+                        programmaticNameChange = false
+                    }
+                    if (customSelectedIconBase64 == null) {
+                        if (meta.faviconBitmap != null) {
+                            iconImage.setImageBitmap(meta.faviconBitmap)
+                            iconPlaceholder.visibility = View.GONE
+                        } else {
+                            iconImage.setImageDrawable(null)
+                            iconPlaceholder.visibility = View.VISIBLE
+                            iconPlaceholder.text = "🌐"
+                        }
+                    }
+                    detectStatusView.text = when {
+                        !meta.title.isNullOrBlank() && meta.faviconBitmap != null -> "✓ Detected page title & favicon"
+                        !meta.title.isNullOrBlank() -> "✓ Detected page title"
+                        meta.faviconBitmap != null -> "✓ Detected favicon"
+                        else -> "Web URL ready"
+                    }
+                }
+            }
+        }
+
+        var debounceRunnable: Runnable? = null
+        uriInput.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: android.text.Editable?) {
+                val raw = s?.toString()?.trim() ?: ""
+                debounceRunnable?.let { root.removeCallbacks(it) }
+                val normalized = WebMetadataResolver.normalizeInputUri(raw)
+                if (WebMetadataResolver.isWebUri(normalized)) {
+                    isFolderCheck.isChecked = false
+                    updatePlaceholderIcon(raw)
+                    val task = Runnable {
+                        if (!isDialogClosed) triggerWebDetection(raw)
+                    }
+                    debounceRunnable = task
+                    root.postDelayed(task, 500)
+                } else {
+                    detectGeneration++
+                    detectedTitle = null
+                    detectedFaviconBase64 = null
+                    detectedForUrl = null
+                    updatePlaceholderIcon(raw)
+                    detectStatusView.text = if (normalized.isEmpty()) {
+                        "Web URLs auto-detect title & favicon · Tap icon to customize"
+                    } else {
+                        "URI ready"
+                    }
+                }
+            }
+        })
+
+        isFolderCheck.setOnCheckedChangeListener { _, _ ->
+            updatePlaceholderIcon(uriInput.text.toString())
+        }
+
+        quickActionsRow.addView(quickActionBtn("Paste URI") {
+            val clipboard = getSystemService(android.content.ClipboardManager::class.java)
+            val clipText = clipboard?.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()?.trim()
+            if (!clipText.isNullOrEmpty()) {
+                uriInput.setText(clipText)
+                uriInput.setSelection(clipText.length)
+                debounceRunnable?.let { root.removeCallbacks(it) }
+                triggerWebDetection(clipText)
+            } else {
+                Toast.makeText(this, "Clipboard is empty.", Toast.LENGTH_SHORT).show()
+            }
+        })
+        quickActionsRow.addView(quickActionBtn("Pick folder…") {
+            val currentTyped = runCatching { Uri.parse(uriInput.text.toString().trim()) }.getOrNull()
+            showFolderPicker("Select Target Folder", currentTyped ?: targetFolderUri) { pickedUri, displayPath ->
+                uriInput.setText(pickedUri.toString())
+                isFolderCheck.isChecked = true
+                if (!nameManuallyEdited || nameInput.text.toString().isBlank()) {
+                    programmaticNameChange = true
+                    nameInput.setText(displayPath.substringAfterLast('/').trim())
+                    programmaticNameChange = false
+                }
+                updatePlaceholderIcon(pickedUri.toString())
+            }
+        })
+        quickActionsRow.addView(quickActionBtn("Detect web info") {
+            val raw = uriInput.text.toString().trim()
+            if (raw.isEmpty()) {
+                Toast.makeText(this, "Enter or paste a web URL first.", Toast.LENGTH_SHORT).show()
+            } else {
+                debounceRunnable?.let { root.removeCallbacks(it) }
+                triggerWebDetection(raw)
+            }
+        })
+
+        val destHeader = TextView(context).apply {
+            text = "Save link to:"
+            textSize = 12f
+            setTextColor(if (dark) 0xFFB8CCAF.toInt() else 0xFF52644F.toInt())
+            setPadding(0, dp(10), 0, dp(4))
+        }
+        val destRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadius = dp(6).toFloat()
+                setColor(if (dark) 0xFF2A2E28.toInt() else 0xFFEAECE7.toInt())
+            }
+            setPadding(dp(12), dp(8), dp(8), dp(8))
+        }
+        val destIcon = TextView(context).apply {
+            text = "📁"
+            textSize = 16f
+            setPadding(0, 0, dp(8), 0)
+        }
+        val destPathView = TextView(context).apply {
+            text = getPathDisplay(targetFolderUri)
+            textSize = 13f
+            setTextColor(setTextColorForTheme())
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        val changeBtn = TextView(context).apply {
+            text = "Change…"
+            textSize = 13f
+            setTextColor(if (dark) 0xFF81C784.toInt() else 0xFF2E7D32.toInt())
+            setPadding(dp(8), dp(6), dp(8), dp(6))
+            isClickable = true
+            isFocusable = true
+        }
+        destRow.addView(destIcon)
+        destRow.addView(destPathView, LinearLayout.LayoutParams(0, -2, 1f))
+        destRow.addView(changeBtn)
+        val pickSaveLocation: () -> Unit = {
+            showFolderPicker("Select Location for Link", targetFolderUri) { selectedUri, displayPath ->
+                targetFolderUri = selectedUri
+                destPathView.text = displayPath
+            }
+        }
+        destRow.setOnClickListener { pickSaveLocation() }
+        changeBtn.setOnClickListener { pickSaveLocation() }
+
+        layout.addView(uriLabel)
+        layout.addView(uriInput)
+        layout.addView(quickActionsRow)
+        layout.addView(nameLabel)
+        layout.addView(nameInput)
+        layout.addView(isFolderCheck)
+        layout.addView(destHeader)
+        layout.addView(destRow)
+
+        val scroll = ScrollView(context).apply { addView(layout) }
+        val dialog = dialogBuilder()
+            .setTitle("Create Link")
+            .setView(scroll)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Create", null)
+            .create()
+
+        dialog.setOnDismissListener {
+            isDialogClosed = true
+            debounceRunnable?.let { root.removeCallbacks(it) }
+            if (pendingIconTargetType == "create_link") {
+                pendingIconTargetType = null
+                pendingCreateLinkIconCallback = null
+            }
+        }
+
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val rawUri = uriInput.text.toString().trim()
+                if (rawUri.isEmpty()) {
+                    uriInput.error = "Enter or paste a URI"
+                    return@setOnClickListener
+                }
+                if (ArchiveUri.isArchiveUri(targetFolderUri) || AppsUri.isAppsUri(targetFolderUri)) {
+                    Toast.makeText(this, "Cannot create link in a read-only location.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                val normalizedUri = WebMetadataResolver.normalizeInputUri(rawUri)
+                val userEnteredName = nameInput.text.toString().trim()
+                    .removeSuffix(".lnk")
+                    .removeSuffix(".LNK")
+                    .trim()
+                val isWeb = WebMetadataResolver.isWebUri(normalizedUri)
+                val alreadyDetected = detectedForUrl == normalizedUri
+                val initialTitle = userEnteredName.ifEmpty {
+                    detectedTitle ?: WebMetadataResolver.defaultNameForUri(normalizedUri)
+                }
+                val initialIconBase64 = customSelectedIconBase64 ?: detectedFaviconBase64
+                val folderFlag = isFolderCheck.isChecked
+
+                dialog.dismiss()
+
+                io.execute {
+                    var finalUrl = normalizedUri
+                    var finalTitle = initialTitle
+                    var finalIconBase64 = initialIconBase64
+                    if (isWeb && (!alreadyDetected || (userEnteredName.isEmpty() && detectedTitle == null) || finalIconBase64 == null)) {
+                        val fetched = WebMetadataResolver.fetchWebMetadata(normalizedUri, dp(128))
+                        finalUrl = fetched.normalizedUrl.ifEmpty { normalizedUri }
+                        if (userEnteredName.isEmpty() && !fetched.title.isNullOrBlank()) {
+                            finalTitle = fetched.title
+                        }
+                        if (finalIconBase64 == null && !fetched.faviconBase64.isNullOrBlank()) {
+                            finalIconBase64 = fetched.faviconBase64
+                        }
+                    }
+
+                    val parsedTarget = runCatching { Uri.parse(finalUrl) }.getOrNull()
+                    val isLocalDir = !isWeb && parsedTarget != null && localProvider.owns(parsedTarget) &&
+                        runCatching { localProvider.fileFor(parsedTarget).isDirectory }.getOrDefault(false)
+                    val targetIsDir = !isWeb && (folderFlag || isLocalDir || (parsedTarget != null && AppsUri.isCategoryUri(parsedTarget)))
+                    val targetPathStr = when {
+                        isWeb -> finalUrl
+                        parsedTarget != null -> getPathDisplay(parsedTarget)
+                        else -> finalUrl
+                    }
+                    val targetMime = when {
+                        isWeb -> "text/uri-list"
+                        targetIsDir -> "vnd.android.document/directory"
+                        else -> null
+                    }
+                    val cleanStem = WebMetadataResolver.sanitizeFileName(
+                        finalTitle,
+                        WebMetadataResolver.defaultNameForUri(finalUrl)
+                    )
+                    val shortcutInfo = ShortcutInfo(
+                        targetUri = finalUrl,
+                        targetPath = targetPathStr,
+                        displayNameOverride = finalTitle.takeIf { it.isNotBlank() },
+                        targetMimeType = targetMime,
+                        targetIsDirectory = targetIsDir,
+                        iconBase64 = finalIconBase64
+                    )
+                    createShortcutFile(targetFolderUri, "$cleanStem.lnk", shortcutInfo)
+                }
+            }
+        }
+        dialog.show()
     }
     private fun showCreateDirectoryDialog() {
         val parent = current ?: return
@@ -701,9 +1201,11 @@ class MainActivity : Activity() {
             val targetType = pendingIconTargetType
             val targetUri = pendingIconTargetUri
             val targetMime = pendingIconTargetMime
+            val createLinkCb = pendingCreateLinkIconCallback
             pendingIconTargetType = null
             pendingIconTargetUri = null
             pendingIconTargetMime = null
+            pendingCreateLinkIconCallback = null
             if (resultCode == RESULT_OK) {
                 val pickedImageUri = data?.data ?: data?.clipData?.getItemAt(0)?.uri
                 if (pickedImageUri != null) {
@@ -711,6 +1213,19 @@ class MainActivity : Activity() {
                         "folder" -> if (targetUri != null) applyFolderIcon(targetUri, pickedImageUri)
                         "shortcut" -> if (targetUri != null) applyShortcutIcon(targetUri, pickedImageUri)
                         "mime" -> if (targetMime != null) applyMimeTypeIcon(targetMime, pickedImageUri)
+                        "create_link" -> if (createLinkCb != null) {
+                            imageIo.execute {
+                                val bmp = thumbnailDecoder.decode(pickedImageUri, dp(128))
+                                val base64 = bmp?.let { CustomIconStore.encodeBitmapToBase64Png(it) }
+                                if (bmp != null && !base64.isNullOrBlank()) {
+                                    runOnUiThread {
+                                        if (!isFinishing && !isDestroyed) {
+                                            createLinkCb(bmp, base64)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -970,6 +1485,7 @@ class MainActivity : Activity() {
 
     private fun isCardVisibleInScroll(cardView: View): Boolean {
         if (!::fileScroll.isInitialized || !cardView.isAttachedToWindow) return false
+        if (cardView.width <= 0 && cardView.height <= 0) return false
         val scrollHeight = fileScroll.height
         if (scrollHeight <= 0) return true
         val rect = android.graphics.Rect()
@@ -1035,11 +1551,13 @@ class MainActivity : Activity() {
                 text = listingError ?: if (listingIsLoading) "Waiting for the storage provider…" else
                     listingNotice ?: "No files or folders were returned for this location."
                 textSize = 16f; setTextColor(setTextColorForTheme()); setPadding(dp(18), dp(28), dp(18), dp(12))
+                setOnLongClickListener { onEmptyAreaLongPress() }
             })
             val path = current?.let { shared.getString("source_path_v2_$it", null) }
                 ?: historyNames.joinToString(" / ")
             content.addView(TextView(this).apply {
                 text = path; textSize = 13f; setTextColor(setTextColorForTheme()); setPadding(dp(18), 0, dp(18), dp(12))
+                setOnLongClickListener { onEmptyAreaLongPress() }
             })
             content.addView(Button(dialogContext()).apply {
                 text = "Refresh"
@@ -1051,12 +1569,24 @@ class MainActivity : Activity() {
             val availableWidth = (resources.configuration.screenWidthDp - if (treeVisible) 220 else 32).coerceAtLeast(iconSizeDp)
             val minimumCellWidth = iconSizeDp + iconSizeDp / 2
             val columns = (availableWidth / minimumCellWidth).coerceIn(1, 8)
-            val table = TableLayout(this).apply { isStretchAllColumns = true }
+            val table = TableLayout(this).apply {
+                isStretchAllColumns = true
+                isLongClickable = true
+                setOnLongClickListener { onEmptyAreaLongPress() }
+            }
             rows.chunked(columns).forEach { group ->
-                val tr = TableRow(this)
+                val tr = TableRow(this).apply {
+                    isLongClickable = true
+                    setOnLongClickListener { onEmptyAreaLongPress() }
+                }
                 val cellHeight = dp(iconSizeDp + iconSizeDp / 2 + 52)
                 group.forEach { entry -> tr.addView(entryCard(entry, true), TableRow.LayoutParams(0, cellHeight, 1f)) }
-                repeat(columns - group.size) { tr.addView(View(this), TableRow.LayoutParams(0, cellHeight, 1f)) }
+                repeat(columns - group.size) {
+                    tr.addView(View(this).apply {
+                        isLongClickable = true
+                        setOnLongClickListener { onEmptyAreaLongPress() }
+                    }, TableRow.LayoutParams(0, cellHeight, 1f))
+                }
                 table.addView(tr)
             }
             content.addView(table)
@@ -1072,14 +1602,19 @@ class MainActivity : Activity() {
             gravity = if (asGrid) Gravity.CENTER else Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(8), dp(10), dp(8))
             minimumHeight = dp(64)
-            if (isSelected) {
-                background = GradientDrawable().apply {
-                    setColor(if (dark) 0x334CAF50.toInt() else 0x3381C784.toInt())
-                    cornerRadius = dp(8).toFloat()
-                    setStroke(dp(1), if (dark) 0xFF4CAF50.toInt() else 0xFF2E7D32.toInt())
+            if (!asGrid) {
+                if (isSelected) {
+                    background = GradientDrawable().apply {
+                        setColor(if (dark) 0x334CAF50.toInt() else 0x3381C784.toInt())
+                        cornerRadius = dp(8).toFloat()
+                        setStroke(dp(1), if (dark) 0xFF4CAF50.toInt() else 0xFF2E7D32.toInt())
+                    }
+                } else {
+                    setBackgroundResource(android.R.drawable.list_selector_background)
                 }
             } else {
-                setBackgroundResource(android.R.drawable.list_selector_background)
+                isLongClickable = true
+                setOnLongClickListener { onEmptyAreaLongPress() }
             }
         }
         val sideDp = if (asGrid) iconSizeDp else 44
@@ -1094,10 +1629,16 @@ class MainActivity : Activity() {
         val rawIcon = if (isShortcut && shortcut != null) {
             val targetUri = try { Uri.parse(shortcut.targetUri) } catch (_: Throwable) { null }
             val targetMeta = ResourceMetadata(shortcut.targetPath ?: entry.metadata.name, shortcut.targetMimeType ?: "", null, null, shortcut.targetIsDirectory)
-            val targetMimeKey = if (!shortcut.targetIsDirectory) CustomIconStore.resolveMimeKey(targetMeta) else null
+            val targetMimeKey = if (!shortcut.targetIsDirectory && !WebMetadataResolver.isWebUri(shortcut.targetUri)) CustomIconStore.resolveMimeKey(targetMeta) else null
             when {
                 !shortcut.iconBase64.isNullOrBlank() -> {
                     shortcutCustomIconPreview(entry.uri, shortcut.iconBase64, asGrid)
+                }
+                WebMetadataResolver.isWebUri(shortcut.targetUri) -> TextView(this).apply {
+                    text = "🌐"
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
+                    gravity = Gravity.CENTER
+                    includeFontPadding = false
                 }
                 targetUri != null && AppsUri.isAppUri(targetUri) -> {
                     val pkg = AppsUri.getPackageName(targetUri)
@@ -1125,6 +1666,12 @@ class MainActivity : Activity() {
                 }
                 shortcut.targetMimeType?.startsWith("image/") == true -> TextView(this).apply {
                     text = "🖼"
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
+                    gravity = Gravity.CENTER
+                    includeFontPadding = false
+                }
+                targetUri?.scheme != null && targetUri.scheme !in setOf("file", "content", "apps", "archive") -> TextView(this).apply {
+                    text = "🔗"
                     setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
                     gravity = Gravity.CENTER
                     includeFontPadding = false
@@ -1198,7 +1745,19 @@ class MainActivity : Activity() {
         val icon = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(iconWidth, iconHeight).apply {
                 gravity = if (asGrid) Gravity.CENTER_HORIZONTAL else Gravity.CENTER_VERTICAL
-                if (asGrid) bottomMargin = dp(6)
+                if (asGrid) bottomMargin = dp(4)
+            }
+            if (asGrid) {
+                setPadding(dp(2), dp(2), dp(2), dp(2))
+                if (isSelected) {
+                    background = GradientDrawable().apply {
+                        setColor(if (dark) 0x334CAF50.toInt() else 0x3381C784.toInt())
+                        cornerRadius = dp(8).toFloat()
+                        setStroke(dp(1), if (dark) 0xFF4CAF50.toInt() else 0xFF2E7D32.toInt())
+                    }
+                } else {
+                    setBackgroundResource(android.R.drawable.list_selector_background)
+                }
             }
             addView(rawIcon, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             if (isShortcut) {
@@ -1239,7 +1798,7 @@ class MainActivity : Activity() {
         val labels = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             if (asGrid) {
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                     gravity = Gravity.CENTER_HORIZONTAL
                 }
                 gravity = Gravity.CENTER_HORIZONTAL
@@ -1261,11 +1820,21 @@ class MainActivity : Activity() {
             maxLines = if (asGrid) 2 else 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             if (asGrid) {
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                     gravity = Gravity.CENTER_HORIZONTAL
                 }
+                setPadding(dp(4), dp(2), dp(4), dp(2))
                 gravity = Gravity.CENTER
                 textAlignment = View.TEXT_ALIGNMENT_CENTER
+                if (isSelected) {
+                    background = GradientDrawable().apply {
+                        setColor(if (dark) 0x334CAF50.toInt() else 0x3381C784.toInt())
+                        cornerRadius = dp(6).toFloat()
+                        setStroke(dp(1), if (dark) 0xFF4CAF50.toInt() else 0xFF2E7D32.toInt())
+                    }
+                } else {
+                    setBackgroundResource(android.R.drawable.list_selector_background)
+                }
             } else {
                 gravity = Gravity.START
                 textAlignment = View.TEXT_ALIGNMENT_VIEW_START
@@ -1294,8 +1863,9 @@ class MainActivity : Activity() {
                             val cacheKey = "shortcut-icon:${entry.uri}:${info.iconBase64.hashCode()}"
                             resolvedBitmap = thumbnailCache.get(cacheKey)
                                 ?: CustomIconStore.decodeBase64Bitmap(info.iconBase64)?.also { thumbnailCache.put(cacheKey, it) }
-                            "📄"
+                            if (WebMetadataResolver.isWebUri(info.targetUri)) "🌐" else "📄"
                         }
+                        WebMetadataResolver.isWebUri(info.targetUri) -> "🌐"
                         targetUri != null && AppsUri.isAppUri(targetUri) -> {
                             val pkg = AppsUri.getPackageName(targetUri)
                             if (!pkg.isNullOrEmpty()) {
@@ -1319,14 +1889,12 @@ class MainActivity : Activity() {
                             }
                             "📁"
                         }
+                        targetUri?.scheme != null && targetUri.scheme !in setOf("file", "content", "apps", "archive") -> "🔗"
                         else -> {
                             val targetMeta = ResourceMetadata(info.targetPath ?: entry.metadata.name, info.targetMimeType ?: "", null, null, false)
                             val targetMimeKey = CustomIconStore.resolveMimeKey(targetMeta)
-                            val mimeFile = customIconStore.getMimeIconFile(targetMimeKey)
-                            if (mimeFile != null) {
-                                val previewKey = "mime-icon:$targetMimeKey:${mimeFile.lastModified()}:$sidePx"
-                                resolvedBitmap = thumbnailCache.get(previewKey)
-                                    ?: thumbnailDecoder.decode(Uri.fromFile(mimeFile), sidePx)?.also { thumbnailCache.put(previewKey, it) }
+                            resolvedBitmap = customIconStore.getMimeIconBitmap(targetMimeKey) { f ->
+                                thumbnailDecoder.decode(Uri.fromFile(f), sidePx)
                             }
                             when {
                                 ArchiveFormats.isArchive(info.targetPath ?: "", info.targetMimeType ?: "") -> "📦"
@@ -1354,16 +1922,16 @@ class MainActivity : Activity() {
             }
         }
 
-        box.setOnClickListener {
+        val onEntryClick = View.OnClickListener {
             if (selectionMode) {
                 if (isSelected) selectedUris.remove(entry.uri) else selectedUris.add(entry.uri)
                 renderEntries()
                 updateListingStatus()
-                return@setOnClickListener
+                return@OnClickListener
             }
             if (isShortcut) {
                 openShortcut(entry)
-                return@setOnClickListener
+                return@OnClickListener
             }
             if (entry.metadata.isDirectory) {
                 navigate(entry.uri, displayName = entry.metadata.name)
@@ -1388,7 +1956,7 @@ class MainActivity : Activity() {
                 open(entry)
             }
         }
-        box.setOnLongClickListener {
+        val onEntryLongClick = View.OnLongClickListener {
             if (selectionMode) {
                 if (!isSelected) {
                     selectedUris.add(entry.uri)
@@ -1401,6 +1969,22 @@ class MainActivity : Activity() {
                 showEntryMenu(entry)
                 true
             }
+        }
+        if (asGrid) {
+            icon.isClickable = true
+            icon.isFocusable = true
+            icon.isLongClickable = true
+            icon.setOnClickListener(onEntryClick)
+            icon.setOnLongClickListener(onEntryLongClick)
+
+            nameView.isClickable = true
+            nameView.isFocusable = true
+            nameView.isLongClickable = true
+            nameView.setOnClickListener(onEntryClick)
+            nameView.setOnLongClickListener(onEntryLongClick)
+        } else {
+            box.setOnClickListener(onEntryClick)
+            box.setOnLongClickListener(onEntryLongClick)
         }
         return box
     }
@@ -1462,6 +2046,13 @@ class MainActivity : Activity() {
         frame.addView(placeholder)
         frame.addView(image)
 
+        val memCached = customIconStore.getCachedMimeBitmap(mimeKey)
+        if (memCached != null) {
+            image.setImageBitmap(memCached)
+            placeholder.visibility = View.GONE
+            return frame
+        }
+
         val mimeFile = customIconStore.getMimeIconFile(mimeKey) ?: return frame
         val previewKey = "mime-icon:$mimeKey:${mimeFile.lastModified()}:$sidePx"
         val cached = thumbnailCache.get(previewKey)
@@ -1476,7 +2067,9 @@ class MainActivity : Activity() {
         registerVisibleCardProbe(hostView, generation) {
             imageIo.execute {
                 if (generation != loadGeneration || isFinishing || isDestroyed) return@execute
-                val bitmap = thumbnailDecoder.decode(Uri.fromFile(mimeFile), sidePx)
+                val bitmap = customIconStore.getMimeIconBitmap(mimeKey) { f ->
+                    thumbnailDecoder.decode(Uri.fromFile(f), sidePx)
+                }
                 if (bitmap != null) {
                     thumbnailCache.put(previewKey, bitmap)
                     runOnUiThread {
@@ -1790,8 +2383,64 @@ class MainActivity : Activity() {
             }
             return
         }
-        val intent = Intent(Intent.ACTION_VIEW).setDataAndType(entry.uri, entry.metadata.mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        try { startActivity(intent) } catch (_: Exception) { Toast.makeText(this, "No app can open this file type.", Toast.LENGTH_SHORT).show() }
+        launchExternalViewIntent(entry.uri, entry.metadata.mimeType, entry.metadata.name)
+    }
+
+    private fun launchExternalViewIntent(targetUri: Uri, mimeType: String? = null, displayName: String? = null) {
+        val scheme = targetUri.scheme?.lowercase()
+        if (WebMetadataResolver.isWebUri(targetUri.toString()) || (scheme != null && scheme !in setOf("file", "content"))) {
+            val browsableIntent = Intent(Intent.ACTION_VIEW, targetUri).apply {
+                addCategory(Intent.CATEGORY_BROWSABLE)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                startActivity(browsableIntent)
+                return
+            } catch (_: Exception) {
+                try {
+                    val plainIntent = Intent(Intent.ACTION_VIEW, targetUri).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(plainIntent)
+                    return
+                } catch (_: Exception) {
+                    Toast.makeText(this, "No app can open this URI ($targetUri).", Toast.LENGTH_SHORT).show()
+                    return
+                }
+            }
+        }
+
+        val shareableUri = if (scheme == "file" && targetUri.path != null) {
+            runCatching {
+                FileProvider.getUriForFile(this, "${packageName}.files", File(targetUri.path!!))
+            }.getOrDefault(targetUri)
+        } else {
+            targetUri
+        }
+        val resolvedMime = when {
+            !mimeType.isNullOrBlank() && mimeType != "application/octet-stream" && mimeType != "text/uri-list" -> mimeType
+            scheme == "file" && targetUri.path != null -> resolveMimeType(shareableUri, File(targetUri.path!!), mimeType ?: "")
+            else -> try { contentResolver.getType(shareableUri) } catch (_: Exception) { null } ?: mimeType ?: "*/*"
+        }
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(shareableUri, resolvedMime)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            clipData = ClipData.newRawUri(displayName ?: shareableUri.lastPathSegment ?: "file", shareableUri)
+        }
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                val fallback = Intent(Intent.ACTION_VIEW, shareableUri).apply {
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(fallback)
+            } catch (_: Exception) {
+                Toast.makeText(this, "No app can open this file or URI.", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
     private fun showHomeRoot() {
         if (selectionMode) exitSelectionMode()
@@ -3383,7 +4032,8 @@ class MainActivity : Activity() {
         val fallbackEmoji = when {
             !isSingle -> "📚"
             AppsUri.isAppUri(currentEntry.uri) -> "📱"
-            isShortcut && shortcut != null && runCatching { AppsUri.isAppUri(Uri.parse(shortcut.targetUri)) }.getOrDefault(false) -> "📱"
+            isShortcut && shortcut != null && WebMetadataResolver.isWebUri(shortcut?.targetUri) -> "🌐"
+            isShortcut && shortcut != null && runCatching { AppsUri.isAppUri(Uri.parse(shortcut?.targetUri)) }.getOrDefault(false) -> "📱"
             AppsUri.isCategoryUri(currentEntry.uri) -> appsProvider.getCategoryIcon(AppsUri.getCategoryName(currentEntry.uri) ?: currentEntry.metadata.name)
             isDirectory -> "📁"
             isArchive -> "📦"
@@ -3410,6 +4060,16 @@ class MainActivity : Activity() {
             if (!isSingle) return
             val decodePx = dp(64)
             if (isShortcut) {
+                val cachedInfo = shortcutCache.get(currentEntry.uri.toString())
+                if (cachedInfo != null && !cachedInfo.iconBase64.isNullOrBlank()) {
+                    val syncBmp = CustomIconStore.decodeBase64Bitmap(cachedInfo.iconBase64)
+                    if (syncBmp != null) {
+                        shortcut = cachedInfo
+                        iconImage.setImageBitmap(syncBmp)
+                        iconPlaceholder.visibility = View.GONE
+                        return
+                    }
+                }
                 imageIo.execute {
                     if (isCancelled || isFinishing || isDestroyed) return@execute
                     val info = shortcutCache.get(currentEntry.uri.toString()) ?: readShortcutInfo(currentEntry)
@@ -3429,11 +4089,12 @@ class MainActivity : Activity() {
                                 val iconUri = findDirectoryIcon(tUri)
                                 if (iconUri != null) bmp = thumbnailDecoder.decode(iconUri, decodePx)
                             }
-                            else -> {
+                            !WebMetadataResolver.isWebUri(info.targetUri) -> {
                                 val targetMeta = ResourceMetadata(info.targetPath ?: currentEntry.metadata.name, info.targetMimeType ?: "", null, null, false)
                                 val mKey = CustomIconStore.resolveMimeKey(targetMeta)
-                                val mFile = customIconStore.getMimeIconFile(mKey)
-                                if (mFile != null) bmp = thumbnailDecoder.decode(Uri.fromFile(mFile), decodePx)
+                                bmp = customIconStore.getMimeIconBitmap(mKey) { f ->
+                                    thumbnailDecoder.decode(Uri.fromFile(f), decodePx)
+                                }
                             }
                         }
                     }
@@ -3444,6 +4105,12 @@ class MainActivity : Activity() {
                                 iconPlaceholder.visibility = View.GONE
                             } else {
                                 iconImage.setImageDrawable(null)
+                                iconPlaceholder.text = when {
+                                    info != null && WebMetadataResolver.isWebUri(info.targetUri) -> "🌐"
+                                    info != null && info.targetIsDirectory -> "📁"
+                                    info != null && runCatching { AppsUri.isAppUri(Uri.parse(info.targetUri)) }.getOrDefault(false) -> "📱"
+                                    else -> fallbackEmoji
+                                }
                                 iconPlaceholder.visibility = View.VISIBLE
                             }
                         }
@@ -3474,6 +4141,17 @@ class MainActivity : Activity() {
                 return
             }
             if (isDirectory && !AppsUri.isAppsUri(currentEntry.uri)) {
+                val dirRef = resourceRef(currentEntry.uri)
+                val dirKey = "${dirRef.providerId}:${dirRef.documentId}"
+                val cachedIconUri = directoryIconCache.get(dirKey)?.takeIf { it.isNotEmpty() }
+                if (cachedIconUri != null) {
+                    val cachedBmp = thumbnailCache.get("dir-icon:$dirKey:$cachedIconUri")
+                    if (cachedBmp != null) {
+                        iconImage.setImageBitmap(cachedBmp)
+                        iconPlaceholder.visibility = View.GONE
+                        return
+                    }
+                }
                 imageIo.execute {
                     if (isCancelled || isFinishing || isDestroyed) return@execute
                     val iconUri = findDirectoryIcon(currentEntry.uri)
@@ -3493,11 +4171,18 @@ class MainActivity : Activity() {
                 return
             }
             if (isFile && fileMimeKey != null) {
-                val mimeFile = customIconStore.getMimeIconFile(fileMimeKey)
-                if (mimeFile != null) {
+                val cachedBmp = customIconStore.getCachedMimeBitmap(fileMimeKey)
+                if (cachedBmp != null) {
+                    iconImage.setImageBitmap(cachedBmp)
+                    iconPlaceholder.visibility = View.GONE
+                    return
+                }
+                if (customIconStore.hasMimeIcon(fileMimeKey)) {
                     imageIo.execute {
                         if (isCancelled || isFinishing || isDestroyed) return@execute
-                        val bmp = thumbnailDecoder.decode(Uri.fromFile(mimeFile), decodePx)
+                        val bmp = customIconStore.getMimeIconBitmap(fileMimeKey) { f ->
+                            thumbnailDecoder.decode(Uri.fromFile(f), decodePx)
+                        }
                         runOnUiThread {
                             if (!isCancelled && bmp != null) {
                                 iconImage.setImageBitmap(bmp)
@@ -3632,12 +4317,16 @@ class MainActivity : Activity() {
                     setTextColor(setTextColorForTheme())
                 }
                 shortcutTargetUriInput = tUriEdit
+                val uriActionsRow = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
                 val pickFolderBtn = TextView(context).apply {
                     text = "Pick folder target…"
                     textSize = 13f
                     typeface = android.graphics.Typeface.DEFAULT_BOLD
                     setTextColor(if (dark) 0xFF81C784.toInt() else 0xFF2E7D32.toInt())
-                    setPadding(dp(4), dp(4), dp(8), dp(4))
+                    setPadding(dp(4), dp(4), dp(12), dp(4))
                     isClickable = true
                     isFocusable = true
                     setOnClickListener {
@@ -3649,8 +4338,55 @@ class MainActivity : Activity() {
                         }
                     }
                 }
+                val detectWebBtn = TextView(context).apply {
+                    text = "Detect web title & icon"
+                    textSize = 13f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    setTextColor(if (dark) 0xFF81C784.toInt() else 0xFF2E7D32.toInt())
+                    setPadding(dp(4), dp(4), dp(8), dp(4))
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        val raw = tUriEdit.text.toString().trim()
+                        val normalized = WebMetadataResolver.normalizeInputUri(raw)
+                        if (!WebMetadataResolver.isWebUri(normalized)) {
+                            Toast.makeText(this@MainActivity, "Enter an http:// or https:// web URL to auto-detect.", Toast.LENGTH_SHORT).show()
+                            return@setOnClickListener
+                        }
+                        tUriEdit.setText(normalized)
+                        Toast.makeText(this@MainActivity, "Detecting title and favicon…", Toast.LENGTH_SHORT).show()
+                        imageIo.execute {
+                            val meta = WebMetadataResolver.fetchWebMetadata(normalized, dp(128))
+                            runOnUiThread {
+                                if (isCancelled || isFinishing || isDestroyed) return@runOnUiThread
+                                if (!meta.title.isNullOrBlank()) {
+                                    shortcutOverrideInput?.setText(meta.title)
+                                }
+                                shortcutTargetPathInput?.setText(meta.normalizedUrl)
+                                shortcutIsDirCheckbox?.isChecked = false
+                                if (!meta.faviconBase64.isNullOrBlank()) {
+                                    val base = shortcut ?: ShortcutInfo(targetUri = meta.normalizedUrl)
+                                    val updatedWithIcon = base.copy(
+                                        targetUri = meta.normalizedUrl,
+                                        iconBase64 = meta.faviconBase64
+                                    )
+                                    shortcut = updatedWithIcon
+                                    shortcutCache.put(currentEntry.uri.toString(), updatedWithIcon)
+                                    loadHeaderIcon()
+                                }
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    if (!meta.title.isNullOrBlank() || !meta.faviconBase64.isNullOrBlank()) "Detected web metadata" else "Could not detect title/favicon for URL",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+                }
+                uriActionsRow.addView(pickFolderBtn)
+                uriActionsRow.addView(detectWebBtn)
                 uriRow.addView(tUriEdit)
-                uriRow.addView(pickFolderBtn)
+                uriRow.addView(uriActionsRow)
                 propertyRow("Target URI", uriRow)
 
                 val tPathEdit = EditText(context).apply {
@@ -3787,11 +4523,12 @@ class MainActivity : Activity() {
         if (isShortcut && shortcutTargetUriInput != null) {
             builder.setNegativeButton("Close", null)
             builder.setPositiveButton("Save") { _, _ ->
-                val newUri = shortcutTargetUriInput.text.toString().trim()
-                if (newUri.isEmpty()) {
+                val rawNewUri = shortcutTargetUriInput.text.toString().trim()
+                if (rawNewUri.isEmpty()) {
                     Toast.makeText(this, "Target URI cannot be empty.", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
+                val newUri = WebMetadataResolver.normalizeInputUri(rawNewUri)
                 val baseInfo = shortcut ?: ShortcutInfo(targetUri = newUri)
                 val updated = baseInfo.copy(
                     targetUri = newUri,
@@ -3901,7 +4638,7 @@ class MainActivity : Activity() {
 
     private fun showEntryMenu(entry: ResourceEntry) {
         val isShortcut = ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)
-        val shortcut = if (isShortcut) shortcutCache.get(entry.uri.toString()) else null
+        val shortcut = if (isShortcut) (shortcutCache.get(entry.uri.toString()) ?: readShortcutInfo(entry)) else null
         val isArchive = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isArchive(entry.metadata.name, entry.metadata.mimeType)
         val inArchive = ArchiveUri.isArchiveUri(entry.uri)
         val isApp = AppsUri.isAppUri(entry.uri)
@@ -3915,12 +4652,17 @@ class MainActivity : Activity() {
             isApp -> listOf("Launch")
             isCategory -> listOf("Browse folder")
             isShortcut -> {
-                val isAppShortcut = shortcut?.let { AppsUri.isAppUri(Uri.parse(it.targetUri)) } == true
-                val openLabel = if (isAppShortcut) "Launch target app" else if (shortcut?.targetIsDirectory == true) "Open target folder" else "Open target file"
-                if (shortcut?.targetIsDirectory == true || isAppShortcut) {
-                    listOf(openLabel)
-                } else {
-                    listOf(openLabel, "Open target with external app")
+                val parsedTarget = shortcut?.let { runCatching { Uri.parse(it.targetUri) }.getOrNull() }
+                val isWebShortcut = shortcut?.let { WebMetadataResolver.isWebUri(it.targetUri) } == true
+                val isAppShortcut = parsedTarget?.let { AppsUri.isAppUri(it) } == true
+                val isCustomScheme = parsedTarget?.scheme != null &&
+                    parsedTarget.scheme !in setOf("file", "content", "apps", "archive")
+                when {
+                    isWebShortcut -> listOf("Open link")
+                    isAppShortcut -> listOf("Launch target app")
+                    shortcut?.targetIsDirectory == true -> listOf("Open target folder")
+                    isCustomScheme -> listOf("Open target URI")
+                    else -> listOf("Open target file", "Open target with external app")
                 }
             }
             inArchive && entry.metadata.isDirectory -> listOf("Browse folder")
@@ -3969,7 +4711,7 @@ class MainActivity : Activity() {
                             .show()
                     }
                 }
-                "Open target folder", "Open target file" -> openShortcut(entry)
+                "Open link", "Open target URI", "Open target folder", "Open target file" -> openShortcut(entry)
                 "Open target with external app" -> openShortcutWithExternalApp(entry)
                 "Browse folder" -> navigate(entry.uri, displayName = entry.metadata.name)
                 "Browse archive" -> {
@@ -3977,13 +4719,7 @@ class MainActivity : Activity() {
                     navigate(archiveUri, displayName = entry.metadata.name)
                 }
                 "Open with external app" -> {
-                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(entry.uri, entry.metadata.mimeType)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        clipData = ClipData.newRawUri(entry.metadata.name, entry.uri)
-                    }
-                    try { startActivity(intent) } catch (_: Exception) { Toast.makeText(this, "No app can open this file type.", Toast.LENGTH_SHORT).show() }
+                    launchExternalViewIntent(entry.uri, entry.metadata.mimeType, entry.metadata.name)
                 }
                 "Open" -> {
                     if (entry.metadata.isDirectory) navigate(entry.uri, displayName = entry.metadata.name)
@@ -4152,12 +4888,20 @@ class MainActivity : Activity() {
                     output.write(imageBytes)
                     output.flush()
                 }
+                val previewBmp = thumbnailDecoder.decode(sourceImageUri, dp(128))
+                    ?: thumbnailDecoder.decode(createRes.value.uri, dp(128))
+                val dirKey = "${folderRef.providerId}:${folderRef.documentId}"
+                val createdUriStr = createRes.value.uri.toString()
 
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     directoryIconCache.evictAll()
                     thumbnailCache.evictAll()
                     failedThumbnails.evictAll()
+                    directoryIconCache.put(dirKey, createdUriStr)
+                    if (previewBmp != null) {
+                        thumbnailCache.put("dir-icon:$dirKey:$createdUriStr", previewBmp)
+                    }
                     activePropertiesIconRefresh?.invoke()
                     if (current == folderUri) {
                         load(folderUri)
@@ -4237,15 +4981,42 @@ class MainActivity : Activity() {
         io.execute {
             try {
                 val (displayName, mimeType, imageBytes) = readSelectedImageNameAndBytes(sourceImageUri)
-                if (imageBytes == null || imageBytes.isEmpty()) {
+                val decodedBmp = thumbnailDecoder.decode(sourceImageUri, dp(128))
+                    ?: imageBytes?.let { bytes ->
+                        runCatching { android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }.getOrNull()
+                    }
+                if (decodedBmp == null && (imageBytes == null || imageBytes.isEmpty())) {
                     runOnUiThread {
-                        Toast.makeText(this, "Could not read selected image.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Could not read or decode selected image.", Toast.LENGTH_SHORT).show()
                     }
                     return@execute
                 }
-                val (iconFileName, _) = DirectoryIconResolver.targetIconFileName(displayName, mimeType)
-                val ext = iconFileName.substringAfterLast('.', "png")
-                customIconStore.setMimeIcon(mimeKey, ext, imageBytes)
+                val pngBytes = decodedBmp?.let { CustomIconStore.encodeBitmapToPngBytes(it) }
+                if (pngBytes != null && pngBytes.isNotEmpty() && decodedBmp != null) {
+                    customIconStore.setMimeIcon(mimeKey, "png", pngBytes, decodedBmp)
+                } else if (imageBytes != null && imageBytes.isNotEmpty()) {
+                    val (iconFileName, _) = DirectoryIconResolver.targetIconFileName(displayName, mimeType)
+                    val ext = iconFileName.substringAfterLast('.', "png")
+                    val file = customIconStore.setMimeIcon(mimeKey, ext, imageBytes, decodedBmp)
+                    if (decodedBmp == null) {
+                        val fallbackBmp = thumbnailDecoder.decode(Uri.fromFile(file), dp(128))
+                        if (fallbackBmp != null) {
+                            val fallbackPng = CustomIconStore.encodeBitmapToPngBytes(fallbackBmp)
+                            if (fallbackPng != null) {
+                                customIconStore.setMimeIcon(mimeKey, "png", fallbackPng, fallbackBmp)
+                            }
+                        }
+                    }
+                }
+                val finalBmp = customIconStore.getMimeIconBitmap(mimeKey) { file ->
+                    thumbnailDecoder.decode(Uri.fromFile(file), dp(128))
+                }
+                if (finalBmp == null) {
+                    runOnUiThread {
+                        Toast.makeText(this, "Selected image format could not be decoded.", Toast.LENGTH_SHORT).show()
+                    }
+                    return@execute
+                }
 
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
@@ -4346,15 +5117,33 @@ class MainActivity : Activity() {
 
     private fun openShortcut(entry: ResourceEntry) {
         fun handle(info: ShortcutInfo) {
-            val targetUri = Uri.parse(info.targetUri)
-            val targetName = info.displayNameOverride ?: info.targetPath?.substringAfterLast('/') ?: info.targetUri.substringAfterLast('/')
+            val normalizedTarget = WebMetadataResolver.normalizeInputUri(info.targetUri)
+            val targetUri = Uri.parse(normalizedTarget)
+            val targetName = info.displayNameOverride
+                ?: info.targetPath?.trimEnd('/')?.substringAfterLast('/')?.takeIf { it.isNotEmpty() }
+                ?: normalizedTarget.trimEnd('/').substringAfterLast('/').ifEmpty { normalizedTarget }
+            if (WebMetadataResolver.isWebUri(normalizedTarget)) {
+                launchExternalViewIntent(targetUri, null, targetName)
+                return
+            }
             if (AppsUri.isAppUri(targetUri)) {
                 val pkg = AppsUri.getPackageName(targetUri)
                 if (pkg != null) {
                     launchApp(pkg)
                     return
                 }
-            } else if (info.targetIsDirectory) {
+            } else if (AppsUri.isCategoryUri(targetUri)) {
+                openInstalledApps(AppsUri.getCategoryName(targetUri))
+                return
+            } else if (AppsUri.isRoot(targetUri)) {
+                openInstalledApps()
+                return
+            }
+            val isLocalDir = localProvider.owns(targetUri) &&
+                runCatching { localProvider.fileFor(targetUri).isDirectory }.getOrDefault(false)
+            if (info.targetIsDirectory || isLocalDir) {
+                navigate(targetUri, displayName = targetName)
+            } else if (ArchiveUri.isArchiveUri(targetUri) && ArchiveUri.getEntryPath(targetUri).isEmpty()) {
                 navigate(targetUri, displayName = targetName)
             } else if (ArchiveFormats.isArchive(info.targetPath ?: targetName, info.targetMimeType ?: "")) {
                 if (ArchiveUri.isArchiveUri(targetUri)) {
@@ -4373,6 +5162,8 @@ class MainActivity : Activity() {
                     val archiveUri = ArchiveUri.toArchiveUri(targetUri)
                     navigate(archiveUri, displayName = targetName)
                 }
+            } else if (targetUri.scheme != null && targetUri.scheme !in setOf("file", "content", "apps", "archive")) {
+                launchExternalViewIntent(targetUri, info.targetMimeType, targetName)
             } else {
                 val targetRef = resourceRef(targetUri)
                 val targetEntry = ResourceEntry(
@@ -4415,7 +5206,8 @@ class MainActivity : Activity() {
     private fun openShortcutWithExternalApp(entry: ResourceEntry) {
         val shortcut = shortcutCache.get(entry.uri.toString())
         fun launchExternal(info: ShortcutInfo) {
-            val targetUri = Uri.parse(info.targetUri)
+            val normalizedTarget = WebMetadataResolver.normalizeInputUri(info.targetUri)
+            val targetUri = Uri.parse(normalizedTarget)
             if (AppsUri.isAppUri(targetUri)) {
                 val pkg = AppsUri.getPackageName(targetUri)
                 if (pkg != null) {
@@ -4423,17 +5215,11 @@ class MainActivity : Activity() {
                     return
                 }
             }
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(targetUri, info.targetMimeType ?: "application/octet-stream")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                clipData = ClipData.newRawUri(info.displayNameOverride ?: targetUri.lastPathSegment ?: "file", targetUri)
-            }
-            try {
-                startActivity(intent)
-            } catch (_: Exception) {
-                Toast.makeText(this, "No app can open this file type.", Toast.LENGTH_SHORT).show()
-            }
+            launchExternalViewIntent(
+                targetUri,
+                info.targetMimeType,
+                info.displayNameOverride ?: targetUri.lastPathSegment ?: "link"
+            )
         }
         if (shortcut != null) {
             launchExternal(shortcut)
@@ -5214,7 +6000,17 @@ class MainActivity : Activity() {
                             val renamed = result.value
                             directoryIconCache.evictAll()
                             refreshInternalSharedTree()
-                            current?.let { load(it) }
+                            if (current == entry.uri) {
+                                current = renamed.uri
+                                if (history.isNotEmpty() && history.last() == entry.uri) {
+                                    history[history.lastIndex] = renamed.uri
+                                    historyNames[historyNames.lastIndex] = renamed.metadata.name
+                                }
+                                renderLocation()
+                                load(renamed.uri)
+                            } else {
+                                current?.let { load(it) }
+                            }
                             onRenamed?.invoke(renamed)
                         } else {
                             Toast.makeText(this, (result as? ProviderResult.Failure)?.message ?: "Rename unsupported", Toast.LENGTH_LONG).show()
@@ -5244,7 +6040,12 @@ class MainActivity : Activity() {
         val isShortcut = ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)
         if (isShortcut) {
             val shortcut = shortcutCache.get(entry.uri.toString())
-            val target = shortcut?.targetPath ?: shortcut?.targetUri?.substringAfterLast('/') ?: "Target"
+            val target = when {
+                shortcut == null -> "Target"
+                WebMetadataResolver.isWebUri(shortcut.targetUri) -> shortcut.targetUri
+                !shortcut.targetPath.isNullOrBlank() -> shortcut.targetPath
+                else -> shortcut.targetUri.trimEnd('/').substringAfterLast('/').ifEmpty { shortcut.targetUri }
+            }
             return "Shortcut ↗ · $target"
         }
         if (AppsUri.isCategoryUri(entry.uri)) {

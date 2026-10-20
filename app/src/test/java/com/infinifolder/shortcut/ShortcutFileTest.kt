@@ -62,4 +62,74 @@ class ShortcutFileTest {
         assertNull(ShortcutInfo.fromJson("{}"))
         assertNull(ShortcutInfo.fromJson("""{"otherField": "value"}"""))
     }
+
+    @Test
+    fun testWebMetadataNormalizeAndDetectWebUri() {
+        assertEquals("https://example.com", WebMetadataResolver.normalizeInputUri("example.com"))
+        assertEquals("https://www.github.com/torvalds", WebMetadataResolver.normalizeInputUri("www.github.com/torvalds"))
+        assertEquals("http://example.org/test", WebMetadataResolver.normalizeInputUri("HTTP://example.org/test"))
+        assertEquals("file:///storage/emulated/0/Download", WebMetadataResolver.normalizeInputUri("/storage/emulated/0/Download"))
+        assertEquals("content://com.android.externalstorage.documents/tree/primary%3ADocs",
+            WebMetadataResolver.normalizeInputUri("content://com.android.externalstorage.documents/tree/primary%3ADocs"))
+        assertEquals("mailto:user@example.com", WebMetadataResolver.normalizeInputUri("mailto:user@example.com"))
+
+        assertTrue(WebMetadataResolver.isWebUri("https://news.ycombinator.com"))
+        assertTrue(WebMetadataResolver.isWebUri("example.com"))
+        assertFalse(WebMetadataResolver.isWebUri("content://authority/doc"))
+        assertFalse(WebMetadataResolver.isWebUri("apps://category/Games"))
+    }
+
+    @Test
+    fun testExtractHtmlTitleAndEntities() {
+        val html1 = """
+            <html>
+              <head>
+                <title>
+                  Hacker News &amp; Tech &#8212; Home&#39;s Page
+                </title>
+              </head>
+              <body></body>
+            </html>
+        """.trimIndent()
+        assertEquals("Hacker News & Tech — Home's Page", WebMetadataResolver.extractHtmlTitle(html1))
+
+        val htmlOgFallback = """
+            <html>
+              <head>
+                <meta property="og:title" content="OpenGraph &quot;Title&quot;" />
+              </head>
+            </html>
+        """.trimIndent()
+        assertEquals("OpenGraph \"Title\"", WebMetadataResolver.extractHtmlTitle(htmlOgFallback))
+    }
+
+    @Test
+    fun testExtractFaviconUrlsOrderingAndResolution() {
+        val html = """
+            <html>
+              <head>
+                <link rel="shortcut icon" href="/favicon.ico">
+                <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
+                <link rel="apple-touch-icon" sizes="180x180" href="//cdn.example.com/apple-touch-icon.png">
+                <link rel="icon" type="image/svg+xml" href="/vector.svg">
+              </head>
+            </html>
+        """.trimIndent()
+
+        val urls = WebMetadataResolver.extractFaviconUrls(html, "https://example.com/docs/index.html")
+        assertTrue(urls.isNotEmpty())
+        // High-res apple-touch-icon should be prioritized first
+        assertEquals("https://cdn.example.com/apple-touch-icon.png", urls[0])
+        assertTrue(urls.contains("https://example.com/docs/assets/icon-32.png"))
+        assertTrue(urls.contains("https://example.com/favicon.ico"))
+        // SVG is skipped in favor of raster icons
+        assertFalse(urls.any { it.endsWith(".svg") })
+    }
+
+    @Test
+    fun testSanitizeFileNameAndDefaultName() {
+        assertEquals("Hacker News Y Combinator", WebMetadataResolver.sanitizeFileName("Hacker News : Y/Combinator?*", "fallback"))
+        assertEquals("example.com - guide", WebMetadataResolver.defaultNameForUri("https://www.example.com/docs/guide"))
+        assertEquals("Documents", WebMetadataResolver.defaultNameForUri("file:///storage/emulated/0/Documents"))
+    }
 }
