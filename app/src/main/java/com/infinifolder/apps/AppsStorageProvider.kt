@@ -258,6 +258,31 @@ class AppsStorageProvider(
         }
     }
 
+    fun getApkFileIconBitmap(filePath: String, sizePx: Int): Bitmap? {
+        val targetSize = sizePx.coerceAtLeast(1)
+        val file = File(filePath)
+        if (!file.exists()) return null
+        val memKey = "apk:${file.absolutePath}:${file.lastModified()}:$targetSize"
+        iconMemoryCache[memKey]?.let { return it }
+
+        val pm = packageManager ?: return null
+        return try {
+            val pkgInfo = pm.getPackageArchiveInfo(filePath, 0) ?: return null
+            val appInfo = pkgInfo.applicationInfo ?: return null
+            appInfo.sourceDir = filePath
+            appInfo.publicSourceDir = filePath
+            val drawable = appInfo.loadIcon(pm)
+            val bitmap = Bitmap.createBitmap(targetSize, targetSize, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            drawable.setBounds(0, 0, canvas.width, canvas.height)
+            drawable.draw(canvas)
+            iconMemoryCache[memKey] = bitmap
+            bitmap
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     override fun list(parent: ResourceRef): ProviderResult<List<ResourceEntry>> {
         val uri = try { AppsUri.parse(parent.documentId) } catch (_: Throwable) { null }
         val allApps = queryInstalledApps()

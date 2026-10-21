@@ -1,7 +1,17 @@
 package com.infinifolder
 
 import android.app.Activity
+import android.app.ProgressDialog
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import androidx.core.app.NotificationCompat
+import com.infinifolder.archive.MountedPartitionException
 import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
+import android.os.PersistableBundle
+import java.util.Locale
+import java.util.UUID
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -12,9 +22,12 @@ import android.os.storage.StorageManager
 import android.graphics.Bitmap
 import android.util.LruCache
 import android.view.Gravity
+import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.ContextThemeWrapper
+import kotlin.math.roundToInt
 import android.util.TypedValue
 import android.widget.*
 import android.graphics.drawable.GradientDrawable
@@ -26,6 +39,24 @@ import com.infinifolder.archive.ArchiveFormats
 import com.infinifolder.archive.ArchiveStorageProvider
 import com.infinifolder.archive.ArchiveUri
 import com.infinifolder.archive.ArchiveWriter
+import com.infinifolder.sftp.SftpAuthType
+import com.infinifolder.sftp.SftpConfig
+import com.infinifolder.sftp.SftpCredentials
+import com.infinifolder.sftp.SftpProviderFactory
+import com.infinifolder.sftp.SftpStorageProvider
+import com.infinifolder.sftp.SftpUri
+import com.infinifolder.ftp.FtpConfig
+import com.infinifolder.ftp.FtpCredentials
+import com.infinifolder.ftp.FtpProviderFactory
+import com.infinifolder.ftp.FtpStorageProvider
+import com.infinifolder.ftp.FtpUri
+import com.infinifolder.smb.DiscoveredSmbServer
+import com.infinifolder.smb.SmbConfig
+import com.infinifolder.smb.SmbCredentials
+import com.infinifolder.smb.SmbDiscoveryService
+import com.infinifolder.smb.SmbProviderFactory
+import com.infinifolder.smb.SmbStorageProvider
+import com.infinifolder.smb.SmbUri
 import com.infinifolder.shortcut.ShortcutInfo
 import com.infinifolder.shortcut.WebMetadataResolver
 import java.io.File
@@ -40,9 +71,13 @@ import com.infinifolder.ops.OperationSnapshot
 import com.infinifolder.ops.FileOperations
 import com.infinifolder.ops.OperationService
 import com.infinifolder.ops.OperationUpdate
+import com.infinifolder.theme.IconThemeManager
+import com.infinifolder.theme.IconThemeInfo
 import android.os.Build
 import com.infinifolder.storage.StorageProvider
 import com.infinifolder.storage.StorageProviderRegistry
+import com.infinifolder.storage.FileMagicDetector
+import com.infinifolder.storage.FileMagicResult
 import com.infinifolder.storage.SafProviderFactory
 import com.infinifolder.storage.ProviderConnection
 import com.infinifolder.storage.LocalStorageProvider
@@ -56,6 +91,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class MainActivity : Activity() {
+    companion object {
+        const val SAFETY_NOTIFICATION_CHANNEL_ID = "infinifolder_safety_channel"
+        const val NOTIFICATION_ID_MOUNTED_BLOCKED = 3001
+    }
     private val io = Executors.newFixedThreadPool(4)
     private val accessIo = Executors.newFixedThreadPool(2)
     private val imageIo = Executors.newFixedThreadPool(4)
@@ -68,6 +107,10 @@ class MainActivity : Activity() {
     private val directoryIconCache = LruCache<String, String>(512)
     /** Caches parsed shortcut (.lnk) metadata by entry URI string. */
     private val shortcutCache = LruCache<String, ShortcutInfo>(2048)
+    /** Caches detected file magic results for ambiguous or extensionless entries. */
+    private val ambiguousMagicCache = LruCache<String, com.infinifolder.storage.FileMagicResult>(1024)
+    /** Holds entries copied to the clipboard in this session. */
+    private var copiedEntries: List<ResourceEntry>? = null
 
     private data class PendingCardProbe(
         val view: View,
@@ -77,10 +120,14 @@ class MainActivity : Activity() {
     private val pendingCardProbes = mutableListOf<PendingCardProbe>()
     private var visibleProbeScheduled = false
     private val customIconStore by lazy { CustomIconStore(filesDir) }
+    private val iconThemeManager by lazy { IconThemeManager(applicationContext) }
     private val thumbnailDecoder by lazy {
         ThumbnailDecoder(contentResolver) { uri ->
             when {
                 ArchiveUri.isArchiveUri(uri) -> archiveProvider.openStream(uri)
+                SftpUri.isSftpUri(uri) -> (sftpProvider.openRead(ResourceRef("sftp", uri.toString())) as? ProviderResult.Success)?.value
+                FtpUri.isFtpUri(uri) -> (ftpProvider.openRead(ResourceRef("ftp", uri.toString())) as? ProviderResult.Success)?.value
+                SmbUri.isSmbUri(uri) -> (smbProvider.openRead(ResourceRef("smb", uri.toString())) as? ProviderResult.Success)?.value
                 uri.scheme == "file" -> uri.path?.let { File(it).inputStream() }
                 else -> null
             }
@@ -90,6 +137,11 @@ class MainActivity : Activity() {
     private lateinit var localProvider: LocalStorageProvider
     private lateinit var archiveProvider: ArchiveStorageProvider
     private lateinit var appsProvider: AppsStorageProvider
+    private lateinit var sftpProvider: SftpStorageProvider
+    private lateinit var ftpProvider: FtpStorageProvider
+    private lateinit var smbProvider: SmbStorageProvider
+    private val pickSftpFileRequest = 9005
+    private var pendingSftpFileCallback: ((String) -> Unit)? = null
     private var internalSharedEntries = emptyList<ResourceEntry>()
     private var internalListGeneration = 0
     private var installedAppCategories = emptyList<String>()
@@ -103,7 +155,9 @@ class MainActivity : Activity() {
     private lateinit var createLinkButton: TextView
     private lateinit var content: LinearLayout
     private lateinit var browserArea: LinearLayout
-    private lateinit var fileScroll: ScrollView
+    private lateinit var fileScroll: PullToRefreshScrollView
+    private lateinit var fileScrollContainer: FrameLayout
+    private var pinchIndicator: TextView? = null
     private lateinit var treePanel: LinearLayout
     private lateinit var treeContent: LinearLayout
     private lateinit var breadcrumb: LinearLayout
@@ -151,6 +205,7 @@ class MainActivity : Activity() {
     private val applicationPublicItems = mutableListOf<HomeItem>()
     private val pickTreeRequest = 4101
     private val pickCustomIconRequest = 4103
+    private val pickThemeArchiveRequest = 4104
     private var pendingTreeSourceKey: String? = null
     private var pendingTreeTarget: Uri? = null
     private var pendingTreeAuthority: String? = null
@@ -240,16 +295,73 @@ class MainActivity : Activity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val defaultCrashHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                val trace = android.util.Log.getStackTraceString(throwable)
+                android.util.Log.e("InfiniFolderCrash", trace)
+                try { File("/sdcard/infinifolder_crash.txt").writeText(trace) } catch (_: Throwable) {}
+                try { File("/sdcard/infinifolder/crash.txt").writeText(trace) } catch (_: Throwable) {}
+                try { File(cacheDir, "crash.txt").writeText(trace) } catch (_: Throwable) {}
+                try { File(filesDir, "crash.txt").writeText(trace) } catch (_: Throwable) {}
+            } catch (_: Throwable) {}
+            defaultCrashHandler?.uncaughtException(thread, throwable)
+        }
+        initSafetyNotificationChannel()
         operations.addListener(operationsListener)
         shared = getSharedPreferences("browser", MODE_PRIVATE)
         grid = shared.getBoolean("grid", true); dark = shared.getBoolean("dark", false); sortByName = shared.getBoolean("sort_name", true)
         showHidden = shared.getBoolean("show_hidden", false)
         treeVisible = shared.getBoolean("tree_visible", false)
-        iconSizeDp = shared.getInt("icon_size_dp", 56).coerceIn(32, 96)
+        iconSizeDp = shared.getInt("icon_size_dp", 56).coerceIn(32, 120)
         localProvider = LocalStorageProvider(applicationContext)
         archiveProvider = ArchiveStorageProvider(applicationContext, localProvider)
         appsProvider = AppsStorageProvider(applicationContext)
-        provider = RoutingStorageProvider(requireNotNull(providerRegistry.create("saf", contentResolver)), localProvider, archiveProvider, appsProvider)
+        val sftpFactory = SftpProviderFactory(applicationContext) { id ->
+            savedConnections().firstOrNull { it.id == id }
+        }
+        sftpProvider = sftpFactory.provider
+
+        val ftpFactory = FtpProviderFactory(applicationContext) { id ->
+            savedConnections().firstOrNull { it.id == id }
+        }
+        ftpProvider = ftpFactory.provider
+
+        val smbFactory = SmbProviderFactory(applicationContext) { id ->
+            savedConnections().firstOrNull { it.id == id }
+        }
+        smbProvider = smbFactory.provider
+
+        archiveProvider.streamResolver = { uri ->
+            when {
+                SftpUri.isSftpUri(uri) -> (sftpProvider.openRead(ResourceRef("sftp", uri.toString())) as? ProviderResult.Success)?.value
+                FtpUri.isFtpUri(uri) -> (ftpProvider.openRead(ResourceRef("ftp", uri.toString())) as? ProviderResult.Success)?.value
+                SmbUri.isSmbUri(uri) -> (smbProvider.openRead(ResourceRef("smb", uri.toString())) as? ProviderResult.Success)?.value
+                uri.scheme == "file" -> uri.path?.let { File(it).inputStream() }
+                uri.scheme == "content" -> contentResolver.openInputStream(uri)
+                else -> null
+            }
+        }
+        archiveProvider.metadataResolver = { uri ->
+            when {
+                SftpUri.isSftpUri(uri) -> sftpProvider.getMetadata(uri)
+                FtpUri.isFtpUri(uri) -> ftpProvider.getMetadata(uri)
+                SmbUri.isSmbUri(uri) -> smbProvider.getMetadata(uri)
+                else -> null
+            }
+        }
+        providerRegistry.register(sftpFactory)
+        providerRegistry.register(ftpFactory)
+        providerRegistry.register(smbFactory)
+        provider = RoutingStorageProvider(
+            requireNotNull(providerRegistry.create("saf", contentResolver)),
+            localProvider,
+            archiveProvider,
+            appsProvider,
+            sftpProvider,
+            ftpProvider,
+            smbProvider
+        )
         hadStorageAccess = localProvider.hasAccess()
         waitingForStorageAccess = savedInstanceState?.getBoolean("storage_access_pending", false) ?: false
         pendingTreeSourceKey = savedInstanceState?.getString("pending_tree_source")
@@ -375,14 +487,88 @@ class MainActivity : Activity() {
             isLongClickable = true
             setOnLongClickListener { onEmptyAreaLongPress() }
         }
-        fileScroll = ScrollView(this).apply {
+        fileScroll = PullToRefreshScrollView(this).apply {
             isFillViewport = true
             isLongClickable = true
             setOnLongClickListener { onEmptyAreaLongPress() }
+            updateHeaderTheme(dark)
             addView(content, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             viewTreeObserver.addOnScrollChangedListener { scheduleVisibleProbe() }
             viewTreeObserver.addOnGlobalLayoutListener { scheduleVisibleProbe() }
+            onRefreshListener = {
+                if (homeMode) showHomeRoot() else current?.let { load(it) }
+            }
+            setOnScaleGestureListener(object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                private var startSizeDp = 0f
+                private var accumulatedScale = 1f
+                private var lastAppliedSize = 0
+                private var didSwitch = false
+
+                override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                    startSizeDp = iconSizeDp.toFloat()
+                    accumulatedScale = 1f
+                    lastAppliedSize = iconSizeDp
+                    didSwitch = false
+                    return true
+                }
+
+                override fun onScale(detector: ScaleGestureDetector): Boolean {
+                    accumulatedScale *= detector.scaleFactor
+                    if (grid) {
+                        val targetSize = (startSizeDp * accumulatedScale).roundToInt()
+                        if (targetSize in 32..120) {
+                            if (targetSize != iconSizeDp && Math.abs(targetSize - lastAppliedSize) >= 3) {
+                                val savedScrollY = fileScroll.scrollY
+                                iconSizeDp = targetSize
+                                lastAppliedSize = targetSize
+                                shared.edit().putInt("icon_size_dp", iconSizeDp).apply()
+                                renderCurrentContents()
+                                fileScroll.post { fileScroll.scrollTo(0, savedScrollY) }
+                                showPinchIndicator("Icon size: ${iconSizeDp} dp")
+                            }
+                        } else if (targetSize < 24 && !didSwitch) {
+                            didSwitch = true
+                            grid = false
+                            shared.edit().putBoolean("grid", false).apply()
+                            renderCurrentContents()
+                            showPinchIndicator("List view")
+                        }
+                    } else {
+                        if (accumulatedScale > 1.25f && !didSwitch) {
+                            didSwitch = true
+                            grid = true
+                            iconSizeDp = 44
+                            startSizeDp = 44f
+                            accumulatedScale = 1f
+                            shared.edit().putBoolean("grid", true).apply()
+                            shared.edit().putInt("icon_size_dp", iconSizeDp).apply()
+                            renderCurrentContents()
+                            showPinchIndicator("Grid view: ${iconSizeDp} dp")
+                        }
+                    }
+                    return true
+                }
+
+                override fun onScaleEnd(detector: ScaleGestureDetector) {
+                    if (grid && !didSwitch) {
+                        val finalSize = (startSizeDp * accumulatedScale).roundToInt().coerceIn(32, 120)
+                        if (finalSize != iconSizeDp) {
+                            val savedScrollY = fileScroll.scrollY
+                            iconSizeDp = finalSize
+                            shared.edit().putInt("icon_size_dp", iconSizeDp).apply()
+                            renderCurrentContents()
+                            fileScroll.post { fileScroll.scrollTo(0, savedScrollY) }
+                        }
+                    }
+                    hidePinchIndicator()
+                }
+            })
         }
+        fileScrollContainer = FrameLayout(this).apply {
+            clipChildren = false
+            addView(fileScroll, FrameLayout.LayoutParams(-1, -1))
+        }
+        fileScroll.setupHeaderInParent(fileScrollContainer)
         browserArea = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         treePanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -396,7 +582,7 @@ class MainActivity : Activity() {
         treeContent = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         treePanel.addView(ScrollView(this).apply { addView(treeContent) }, LinearLayout.LayoutParams(-1, 0, 1f))
         browserArea.addView(treePanel, LinearLayout.LayoutParams(dp(180), -1))
-        browserArea.addView(fileScroll, LinearLayout.LayoutParams(0, -1, 1f))
+        browserArea.addView(fileScrollContainer, LinearLayout.LayoutParams(0, -1, 1f))
         root.addView(browserArea, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
         root.requestApplyInsets()
@@ -426,7 +612,7 @@ class MainActivity : Activity() {
     }
     private fun updateCreateAction() {
         if (!::createButton.isInitialized) return
-        val inArchive = current?.let { ArchiveUri.isArchiveUri(it) } ?: false
+        val inArchive = current?.let { ArchiveUri.isArchiveUri(it) && !archiveProvider.isWritable(it) } ?: false
         val inApps = current?.let { AppsUri.isAppsUri(it) } ?: false
         val canWriteDir = !homeMode && current != null && !inArchive && !inApps
         createButton.visibility = if ((homeMode && homePage != "root") || inArchive || inApps) View.GONE else View.VISIBLE
@@ -452,19 +638,91 @@ class MainActivity : Activity() {
         showCurrentDirectoryMenu(dirUri)
         return true
     }
+    private fun initSafetyNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            val channel = NotificationChannel(
+                SAFETY_NOTIFICATION_CHANNEL_ID,
+                "Safety Alerts",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Alerts when dangerous operations like writing to mounted partitions are prevented"
+            }
+            nm.createNotificationChannel(channel)
+        }
+    }
+
+    private fun notifyMountedPartitionBlocked(targetName: String, reason: String) {
+        initSafetyNotificationChannel()
+        try {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as? NotificationManager
+            if (nm != null) {
+                val notification = NotificationCompat.Builder(this, SAFETY_NOTIFICATION_CHANNEL_ID)
+                    .setSmallIcon(android.R.drawable.stat_notify_error)
+                    .setContentTitle("Write Blocked: Mounted Partition")
+                    .setContentText("Cannot modify '$targetName': $reason")
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(
+                        "Writing to '$targetName' was blocked because this partition or disk image is currently mounted or in use ($reason).\n\nModifying a mounted partition causes severe filesystem corruption."
+                    ))
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setAutoCancel(true)
+                    .build()
+                nm.notify(NOTIFICATION_ID_MOUNTED_BLOCKED, notification)
+            }
+        } catch (_: Exception) {}
+
+        Toast.makeText(this, "Write blocked: '$targetName' is currently mounted or in use.", Toast.LENGTH_LONG).show()
+
+        dialogBuilder()
+            .setTitle("Write Operation Blocked")
+            .setMessage("The partition or disk image '$targetName' is currently mounted or in active use ($reason).\n\nWriting directly to a mounted filesystem can cause severe filesystem corruption and data loss.\n\nPlease unmount the partition or stop the virtual machine before making modifications.")
+            .setIcon(android.R.drawable.ic_dialog_alert)
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
     private fun showCurrentDirectoryMenu(dirUri: Uri? = current) {
         val targetDirUri = dirUri ?: return
         val dirName = historyNames.lastOrNull() ?: displayNameFor(targetDirUri) ?: "Current directory"
-        val writable = !ArchiveUri.isArchiveUri(targetDirUri) && !AppsUri.isAppsUri(targetDirUri)
-        val createGroup = if (writable) listOf("Create folder", "Create link") else emptyList()
+        val isArchiveDir = ArchiveUri.isArchiveUri(targetDirUri)
+        val mountCheck = if (isArchiveDir) archiveProvider.checkMounted(targetDirUri) else null
+        val isMounted = mountCheck?.isMounted == true
+        val isWritableArchive = isArchiveDir && !isMounted && archiveProvider.isWritable(targetDirUri)
+        val writable = (!isArchiveDir || isWritableArchive) && !AppsUri.isAppsUri(targetDirUri) && !isMounted
+        val createGroup = if (writable) listOf("Paste", "Create folder", "Create link") else emptyList()
         val propertiesGroup = listOf("Properties")
         showGroupedMenuDialog(
             title = dirName,
+            subtitle = when {
+                isMounted -> "Mounted filesystem (Read-only safety lock)"
+                isWritableArchive -> "Writable archive folder"
+                isArchiveDir -> "Archive folder"
+                else -> "Current directory"
+            },
             groups = listOf(createGroup, propertiesGroup)
         ) { action ->
             when (action) {
-                "Create folder" -> showCreateDirectoryDialog()
-                "Create link" -> showCreateUriLinkDialog(targetDirUri)
+                "Paste" -> {
+                    if (isMounted) {
+                        notifyMountedPartitionBlocked(dirName, mountCheck?.reason ?: "Partition is mounted")
+                    } else {
+                        pasteFromClipboard(targetDirUri)
+                    }
+                }
+                "Create folder" -> {
+                    if (isMounted) {
+                        notifyMountedPartitionBlocked(dirName, mountCheck?.reason ?: "Partition is mounted")
+                    } else {
+                        showCreateDirectoryDialog()
+                    }
+                }
+                "Create link" -> {
+                    if (isMounted) {
+                        notifyMountedPartitionBlocked(dirName, mountCheck?.reason ?: "Partition is mounted")
+                    } else {
+                        showCreateUriLinkDialog(targetDirUri)
+                    }
+                }
                 "Properties" -> showCurrentDirectoryProperties(targetDirUri, dirName)
             }
         }
@@ -480,7 +738,7 @@ class MainActivity : Activity() {
         )
         showPropertiesDialog(entry)
     }
-    private fun showCreateUriLinkDialog(initialFolderUri: Uri? = current) {
+    private fun showCreateUriLinkDialog(initialFolderUri: Uri? = current, initialUri: String? = null) {
         val defaultTargetFolder = initialFolderUri?.takeIf { !ArchiveUri.isArchiveUri(it) && !AppsUri.isAppsUri(it) }
             ?: current?.takeIf { !ArchiveUri.isArchiveUri(it) && !AppsUri.isAppsUri(it) }
             ?: defaultWritableFolderUri()
@@ -519,6 +777,8 @@ class MainActivity : Activity() {
                 setStroke(dp(1), if (dark) 0xFF4E5B49.toInt() else 0xFFB8C2B3.toInt())
             }
             setPadding(dp(6), dp(6), dp(6), dp(6))
+            clipChildren = false
+            clipToPadding = false
             isClickable = true
             isFocusable = true
         }
@@ -526,7 +786,6 @@ class MainActivity : Activity() {
             text = "🔗"
             setTextSize(TypedValue.COMPLEX_UNIT_DIP, 28f)
             gravity = Gravity.CENTER
-            includeFontPadding = false
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
         val iconImage = ImageView(context).apply {
@@ -823,6 +1082,12 @@ class MainActivity : Activity() {
         layout.addView(destHeader)
         layout.addView(destRow)
 
+        if (!initialUri.isNullOrBlank()) {
+            uriInput.setText(initialUri)
+            uriInput.setSelection(initialUri.length)
+            triggerWebDetection(initialUri)
+        }
+
         val scroll = ScrollView(context).apply { addView(layout) }
         val dialog = dialogBuilder()
             .setTitle("Create Link")
@@ -847,7 +1112,14 @@ class MainActivity : Activity() {
                     uriInput.error = "Enter or paste a URI"
                     return@setOnClickListener
                 }
-                if (ArchiveUri.isArchiveUri(targetFolderUri) || AppsUri.isAppsUri(targetFolderUri)) {
+                if (ArchiveUri.isArchiveUri(targetFolderUri)) {
+                    val mountCheck = archiveProvider.checkMounted(targetFolderUri)
+                    if (mountCheck?.isMounted == true) {
+                        notifyMountedPartitionBlocked(displayNameFor(targetFolderUri) ?: "Archive", mountCheck.reason)
+                        return@setOnClickListener
+                    }
+                }
+                if ((ArchiveUri.isArchiveUri(targetFolderUri) && !archiveProvider.isWritable(targetFolderUri)) || AppsUri.isAppsUri(targetFolderUri)) {
                     Toast.makeText(this, "Cannot create link in a read-only location.", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
@@ -919,6 +1191,13 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Installed applications directory is read-only.", Toast.LENGTH_SHORT).show()
             return
         }
+        if (ArchiveUri.isArchiveUri(parent)) {
+            val mountCheck = archiveProvider.checkMounted(parent)
+            if (mountCheck?.isMounted == true) {
+                notifyMountedPartitionBlocked(displayNameFor(parent) ?: "Archive", mountCheck.reason)
+                return
+            }
+        }
         val input = EditText(dialogContext()).apply { hint = "Directory name" }
         dialogBuilder().setTitle("Create directory").setView(input).setNegativeButton("Cancel", null)
             .setPositiveButton("Create", null).create().also { dialog ->
@@ -936,7 +1215,13 @@ class MainActivity : Activity() {
                                 when (result) {
                                     is ProviderResult.Success -> current?.let(::load)
                                     is ProviderResult.Unsupported -> Toast.makeText(this, "This provider does not support creating directories.", Toast.LENGTH_LONG).show()
-                                    is ProviderResult.Failure -> Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
+                                    is ProviderResult.Failure -> {
+                                        if (result.cause is MountedPartitionException || result.message.contains("mounted", ignoreCase = true)) {
+                                            notifyMountedPartitionBlocked(name, result.message)
+                                        } else {
+                                            Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -955,17 +1240,33 @@ class MainActivity : Activity() {
         val name = EditText(context).apply { hint = "Connection name" }
         val endpoint = EditText(context).apply { hint = "Server or URL (optional)" }
         body.addView(type); body.addView(name); body.addView(endpoint)
-        dialogBuilder().setTitle("Add saved connection").setMessage("Connection details are saved locally. Network access is not implemented yet, and credentials are not stored.")
-            .setView(body).setNegativeButton("Cancel", null).setPositiveButton("Save", null).create().also { dialog ->
+        dialogBuilder().setTitle("Add saved connection").setMessage("Configure network or cloud connection.")
+            .setView(body).setNegativeButton("Cancel", null).setPositiveButton("Next", null).create().also { dialog ->
                 dialog.setOnShowListener {
                     dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                        val displayName = name.text.toString().trim()
-                        if (displayName.isEmpty()) { name.error = "Enter a name"; return@setOnClickListener }
                         val descriptor = types.getOrNull(type.selectedItemPosition) ?: return@setOnClickListener
+                        val displayName = name.text.toString().trim()
+                        val endpointText = endpoint.text.toString().trim()
+                        if (descriptor.id == "sftp") {
+                            dialog.dismiss()
+                            showSftpConnectionDialog(initialName = displayName, initialEndpoint = endpointText)
+                            return@setOnClickListener
+                        }
+                        if (descriptor.id == "smb") {
+                            dialog.dismiss()
+                            showSmbConnectionDialog(initialName = displayName, initialEndpoint = endpointText)
+                            return@setOnClickListener
+                        }
+                        if (descriptor.id == "ftp") {
+                            dialog.dismiss()
+                            showFtpConnectionDialog(initialName = displayName, initialEndpoint = endpointText)
+                            return@setOnClickListener
+                        }
+                        if (displayName.isEmpty()) { name.error = "Enter a name"; return@setOnClickListener }
                         val connection = ProviderConnection(
                             sourceTypeId = descriptor.id,
                             displayName = displayName,
-                            endpoint = endpoint.text.toString().trim().ifEmpty { null }
+                            endpoint = endpointText.ifEmpty { null }
                         )
                         saveConnection(connection)
                         dialog.dismiss()
@@ -981,30 +1282,987 @@ class MainActivity : Activity() {
             val item = json.optJSONObject(index) ?: return@mapNotNull null
             val type = item.optString("type").takeIf(String::isNotBlank) ?: return@mapNotNull null
             val name = item.optString("name").takeIf(String::isNotBlank) ?: return@mapNotNull null
-            ProviderConnection(item.optString("id"), type, name, item.optString("endpoint").takeIf(String::isNotBlank))
+            val optionsJson = item.optJSONObject("options")
+            val options = mutableMapOf<String, String>()
+            if (optionsJson != null) {
+                val keys = optionsJson.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    options[k] = optionsJson.optString(k)
+                }
+            }
+            ProviderConnection(
+                id = item.optString("id").takeIf(String::isNotBlank) ?: UUID.randomUUID().toString(),
+                sourceTypeId = type,
+                displayName = name,
+                endpoint = item.optString("endpoint").takeIf(String::isNotBlank),
+                options = options,
+                credentialHandle = item.optString("credentialHandle").takeIf(String::isNotBlank)
+            )
         }
     } catch (_: Exception) { emptyList() }
+
     private fun saveConnection(connection: ProviderConnection) {
         val all = (savedConnections().filterNot { it.id == connection.id } + connection)
         val json = JSONArray()
-        all.forEach { item -> json.put(JSONObject().put("id", item.id).put("type", item.sourceTypeId).put("name", item.displayName).put("endpoint", item.endpoint ?: "")) }
+        all.forEach { item ->
+            val obj = JSONObject()
+                .put("id", item.id)
+                .put("type", item.sourceTypeId)
+                .put("name", item.displayName)
+                .put("endpoint", item.endpoint ?: "")
+                .put("credentialHandle", item.credentialHandle ?: "")
+            val opts = JSONObject()
+            item.options.forEach { (k, v) -> opts.put(k, v) }
+            obj.put("options", opts)
+            json.put(obj)
+        }
         shared.edit().putString("saved_connections", json.toString()).apply()
     }
+
+    private fun removeConnection(connectionId: String) {
+        val all = savedConnections().filterNot { it.id == connectionId }
+        val json = JSONArray()
+        all.forEach { item ->
+            val obj = JSONObject()
+                .put("id", item.id)
+                .put("type", item.sourceTypeId)
+                .put("name", item.displayName)
+                .put("endpoint", item.endpoint ?: "")
+                .put("credentialHandle", item.credentialHandle ?: "")
+            val opts = JSONObject()
+            item.options.forEach { (k, v) -> opts.put(k, v) }
+            obj.put("options", opts)
+            json.put(obj)
+        }
+        shared.edit().putString("saved_connections", json.toString()).apply()
+        sftpProvider.credentialStore.remove(connectionId)
+        sftpProvider.clientPool.disconnect(connectionId)
+        ftpProvider.credentialStore.remove(connectionId)
+        ftpProvider.clientPool.disconnect(connectionId)
+        smbProvider.credentialStore.remove(connectionId)
+        smbProvider.clientPool.disconnect(connectionId)
+        showHomeRoot()
+    }
+
     private fun showSavedConnectionActions(connection: ProviderConnection) {
+        if (connection.sourceTypeId == "sftp") {
+            dialogBuilder().setTitle(connection.displayName).setItems(arrayOf("Open", "Test connection", "Edit connection", "Remove saved connection")) { _, which ->
+                when (which) {
+                    0 -> {
+                        val rootUri = SftpUri.build(connection.id, connection.options["initialPath"] ?: "/")
+                        openRoot(rootUri, rememberAuthorizedRoot = false)
+                    }
+                    1 -> {
+                        val creds = sftpProvider.credentialStore.load(connection.id)
+                        if (creds == null) {
+                            Toast.makeText(this, "No saved credentials found", Toast.LENGTH_SHORT).show()
+                            return@setItems
+                        }
+                        val endpoint = connection.endpoint ?: "localhost:22"
+                        val host = connection.options["host"]?.ifEmpty { null }
+                            ?: (if (endpoint.contains(':')) endpoint.substringBefore(':').ifEmpty { "localhost" } else endpoint.ifEmpty { "localhost" })
+                        val port = connection.options["port"]?.toIntOrNull()
+                            ?: (if (endpoint.contains(':')) endpoint.substringAfter(':').toIntOrNull() else null) ?: 22
+                        val config = SftpConfig(
+                            id = connection.id,
+                            displayName = connection.displayName,
+                            host = host,
+                            port = port,
+                            username = connection.options["username"] ?: "root",
+                            initialPath = connection.options["initialPath"] ?: "/"
+                        )
+                        val progress = android.app.ProgressDialog(this).apply {
+                            setMessage("Testing connection to ${config.host}:${config.port}…")
+                            setCancelable(false)
+                            show()
+                        }
+                        accessIo.execute {
+                            val res = sftpProvider.clientPool.testConnection(config, creds)
+                            runOnUiThread {
+                                progress.dismiss()
+                                res.onSuccess { msg ->
+                                    dialogBuilder().setTitle("Connection Succeeded").setMessage(msg).setPositiveButton("OK", null).show()
+                                }.onFailure { err ->
+                                    dialogBuilder().setTitle("Connection Failed").setMessage(err.message ?: "Unknown error").setPositiveButton("OK", null).show()
+                                }
+                            }
+                        }
+                    }
+                    2 -> showSftpConnectionDialog(existing = connection)
+                    3 -> dialogBuilder().setMessage("Remove ${connection.displayName} from the Virtual root?").setNegativeButton("Cancel", null)
+                        .setPositiveButton("Remove") { _, _ ->
+                            removeConnection(connection.id)
+                        }.show()
+                }
+            }.show()
+            return
+        }
+        if (connection.sourceTypeId == "ftp") {
+            dialogBuilder().setTitle(connection.displayName).setItems(arrayOf("Open", "Test connection", "Edit connection", "Remove saved connection")) { _, which ->
+                when (which) {
+                    0 -> {
+                        val rootUri = FtpUri.build(connection.id, connection.options["initialPath"] ?: "/")
+                        openRoot(rootUri, rememberAuthorizedRoot = false)
+                    }
+                    1 -> {
+                        val creds = ftpProvider.credentialStore.load(connection.id) ?: FtpCredentials()
+                        val endpoint = connection.endpoint ?: "localhost:21"
+                        val host = connection.options["host"]?.ifEmpty { null }
+                            ?: (if (endpoint.contains(':')) endpoint.substringBefore(':').ifEmpty { "localhost" } else endpoint.ifEmpty { "localhost" })
+                        val port = connection.options["port"]?.toIntOrNull()
+                            ?: (if (endpoint.contains(':')) endpoint.substringAfter(':').toIntOrNull() else null) ?: 21
+                        val username = connection.options["username"] ?: "anonymous"
+                        val isAnon = connection.options["isAnonymous"]?.toBooleanStrictOrNull() ?: (username == "anonymous")
+                        val config = FtpConfig(
+                            id = connection.id,
+                            displayName = connection.displayName,
+                            host = host,
+                            port = port,
+                            username = username,
+                            isAnonymous = isAnon,
+                            initialPath = connection.options["initialPath"] ?: "/",
+                            useFtps = connection.options["useFtps"]?.toBooleanStrictOrNull() ?: false,
+                            passiveMode = connection.options["passiveMode"]?.toBooleanStrictOrNull() ?: true
+                        )
+                        val progress = android.app.ProgressDialog(this).apply {
+                            setMessage("Testing connection to ${config.host}:${config.port}…")
+                            setCancelable(false)
+                            show()
+                        }
+                        accessIo.execute {
+                            val res = ftpProvider.clientPool.testConnection(config, creds)
+                            runOnUiThread {
+                                progress.dismiss()
+                                res.onSuccess { msg ->
+                                    dialogBuilder().setTitle("Connection Succeeded").setMessage(msg).setPositiveButton("OK", null).show()
+                                }.onFailure { err ->
+                                    dialogBuilder().setTitle("Connection Failed").setMessage(err.message ?: "Unknown error").setPositiveButton("OK", null).show()
+                                }
+                            }
+                        }
+                    }
+                    2 -> showFtpConnectionDialog(existing = connection)
+                    3 -> dialogBuilder().setMessage("Remove ${connection.displayName} from the Virtual root?").setNegativeButton("Cancel", null)
+                        .setPositiveButton("Remove") { _, _ ->
+                            removeConnection(connection.id)
+                        }.show()
+                }
+            }.show()
+            return
+        }
+        if (connection.sourceTypeId == "smb") {
+            dialogBuilder().setTitle(connection.displayName).setItems(arrayOf("Open", "Test connection", "Edit connection", "Remove saved connection")) { _, which ->
+                when (which) {
+                    0 -> {
+                        val initialPath = if (!connection.options["initialShare"].isNullOrBlank()) {
+                            "/${connection.options["initialShare"]!!.trim('/')}"
+                        } else {
+                            connection.options["initialPath"] ?: "/"
+                        }
+                        val rootUri = SmbUri.build(connection.id, initialPath)
+                        openRoot(rootUri, rememberAuthorizedRoot = false)
+                    }
+                    1 -> {
+                        val creds = smbProvider.credentialStore.load(connection.id) ?: SmbCredentials()
+                        val endpoint = connection.endpoint ?: "localhost:445"
+                        val host = connection.options["host"]?.ifEmpty { null }
+                            ?: (if (endpoint.contains(':')) endpoint.substringBefore(':').ifEmpty { "localhost" } else endpoint.ifEmpty { "localhost" })
+                        val port = connection.options["port"]?.toIntOrNull()
+                            ?: (if (endpoint.contains(':')) endpoint.substringAfter(':').toIntOrNull() else null) ?: 445
+                        val domain = connection.options["domain"] ?: "WORKGROUP"
+                        val username = connection.options["username"] ?: ""
+                        val isGuest = connection.options["isGuest"]?.toBooleanStrictOrNull() ?: false
+                        val initialShare = connection.options["initialShare"]?.ifEmpty { null }
+                        val initialPath = connection.options["initialPath"] ?: "/"
+                        val config = SmbConfig(
+                            id = connection.id,
+                            displayName = connection.displayName,
+                            host = host,
+                            port = port,
+                            domain = domain,
+                            username = username,
+                            isGuest = isGuest,
+                            initialShare = initialShare,
+                            initialPath = initialPath
+                        )
+                        val progress = android.app.ProgressDialog(this).apply {
+                            setMessage("Testing connection to ${config.host}:${config.port}…")
+                            setCancelable(false)
+                            show()
+                        }
+                        accessIo.execute {
+                            val res = smbProvider.clientPool.testConnection(config, creds)
+                            runOnUiThread {
+                                progress.dismiss()
+                                res.onSuccess { msg ->
+                                    dialogBuilder().setTitle("Connection Succeeded").setMessage(msg).setPositiveButton("OK", null).show()
+                                }.onFailure { err ->
+                                    dialogBuilder().setTitle("Connection Failed").setMessage(err.message ?: "Unknown error").setPositiveButton("OK", null).show()
+                                }
+                            }
+                        }
+                    }
+                    2 -> showSmbConnectionDialog(existing = connection)
+                    3 -> dialogBuilder().setMessage("Remove ${connection.displayName} from the Virtual root?").setNegativeButton("Cancel", null)
+                        .setPositiveButton("Remove") { _, _ ->
+                            removeConnection(connection.id)
+                        }.show()
+                }
+            }.show()
+            return
+        }
         dialogBuilder().setTitle(connection.displayName).setItems(arrayOf("Properties", "Remove saved connection")) { _, which ->
             when (which) {
                 0 -> dialogBuilder().setMessage("Type: ${connection.sourceTypeId}\nServer: ${connection.endpoint ?: "Not set"}\nStatus: saved; provider support is not implemented").setPositiveButton("OK", null).show()
                 1 -> dialogBuilder().setMessage("Remove ${connection.displayName} from the Virtual root?").setNegativeButton("Cancel", null)
                     .setPositiveButton("Remove") { _, _ ->
-                        val json = JSONArray()
-                        savedConnections().filterNot { it.id == connection.id }.forEach { item ->
-                            json.put(JSONObject().put("id", item.id).put("type", item.sourceTypeId).put("name", item.displayName).put("endpoint", item.endpoint ?: ""))
-                        }
-                        shared.edit().putString("saved_connections", json.toString()).apply()
-                        showHomeRoot()
+                        removeConnection(connection.id)
                     }.show()
             }
         }.show()
+    }
+
+    private fun showSftpConnectionDialog(
+        existing: ProviderConnection? = null,
+        initialName: String = "",
+        initialEndpoint: String = ""
+    ) {
+        val context = dialogContext()
+        val scroll = ScrollView(context)
+        val body = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(12))
+        }
+        scroll.addView(body)
+
+        val nameInput = EditText(context).apply {
+            hint = "Display name (e.g. My Server)"
+            setText(existing?.displayName ?: initialName)
+            setSingleLine(true)
+        }
+
+        val existingEndpoint = existing?.endpoint ?: initialEndpoint
+        val parsedHost = if (existingEndpoint.contains(':')) existingEndpoint.substringBefore(':') else existingEndpoint
+        val parsedPort = (if (existingEndpoint.contains(':')) existingEndpoint.substringAfter(':').toIntOrNull() else null)
+            ?: existing?.options?.get("port")?.toIntOrNull() ?: 22
+
+        val hostInput = EditText(context).apply {
+            hint = "Host / IP address (e.g. 192.168.1.100)"
+            setText(existing?.options?.get("host") ?: parsedHost)
+            setSingleLine(true)
+        }
+
+        val portInput = EditText(context).apply {
+            hint = "Port (default 22)"
+            setText(parsedPort.toString())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setSingleLine(true)
+        }
+
+        val userInput = EditText(context).apply {
+            hint = "Username (e.g. root or user)"
+            setText(existing?.options?.get("username") ?: "")
+            setSingleLine(true)
+        }
+
+        val pathInput = EditText(context).apply {
+            hint = "Initial remote path (default /)"
+            setText(existing?.options?.get("initialPath") ?: "/")
+            setSingleLine(true)
+        }
+
+        val authGroup = RadioGroup(context).apply {
+            orientation = RadioGroup.HORIZONTAL
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        val rbPassword = RadioButton(context).apply {
+            text = "Password"
+            id = View.generateViewId()
+        }
+        val rbKeyCert = RadioButton(context).apply {
+            text = "Key & Certificate"
+            id = View.generateViewId()
+        }
+        authGroup.addView(rbPassword)
+        authGroup.addView(rbKeyCert)
+
+        val passwordContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val passwordInput = EditText(context).apply {
+            hint = "Password"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine(true)
+        }
+        passwordContainer.addView(passwordInput)
+
+        val keyCertContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+
+        fun createPickerRow(label: String, targetInput: EditText): LinearLayout {
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(4), 0, dp(2))
+            }
+            val title = TextView(context).apply {
+                text = label
+                textSize = 13f
+                layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            }
+            val btnBrowse = Button(context, null, android.R.attr.buttonStyleSmall).apply {
+                text = "Browse…"
+                setOnClickListener {
+                    pendingSftpFileCallback = { text -> targetInput.setText(text) }
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                    }
+                    startActivityForResult(intent, pickSftpFileRequest)
+                }
+            }
+            val btnPaste = Button(context, null, android.R.attr.buttonStyleSmall).apply {
+                text = "Paste"
+                setOnClickListener {
+                    val clipboard = getSystemService(ClipboardManager::class.java)
+                    val text = clipboard?.primaryClip?.getItemAt(0)?.text?.toString()?.trim()
+                    if (!text.isNullOrEmpty()) {
+                        targetInput.setText(text)
+                        Toast.makeText(this@MainActivity, "Pasted from clipboard", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this@MainActivity, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            row.addView(title)
+            row.addView(btnBrowse)
+            row.addView(btnPaste)
+            return row
+        }
+
+        val keyInput = EditText(context).apply {
+            hint = "Private key (OpenSSH / PEM format)"
+            typeface = android.graphics.Typeface.MONOSPACE
+            textSize = 12f
+            maxLines = 5
+        }
+        val certInput = EditText(context).apply {
+            hint = "Certificate (-cert.pub, optional)"
+            typeface = android.graphics.Typeface.MONOSPACE
+            textSize = 12f
+            maxLines = 4
+        }
+        val passphraseInput = EditText(context).apply {
+            hint = "Key passphrase (optional)"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine(true)
+        }
+
+        keyCertContainer.addView(createPickerRow("Private Key:", keyInput))
+        keyCertContainer.addView(keyInput)
+        keyCertContainer.addView(createPickerRow("OpenSSH Certificate:", certInput))
+        keyCertContainer.addView(certInput)
+        keyCertContainer.addView(passphraseInput)
+
+        authGroup.setOnCheckedChangeListener { _, checkedId ->
+            if (checkedId == rbPassword.id) {
+                passwordContainer.visibility = View.VISIBLE
+                keyCertContainer.visibility = View.GONE
+            } else {
+                passwordContainer.visibility = View.GONE
+                keyCertContainer.visibility = View.VISIBLE
+            }
+        }
+
+        if (existing != null) {
+            val existingCreds = sftpProvider.credentialStore.load(existing.id)
+            if (existingCreds?.authType == SftpAuthType.KEY_CERT) {
+                rbKeyCert.isChecked = true
+                keyInput.setText(existingCreds.privateKey ?: "")
+                certInput.setText(existingCreds.certificate ?: "")
+                passphraseInput.setText(existingCreds.passphrase ?: "")
+            } else {
+                rbPassword.isChecked = true
+                passwordInput.setText(existingCreds?.password ?: "")
+            }
+        } else {
+            rbPassword.isChecked = true
+        }
+
+        body.addView(nameInput)
+        body.addView(hostInput)
+        body.addView(portInput)
+        body.addView(userInput)
+        body.addView(pathInput)
+        body.addView(authGroup)
+        body.addView(passwordContainer)
+        body.addView(keyCertContainer)
+
+        fun extractConfigAndCreds(id: String): Pair<SftpConfig, SftpCredentials>? {
+            val host = hostInput.text.toString().trim()
+            if (host.isEmpty()) { hostInput.error = "Host is required"; return null }
+            val port = portInput.text.toString().trim().toIntOrNull() ?: 22
+            val username = userInput.text.toString().trim()
+            if (username.isEmpty()) { userInput.error = "Username is required"; return null }
+            val displayName = nameInput.text.toString().trim().ifEmpty { host }
+            val initialPath = pathInput.text.toString().trim().ifEmpty { "/" }
+
+            val authType = if (rbPassword.isChecked) SftpAuthType.PASSWORD else SftpAuthType.KEY_CERT
+            val creds = if (authType == SftpAuthType.PASSWORD) {
+                val pwd = passwordInput.text.toString()
+                SftpCredentials(authType = SftpAuthType.PASSWORD, password = pwd)
+            } else {
+                val prvKey = keyInput.text.toString().trim()
+                if (prvKey.isEmpty()) { keyInput.error = "Private key is required"; return null }
+                val cert = certInput.text.toString().trim().ifEmpty { null }
+                val pass = passphraseInput.text.toString().ifEmpty { null }
+                SftpCredentials(
+                    authType = SftpAuthType.KEY_CERT,
+                    privateKey = prvKey,
+                    certificate = cert,
+                    passphrase = pass
+                )
+            }
+            val config = SftpConfig(
+                id = id,
+                displayName = displayName,
+                host = host,
+                port = port,
+                username = username,
+                initialPath = initialPath
+            )
+            return config to creds
+        }
+
+        dialogBuilder()
+            .setTitle(if (existing != null) "Edit SFTP Connection" else "Add SFTP / SSH Connection")
+            .setView(scroll)
+            .setNeutralButton("Test Connection", null)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton(if (existing != null) "Save" else "Save & Connect", null)
+            .create().also { dialog ->
+                dialog.setOnShowListener {
+                    dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                        val pair = extractConfigAndCreds("test_temp_id") ?: return@setOnClickListener
+                        val (config, creds) = pair
+                        val progress = android.app.ProgressDialog(this).apply {
+                            setMessage("Testing connection to ${config.host}:${config.port}…")
+                            setCancelable(false)
+                            show()
+                        }
+                        accessIo.execute {
+                            val res = sftpProvider.clientPool.testConnection(config, creds)
+                            runOnUiThread {
+                                progress.dismiss()
+                                res.onSuccess { msg ->
+                                    dialogBuilder().setTitle("Connection Succeeded").setMessage(msg).setPositiveButton("OK", null).show()
+                                }.onFailure { err ->
+                                    dialogBuilder().setTitle("Connection Failed").setMessage(err.message ?: "Unknown error").setPositiveButton("OK", null).show()
+                                }
+                            }
+                        }
+                    }
+
+                    dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        val connectionId = existing?.id ?: UUID.randomUUID().toString()
+                        val pair = extractConfigAndCreds(connectionId) ?: return@setOnClickListener
+                        val (config, creds) = pair
+
+                        sftpProvider.credentialStore.save(connectionId, creds)
+                        if (existing != null) {
+                            sftpProvider.clientPool.disconnect(connectionId)
+                        }
+
+                        val endpoint = if (config.port == 22) config.host else "${config.host}:${config.port}"
+                        val connection = ProviderConnection(
+                            id = connectionId,
+                            sourceTypeId = "sftp",
+                            displayName = config.displayName,
+                            endpoint = endpoint,
+                            options = mapOf(
+                                "host" to config.host,
+                                "port" to config.port.toString(),
+                                "username" to config.username,
+                                "initialPath" to config.initialPath
+                            ),
+                            credentialHandle = "sftp_vault"
+                        )
+                        saveConnection(connection)
+                        dialog.dismiss()
+                        showHomeRoot()
+
+                        val rootUri = SftpUri.build(connectionId, config.initialPath)
+                        openRoot(rootUri, rememberAuthorizedRoot = false)
+                    }
+                }
+                dialog.show()
+            }
+    }
+
+    private fun showFtpConnectionDialog(
+        existing: ProviderConnection? = null,
+        initialName: String = "",
+        initialEndpoint: String = ""
+    ) {
+        val context = dialogContext()
+        val scroll = ScrollView(context)
+        val body = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(10), dp(20), dp(10))
+        }
+        scroll.addView(body)
+
+        val nameInput = EditText(context).apply {
+            hint = "Connection name"
+            setText(existing?.displayName ?: initialName)
+        }
+        val hostInput = EditText(context).apply {
+            hint = "Host / Server IP"
+            setText(existing?.options?.get("host") ?: initialEndpoint.substringBefore(':'))
+        }
+        val portInput = EditText(context).apply {
+            hint = "Port (default 21)"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(existing?.options?.get("port") ?: (if (initialEndpoint.contains(':')) initialEndpoint.substringAfter(':') else "21"))
+        }
+        val anonCheck = CheckBox(context).apply {
+            text = "Anonymous login"
+            isChecked = existing?.options?.get("isAnonymous")?.toBooleanStrictOrNull() ?: false
+        }
+        val userInput = EditText(context).apply {
+            hint = "Username"
+            setText(existing?.options?.get("username") ?: "anonymous")
+        }
+        val passInput = EditText(context).apply {
+            hint = "Password"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            if (existing != null) {
+                val creds = ftpProvider.credentialStore.load(existing.id)
+                setText(creds?.password ?: "")
+            }
+        }
+        val pathInput = EditText(context).apply {
+            hint = "Initial path (default /)"
+            setText(existing?.options?.get("initialPath") ?: "/")
+        }
+        val ftpsCheck = CheckBox(context).apply {
+            text = "Use FTPS (SSL/TLS)"
+            isChecked = existing?.options?.get("useFtps")?.toBooleanStrictOrNull() ?: false
+        }
+        val pasvCheck = CheckBox(context).apply {
+            text = "Passive mode (PASV)"
+            isChecked = existing?.options?.get("passiveMode")?.toBooleanStrictOrNull() ?: true
+        }
+
+        fun updateAnonVisibility() {
+            if (anonCheck.isChecked) {
+                userInput.visibility = View.GONE
+                passInput.visibility = View.GONE
+            } else {
+                userInput.visibility = View.VISIBLE
+                passInput.visibility = View.VISIBLE
+            }
+        }
+        anonCheck.setOnCheckedChangeListener { _, _ -> updateAnonVisibility() }
+        updateAnonVisibility()
+
+        body.addView(nameInput)
+        body.addView(hostInput)
+        body.addView(portInput)
+        body.addView(anonCheck)
+        body.addView(userInput)
+        body.addView(passInput)
+        body.addView(pathInput)
+        body.addView(ftpsCheck)
+        body.addView(pasvCheck)
+
+        fun extractConfigAndCreds(id: String): Pair<FtpConfig, FtpCredentials>? {
+            val host = hostInput.text.toString().trim()
+            if (host.isEmpty()) { hostInput.error = "Host is required"; return null }
+            val port = portInput.text.toString().trim().toIntOrNull() ?: 21
+            val isAnon = anonCheck.isChecked
+            val username = if (isAnon) "anonymous" else userInput.text.toString().trim()
+            if (!isAnon && username.isEmpty()) { userInput.error = "Username is required"; return null }
+            val displayName = nameInput.text.toString().trim().ifEmpty { host }
+            val initialPath = pathInput.text.toString().trim().ifEmpty { "/" }
+
+            val creds = FtpCredentials(password = if (isAnon) null else passInput.text.toString())
+            val config = FtpConfig(
+                id = id,
+                displayName = displayName,
+                host = host,
+                port = port,
+                username = username,
+                isAnonymous = isAnon,
+                initialPath = initialPath,
+                useFtps = ftpsCheck.isChecked,
+                passiveMode = pasvCheck.isChecked
+            )
+            return config to creds
+        }
+
+        dialogBuilder()
+            .setTitle(if (existing != null) "Edit FTP Connection" else "Add FTP Connection")
+            .setView(scroll)
+            .setNeutralButton("Test Connection", null)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton(if (existing != null) "Save" else "Save & Connect", null)
+            .create().also { dialog ->
+                dialog.setOnShowListener {
+                    dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                        val pair = extractConfigAndCreds("test_temp_id") ?: return@setOnClickListener
+                        val (config, creds) = pair
+                        val progress = android.app.ProgressDialog(this).apply {
+                            setMessage("Testing connection to ${config.host}:${config.port}…")
+                            setCancelable(false)
+                            show()
+                        }
+                        accessIo.execute {
+                            val res = ftpProvider.clientPool.testConnection(config, creds)
+                            runOnUiThread {
+                                progress.dismiss()
+                                res.onSuccess { msg ->
+                                    dialogBuilder().setTitle("Connection Succeeded").setMessage(msg).setPositiveButton("OK", null).show()
+                                }.onFailure { err ->
+                                    dialogBuilder().setTitle("Connection Failed").setMessage(err.message ?: "Unknown error").setPositiveButton("OK", null).show()
+                                }
+                            }
+                        }
+                    }
+
+                    dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        val connectionId = existing?.id ?: UUID.randomUUID().toString()
+                        val pair = extractConfigAndCreds(connectionId) ?: return@setOnClickListener
+                        val (config, creds) = pair
+
+                        ftpProvider.credentialStore.save(connectionId, creds)
+                        if (existing != null) {
+                            ftpProvider.clientPool.disconnect(connectionId)
+                        }
+
+                        val endpoint = if (config.port == 21) config.host else "${config.host}:${config.port}"
+                        val connection = ProviderConnection(
+                            id = connectionId,
+                            sourceTypeId = "ftp",
+                            displayName = config.displayName,
+                            endpoint = endpoint,
+                            options = mapOf(
+                                "host" to config.host,
+                                "port" to config.port.toString(),
+                                "username" to config.username,
+                                "isAnonymous" to config.isAnonymous.toString(),
+                                "initialPath" to config.initialPath,
+                                "useFtps" to config.useFtps.toString(),
+                                "passiveMode" to config.passiveMode.toString()
+                            ),
+                            credentialHandle = "ftp_vault"
+                        )
+                        saveConnection(connection)
+                        dialog.dismiss()
+                        showHomeRoot()
+
+                        val rootUri = FtpUri.build(connectionId, config.initialPath)
+                        openRoot(rootUri, rememberAuthorizedRoot = false)
+                    }
+                }
+                dialog.show()
+            }
+    }
+
+    private fun showSmbDiscoveryDialog(onSelected: (DiscoveredSmbServer) -> Unit) {
+        val discovery = SmbDiscoveryService(applicationContext)
+        val serverList = mutableListOf<DiscoveredSmbServer>()
+        val serverAdapter = object : ArrayAdapter<DiscoveredSmbServer>(this, android.R.layout.simple_list_item_2, serverList) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = convertView ?: layoutInflater.inflate(android.R.layout.simple_list_item_2, parent, false)
+                val server = getItem(position) ?: return view
+                val text1 = view.findViewById<TextView>(android.R.id.text1)
+                val text2 = view.findViewById<TextView>(android.R.id.text2)
+                text1.text = "🖧  ${server.name}"
+                val wg = if (!server.workgroup.isNullOrBlank()) "  ·  [${server.workgroup}]" else ""
+                text2.text = "${server.host}:${server.port}$wg  ·  ${server.source}"
+                return view
+            }
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(4))
+        }
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(10))
+        }
+        val progressBar = ProgressBar(this).apply {
+            isIndeterminate = false
+            max = 100
+            progress = 0
+            layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { rightMargin = dp(12) }
+        }
+        val statusText = TextView(this).apply {
+            text = "Scanning local network for Samba servers…"
+            textSize = 14f
+        }
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+
+        val listView = ListView(this).apply {
+            adapter = serverAdapter
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(260))
+        }
+        container.addView(progressLayout)
+        container.addView(listView)
+
+        val dialog = dialogBuilder()
+            .setTitle("Discover Samba Servers")
+            .setView(container)
+            .setNegativeButton("Close") { _, _ -> discovery.cancel() }
+            .create()
+
+        listView.setOnItemClickListener { _, _, position, _ ->
+            val chosen = serverList.getOrNull(position) ?: return@setOnItemClickListener
+            discovery.cancel()
+            dialog.dismiss()
+            onSelected(chosen)
+        }
+
+        dialog.setOnDismissListener {
+            discovery.cancel()
+        }
+
+        dialog.show()
+
+        accessIo.execute {
+            discovery.discoverServers(
+                onServerFound = { srv ->
+                    runOnUiThread {
+                        val idx = serverList.indexOfFirst { it.host == srv.host }
+                        if (idx == -1) {
+                            serverList.add(srv)
+                            serverAdapter.notifyDataSetChanged()
+                        } else if (serverList[idx].name == serverList[idx].host && srv.name != srv.host) {
+                            serverList[idx] = srv
+                            serverAdapter.notifyDataSetChanged()
+                        }
+                    }
+                },
+                onProgress = { scanned, total ->
+                    runOnUiThread {
+                        if (total > 0) {
+                            progressBar.isIndeterminate = false
+                            progressBar.progress = (scanned * 100) / total
+                            statusText.text = "Scanned $scanned/$total hosts… (${serverList.size} found)"
+                        }
+                    }
+                },
+                onFinished = {
+                    runOnUiThread {
+                        progressBar.visibility = View.GONE
+                        statusText.text = if (serverList.isEmpty()) "No Samba servers found on LAN." else "Scan complete. Found ${serverList.size} server(s)."
+                    }
+                }
+            )
+        }
+    }
+
+    private fun showSmbConnectionDialog(
+        existing: ProviderConnection? = null,
+        initialName: String = "",
+        initialEndpoint: String = ""
+    ) {
+        val context = dialogContext()
+        val scroll = ScrollView(context)
+        val body = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(10), dp(20), dp(10))
+        }
+        scroll.addView(body)
+
+        val nameInput = EditText(context).apply {
+            hint = "Connection name"
+            setText(existing?.displayName ?: initialName)
+        }
+        val hostInput = EditText(context).apply {
+            hint = "Server host or IP address"
+            setText(existing?.options?.get("host") ?: initialEndpoint.substringBefore(':'))
+        }
+        val portInput = EditText(context).apply {
+            hint = "Port (default 445)"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(existing?.options?.get("port") ?: (if (initialEndpoint.contains(':')) initialEndpoint.substringAfter(':') else "445"))
+        }
+        val domainInput = EditText(context).apply {
+            hint = "Workgroup / Domain (default WORKGROUP)"
+            setText(existing?.options?.get("domain") ?: "WORKGROUP")
+        }
+        val guestCheck = CheckBox(context).apply {
+            text = "Guest / Anonymous access"
+            isChecked = existing?.options?.get("isGuest")?.toBooleanStrictOrNull() ?: false
+        }
+        val userInput = EditText(context).apply {
+            hint = "Username"
+            setText(existing?.options?.get("username") ?: "")
+        }
+        val passInput = EditText(context).apply {
+            hint = "Password"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            if (existing != null) {
+                val creds = smbProvider.credentialStore.load(existing.id)
+                setText(creds?.password ?: "")
+            }
+        }
+        val shareInput = EditText(context).apply {
+            hint = "Share name (e.g. shared, media, c$)"
+            setText(existing?.options?.get("initialShare") ?: "")
+        }
+        val shareTip = TextView(context).apply {
+            text = "💡 Tip: If your server restricts browsing the public share list (common on Windows 10/11), enter your Share name directly."
+            textSize = 11f
+            setTextColor(if (dark) 0xFF9BA39B.toInt() else 0xFF656D65.toInt())
+            setPadding(dp(4), dp(0), dp(4), dp(4))
+        }
+        val pathInput = EditText(context).apply {
+            hint = "Initial path within share (default /)"
+            setText(existing?.options?.get("initialPath") ?: "/")
+        }
+
+        val discoverButton = Button(context).apply {
+            text = "🔍 Discover Samba Servers on LAN"
+            setOnClickListener {
+                showSmbDiscoveryDialog { srv ->
+                    hostInput.setText(srv.host)
+                    if (nameInput.text.isNullOrEmpty() || nameInput.text.toString() == hostInput.text.toString()) {
+                        nameInput.setText(srv.name)
+                    }
+                    portInput.setText(srv.port.toString())
+                    if (!srv.workgroup.isNullOrBlank()) {
+                        domainInput.setText(srv.workgroup)
+                    }
+                }
+            }
+        }
+
+        fun updateGuestVisibility() {
+            if (guestCheck.isChecked) {
+                userInput.visibility = View.GONE
+                passInput.visibility = View.GONE
+            } else {
+                userInput.visibility = View.VISIBLE
+                passInput.visibility = View.VISIBLE
+            }
+        }
+        guestCheck.setOnCheckedChangeListener { _, _ -> updateGuestVisibility() }
+        updateGuestVisibility()
+
+        body.addView(discoverButton)
+        body.addView(nameInput)
+        body.addView(hostInput)
+        body.addView(portInput)
+        body.addView(domainInput)
+        body.addView(guestCheck)
+        body.addView(userInput)
+        body.addView(passInput)
+        body.addView(shareInput)
+        body.addView(shareTip)
+        body.addView(pathInput)
+
+        fun extractConfigAndCreds(id: String): Pair<SmbConfig, SmbCredentials>? {
+            val host = hostInput.text.toString().trim()
+            if (host.isEmpty()) { hostInput.error = "Host is required"; return null }
+            val port = portInput.text.toString().trim().toIntOrNull() ?: 445
+            val isGuest = guestCheck.isChecked
+            val username = if (isGuest) "" else userInput.text.toString().trim()
+            val domain = domainInput.text.toString().trim().ifEmpty { "WORKGROUP" }
+            val displayName = nameInput.text.toString().trim().ifEmpty { host }
+            val share = shareInput.text.toString().trim().trim('/').ifEmpty { null }
+            val initialPath = pathInput.text.toString().trim().ifEmpty { "/" }
+
+            val creds = SmbCredentials(password = if (isGuest) null else passInput.text.toString())
+            val config = SmbConfig(
+                id = id,
+                displayName = displayName,
+                host = host,
+                port = port,
+                domain = domain,
+                username = username,
+                isGuest = isGuest,
+                initialShare = share,
+                initialPath = initialPath
+            )
+            return config to creds
+        }
+
+        dialogBuilder()
+            .setTitle(if (existing != null) "Edit SMB / Samba Connection" else "Add SMB / Samba Connection")
+            .setView(scroll)
+            .setNeutralButton("Test Connection", null)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton(if (existing != null) "Save" else "Save & Connect", null)
+            .create().also { dialog ->
+                dialog.setOnShowListener {
+                    dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                        val pair = extractConfigAndCreds("test_temp_id") ?: return@setOnClickListener
+                        val (config, creds) = pair
+                        val progress = android.app.ProgressDialog(this).apply {
+                            setMessage("Testing connection to ${config.host}:${config.port}…")
+                            setCancelable(false)
+                            show()
+                        }
+                        accessIo.execute {
+                            val res = smbProvider.clientPool.testConnection(config, creds)
+                            runOnUiThread {
+                                progress.dismiss()
+                                res.onSuccess { msg ->
+                                    dialogBuilder().setTitle("Connection Succeeded").setMessage(msg).setPositiveButton("OK", null).show()
+                                }.onFailure { err ->
+                                    dialogBuilder().setTitle("Connection Failed").setMessage(err.message ?: "Unknown error").setPositiveButton("OK", null).show()
+                                }
+                            }
+                        }
+                    }
+
+                    dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        val connectionId = existing?.id ?: UUID.randomUUID().toString()
+                        val pair = extractConfigAndCreds(connectionId) ?: return@setOnClickListener
+                        val (config, creds) = pair
+
+                        smbProvider.credentialStore.save(connectionId, creds)
+                        if (existing != null) {
+                            smbProvider.clientPool.disconnect(connectionId)
+                        }
+
+                        val endpoint = if (config.port == 445) config.host else "${config.host}:${config.port}"
+                        val connection = ProviderConnection(
+                            id = connectionId,
+                            sourceTypeId = "smb",
+                            displayName = config.displayName,
+                            endpoint = endpoint,
+                            options = mapOf(
+                                "host" to config.host,
+                                "port" to config.port.toString(),
+                                "domain" to config.domain,
+                                "username" to config.username,
+                                "isGuest" to config.isGuest.toString(),
+                                "initialShare" to (config.initialShare ?: ""),
+                                "initialPath" to config.initialPath
+                            ),
+                            credentialHandle = "smb_vault"
+                        )
+                        saveConnection(connection)
+                        dialog.dismiss()
+                        showHomeRoot()
+
+                        val initialPath = if (!config.initialShare.isNullOrBlank()) "/${config.initialShare.trim('/')}" else "/"
+                        val rootUri = SmbUri.build(connectionId, initialPath)
+                        openRoot(rootUri, rememberAuthorizedRoot = false)
+                    }
+                }
+                dialog.show()
+            }
     }
     private fun openOrRequestSource(initialUri: Uri, key: String) {
         val logicalPrefix = if (key.startsWith("public_")) "Internal shared storage" else null
@@ -1043,7 +2301,10 @@ class MainActivity : Activity() {
         val candidates = homeItems.mapNotNull { item ->
             val key = item.treeKey ?: return@mapNotNull null
             val target = item.initialUri ?: item.treeUri ?: return@mapNotNull null
-            if (localProvider.owns(target) || AppsUri.isAppsUri(target) || key == "internal_shared" || key == "application_public" || key == "installed_apps") return@mapNotNull null
+            if (localProvider.owns(target) || AppsUri.isAppsUri(target) || SftpUri.isSftpUri(target) ||
+                FtpUri.isFtpUri(target) || SmbUri.isSmbUri(target) ||
+                ArchiveUri.isArchiveUri(target) || key.startsWith("sftp_") || key.startsWith("ftp_") || key.startsWith("smb_") || key.startsWith("archive_") ||
+                key == "internal_shared" || key == "application_public" || key == "installed_apps") return@mapNotNull null
             key to target
         }
         if (candidates.isEmpty()) return
@@ -1230,6 +2491,33 @@ class MainActivity : Activity() {
                 }
             }
         }
+        if (requestCode == pickThemeArchiveRequest && resultCode == RESULT_OK) {
+            val pickedUri = data?.data ?: data?.clipData?.getItemAt(0)?.uri
+            if (pickedUri != null) {
+                installIconThemeFromUri(pickedUri)
+            }
+        }
+        if (requestCode == pickSftpFileRequest) {
+            val receiver = pendingSftpFileCallback
+            pendingSftpFileCallback = null
+            if (resultCode == RESULT_OK) {
+                val pickedUri = data?.data ?: data?.clipData?.getItemAt(0)?.uri
+                if (pickedUri != null && receiver != null) {
+                    io.execute {
+                        try {
+                            contentResolver.openInputStream(pickedUri)?.use { stream ->
+                                val text = stream.bufferedReader(java.nio.charset.StandardCharsets.UTF_8).readText()
+                                runOnUiThread { receiver(text) }
+                            }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                Toast.makeText(this@MainActivity, "Failed to read file: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     private fun openInstalledApps(category: String? = null) {
         if (selectionMode) exitSelectionMode()
@@ -1265,7 +2553,7 @@ class MainActivity : Activity() {
         homeMode = false
         updateCreateAction()
         logicalLocationPrefix = logicalPrefix ?: when {
-            !localProvider.owns(uri) && AppDocumentSources.isAppAuthority(uri.authority) -> "Application public"
+            AppDocumentSources.isAppAuthority(uri) && !localProvider.owns(uri) -> "Application public"
             uri != localProvider.rootUri && (localProvider.owns(uri) || isPrimaryExternalStorageUri(uri)) -> "Internal shared storage"
             else -> null
         }
@@ -1313,7 +2601,8 @@ class MainActivity : Activity() {
         }
     }
     private fun rememberAuthorizedTreeRoot(uri: Uri, name: String, path: String) {
-        if (localProvider.owns(uri) || AppsUri.isAppsUri(uri) || ArchiveUri.isArchiveUri(uri) || AppDocumentSources.isAppAuthority(uri.authority) ||
+        if (localProvider.owns(uri) || AppsUri.isAppsUri(uri) || ArchiveUri.isArchiveUri(uri) || SftpUri.isSftpUri(uri) ||
+            FtpUri.isFtpUri(uri) || SmbUri.isSmbUri(uri) || AppDocumentSources.isAppAuthority(uri) ||
             (localProvider.hasAccess() && isPrimaryExternalStorageUri(uri))) return
         val key = "authorized_${sourceIdentity(uri)}"
         val existing = homeItems.indexOfFirst { it.treeKey == key }
@@ -1325,68 +2614,81 @@ class MainActivity : Activity() {
         showHomeRoot()
     }
     private fun navigate(uri: Uri, push: Boolean = true, displayName: String? = null) {
-        if (selectionMode) exitSelectionMode()
-        homeMode = false
-        updateCreateAction()
-        if (push && current != uri) {
-            history.add(uri)
-            historyNames.add(displayName ?: entries.firstOrNull { it.uri == uri }?.metadata?.name ?: "Folder")
-        } else if (!push && history.isEmpty()) {
-            history.add(uri)
-            historyNames.add(displayName ?: "Storage")
+        try {
+            if (selectionMode) exitSelectionMode()
+            if (::fileScroll.isInitialized) fileScroll.resetPull(smooth = false)
+            homeMode = false
+            updateCreateAction()
+            if (push && current != uri) {
+                history.add(uri)
+                historyNames.add(displayName ?: entries.firstOrNull { it.uri == uri }?.metadata?.name ?: "Folder")
+            } else if (!push && history.isEmpty()) {
+                history.add(uri)
+                historyNames.add(displayName ?: "Storage")
+            }
+            current = uri
+            renderLocation()
+            load(uri)
+        } catch (t: Throwable) {
+            android.util.Log.e("InfiniFolder", "Error navigating to $uri", t)
+            try { File("/sdcard/infinifolder_crash.txt").writeText(android.util.Log.getStackTraceString(t)) } catch (_: Throwable) {}
+            status.text = "Error opening folder: ${t.message}"
+            Toast.makeText(this, "Error opening folder: ${t.message}", Toast.LENGTH_SHORT).show()
         }
-        current = uri
-        renderLocation()
-        load(uri)
     }
     private fun renderLocation() {
-        breadcrumb.removeAllViews()
-        if (homeMode) {
-            breadcrumb.addView(crumbText("Virtual root", setTextColorForTheme(), homePage == "root") { showHomeRoot() })
-            if (homePage == "internal_shared") {
-                breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
-                breadcrumb.addView(crumbText("Internal shared storage", setTextColorForTheme(), true) { showInternalShared() })
-            }
-            if (homePage == "application_public") {
-                breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
-                breadcrumb.addView(crumbText("Application public", setTextColorForTheme(), true) { showApplicationPublic() })
-            }
-            renderTree()
-            return
-        }
-        breadcrumb.addView(crumbText("Virtual root", setTextColorForTheme(), false) { showHomeRoot() })
-        logicalLocationPrefix?.let { prefix ->
-            breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
-            breadcrumb.addView(crumbText(prefix, setTextColorForTheme(), false) {
-                when (prefix) {
-                    "Application public" -> showApplicationPublic()
-                    "Installed Applications" -> openInstalledApps()
-                    else -> showInternalShared()
+        try {
+            breadcrumb.removeAllViews()
+            if (homeMode) {
+                breadcrumb.addView(crumbText("Virtual root", setTextColorForTheme(), homePage == "root") { showHomeRoot() })
+                if (homePage == "internal_shared") {
+                    breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
+                    breadcrumb.addView(crumbText("Internal shared storage", setTextColorForTheme(), true) { showInternalShared() })
                 }
-            })
+                if (homePage == "application_public") {
+                    breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
+                    breadcrumb.addView(crumbText("Application public", setTextColorForTheme(), true) { showApplicationPublic() })
+                }
+                renderTree()
+                return
+            }
+            breadcrumb.addView(crumbText("Virtual root", setTextColorForTheme(), false) { showHomeRoot() })
+            logicalLocationPrefix?.let { prefix ->
+                breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
+                breadcrumb.addView(crumbText(prefix, setTextColorForTheme(), false) {
+                    when (prefix) {
+                        "Application public" -> showApplicationPublic()
+                        "Installed Applications" -> openInstalledApps()
+                        else -> showInternalShared()
+                    }
+                })
+            }
+            if (history.isNotEmpty()) breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
+            if (history.isEmpty()) {
+                breadcrumb.addView(crumbText("Choose a folder", setTextColorForTheme(), true) { rootPicker() })
+                return
+            }
+            historyNames.forEachIndexed { index, name ->
+                if (index > 0) breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
+                breadcrumb.addView(crumbText(name, setTextColorForTheme(), index == historyNames.lastIndex) { selectLocation(index) })
+            }
+            breadcrumb.post { (breadcrumb.parent as? HorizontalScrollView)?.fullScroll(View.FOCUS_RIGHT) }
+            renderTree()
+        } catch (t: Throwable) {
+            android.util.Log.e("InfiniFolder", "Error rendering location", t)
+            try { File("/sdcard/infinifolder_crash.txt").writeText(android.util.Log.getStackTraceString(t)) } catch (_: Throwable) {}
         }
-        if (history.isNotEmpty()) breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
-        if (history.isEmpty()) {
-            breadcrumb.addView(crumbText("Choose a folder", setTextColorForTheme(), true) { rootPicker() })
-            return
-        }
-        historyNames.forEachIndexed { index, name ->
-            if (index > 0) breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
-            breadcrumb.addView(crumbText(name, setTextColorForTheme(), index == history.lastIndex) { selectLocation(index) })
-        }
-        breadcrumb.post { (breadcrumb.parent as? HorizontalScrollView)?.fullScroll(View.FOCUS_RIGHT) }
-        renderTree()
     }
     private fun selectLocation(index: Int) {
         if (index !in history.indices) return
-        if (index + 1 < history.size) {
-            history.subList(index + 1, history.size).clear()
-            historyNames.subList(index + 1, historyNames.size).clear()
-        }
-        current = history[index]
+        val targetSize = index + 1
+        while (history.size > targetSize) history.removeAt(history.lastIndex)
+        while (historyNames.size > targetSize) historyNames.removeAt(historyNames.lastIndex)
+        current = history.getOrNull(index) ?: return
         homeMode = false
         updateCreateAction()
-        renderLocation(); load(current!!)
+        renderLocation()
+        load(current!!)
     }
     private fun crumbText(label: String, color: Int, selected: Boolean, click: (() -> Unit)? = null): TextView = TextView(this).apply {
         text = label; textSize = 14f; setTextColor(color); setPadding(dp(6), dp(12), dp(6), dp(12))
@@ -1402,51 +2704,76 @@ class MainActivity : Activity() {
             entries = emptyList(); listingIsLoading = true; listingNotice = null
             status.text = "Loading…"; content.removeAllViews()
         }
-        val ref = resourceRef(uri)
+        val ref = try {
+            resourceRef(uri)
+        } catch (t: Throwable) {
+            listingError = "Invalid folder reference: ${t.message}"
+            status.text = listingError
+            return
+        }
         io.execute {
-            val result = provider.list(ref)
-            runOnUiThread {
-                if (requestGeneration != loadGeneration || homeMode || current != uri) return@runOnUiThread
-                when (result) {
-                    is ProviderResult.Success -> {
-                        entries = result.value
-                        listingIsLoading = result.isLoading
-                        listingNotice = result.notice
-                        updateListingStatus(result.notice, result.isLoading, loadingAttempt)
-                        renderEntries()
-                        if (result.isLoading && loadingAttempt < 8) root.postDelayed({
-                            if (!isFinishing && !isDestroyed && requestGeneration == loadGeneration && !homeMode && current == uri) {
-                                load(uri, loadingAttempt + 1)
+            try {
+                val result = provider.list(ref)
+                runOnUiThread {
+                    try {
+                        if (requestGeneration != loadGeneration || homeMode || current != uri) return@runOnUiThread
+                        when (result) {
+                            is ProviderResult.Success -> {
+                                entries = result.value
+                                listingIsLoading = result.isLoading
+                                listingNotice = result.notice
+                                updateListingStatus(result.notice, result.isLoading, loadingAttempt)
+                                renderEntries()
+                                if (result.isLoading && loadingAttempt < 8) root.postDelayed({
+                                    if (!isFinishing && !isDestroyed && requestGeneration == loadGeneration && !homeMode && current == uri) {
+                                        load(uri, loadingAttempt + 1)
+                                    }
+                                }, 1000)
+                                if (uri == localProvider.rootUri) {
+                                    internalSharedEntries = result.value
+                                    rebuildTreeRoots()
+                                } else if (AppsUri.isRoot(uri)) {
+                                    installedAppCategories = result.value.map { it.metadata.name }
+                                    rebuildTreeRoots()
+                                }
                             }
-                        }, 1000)
-                        if (uri == localProvider.rootUri) {
-                            internalSharedEntries = result.value
-                            rebuildTreeRoots()
-                        } else if (AppsUri.isRoot(uri)) {
-                            installedAppCategories = result.value.map { it.metadata.name }
-                            rebuildTreeRoots()
+                            is ProviderResult.Failure -> {
+                                entries = emptyList(); listingIsLoading = false; listingError = result.message
+                                status.text = result.message; renderEntries()
+                                if (localProvider.owns(uri)) {
+                                    if (!localProvider.hasAccess()) requestSharedStorageAccess()
+                                    else status.text = "Android restricts access to this folder: ${result.message}"
+                                } else if (!ArchiveUri.isArchiveUri(uri) && !AppsUri.isAppsUri(uri) && !SftpUri.isSftpUri(uri) && !FtpUri.isFtpUri(uri) && !SmbUri.isSmbUri(uri) && isAccessFailure(result.message, result.cause)) {
+                                    rootPicker(uri, "tree_permission_regrant")
+                                }
+                            }
+                            is ProviderResult.Unsupported -> {
+                                entries = emptyList(); listingIsLoading = false
+                                listingError = "This provider cannot list this folder."
+                                status.text = listingError; renderEntries()
+                            }
                         }
+                    } catch (t: Throwable) {
+                        android.util.Log.e("InfiniFolder", "Error rendering listing for $uri", t)
+                        try { File("/sdcard/infinifolder_crash.txt").writeText(android.util.Log.getStackTraceString(t)) } catch (_: Throwable) {}
+                        status.text = "Error rendering folder: ${t.message}"
                     }
-                    is ProviderResult.Failure -> {
-                        entries = emptyList(); listingIsLoading = false; listingError = result.message
-                        status.text = result.message; renderEntries()
-                        if (localProvider.owns(uri)) {
-                            if (!localProvider.hasAccess()) requestSharedStorageAccess()
-                            else status.text = "Android restricts access to this folder: ${result.message}"
-                        } else if (isAccessFailure(result.message, result.cause)) {
-                            rootPicker(uri, "tree_permission_regrant")
-                        }
-                    }
-                    is ProviderResult.Unsupported -> {
-                        entries = emptyList(); listingIsLoading = false
-                        listingError = "This provider cannot list this folder."
-                        status.text = listingError; renderEntries()
+                }
+            } catch (t: Throwable) {
+                android.util.Log.e("InfiniFolder", "Background list error for $uri", t)
+                try { File("/sdcard/infinifolder_crash.txt").writeText(android.util.Log.getStackTraceString(t)) } catch (_: Throwable) {}
+                runOnUiThread {
+                    if (requestGeneration == loadGeneration && current == uri) {
+                        status.text = "Failed to list folder: ${t.message}"
                     }
                 }
             }
         }
     }
     private fun updateListingStatus(notice: String? = listingNotice, isLoading: Boolean = listingIsLoading, loadingAttempt: Int = 0) {
+        if (!isLoading && ::fileScroll.isInitialized) {
+            fileScroll.isRefreshing = false
+        }
         if (selectionMode) {
             val count = selectedUris.size
             status.text = "$count item${if (count == 1) "" else "s"} selected (long-press to act)"
@@ -1466,6 +2793,9 @@ class MainActivity : Activity() {
         when {
             AppsUri.isAppsUri(uri) -> "apps"
             ArchiveUri.isArchiveUri(uri) -> "archive"
+            SftpUri.isSftpUri(uri) -> "sftp"
+            FtpUri.isFtpUri(uri) -> "ftp"
+            SmbUri.isSmbUri(uri) -> "smb"
             localProvider.owns(uri) -> "local"
             else -> "saf"
         },
@@ -1496,7 +2826,7 @@ class MainActivity : Activity() {
             val visibleTop = fileScroll.scrollY - buffer
             val visibleBottom = fileScroll.scrollY + scrollHeight + buffer
             rect.bottom >= visibleTop && rect.top <= visibleBottom
-        } catch (_: IllegalArgumentException) {
+        } catch (_: Throwable) {
             false
         }
     }
@@ -1504,14 +2834,15 @@ class MainActivity : Activity() {
     private fun probeVisibleCards() {
         if (pendingCardProbes.isEmpty()) return
         val currentGen = loadGeneration
-        val iterator = pendingCardProbes.iterator()
-        while (iterator.hasNext()) {
-            val probe = iterator.next()
+        val snapshot = ArrayList(pendingCardProbes)
+        for (probe in snapshot) {
             if (probe.generation != currentGen) {
-                iterator.remove()
+                pendingCardProbes.remove(probe)
             } else if (isCardVisibleInScroll(probe.view)) {
-                iterator.remove()
-                probe.startProbe()
+                pendingCardProbes.remove(probe)
+                try {
+                    probe.startProbe()
+                } catch (_: Throwable) {}
             }
         }
     }
@@ -1541,66 +2872,144 @@ class MainActivity : Activity() {
     }
 
     private fun renderEntries() {
-        pendingCardProbes.clear()
-        visibleProbeScheduled = false
-        content.removeAllViews()
-        val visible = if (showHidden) entries else entries.filterNot { it.metadata.isHidden }
-        val rows = if (sortByName) visible.sortedWith(compareBy<ResourceEntry> { !it.metadata.isDirectory }.thenBy { it.metadata.name.lowercase() }) else visible.sortedByDescending { it.metadata.modifiedAtMillis ?: 0L }
-        if (rows.isEmpty()) {
-            content.addView(TextView(this).apply {
-                text = listingError ?: if (listingIsLoading) "Waiting for the storage provider…" else
-                    listingNotice ?: "No files or folders were returned for this location."
-                textSize = 16f; setTextColor(setTextColorForTheme()); setPadding(dp(18), dp(28), dp(18), dp(12))
-                setOnLongClickListener { onEmptyAreaLongPress() }
-            })
-            val path = current?.let { shared.getString("source_path_v2_$it", null) }
-                ?: historyNames.joinToString(" / ")
-            content.addView(TextView(this).apply {
-                text = path; textSize = 13f; setTextColor(setTextColorForTheme()); setPadding(dp(18), 0, dp(18), dp(12))
-                setOnLongClickListener { onEmptyAreaLongPress() }
-            })
-            content.addView(Button(dialogContext()).apply {
-                text = "Refresh"
-                setOnClickListener { current?.let { load(it) } }
-            })
-            return
-        }
-        if (grid) {
-            val availableWidth = (resources.configuration.screenWidthDp - if (treeVisible) 220 else 32).coerceAtLeast(iconSizeDp)
-            val minimumCellWidth = iconSizeDp + iconSizeDp / 2
-            val columns = (availableWidth / minimumCellWidth).coerceIn(1, 8)
-            val table = TableLayout(this).apply {
-                isStretchAllColumns = true
-                isLongClickable = true
-                setOnLongClickListener { onEmptyAreaLongPress() }
+        try {
+            pendingCardProbes.clear()
+            visibleProbeScheduled = false
+            content.removeAllViews()
+            val visible = if (showHidden) entries else entries.filterNot { it.metadata.isHidden }
+            val rows = if (sortByName) visible.sortedWith(compareBy<ResourceEntry> { !it.metadata.isDirectory }.thenBy { it.metadata.name.lowercase() }) else visible.sortedByDescending { it.metadata.modifiedAtMillis ?: 0L }
+            if (rows.isEmpty()) {
+                content.addView(TextView(this).apply {
+                    text = listingError ?: if (listingIsLoading) "Waiting for the storage provider…" else
+                        listingNotice ?: "No files or folders were returned for this location."
+                    textSize = 16f; setTextColor(setTextColorForTheme()); setPadding(dp(18), dp(28), dp(18), dp(12))
+                    setOnLongClickListener { onEmptyAreaLongPress() }
+                })
+                val path = current?.let { shared.getString("source_path_v2_$it", null) }
+                    ?: historyNames.joinToString(" / ")
+                content.addView(TextView(this).apply {
+                    text = path; textSize = 13f; setTextColor(setTextColorForTheme()); setPadding(dp(18), 0, dp(18), dp(12))
+                    setOnLongClickListener { onEmptyAreaLongPress() }
+                })
+                content.addView(Button(dialogContext()).apply {
+                    text = "Refresh"
+                    setOnClickListener { current?.let { load(it) } }
+                })
+                return
             }
-            rows.chunked(columns).forEach { group ->
-                val tr = TableRow(this).apply {
+            if (grid) {
+                val containerPx = if (content.width > 0) content.width else if (fileScroll.width > 0) fileScroll.width else 0
+                val availableWidth = if (containerPx > 0) {
+                    (containerPx / resources.displayMetrics.density).roundToInt()
+                } else {
+                    (resources.configuration.screenWidthDp - if (treeVisible) 220 else 32).coerceAtLeast(iconSizeDp)
+                }
+                val columns = gridColumns(availableWidth)
+                val table = TableLayout(this).apply {
+                    clipChildren = false
+                    clipToPadding = false
+                    isStretchAllColumns = true
                     isLongClickable = true
                     setOnLongClickListener { onEmptyAreaLongPress() }
                 }
-                val cellHeight = dp(iconSizeDp + iconSizeDp / 2 + 52)
-                group.forEach { entry -> tr.addView(entryCard(entry, true), TableRow.LayoutParams(0, cellHeight, 1f)) }
-                repeat(columns - group.size) {
-                    tr.addView(View(this).apply {
+                rows.chunked(columns).forEach { group ->
+                    val tr = TableRow(this).apply {
+                        clipChildren = false
+                        clipToPadding = false
                         isLongClickable = true
                         setOnLongClickListener { onEmptyAreaLongPress() }
-                    }, TableRow.LayoutParams(0, cellHeight, 1f))
+                    }
+                    group.forEach { entry -> tr.addView(entryCard(entry, true), TableRow.LayoutParams(0, TableRow.LayoutParams.WRAP_CONTENT, 1f)) }
+                    repeat(columns - group.size) {
+                        tr.addView(View(this).apply {
+                            isLongClickable = true
+                            setOnLongClickListener { onEmptyAreaLongPress() }
+                        }, TableRow.LayoutParams(0, TableRow.LayoutParams.WRAP_CONTENT, 1f))
+                    }
+                    table.addView(tr)
                 }
-                table.addView(tr)
-            }
-            content.addView(table)
-        } else rows.forEach { content.addView(entryCard(it, false)) }
-        scheduleVisibleProbe()
+                content.addView(table)
+            } else rows.forEach { content.addView(entryCard(it, false)) }
+            scheduleVisibleProbe()
+        } catch (t: Throwable) {
+            android.util.Log.e("InfiniFolder", "Error rendering entries", t)
+            try { File("/sdcard/infinifolder_crash.txt").writeText(android.util.Log.getStackTraceString(t)) } catch (_: Throwable) {}
+            status.text = "Error displaying folder contents: ${t.message}"
+        }
     }
     private fun renderCurrentContents() { if (homeMode) renderHomeItems() else renderEntries() }
+    private fun iconTextSizeDp(asGrid: Boolean): Float = if (asGrid) (iconSizeDp * 0.72f) else 28f
+    private fun gridColumns(availableWidthDp: Int): Int {
+        val targetCellWidth = (iconSizeDp * 1.35f).coerceAtLeast(36f)
+        return Math.round(availableWidthDp / targetCellWidth).coerceIn(1, 14)
+    }
+    private fun buildFileIconView(
+        entry: ResourceEntry,
+        meta: ResourceMetadata,
+        asGrid: Boolean,
+        box: View
+    ): View {
+        val isDefaultArchive = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isDefaultBrowsableArchive(meta.name, meta.mimeType)
+        val mimeKey = CustomIconStore.resolveMimeKey(meta)
+        val sidePx = dp(if (asGrid) iconSizeDp else 44)
+
+        if (customIconStore.hasMimeIcon(mimeKey)) {
+            return mimeIconPreview(mimeKey, if (isDefaultArchive) "📦" else iconFor(meta), asGrid, box)
+        }
+
+        if (iconThemeManager.hasActiveTheme()) {
+            val themeBmp = iconThemeManager.resolveFileIcon(meta, sidePx)
+            if (themeBmp != null) {
+                return ImageView(this).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    setImageBitmap(themeBmp)
+                    layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
+                }
+            }
+        }
+
+        if (meta.name.endsWith(".apk", ignoreCase = true) && localProvider.owns(entry.uri)) {
+            val localFile = localProvider.fileFor(entry.uri)
+            val apkIcon = appsProvider.getApkFileIconBitmap(localFile.absolutePath, sidePx)
+            if (apkIcon != null) {
+                return ImageView(this).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    setImageBitmap(apkIcon)
+                    layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
+                }
+            }
+        }
+
+        return when {
+            isDefaultArchive -> TextView(this).apply {
+                text = "📦"
+                setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+            }
+            ImageFormats.isImage(meta) -> {
+                imagePreview(entry, asGrid, box)
+            }
+            else -> TextView(this).apply {
+                text = iconFor(meta)
+                setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+            }
+        }
+    }
+
     private fun entryCard(entry: ResourceEntry, asGrid: Boolean): View {
         val fg = if (dark) 0xFFF0F0E9.toInt() else 0xFF20231F.toInt()
         val isSelected = selectedUris.contains(entry.uri)
         val box = LinearLayout(this).apply {
             orientation = if (asGrid) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
-            gravity = if (asGrid) Gravity.CENTER else Gravity.CENTER_VERTICAL
-            setPadding(dp(10), dp(8), dp(10), dp(8))
+            gravity = if (asGrid) (Gravity.TOP or Gravity.CENTER_HORIZONTAL) else Gravity.CENTER_VERTICAL
+            clipChildren = false
+            clipToPadding = false
+            val hPad = if (asGrid) dp(2) else dp(10)
+            val vPad = if (asGrid) dp(4) else dp(8)
+            setPadding(hPad, vPad, hPad, vPad)
             minimumHeight = dp(64)
             if (!asGrid) {
                 if (isSelected) {
@@ -1621,7 +3030,25 @@ class MainActivity : Activity() {
         val sidePx = dp(sideDp)
         val isShortcut = ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)
         val shortcut = if (isShortcut) shortcutCache.get(entry.uri.toString()) else null
-        val isArchive = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isArchive(entry.metadata.name, entry.metadata.mimeType)
+
+        val isPackagedFormat = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isPackagedFormat(entry.metadata.name, entry.metadata.mimeType)
+        val detectedMagic = if (!isPackagedFormat && !entry.metadata.isDirectory && FileMagicDetector.isAmbiguousOrUnknown(entry.metadata.name, entry.metadata.mimeType)) {
+            if (localProvider.owns(entry.uri)) {
+                runCatching { FileMagicDetector.detect(localProvider.fileFor(entry.uri)) }.getOrNull()
+            } else {
+                ambiguousMagicCache.get(entry.uri.toString())
+            }
+        } else null
+        val effectiveMeta = if (isPackagedFormat) {
+            val pkgMime = ArchiveFormats.packageMimeType(entry.metadata.name)
+            if (pkgMime != null) entry.metadata.copy(mimeType = pkgMime) else entry.metadata
+        } else if (detectedMagic != null && detectedMagic.mimeType != entry.metadata.mimeType) {
+            entry.metadata.copy(mimeType = detectedMagic.mimeType)
+        } else {
+            entry.metadata
+        }
+        val isArchive = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isArchive(effectiveMeta.name, effectiveMeta.mimeType)
+        val isDefaultArchive = isArchive && !isPackagedFormat
 
         var uncachedShortcutPlaceholder: TextView? = null
         var uncachedShortcutImage: ImageView? = null
@@ -1636,9 +3063,8 @@ class MainActivity : Activity() {
                 }
                 WebMetadataResolver.isWebUri(shortcut.targetUri) -> TextView(this).apply {
                     text = "🌐"
-                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
                     gravity = Gravity.CENTER
-                    includeFontPadding = false
                 }
                 targetUri != null && AppsUri.isAppUri(targetUri) -> {
                     val pkg = AppsUri.getPackageName(targetUri)
@@ -1650,49 +3076,45 @@ class MainActivity : Activity() {
                 }
                 shortcut.targetIsDirectory -> TextView(this).apply {
                     text = "📁"
-                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
                     gravity = Gravity.CENTER
-                    includeFontPadding = false
                 }
                 targetMimeKey != null && customIconStore.hasMimeIcon(targetMimeKey) -> {
-                    val fallback = if (ArchiveFormats.isArchive(targetMeta.name, targetMeta.mimeType)) "📦" else iconFor(targetMeta)
+                    val fallback = if (ArchiveFormats.isDefaultBrowsableArchive(targetMeta.name, targetMeta.mimeType)) "📦" else iconFor(targetMeta)
                     mimeIconPreview(targetMimeKey, fallback, asGrid, box)
                 }
-                ArchiveFormats.isArchive(shortcut.targetPath ?: "", shortcut.targetMimeType ?: "") -> TextView(this).apply {
+                ArchiveFormats.isDefaultBrowsableArchive(shortcut.targetPath ?: "", shortcut.targetMimeType ?: "") -> TextView(this).apply {
                     text = "📦"
-                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
                     gravity = Gravity.CENTER
-                    includeFontPadding = false
                 }
                 shortcut.targetMimeType?.startsWith("image/") == true -> TextView(this).apply {
                     text = "🖼"
-                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
                     gravity = Gravity.CENTER
-                    includeFontPadding = false
                 }
                 targetUri?.scheme != null && targetUri.scheme !in setOf("file", "content", "apps", "archive") -> TextView(this).apply {
                     text = "🔗"
-                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
                     gravity = Gravity.CENTER
-                    includeFontPadding = false
                 }
                 else -> TextView(this).apply {
                     text = iconFor(targetMeta)
-                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
                     gravity = Gravity.CENTER
-                    includeFontPadding = false
                 }
             }
         } else if (isShortcut) {
             val frame = FrameLayout(this).apply {
+                clipChildren = false
+                clipToPadding = false
                 layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
                 foregroundGravity = Gravity.CENTER
             }
             val placeholder = TextView(this).apply {
                 text = "📄"
-                setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
+                setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
                 gravity = Gravity.CENTER
-                includeFontPadding = false
                 layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
             }
             val image = ImageView(this).apply {
@@ -1714,41 +3136,24 @@ class MainActivity : Activity() {
             val cat = AppsUri.getCategoryName(entry.uri) ?: ""
             TextView(this).apply {
                 text = appsProvider.getCategoryIcon(cat)
-                setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
+                setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
                 gravity = Gravity.CENTER
-                includeFontPadding = false
             }
         } else if (entry.metadata.isDirectory) {
             directoryPreview(entry, asGrid, box)
         } else {
-            val mimeKey = CustomIconStore.resolveMimeKey(entry.metadata)
-            if (customIconStore.hasMimeIcon(mimeKey)) {
-                mimeIconPreview(mimeKey, if (isArchive) "📦" else iconFor(entry.metadata), asGrid, box)
-            } else if (isArchive) {
-                TextView(this).apply {
-                    text = "📦"
-                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
-                    gravity = Gravity.CENTER
-                    includeFontPadding = false
-                }
-            } else if (ImageFormats.isImage(entry.metadata)) {
-                imagePreview(entry, asGrid, box)
-            } else TextView(this).apply {
-                text = iconFor(entry.metadata)
-                setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
-                gravity = Gravity.CENTER
-                includeFontPadding = false
-            }
+            buildFileIconView(entry, effectiveMeta, asGrid, box)
         }
         val iconWidth = if (asGrid) sidePx else dp(52)
         val iconHeight = sidePx
         val icon = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
             layoutParams = LinearLayout.LayoutParams(iconWidth, iconHeight).apply {
                 gravity = if (asGrid) Gravity.CENTER_HORIZONTAL else Gravity.CENTER_VERTICAL
                 if (asGrid) bottomMargin = dp(4)
             }
             if (asGrid) {
-                setPadding(dp(2), dp(2), dp(2), dp(2))
                 if (isSelected) {
                     background = GradientDrawable().apply {
                         setColor(if (dark) 0x334CAF50.toInt() else 0x3381C784.toInt())
@@ -1795,6 +3200,42 @@ class MainActivity : Activity() {
                 addView(badge)
             }
         }
+
+        if (!isPackagedFormat && detectedMagic == null && FileMagicDetector.isAmbiguousOrUnknown(entry.metadata.name, entry.metadata.mimeType) &&
+            !entry.metadata.isDirectory && !isShortcut && !AppsUri.isAppsUri(entry.uri)
+        ) {
+            val generation = loadGeneration
+            registerVisibleCardProbe(box, generation) {
+                imageIo.execute {
+                    if (generation != loadGeneration || isFinishing || isDestroyed) return@execute
+                    val magic = try {
+                        if (localProvider.owns(entry.uri)) {
+                            FileMagicDetector.detect(localProvider.fileFor(entry.uri), peekCompressedPayload = true)
+                        } else {
+                            FileMagicDetector.detectFromStream {
+                                (provider.openRead(entry.ref) as? ProviderResult.Success)?.value
+                                    ?: throw java.io.IOException("Cannot open stream")
+                            }
+                        }
+                    } catch (_: Throwable) { null }
+                    if (magic != null && magic.mimeType != entry.metadata.mimeType) {
+                        ambiguousMagicCache.put(entry.uri.toString(), magic)
+                        runOnUiThread {
+                            if (generation == loadGeneration && !isFinishing && !isDestroyed) {
+                                val updatedMeta = entry.metadata.copy(mimeType = magic.mimeType)
+                                val updatedIcon = buildFileIconView(entry, updatedMeta, asGrid, box)
+                                if (icon.childCount > 0) {
+                                    icon.removeViewAt(0)
+                                    icon.addView(updatedIcon, 0, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+                                } else {
+                                    icon.addView(updatedIcon, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         val labels = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             if (asGrid) {
@@ -1813,12 +3254,18 @@ class MainActivity : Activity() {
         } else {
             entry.metadata.name
         }
-        val nameView = TextView(this).apply {
-            text = displayName
+        val gridCellMaxWidthPx = if (asGrid) {
+            val availableWidthDp = (resources.configuration.screenWidthDp - if (treeVisible) 220 else 32).coerceAtLeast(iconSizeDp)
+            val columns = gridColumns(availableWidthDp)
+            val actualContainerWidthPx = content.width.takeIf { it > 0 } ?: dp(availableWidthDp)
+            (actualContainerWidthPx / columns - dp(4)).coerceAtLeast(dp(36))
+        } else 0
+        val isLogicalDir = if (isShortcut && shortcut != null) shortcut.targetIsDirectory else entry.metadata.isDirectory
+        val nameView = SmartFileNameTextView(this).apply {
             textSize = 14f
             setTextColor(fg)
-            maxLines = if (asGrid) 2 else 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
+            maxAllowedWidthPx = gridCellMaxWidthPx
+            setFileName(displayName, isLogicalDir)
             if (asGrid) {
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                     gravity = Gravity.CENTER_HORIZONTAL
@@ -1836,6 +3283,7 @@ class MainActivity : Activity() {
                     setBackgroundResource(android.R.drawable.list_selector_background)
                 }
             } else {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 gravity = Gravity.START
                 textAlignment = View.TEXT_ALIGNMENT_VIEW_START
             }
@@ -1897,7 +3345,7 @@ class MainActivity : Activity() {
                                 thumbnailDecoder.decode(Uri.fromFile(f), sidePx)
                             }
                             when {
-                                ArchiveFormats.isArchive(info.targetPath ?: "", info.targetMimeType ?: "") -> "📦"
+                                ArchiveFormats.isDefaultBrowsableArchive(info.targetPath ?: "", info.targetMimeType ?: "") -> "📦"
                                 info.targetMimeType?.startsWith("image/") == true -> "🖼"
                                 else -> iconFor(targetMeta)
                             }
@@ -1905,11 +3353,12 @@ class MainActivity : Activity() {
                     }
                     runOnUiThread {
                         if (generation != loadGeneration || isFinishing || isDestroyed) return@runOnUiThread
-                        nameView.text = if (!info.displayNameOverride.isNullOrBlank()) {
+                        val updatedDisplayName = if (!info.displayNameOverride.isNullOrBlank()) {
                             "${info.displayNameOverride} ↗"
                         } else {
                             "${entry.metadata.name.removeSuffix(".lnk")} ↗"
                         }
+                        nameView.setFileName(updatedDisplayName, info.targetIsDirectory)
                         metaView?.text = metadataLine(entry)
                         if (resolvedBitmap != null) {
                             uncachedShortcutImage?.setImageBitmap(resolvedBitmap)
@@ -1935,7 +3384,7 @@ class MainActivity : Activity() {
             }
             if (entry.metadata.isDirectory) {
                 navigate(entry.uri, displayName = entry.metadata.name)
-            } else if (isArchive) {
+            } else if (isDefaultArchive) {
                 if (ArchiveUri.isArchiveUri(entry.uri)) {
                     val nestedVirtualPath = if (historyNames.isNotEmpty()) (historyNames + entry.metadata.name).joinToString("/") else null
                     io.execute {
@@ -1993,14 +3442,15 @@ class MainActivity : Activity() {
         val sidePx = dp(sideDp)
         val cacheKey = "shortcut-icon:$entryUri:${base64.hashCode()}"
         val frame = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
             foregroundGravity = Gravity.CENTER
         }
         val placeholder = TextView(this).apply {
             text = "📄"
-            setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
+            setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
             gravity = Gravity.CENTER
-            includeFontPadding = false
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
         val image = ImageView(this).apply {
@@ -2026,14 +3476,15 @@ class MainActivity : Activity() {
         val sideDp = if (asGrid) iconSizeDp else 44
         val sidePx = dp(sideDp)
         val frame = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
             foregroundGravity = Gravity.CENTER
         }
         val placeholder = TextView(this).apply {
             text = fallbackEmoji
-            setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
+            setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
             gravity = Gravity.CENTER
-            includeFontPadding = false
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
         val image = ImageView(this).apply {
@@ -2089,12 +3540,14 @@ class MainActivity : Activity() {
         val sidePx = dp(sideDp)
         val previewKey = "${entry.ref.providerId}:${entry.ref.documentId}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}"
         val frame = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
             foregroundGravity = Gravity.CENTER
         }
         val placeholder = TextView(this).apply {
             text = "🖼"
-            setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
+            setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
             gravity = Gravity.CENTER
             includeFontPadding = false
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
@@ -2167,15 +3620,28 @@ class MainActivity : Activity() {
         val sidePx = dp(sideDp)
         val dirKey = "${entry.ref.providerId}:${entry.ref.documentId}"
         val frame = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
             foregroundGravity = Gravity.CENTER
         }
-        val placeholder = TextView(this).apply {
-            text = "📁"
-            setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
-            gravity = Gravity.CENTER
-            includeFontPadding = false
-            layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
+        val themeFolderBmp = if (iconThemeManager.hasActiveTheme()) {
+            iconThemeManager.resolveFolderIcon(entry.metadata.name, sidePx)
+        } else null
+        val placeholder: View = if (themeFolderBmp != null) {
+            ImageView(this).apply {
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setImageBitmap(themeFolderBmp)
+                layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
+            }
+        } else {
+            TextView(this).apply {
+                text = "📁"
+                setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+                layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
+            }
         }
         val image = ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
@@ -2233,14 +3699,15 @@ class MainActivity : Activity() {
         val sideDp = if (asGrid) iconSizeDp else 44
         val sidePx = dp(sideDp)
         val frame = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
             foregroundGravity = Gravity.CENTER
         }
         val placeholder = TextView(this).apply {
             text = "📱"
-            setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
+            setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
             gravity = Gravity.CENTER
-            includeFontPadding = false
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
         val image = ImageView(this).apply {
@@ -2284,6 +3751,8 @@ class MainActivity : Activity() {
         return frame
     }
     private fun resolveMimeType(fileUri: Uri, file: java.io.File, metadataMime: String): String {
+        val pkgMime = com.infinifolder.archive.ArchiveFormats.packageMimeType(file.name)
+        if (pkgMime != null) return pkgMime
         val fromResolver = try { contentResolver.getType(fileUri) } catch (_: Exception) { null }
         if (!fromResolver.isNullOrEmpty() && fromResolver != "application/octet-stream") {
             return fromResolver
@@ -2296,7 +3765,15 @@ class MainActivity : Activity() {
         if (metadataMime.isNotEmpty() && metadataMime != "application/octet-stream") {
             return metadataMime
         }
-        return com.infinifolder.archive.ArchiveMimeTypes.guessMimeType(file.name, false)
+        val guessed = com.infinifolder.archive.ArchiveMimeTypes.guessMimeType(file.name, false)
+        if (guessed.isNotEmpty() && guessed != "application/octet-stream" && !com.infinifolder.storage.FileMagicDetector.isAmbiguousOrUnknown(file.name, guessed)) {
+            return guessed
+        }
+        val magic = com.infinifolder.storage.FileMagicDetector.detect(file, peekCompressedPayload = true)
+        if (magic != null) {
+            return magic.mimeType
+        }
+        return guessed.ifEmpty { "application/octet-stream" }
     }
 
     private fun launchApp(packageName: String) {
@@ -2383,7 +3860,59 @@ class MainActivity : Activity() {
             }
             return
         }
-        launchExternalViewIntent(entry.uri, entry.metadata.mimeType, entry.metadata.name)
+        if (SftpUri.isSftpUri(entry.uri) || FtpUri.isFtpUri(entry.uri) || SmbUri.isSmbUri(entry.uri)) {
+            val (providerId, remotePath, connId) = when {
+                SftpUri.isSftpUri(entry.uri) -> Triple("sftp", SftpUri.getRemotePath(entry.uri), SftpUri.getConnectionId(entry.uri))
+                FtpUri.isFtpUri(entry.uri) -> Triple("ftp", FtpUri.getRemotePath(entry.uri), FtpUri.getConnectionId(entry.uri))
+                else -> Triple("smb", SmbUri.getRemotePath(entry.uri), SmbUri.getConnectionId(entry.uri))
+            }
+            val fileName = remotePath.substringAfterLast('/').ifEmpty { "file" }
+            io.execute {
+                try {
+                    val cacheDir = File(cacheDir, "${providerId}_cache/$connId").apply { mkdirs() }
+                    val cachedFile = File(cacheDir, fileName)
+                    val res = provider.openRead(ResourceRef(providerId, entry.uri.toString()))
+                    if (res is ProviderResult.Success) {
+                        res.value.use { input ->
+                            cachedFile.outputStream().use { output ->
+                                input.copyTo(output, bufferSize = 128 * 1024)
+                            }
+                        }
+                        val fileUri = FileProvider.getUriForFile(this@MainActivity, "${packageName}.files", cachedFile)
+                        val mimeType = resolveMimeType(fileUri, cachedFile, entry.metadata.mimeType)
+                        runOnUiThread {
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(fileUri, mimeType)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                clipData = ClipData.newRawUri(cachedFile.name, fileUri)
+                            }
+                            val resInfoList = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+                            for (resolveInfo in resInfoList) {
+                                grantUriPermission(resolveInfo.activityInfo.packageName, fileUri,
+                                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                            }
+                            try {
+                                startActivity(intent)
+                            } catch (_: Exception) {
+                                Toast.makeText(this@MainActivity, "No app can open this file type.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } else if (res is ProviderResult.Failure) {
+                        runOnUiThread { Toast.makeText(this@MainActivity, "Failed to download file: ${res.message}", Toast.LENGTH_SHORT).show() }
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread { Toast.makeText(this@MainActivity, "Error opening file: ${e.message}", Toast.LENGTH_SHORT).show() }
+                }
+            }
+            return
+        }
+        val pkgMime = ArchiveFormats.packageMimeType(entry.metadata.name)
+        val cachedMagic = if (pkgMime != null) null else ambiguousMagicCache.get(entry.uri.toString())
+        val effectiveMime = pkgMime
+            ?: cachedMagic?.mimeType?.takeIf { it.isNotEmpty() }
+            ?: entry.metadata.mimeType
+        launchExternalViewIntent(entry.uri, effectiveMime, entry.metadata.name)
     }
 
     private fun launchExternalViewIntent(targetUri: Uri, mimeType: String? = null, displayName: String? = null) {
@@ -2417,7 +3946,10 @@ class MainActivity : Activity() {
         } else {
             targetUri
         }
+        val fileName = displayName ?: targetUri.lastPathSegment ?: ""
+        val pkgMime = ArchiveFormats.packageMimeType(fileName)
         val resolvedMime = when {
+            pkgMime != null -> pkgMime
             !mimeType.isNullOrBlank() && mimeType != "application/octet-stream" && mimeType != "text/uri-list" -> mimeType
             scheme == "file" && targetUri.path != null -> resolveMimeType(shareableUri, File(targetUri.path!!), mimeType ?: "")
             else -> try { contentResolver.getType(shareableUri) } catch (_: Exception) { null } ?: mimeType ?: "*/*"
@@ -2427,6 +3959,11 @@ class MainActivity : Activity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             clipData = ClipData.newRawUri(displayName ?: shareableUri.lastPathSegment ?: "file", shareableUri)
+        }
+        val resInfoList = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        for (resolveInfo in resInfoList) {
+            grantUriPermission(resolveInfo.activityInfo.packageName, shareableUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         }
         try {
             startActivity(intent)
@@ -2461,11 +3998,56 @@ class MainActivity : Activity() {
                 val source = providerRegistry.sourceTypes().firstOrNull { it.id == connection.sourceTypeId }
                 val icon = source?.icon ?: "🌐"
                 val detail = connection.endpoint ?: "Saved connection · provider not implemented"
-                tail += HomeItem(icon, connection.displayName, detail, {
-                    dialogBuilder().setTitle(connection.displayName)
-                        .setMessage("This ${source?.label ?: connection.sourceTypeId} connection is saved, but network browsing is not implemented yet.")
-                        .setPositiveButton("OK", null).show()
-                }, { showSavedConnectionActions(connection) })
+                if (connection.sourceTypeId == "sftp") {
+                    val rootUri = SftpUri.build(connection.id, connection.options["initialPath"] ?: "/")
+                    tail += HomeItem(
+                        icon = icon,
+                        title = connection.displayName,
+                        detail = "${connection.endpoint ?: "SFTP"} · ${connection.options["username"] ?: "user"}",
+                        action = { openRoot(rootUri, rememberAuthorizedRoot = false) },
+                        longAction = { showSavedConnectionActions(connection) },
+                        treeKey = "sftp_${connection.id}",
+                        treeUri = rootUri,
+                        treeExpandable = true
+                    )
+                } else if (connection.sourceTypeId == "ftp") {
+                    val rootUri = FtpUri.build(connection.id, connection.options["initialPath"] ?: "/")
+                    val userLabel = if (connection.options["isAnonymous"] == "true") "anonymous" else (connection.options["username"] ?: "user")
+                    tail += HomeItem(
+                        icon = icon,
+                        title = connection.displayName,
+                        detail = "${connection.endpoint ?: "FTP"} · $userLabel",
+                        action = { openRoot(rootUri, rememberAuthorizedRoot = false) },
+                        longAction = { showSavedConnectionActions(connection) },
+                        treeKey = "ftp_${connection.id}",
+                        treeUri = rootUri,
+                        treeExpandable = true
+                    )
+                } else if (connection.sourceTypeId == "smb") {
+                    val initialPath = if (!connection.options["initialShare"].isNullOrBlank()) {
+                        "/${connection.options["initialShare"]!!.trim('/')}"
+                    } else {
+                        connection.options["initialPath"] ?: "/"
+                    }
+                    val rootUri = SmbUri.build(connection.id, initialPath)
+                    val userLabel = if (connection.options["isGuest"] == "true") "guest" else (connection.options["username"]?.ifEmpty { "guest" } ?: "guest")
+                    tail += HomeItem(
+                        icon = icon,
+                        title = connection.displayName,
+                        detail = "${connection.endpoint ?: "SMB"} · $userLabel",
+                        action = { openRoot(rootUri, rememberAuthorizedRoot = false) },
+                        longAction = { showSavedConnectionActions(connection) },
+                        treeKey = "smb_${connection.id}",
+                        treeUri = rootUri,
+                        treeExpandable = true
+                    )
+                } else {
+                    tail += HomeItem(icon, connection.displayName, detail, {
+                        dialogBuilder().setTitle(connection.displayName)
+                            .setMessage("This ${source?.label ?: connection.sourceTypeId} connection is saved, but network browsing is not implemented yet.")
+                            .setPositiveButton("OK", null).show()
+                    }, { showSavedConnectionActions(connection) })
+                }
             }
             tail += HomeItem("📱", "Application public", "Storage exposed by applications", {
                 showApplicationPublic()
@@ -2490,7 +4072,7 @@ class MainActivity : Activity() {
                 contentResolver.persistedUriPermissions
                     .filter { it.isReadPermission && it.uri.pathSegments.contains("tree") }
                     .map { it.uri }
-                    .filterNot { AppDocumentSources.isAppAuthority(it.authority) || AppsUri.isAppsUri(it) }
+                    .filterNot { AppDocumentSources.isAppAuthority(it) || AppsUri.isAppsUri(it) || SftpUri.isSftpUri(it) || FtpUri.isFtpUri(it) || SmbUri.isSmbUri(it) || ArchiveUri.isArchiveUri(it) }
                     .distinctBy(::sourceIdentity)
                     .toMutableList()
             } catch (_: Exception) {
@@ -2498,9 +4080,9 @@ class MainActivity : Activity() {
             }
             shared.getString("root", null)?.let { rootString ->
                 val uri = Uri.parse(rootString)
-                if (AppsUri.isAppsUri(uri)) {
-                    shared.edit().remove("root").apply()
-                } else if (!localProvider.owns(uri) && !AppDocumentSources.isAppAuthority(uri.authority) &&
+                if (AppsUri.isAppsUri(uri) || SftpUri.isSftpUri(uri) || FtpUri.isFtpUri(uri) || SmbUri.isSmbUri(uri) || ArchiveUri.isArchiveUri(uri)) {
+                    // Virtual / remote roots are not SAF document trees
+                } else if (!localProvider.owns(uri) && !AppDocumentSources.isAppAuthority(uri) &&
                     grantedRoots.none { sourceIdentity(it) == sourceIdentity(uri) }) {
                     grantedRoots.add(uri)
                 }
@@ -2509,6 +4091,7 @@ class MainActivity : Activity() {
             val discoveredItems = mutableListOf<HomeItem>()
             val pathsToResolve = mutableListOf<Pair<Uri, String>>()
             grantedRoots.forEach { uri ->
+                if (SftpUri.isSftpUri(uri) || FtpUri.isFtpUri(uri) || SmbUri.isSmbUri(uri) || ArchiveUri.isArchiveUri(uri)) return@forEach
                 if (hasLocalAccess && isPrimaryExternalStorageUri(uri)) return@forEach
                 val name = shared.getString("source_name_${uri}", null) ?: "Storage folder"
                 val cachedPath = shared.getString("source_path_v2_${uri}", null)
@@ -2727,14 +4310,25 @@ class MainActivity : Activity() {
         }
         if (visibleItems.isEmpty()) return
         if (grid) {
-            val availableWidth = (resources.configuration.screenWidthDp - if (treeVisible) 220 else 32).coerceAtLeast(iconSizeDp)
-            val columns = (availableWidth / (iconSizeDp + iconSizeDp / 2)).coerceIn(1, 8)
-            val table = TableLayout(this).apply { isStretchAllColumns = true }
+            val containerPx = if (content.width > 0) content.width else if (fileScroll.width > 0) fileScroll.width else 0
+            val availableWidth = if (containerPx > 0) {
+                (containerPx / resources.displayMetrics.density).roundToInt()
+            } else {
+                (resources.configuration.screenWidthDp - if (treeVisible) 220 else 32).coerceAtLeast(iconSizeDp)
+            }
+            val columns = gridColumns(availableWidth)
+            val table = TableLayout(this).apply {
+                clipChildren = false
+                clipToPadding = false
+                isStretchAllColumns = true
+            }
             visibleItems.chunked(columns).forEach { group ->
-                val row = TableRow(this)
-                val height = dp(iconSizeDp + iconSizeDp / 2 + 52)
-                group.forEach { item -> row.addView(homeItemCard(item, true), TableRow.LayoutParams(0, height, 1f)) }
-                repeat(columns - group.size) { row.addView(View(this), TableRow.LayoutParams(0, height, 1f)) }
+                val row = TableRow(this).apply {
+                    clipChildren = false
+                    clipToPadding = false
+                }
+                group.forEach { item -> row.addView(homeItemCard(item, true), TableRow.LayoutParams(0, TableRow.LayoutParams.WRAP_CONTENT, 1f)) }
+                repeat(columns - group.size) { row.addView(View(this), TableRow.LayoutParams(0, TableRow.LayoutParams.WRAP_CONTENT, 1f)) }
                 table.addView(row)
             }
             content.addView(table)
@@ -2743,26 +4337,44 @@ class MainActivity : Activity() {
     private fun homeItemCard(item: HomeItem, asGrid: Boolean): View {
         val box = LinearLayout(this).apply {
             orientation = if (asGrid) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
-            gravity = if (asGrid) Gravity.CENTER else Gravity.CENTER_VERTICAL
-            setPadding(dp(10), dp(8), dp(10), dp(8)); minimumHeight = dp(64)
+            gravity = if (asGrid) (Gravity.TOP or Gravity.CENTER_HORIZONTAL) else Gravity.CENTER_VERTICAL
+            clipChildren = false
+            clipToPadding = false
+            val hPad = if (asGrid) dp(2) else dp(10)
+            val vPad = if (asGrid) dp(4) else dp(8)
+            setPadding(hPad, vPad, hPad, vPad); minimumHeight = dp(64)
             setBackgroundResource(android.R.drawable.list_selector_background)
         }
         val iconSize = if (asGrid) iconSizeDp else 28
         val iconWidth = if (asGrid) dp(iconSize) else dp(52)
         val iconHeight = if (asGrid) dp(iconSize) else dp(48)
         val iconFrame = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
             val iconParams = LinearLayout.LayoutParams(iconWidth, iconHeight).apply {
                 gravity = if (asGrid) Gravity.CENTER_HORIZONTAL else Gravity.CENTER_VERTICAL
-                if (asGrid) bottomMargin = dp(6)
+                if (asGrid) bottomMargin = dp(4)
             }
             layoutParams = iconParams
         }
-        iconFrame.addView(TextView(this).apply {
-            text = item.icon
-            setTextSize(TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp.toFloat() else 28f)
-            gravity = Gravity.CENTER
-            includeFontPadding = false
-        }, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+        val themePlaceBmp = if (iconThemeManager.hasActiveTheme()) {
+            val key = item.treeParentKey ?: item.treeKey ?: item.title
+            iconThemeManager.resolvePlaceIcon(key, iconWidth)
+        } else null
+
+        if (themePlaceBmp != null) {
+            iconFrame.addView(ImageView(this).apply {
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setImageBitmap(themePlaceBmp)
+            }, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+        } else {
+            iconFrame.addView(TextView(this).apply {
+                text = item.icon
+                setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+            }, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+        }
         if (item.needsAccessBadge) {
             iconFrame.addView(accessBadge().apply { setOnClickListener { activateHomeItem(item) } }, FrameLayout.LayoutParams(dp(20), dp(20), Gravity.END or Gravity.TOP))
         }
@@ -2805,7 +4417,8 @@ class MainActivity : Activity() {
             when {
                 item.treeKey == "application_public" -> item.action()
                 item.providerAuthority != null -> item.action()
-                item.initialUri != null -> rootPicker(item.initialUri, item.treeKey)
+                item.treeKey?.startsWith("sftp_") == true || item.treeKey?.startsWith("ftp_") == true || item.treeKey?.startsWith("smb_") == true -> item.action()
+                item.initialUri != null && !SftpUri.isSftpUri(item.initialUri) && !FtpUri.isFtpUri(item.initialUri) && !SmbUri.isSmbUri(item.initialUri) -> rootPicker(item.initialUri, item.treeKey)
                 else -> item.action()
             }
         } else item.action()
@@ -2823,19 +4436,19 @@ class MainActivity : Activity() {
         resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT &&
             resources.configuration.screenWidthDp < 600
     private fun updateBrowserPanes() {
-        if (!::treePanel.isInitialized || !::fileScroll.isInitialized) return
+        if (!::treePanel.isInitialized || !::fileScroll.isInitialized || !::fileScrollContainer.isInitialized) return
         val treeOnly = treeVisible && isCompactPortrait()
         treePanel.visibility = if (treeVisible) View.VISIBLE else View.GONE
-        fileScroll.visibility = if (treeOnly) View.GONE else View.VISIBLE
+        fileScrollContainer.visibility = if (treeOnly) View.GONE else View.VISIBLE
         (treePanel.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
             params.width = if (treeOnly) LinearLayout.LayoutParams.MATCH_PARENT else dp(180)
             params.weight = 0f
             treePanel.layoutParams = params
         }
-        (fileScroll.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+        (fileScrollContainer.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
             params.width = 0
             params.weight = if (treeOnly) 0f else 1f
-            fileScroll.layoutParams = params
+            fileScrollContainer.layoutParams = params
         }
         browserArea.requestLayout()
     }
@@ -2872,12 +4485,13 @@ class MainActivity : Activity() {
             node.onOpen = action
             node.canExpand = item.treeExpandable
             node.onLongPress = item.longAction
-            node.needsAccessBadge = item.needsAccessBadge && key != "installed_apps"
+            node.needsAccessBadge = item.needsAccessBadge && key != "installed_apps" && !key.startsWith("sftp_") && !key.startsWith("ftp_") && !key.startsWith("smb_")
             node.onRequestAccess = when {
                 !node.needsAccessBadge -> null
                 key == "internal_shared" -> item.action
                 key == "application_public" -> item.action
-                item.initialUri != null -> ({ rootPicker(item.initialUri, key) })
+                key.startsWith("sftp_") || key.startsWith("ftp_") || key.startsWith("smb_") -> item.action
+                item.initialUri != null && !SftpUri.isSftpUri(item.initialUri) && !FtpUri.isFtpUri(item.initialUri) && !SmbUri.isSmbUri(item.initialUri) -> ({ rootPicker(item.initialUri, key) })
                 else -> item.action
             }
             if (key == "internal_shared") {
@@ -3276,11 +4890,11 @@ class MainActivity : Activity() {
                         node.children.clear()
                         val folders = result.value.filter {
                             !AppsUri.isAppUri(it.uri) &&
-                            (it.metadata.isDirectory || ArchiveFormats.isArchive(it.metadata.name, it.metadata.mimeType)) &&
+                            (it.metadata.isDirectory || ArchiveFormats.isDefaultBrowsableArchive(it.metadata.name, it.metadata.mimeType)) &&
                             (showHidden || !it.metadata.isHidden)
                         }
                         folders.forEachIndexed { index, child ->
-                            val childIsArchive = !AppsUri.isAppUri(child.uri) && ArchiveFormats.isArchive(child.metadata.name, child.metadata.mimeType)
+                            val childIsArchive = !AppsUri.isAppUri(child.uri) && ArchiveFormats.isDefaultBrowsableArchive(child.metadata.name, child.metadata.mimeType)
                             val childUri = if (childIsArchive && !ArchiveUri.isArchiveUri(child.uri)) ArchiveUri.toArchiveUri(child.uri) else child.uri
                             val icon = if (childIsArchive) "📦" else "📁"
                             lateinit var childNode: TreeNode
@@ -3311,7 +4925,7 @@ class MainActivity : Activity() {
                                 node.onRequestAccess = { requestSharedStorageAccess() }
                                 requestSharedStorageAccess()
                             }
-                        } else if (isAccessFailure(result.message, result.cause)) {
+                        } else if (!ArchiveUri.isArchiveUri(uri) && !AppsUri.isAppsUri(uri) && !SftpUri.isSftpUri(uri) && !FtpUri.isFtpUri(uri) && !SmbUri.isSmbUri(uri) && isAccessFailure(result.message, result.cause)) {
                             node.needsAccessBadge = true
                             node.onRequestAccess = { rootPicker(node.uri, "tree_permission_regrant") }
                             node.onRequestAccess?.invoke()
@@ -3532,13 +5146,15 @@ class MainActivity : Activity() {
         showHomeRoot()
     }
     private fun showOptions() {
+        val currentThemeName = iconThemeManager.getActiveThemeInfo()?.name ?: "System emojis"
         val choices = arrayOf(
             if (grid) "List / details view" else "Grid view",
             if (sortByName) "Sort by modified" else "Sort by name",
             if (showHidden) "Hide hidden files" else "Show hidden files",
             if (dark) "Light theme" else "Dark theme",
             "Operations",
-            "Icon size (${iconSizeDp} dp)"
+            "Icon size (${iconSizeDp} dp)",
+            "Icon theme ($currentThemeName)"
         )
         dialogBuilder().setTitle("View options").setItems(choices) { _, i -> when (i) {
             0 -> { grid = !grid; shared.edit().putBoolean("grid", grid).apply(); renderCurrentContents() }
@@ -3556,7 +5172,188 @@ class MainActivity : Activity() {
             3 -> { dark = !dark; shared.edit().putBoolean("dark", dark).apply(); buildUi(); if (homeMode) showHomeRoot() else current?.let { load(it) } }
             4 -> showOperations()
             5 -> showIconSizeDialog()
+            6 -> showIconThemeDialog()
         } }.show()
+    }
+
+    private fun showIconThemeDialog() {
+        val availableThemes = iconThemeManager.listAvailableThemes()
+        val activeId = iconThemeManager.getActiveThemeId()
+
+        val themeItems = mutableListOf<IconThemeInfo?>()
+        themeItems.add(null) // null = default system emojis
+        themeItems.addAll(availableThemes)
+
+        var selectedIndex = themeItems.indexOfFirst {
+            if (it == null) activeId.isNullOrBlank() else it.id == activeId || it.name.equals(activeId, true)
+        }.coerceAtLeast(0)
+
+        val itemLabels = themeItems.map { theme ->
+            if (theme == null) {
+                "Default (InfiniFolder Emojis)"
+            } else {
+                val origin = if (theme.isSystem) "System / Termux" else "Imported"
+                "${theme.name} ($origin)"
+            }
+        }.toTypedArray()
+
+        dialogBuilder()
+            .setTitle("FreeDesktop Icon Themes")
+            .setSingleChoiceItems(itemLabels, selectedIndex) { _, which ->
+                selectedIndex = which
+            }
+            .setPositiveButton("Apply") { _, _ ->
+                val selected = themeItems.getOrNull(selectedIndex)
+                iconThemeManager.setActiveTheme(selected?.id)
+                thumbnailCache.evictAll()
+                renderCurrentContents()
+                rebuildTreeRoots()
+                Toast.makeText(this, "Active icon theme: ${selected?.name ?: "Default emojis"}", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Import…") { _, _ ->
+                showImportThemeOptionsDialog()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showImportThemeOptionsDialog() {
+        val options = arrayOf(
+            "Import theme archive (.tar.gz, .tar.xz, .zip)…",
+            "Scan Termux & system icon themes"
+        )
+        dialogBuilder()
+            .setTitle("Import Icon Theme")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> pickThemeArchiveLauncher()
+                    1 -> {
+                        val count = iconThemeManager.listAvailableThemes().size
+                        Toast.makeText(this, "Found $count icon themes", Toast.LENGTH_SHORT).show()
+                        showIconThemeDialog()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun pickThemeArchiveLauncher() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        try {
+            startActivityForResult(intent, pickThemeArchiveRequest)
+        } catch (_: Exception) {
+            val getIn = Intent(Intent.ACTION_GET_CONTENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+            }
+            try { startActivityForResult(getIn, pickThemeArchiveRequest) }
+            catch (e: Exception) {
+                Toast.makeText(this, "No file picker available: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun installIconThemeFromUri(uri: Uri) {
+        val progress = ProgressDialog(this).apply {
+            setMessage("Analyzing icon theme...")
+            setCancelable(false)
+            show()
+        }
+        val fileName = try {
+            val docId = DocumentsContract.getDocumentId(uri)
+            docId.substringAfterLast('/')
+        } catch (_: Exception) {
+            uri.lastPathSegment ?: "theme.tar.gz"
+        }
+
+        imageIo.execute {
+            try {
+                val info = iconThemeManager.importThemeFromArchive(
+                    openStream = { contentResolver.openInputStream(uri) ?: throw java.io.IOException("Cannot open input stream") },
+                    archiveFileName = fileName
+                ) { msg ->
+                    runOnUiThread { progress.setMessage(msg) }
+                }
+                runOnUiThread {
+                    progress.dismiss()
+                    dialogBuilder()
+                        .setTitle("Theme Installed")
+                        .setMessage("Successfully installed icon theme '${info.name}'.\n\nWould you like to activate it now?")
+                        .setPositiveButton("Activate") { _, _ ->
+                            iconThemeManager.setActiveTheme(info.id)
+                            thumbnailCache.evictAll()
+                            renderCurrentContents()
+                            rebuildTreeRoots()
+                            Toast.makeText(this, "Active icon theme: ${info.name}", Toast.LENGTH_SHORT).show()
+                        }
+                        .setNegativeButton("Keep current", null)
+                        .show()
+                }
+            } catch (t: Throwable) {
+                runOnUiThread {
+                    progress.dismiss()
+                    dialogBuilder()
+                        .setTitle("Theme Import Failed")
+                        .setMessage("Failed to import icon theme: ${t.message}")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }
+    }
+
+    private fun installIconThemeFromEntry(entry: ResourceEntry) {
+        val progress = ProgressDialog(this).apply {
+            setMessage("Installing icon theme...")
+            setCancelable(false)
+            show()
+        }
+        imageIo.execute {
+            try {
+                val info = if (entry.metadata.isDirectory && localProvider.owns(entry.uri)) {
+                    val folder = localProvider.fileFor(entry.uri)
+                    iconThemeManager.importThemeFromDirectory(folder)
+                } else {
+                    iconThemeManager.importThemeFromArchive(
+                        openStream = {
+                            (provider.openRead(entry.ref) as? ProviderResult.Success)?.value
+                                ?: throw java.io.IOException("Cannot read archive")
+                        },
+                        archiveFileName = entry.metadata.name
+                    ) { msg ->
+                        runOnUiThread { progress.setMessage(msg) }
+                    }
+                }
+                runOnUiThread {
+                    progress.dismiss()
+                    dialogBuilder()
+                        .setTitle("Theme Installed")
+                        .setMessage("Successfully installed icon theme '${info.name}'.\n\nWould you like to activate it now?")
+                        .setPositiveButton("Activate") { _, _ ->
+                            iconThemeManager.setActiveTheme(info.id)
+                            thumbnailCache.evictAll()
+                            renderCurrentContents()
+                            rebuildTreeRoots()
+                            Toast.makeText(this, "Active icon theme: ${info.name}", Toast.LENGTH_SHORT).show()
+                        }
+                        .setNegativeButton("Keep current", null)
+                        .show()
+                }
+            } catch (t: Throwable) {
+                runOnUiThread {
+                    progress.dismiss()
+                    dialogBuilder()
+                        .setTitle("Theme Import Failed")
+                        .setMessage("Failed to import icon theme: ${t.message}")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }
     }
     private fun showIconSizeDialog() {
         val context = dialogContext()
@@ -3567,7 +5364,7 @@ class MainActivity : Activity() {
             setPadding(dp(20), dp(16), dp(20), dp(8))
         }
         val slider = SeekBar(context).apply {
-            max = 64
+            max = 88
             progress = iconSizeDp - 32
             setPadding(dp(20), dp(8), dp(20), dp(12))
         }
@@ -3590,6 +5387,35 @@ class MainActivity : Activity() {
                 shared.edit().putInt("icon_size_dp", iconSizeDp).apply()
                 renderCurrentContents()
             }.show()
+    }
+    private fun showPinchIndicator(text: String) {
+        val indicator = pinchIndicator ?: TextView(this).apply {
+            textSize = 14f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setTextColor(0xFFFFFFFF.toInt())
+            background = GradientDrawable().apply {
+                cornerRadius = dp(20).toFloat()
+                setColor(0xCC1A1E19.toInt())
+                setStroke(dp(1), 0x66FFFFFF.toInt())
+            }
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            elevation = dp(6).toFloat()
+            val lp = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.CENTER
+            }
+            fileScrollContainer.addView(this, lp)
+            pinchIndicator = this
+        }
+        indicator.text = text
+        indicator.visibility = View.VISIBLE
+        indicator.alpha = 1f
+        indicator.animate().cancel()
+    }
+
+    private fun hidePinchIndicator() {
+        pinchIndicator?.animate()?.alpha(0f)?.setDuration(350)?.withEndAction {
+            pinchIndicator?.visibility = View.GONE
+        }?.start()
     }
     private val operationsListener: (List<OperationSnapshot>) -> Unit = { snapshots ->
         runOnUiThread {
@@ -3927,6 +5753,9 @@ class MainActivity : Activity() {
                 OperationState.FAILED -> {
                     progressTitleView?.text = "${op.label} failed"
                     progressCurrentItemView?.text = op.message ?: "Operation failed"
+                    if (op.message?.contains("mounted", ignoreCase = true) == true) {
+                        notifyMountedPartitionBlocked(op.label, op.message ?: "Partition is mounted")
+                    }
                 }
                 else -> Unit
             }
@@ -3963,6 +5792,7 @@ class MainActivity : Activity() {
         val isShortcut = isSingle && ShortcutInfo.isShortcut(currentEntry.metadata.name, currentEntry.metadata.mimeType)
         var shortcut = if (isShortcut) shortcutCache.get(currentEntry.uri.toString()) else null
         val isDirectory = isSingle && !isShortcut && currentEntry.metadata.isDirectory
+        val isPackagedFormat = isSingle && !AppsUri.isAppUri(currentEntry.uri) && ArchiveFormats.isPackagedFormat(currentEntry.metadata.name, currentEntry.metadata.mimeType)
         val isArchive = isSingle && !AppsUri.isAppUri(currentEntry.uri) && ArchiveFormats.isArchive(currentEntry.metadata.name, currentEntry.metadata.mimeType)
         val inArchive = isSingle && ArchiveUri.isArchiveUri(currentEntry.uri)
         val isFile = isSingle && !isShortcut && !currentEntry.metadata.isDirectory && !AppsUri.isAppsUri(currentEntry.uri)
@@ -4025,6 +5855,8 @@ class MainActivity : Activity() {
                 }
             }
             setPadding(dp(6), dp(6), dp(6), dp(6))
+            clipChildren = false
+            clipToPadding = false
             isClickable = isSingle
             isFocusable = isSingle
         }
@@ -4036,6 +5868,7 @@ class MainActivity : Activity() {
             isShortcut && shortcut != null && runCatching { AppsUri.isAppUri(Uri.parse(shortcut?.targetUri)) }.getOrDefault(false) -> "📱"
             AppsUri.isCategoryUri(currentEntry.uri) -> appsProvider.getCategoryIcon(AppsUri.getCategoryName(currentEntry.uri) ?: currentEntry.metadata.name)
             isDirectory -> "📁"
+            isPackagedFormat -> iconFor(currentEntry.metadata)
             isArchive -> "📦"
             else -> iconFor(currentEntry.metadata)
         }
@@ -4044,7 +5877,6 @@ class MainActivity : Activity() {
             text = fallbackEmoji
             setTextSize(TypedValue.COMPLEX_UNIT_DIP, 34f)
             gravity = Gravity.CENTER
-            includeFontPadding = false
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
 
@@ -4059,6 +5891,15 @@ class MainActivity : Activity() {
         fun loadHeaderIcon() {
             if (!isSingle) return
             val decodePx = dp(64)
+            if (currentEntry.metadata.name.endsWith(".apk", ignoreCase = true) && localProvider.owns(currentEntry.uri)) {
+                val localFile = localProvider.fileFor(currentEntry.uri)
+                val apkIcon = appsProvider.getApkFileIconBitmap(localFile.absolutePath, decodePx)
+                if (apkIcon != null) {
+                    iconImage.setImageBitmap(apkIcon)
+                    iconPlaceholder.visibility = View.GONE
+                    return
+                }
+            }
             if (isShortcut) {
                 val cachedInfo = shortcutCache.get(currentEntry.uri.toString())
                 if (cachedInfo != null && !cachedInfo.iconBase64.isNullOrBlank()) {
@@ -4275,11 +6116,39 @@ class MainActivity : Activity() {
             isSingle && AppsUri.isAppUri(currentEntry.uri) -> "Android Application (APK)"
             isSingle && AppsUri.isCategoryUri(currentEntry.uri) -> "Virtual Application Category"
             isDirectory -> "Folder"
+            isPackagedFormat -> {
+                val ext = currentEntry.metadata.name.substringAfterLast('.', "").uppercase(Locale.ROOT)
+                val mime = currentEntry.metadata.mimeType
+                if (ext.isNotEmpty()) " Package ()" else "Package ()"
+            }
             isArchive -> "Archive (${currentEntry.metadata.mimeType})"
             else -> currentEntry.metadata.mimeType.ifEmpty { "File" }
         }
         val typeView = textValue(typeDesc)
         propertyRow("Type", typeView)
+
+        if (isFile && !isPackagedFormat) {
+            io.execute {
+                val magic = if (localProvider.owns(currentEntry.uri)) {
+                    val file = localProvider.fileFor(currentEntry.uri)
+                    com.infinifolder.storage.FileMagicDetector.detect(file, peekCompressedPayload = true)
+                } else {
+                    try {
+                        com.infinifolder.storage.FileMagicDetector.detectFromStream {
+                            (provider.openRead(currentEntry.ref) as? ProviderResult.Success)?.value
+                                ?: throw java.io.IOException("Cannot open stream")
+                        }
+                    } catch (_: Throwable) { null }
+                }
+                if (magic != null) {
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) {
+                            typeView.text = "${magic.description} (${magic.mimeType})"
+                        }
+                    }
+                }
+            }
+        }
 
         // If app or category, show app info
         if (isSingle && AppsUri.isAppUri(currentEntry.uri)) {
@@ -4588,9 +6457,10 @@ class MainActivity : Activity() {
 
     private fun showGroupedMenuDialog(
         title: String,
+        subtitle: CharSequence? = null,
         groups: List<List<String>>,
         onAction: (String) -> Unit
-    ) {
+    ): android.app.AlertDialog {
         val context = dialogContext()
         val nonEmptyGroups = groups.map { it.filter(String::isNotBlank) }.filter { it.isNotEmpty() }
         val listLayout = LinearLayout(context).apply {
@@ -4629,20 +6499,70 @@ class MainActivity : Activity() {
             }
         }
         val scroll = ScrollView(context).apply { addView(listLayout) }
-        dialog = dialogBuilder()
-            .setTitle(title)
+        val builder = dialogBuilder()
+        if (subtitle != null) {
+            val titleContainer = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(24), dp(18), dp(24), dp(8))
+                val titleView = TextView(context).apply {
+                    text = title
+                    textSize = 18f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    setTextColor(setTextColorForTheme())
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    maxLines = 2
+                }
+                addView(titleView)
+                val subView = TextView(context).apply {
+                    id = android.R.id.text2
+                    text = subtitle
+                    textSize = 13f
+                    setTextColor(if (dark) 0xFF9BA994.toInt() else 0xFF687363.toInt())
+                    setPadding(0, dp(3), 0, 0)
+                    visibility = if (subtitle.isNotEmpty()) View.VISIBLE else View.GONE
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    maxLines = 2
+                }
+                addView(subView)
+            }
+            builder.setCustomTitle(titleContainer)
+        } else {
+            builder.setTitle(title)
+        }
+        dialog = builder
             .setView(scroll)
             .create()
-        dialog?.show()
+        dialog.show()
+        return dialog
     }
 
     private fun showEntryMenu(entry: ResourceEntry) {
         val isShortcut = ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)
         val shortcut = if (isShortcut) (shortcutCache.get(entry.uri.toString()) ?: readShortcutInfo(entry)) else null
-        val isArchive = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isArchive(entry.metadata.name, entry.metadata.mimeType)
         val inArchive = ArchiveUri.isArchiveUri(entry.uri)
         val isApp = AppsUri.isAppUri(entry.uri)
         val isCategory = AppsUri.isCategoryUri(entry.uri)
+        val isFile = !entry.metadata.isDirectory && !isApp && !isCategory && !isShortcut
+
+        val detectedMagic = if (isFile) {
+            ambiguousMagicCache.get(entry.uri.toString()) ?: run {
+                if (localProvider.owns(entry.uri)) {
+                    val file = localProvider.fileFor(entry.uri)
+                    FileMagicDetector.detect(file, peekCompressedPayload = true)?.also {
+                        ambiguousMagicCache.put(entry.uri.toString(), it)
+                    }
+                } else null
+            }
+        } else null
+
+        val isArchive = !isApp && (
+            ArchiveFormats.isArchive(entry.metadata.name, entry.metadata.mimeType) ||
+            (detectedMagic != null && (detectedMagic.isArchiveOrDiscImage || ArchiveFormats.isArchive(entry.metadata.name, detectedMagic.mimeType)))
+        )
+        val isPackagedFormat = !isApp && (
+            ArchiveFormats.isPackagedFormat(entry.metadata.name, entry.metadata.mimeType) ||
+            (detectedMagic != null && ArchiveFormats.isPackagedFormat(entry.metadata.name, detectedMagic.mimeType))
+        )
         val canExtractApp = if (isApp) {
             val pkg = AppsUri.getPackageName(entry.uri)
             pkg != null && appsProvider.canExtract(pkg)
@@ -4665,31 +6585,94 @@ class MainActivity : Activity() {
                     else -> listOf("Open target file", "Open target with external app")
                 }
             }
+            isPackagedFormat -> {
+                if (inArchive) listOf("Open", "Browse archive")
+                else listOf("Open", "Browse archive", "Open with external app")
+            }
             inArchive && entry.metadata.isDirectory -> listOf("Browse folder")
+            inArchive && isArchive -> listOf("Browse archive", "Open")
             inArchive -> listOf("Open")
             isArchive -> listOf("Browse archive", "Open with external app")
             entry.metadata.isDirectory -> listOf("Browse folder")
             else -> listOf("Open", "Open with external app")
         }
 
+        val canCopyContents = !entry.metadata.isDirectory && !isApp && !isCategory &&
+            (isTextEntry(entry, detectedMagic) || isImageEntry(entry, detectedMagic))
+        val isArchiveEntry = ArchiveUri.isArchiveUri(entry.uri)
+        val isWritableArchiveEntry = isArchiveEntry && archiveProvider.isWritable(entry.uri)
+        val canPaste = entry.metadata.isDirectory && !AppsUri.isAppsUri(entry.uri) && (!isArchiveEntry || isWritableArchiveEntry)
+
         val fileOpsGroup: List<String> = when {
             isApp -> {
                 if (canExtractApp) {
-                    listOf("Select", "Create shortcut", "Create archive", "Copy to…", "Move to…", "Uninstall")
+                    listOf("Select", "Copy", "Create shortcut", "Create archive", "Copy to…", "Move to…", "Uninstall")
                 } else {
-                    listOf("Select", "Create shortcut", "Uninstall")
+                    listOf("Select", "Copy", "Create shortcut", "Uninstall")
                 }
             }
-            isCategory -> listOf("Select", "Copy to…", "Create shortcut")
-            isShortcut -> listOf("Select", "Create archive", "Copy to…", "Move to…", "Delete")
-            inArchive -> listOf("Create shortcut")
-            else -> listOf("Select", "Create shortcut", "Create archive", "Copy to…", "Move to…", "Delete")
+            isCategory -> listOf("Select", "Copy", "Copy to…", "Create shortcut")
+            isShortcut -> listOf("Select", "Copy", "Create archive", "Copy to…", "Move to…", "Rename", "Delete")
+            inArchive -> {
+                val list = mutableListOf("Select", "Copy")
+                if (canCopyContents) list.add("Copy contents")
+                if (canPaste) list.add("Paste into folder")
+                list.add("Create shortcut")
+                if (isWritableArchiveEntry) {
+                    list.add("Delete")
+                }
+                list
+            }
+            else -> {
+                val list = mutableListOf("Select", "Copy")
+                if (canCopyContents) list.add("Copy contents")
+                if (canPaste) list.add("Paste into folder")
+                list.addAll(listOf("Create shortcut", "Create archive", "Copy to…", "Move to…", "Rename", "Delete"))
+                val lower = entry.metadata.name.lowercase(Locale.ROOT)
+                val isThemeArchive = isArchive && (lower.endsWith(".tar.gz") || lower.endsWith(".tar.xz") || lower.endsWith(".tar.bz2") || lower.endsWith(".tgz") || lower.endsWith(".txz") || lower.endsWith(".zip"))
+                if (isThemeArchive || (entry.metadata.isDirectory && (lower.contains("icon") || lower.contains("theme")))) {
+                    list.add("Install as icon theme")
+                }
+                list
+            }
         }
 
         val propertiesGroup = listOf("Properties")
 
-        showGroupedMenuDialog(
+        val initialSubtitle = when {
+            isApp -> {
+                val pkg = AppsUri.getPackageName(entry.uri)
+                val appItem = if (pkg != null) appsProvider.getAppItem(pkg) else null
+                if (appItem?.versionName != null) "Android Application · v${appItem.versionName}" else "Android Application"
+            }
+            isCategory -> "Virtual Application Category"
+            isShortcut -> {
+                val target = shortcut?.targetPath ?: shortcut?.targetUri
+                if (!target.isNullOrBlank()) "Shortcut (.lnk) → $target" else "Shortcut (.lnk)"
+            }
+            entry.metadata.isDirectory -> if (inArchive) "Folder in archive" else "Folder"
+            isPackagedFormat -> {
+                val pkgMime = ArchiveFormats.packageMimeType(entry.metadata.name)
+                val ext = entry.metadata.name.substringAfterLast('.', "").uppercase(Locale.ROOT)
+                " Application Package · ${pkgMime ?: entry.metadata.mimeType}"
+            }
+            detectedMagic != null -> "${detectedMagic.description} · ${detectedMagic.mimeType}"
+            else -> {
+                val mime = entry.metadata.mimeType.ifEmpty {
+                    com.infinifolder.archive.ArchiveMimeTypes.guessMimeType(entry.metadata.name, false)
+                }
+                when {
+                    inArchive -> "File in archive · ${mime.ifEmpty { "unknown type" }}"
+                    mime.isNotEmpty() && mime != "application/octet-stream" -> mime
+                    FileMagicDetector.isAmbiguousOrUnknown(entry.metadata.name, entry.metadata.mimeType) -> "Detecting file type…"
+                    else -> "File"
+                }
+            }
+        }
+
+        val dialog = showGroupedMenuDialog(
             title = entry.metadata.name,
+            subtitle = initialSubtitle,
             groups = listOf(openGroup, fileOpsGroup, propertiesGroup)
         ) { action ->
             when (action) {
@@ -4714,17 +6697,64 @@ class MainActivity : Activity() {
                 "Open link", "Open target URI", "Open target folder", "Open target file" -> openShortcut(entry)
                 "Open target with external app" -> openShortcutWithExternalApp(entry)
                 "Browse folder" -> navigate(entry.uri, displayName = entry.metadata.name)
-                "Browse archive" -> {
-                    val archiveUri = ArchiveUri.toArchiveUri(entry.uri)
-                    navigate(archiveUri, displayName = entry.metadata.name)
+                "Browse archive", "Browse" -> {
+                    if (inArchive) {
+                        val nestedVirtualPath = if (historyNames.isNotEmpty()) (historyNames + entry.metadata.name).joinToString("/") else null
+                        io.execute {
+                            try {
+                                val cached = archiveProvider.extractToCache(entry.uri, nestedVirtualPath)
+                                val fileUri = Uri.fromFile(cached)
+                                val nestedUri = ArchiveUri.toArchiveUri(fileUri)
+                                runOnUiThread { navigate(nestedUri, displayName = entry.metadata.name) }
+                            } catch (e: Exception) {
+                                runOnUiThread { Toast.makeText(this@MainActivity, "Could not open archive: ${e.message}", Toast.LENGTH_SHORT).show() }
+                            }
+                        }
+                    } else {
+                        val archiveUri = ArchiveUri.toArchiveUri(entry.uri)
+                        navigate(archiveUri, displayName = entry.metadata.name)
+                    }
                 }
                 "Open with external app" -> {
-                    launchExternalViewIntent(entry.uri, entry.metadata.mimeType, entry.metadata.name)
+                    val pkgMime = ArchiveFormats.packageMimeType(entry.metadata.name)
+                    val mime = pkgMime
+                        ?: (ambiguousMagicCache.get(entry.uri.toString()) ?: detectedMagic)?.mimeType
+                        ?.takeIf { it.isNotEmpty() } ?: entry.metadata.mimeType
+                    if (SftpUri.isSftpUri(entry.uri) || FtpUri.isFtpUri(entry.uri) || SmbUri.isSmbUri(entry.uri)) {
+                        open(entry)
+                    } else {
+                        launchExternalViewIntent(entry.uri, mime, entry.metadata.name)
+                    }
                 }
                 "Open" -> {
+                    val effectiveIsArchive = isArchive ||
+                        (ambiguousMagicCache.get(entry.uri.toString())?.let { it.isArchiveOrDiscImage || ArchiveFormats.isArchive(entry.metadata.name, it.mimeType) } == true)
+                    val effectiveIsPackaged = isPackagedFormat ||
+                        (ambiguousMagicCache.get(entry.uri.toString())?.let { ArchiveFormats.isPackagedFormat(entry.metadata.name, it.mimeType) } == true)
                     if (entry.metadata.isDirectory) navigate(entry.uri, displayName = entry.metadata.name)
-                    else if (isArchive) navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
-                    else open(entry)
+                    else if (effectiveIsArchive && !effectiveIsPackaged) {
+                        if (inArchive) {
+                            val nestedVirtualPath = if (historyNames.isNotEmpty()) (historyNames + entry.metadata.name).joinToString("/") else null
+                            io.execute {
+                                try {
+                                    val cached = archiveProvider.extractToCache(entry.uri, nestedVirtualPath)
+                                    val fileUri = Uri.fromFile(cached)
+                                    val nestedUri = ArchiveUri.toArchiveUri(fileUri)
+                                    runOnUiThread { navigate(nestedUri, displayName = entry.metadata.name) }
+                                } catch (e: Exception) {
+                                    runOnUiThread { Toast.makeText(this@MainActivity, "Could not open archive: ${e.message}", Toast.LENGTH_SHORT).show() }
+                                }
+                            }
+                        } else {
+                            navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
+                        }
+                    } else {
+                        val magic = ambiguousMagicCache.get(entry.uri.toString()) ?: detectedMagic
+                        val effectiveEntry = if (magic != null && magic.mimeType != entry.metadata.mimeType) {
+                            entry.copy(metadata = entry.metadata.copy(mimeType = magic.mimeType))
+                        } else entry
+                        open(effectiveEntry)
+                    }
                 }
                 "Select" -> {
                     selectionMode = true
@@ -4733,16 +6763,434 @@ class MainActivity : Activity() {
                     renderCurrentContents()
                     updateListingStatus()
                 }
+                "Copy" -> copyEntriesToClipboard(listOf(entry))
+                "Copy contents" -> copyEntryContentsToClipboard(entry, detectedMagic)
+                "Paste into folder", "Paste" -> pasteFromClipboard(entry.uri)
                 "Create shortcut" -> promptCreateShortcut(entry)
                 "Create archive" -> promptCreateArchive(listOf(entry))
                 "Copy to…" -> showDestinationPicker(entry, false)
                 "Move to…" -> showDestinationPicker(entry, true)
                 "Rename" -> renameEntry(entry)
                 "Delete" -> confirmDelete(entry)
+                "Install as icon theme" -> installIconThemeFromEntry(entry)
                 "Properties" -> showPropertiesDialog(entry)
                 else -> showPropertiesDialog(entry)
             }
         }
+
+        if (isFile && !isPackagedFormat && detectedMagic == null) {
+            io.execute {
+                val magic = try {
+                    if (localProvider.owns(entry.uri)) {
+                        FileMagicDetector.detect(localProvider.fileFor(entry.uri), peekCompressedPayload = true)
+                    } else {
+                        FileMagicDetector.detectFromStream {
+                            (provider.openRead(entry.ref) as? ProviderResult.Success)?.value
+                                ?: throw java.io.IOException("Cannot open stream")
+                        }
+                    }
+                } catch (_: Exception) { null }
+                if (magic != null) {
+                    ambiguousMagicCache.put(entry.uri.toString(), magic)
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) {
+                            dialog.findViewById<TextView>(android.R.id.text2)?.apply {
+                                text = "${magic.description} · ${magic.mimeType}"
+                                visibility = View.VISIBLE
+                            }
+                        }
+                    }
+                } else if (initialSubtitle == "Detecting file type…") {
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) {
+                            val mime = entry.metadata.mimeType.ifEmpty {
+                                com.infinifolder.archive.ArchiveMimeTypes.guessMimeType(entry.metadata.name, false)
+                            }
+                            dialog.findViewById<TextView>(android.R.id.text2)?.apply {
+                                text = mime.ifEmpty { "Binary / Data File" }
+                                visibility = View.VISIBLE
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun copyEntriesToClipboard(entries: List<ResourceEntry>) {
+        if (entries.isEmpty()) return
+        copiedEntries = entries
+        val clipboard = getSystemService(ClipboardManager::class.java) ?: return
+        val first = entries[0]
+        val clip = if (entries.size == 1) {
+            val item = ClipData.Item(first.uri.toString(), null, first.uri)
+            ClipData(ClipDescription(first.metadata.name, arrayOf("application/x-infinifolder-uri", "text/uri-list", "text/plain")), item)
+        } else {
+            val firstItem = ClipData.Item(first.uri.toString(), null, first.uri)
+            val c = ClipData(ClipDescription("${entries.size} items", arrayOf("application/x-infinifolder-uri", "text/uri-list", "text/plain")), firstItem)
+            for (i in 1 until entries.size) {
+                val e = entries[i]
+                c.addItem(ClipData.Item(e.uri.toString(), null, e.uri))
+            }
+            c
+        }
+        clipboard.setPrimaryClip(clip)
+        val label = if (entries.size == 1) entries[0].metadata.name else "${entries.size} items"
+        Toast.makeText(this, "Copied $label to clipboard", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun isTextEntry(entry: ResourceEntry, detectedMagic: FileMagicResult?): Boolean {
+        val mime = (detectedMagic?.mimeType ?: entry.metadata.mimeType).lowercase(Locale.ROOT)
+        if (mime.startsWith("text/")) return true
+        if (mime in setOf(
+            "application/json", "application/xml", "application/javascript",
+            "application/x-javascript", "application/x-sh", "application/x-shellscript",
+            "application/x-yaml", "application/yaml", "application/toml",
+            "application/sql", "application/x-sql", "application/x-httpd-php"
+        )) return true
+        val ext = entry.metadata.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        val textExts = setOf(
+            "txt", "text", "md", "markdown", "log", "json", "xml", "html", "htm",
+            "css", "js", "ts", "jsx", "tsx", "c", "h", "cpp", "hpp", "java", "kt",
+            "kts", "py", "sh", "bash", "zsh", "rc", "conf", "ini", "yaml", "yml",
+            "toml", "csv", "tsv", "sql", "properties", "gradle", "bat", "cmd", "ps1"
+        )
+        return ext in textExts
+    }
+
+    private fun isImageEntry(entry: ResourceEntry, detectedMagic: FileMagicResult?): Boolean {
+        val mime = (detectedMagic?.mimeType ?: entry.metadata.mimeType).lowercase(Locale.ROOT)
+        if (mime.startsWith("image/")) return true
+        val ext = entry.metadata.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        val imageExts = setOf("png", "jpg", "jpeg", "webp", "gif", "bmp", "ico", "svg", "tif", "tiff", "avif", "heic")
+        return ext in imageExts
+    }
+
+    private fun copyEntryContentsToClipboard(entry: ResourceEntry, detectedMagic: FileMagicResult?) {
+        val isImg = isImageEntry(entry, detectedMagic)
+        val isTxt = isTextEntry(entry, detectedMagic)
+        if (!isImg && !isTxt) {
+            Toast.makeText(this, "Cannot copy contents of this file type.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (isTxt) {
+            io.execute {
+                try {
+                    val streamRes = provider.openRead(entry.ref)
+                    if (streamRes !is ProviderResult.Success) {
+                        throw java.io.IOException((streamRes as? ProviderResult.Failure)?.message ?: "Cannot open file")
+                    }
+                    val text = streamRes.value.bufferedReader(Charsets.UTF_8).use { reader ->
+                        val buffer = CharArray(1024 * 1024 * 4) // up to 4MB text
+                        val read = reader.read(buffer)
+                        if (read > 0) String(buffer, 0, read) else ""
+                    }
+                    runOnUiThread {
+                        val clipboard = getSystemService(ClipboardManager::class.java)
+                        val clip = ClipData.newPlainText(entry.metadata.name, text)
+                        clipboard?.setPrimaryClip(clip)
+                        Toast.makeText(this@MainActivity, "Copied text contents to clipboard", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "Failed to copy contents: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        } else {
+            io.execute {
+                try {
+                    val shareableUri = if (localProvider.owns(entry.uri)) {
+                        val file = localProvider.fileFor(entry.uri)
+                        FileProvider.getUriForFile(this@MainActivity, "${packageName}.files", file)
+                    } else if (entry.uri.scheme == "file" && entry.uri.path != null) {
+                        FileProvider.getUriForFile(this@MainActivity, "${packageName}.files", File(entry.uri.path!!))
+                    } else {
+                        val cacheFile = File(cacheDir, "clip_${System.currentTimeMillis()}_${entry.metadata.name}")
+                        val streamRes = provider.openRead(entry.ref)
+                        if (streamRes !is ProviderResult.Success) {
+                            throw java.io.IOException((streamRes as? ProviderResult.Failure)?.message ?: "Cannot open file")
+                        }
+                        streamRes.value.use { input ->
+                            cacheFile.outputStream().use { output ->
+                                input.copyTo(output, bufferSize = 128 * 1024)
+                            }
+                        }
+                        FileProvider.getUriForFile(this@MainActivity, "${packageName}.files", cacheFile)
+                    }
+                    val mime = (detectedMagic?.mimeType ?: entry.metadata.mimeType).takeIf { it.startsWith("image/") }
+                        ?: com.infinifolder.archive.ArchiveMimeTypes.guessMimeType(entry.metadata.name, false).takeIf { it.startsWith("image/") }
+                        ?: "image/png"
+                    runOnUiThread {
+                        val clipboard = getSystemService(ClipboardManager::class.java)
+                        val clip = ClipData(
+                            ClipDescription(entry.metadata.name, arrayOf(mime)),
+                            ClipData.Item(shareableUri)
+                        ).apply {
+                            description.extras = PersistableBundle().apply {
+                                putBoolean("is_image_content", true)
+                            }
+                        }
+                        grantUriPermission(packageName, shareableUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        clipboard?.setPrimaryClip(clip)
+                        Toast.makeText(this@MainActivity, "Copied image to clipboard", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "Failed to copy image: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun resolveClipboardFileEntries(clip: ClipData): List<ResourceEntry> {
+        val clipUris = (0 until clip.itemCount).mapNotNull {
+            clip.getItemAt(it).uri ?: runCatching { Uri.parse(clip.getItemAt(it).text?.toString()?.trim() ?: "") }.getOrNull()
+        }.filter { it.scheme != null }
+
+        if (clipUris.isEmpty()) return emptyList()
+
+        val cached = copiedEntries
+        if (cached != null && cached.isNotEmpty()) {
+            val cachedMap = cached.associateBy { it.uri }
+            val matched = clipUris.mapNotNull { cachedMap[it] }
+            if (matched.size == clipUris.size) {
+                return matched
+            }
+        }
+
+        val resolved = mutableListOf<ResourceEntry>()
+        for (uri in clipUris) {
+            val scheme = uri.scheme?.lowercase(Locale.ROOT)
+            if (localProvider.owns(uri)) {
+                val f = localProvider.fileFor(uri)
+                if (f.exists()) {
+                    val meta = ResourceMetadata(f.name, if (f.isDirectory) "vnd.android.document/directory" else resolveMimeType(uri, f, ""), f.length(), f.lastModified(), f.isDirectory)
+                    resolved.add(ResourceEntry(resourceRef(uri), meta, uri))
+                }
+            } else if (scheme == "file" && uri.path != null) {
+                val f = File(uri.path!!)
+                if (f.exists()) {
+                    val meta = ResourceMetadata(f.name, if (f.isDirectory) "vnd.android.document/directory" else resolveMimeType(uri, f, ""), f.length(), f.lastModified(), f.isDirectory)
+                    resolved.add(ResourceEntry(resourceRef(uri), meta, uri))
+                }
+            } else if (AppsUri.isAppUri(uri)) {
+                val pkg = AppsUri.getPackageName(uri)
+                if (pkg != null) {
+                    val label = appsProvider.getAppLabel(pkg) ?: pkg
+                    val meta = ResourceMetadata("$label.apk", "application/vnd.android.package-archive", null, null, false)
+                    resolved.add(ResourceEntry(resourceRef(uri), meta, uri))
+                }
+            } else if (ArchiveUri.isArchiveUri(uri)) {
+                val name = uri.lastPathSegment ?: "archive_item"
+                val meta = ResourceMetadata(name, "", null, null, false)
+                resolved.add(ResourceEntry(resourceRef(uri), meta, uri))
+            } else if (SftpUri.isSftpUri(uri)) {
+                val name = SftpUri.getRemotePath(uri).substringAfterLast('/').ifEmpty { "sftp_item" }
+                val meta = ResourceMetadata(name, "", null, null, false)
+                resolved.add(ResourceEntry(resourceRef(uri), meta, uri))
+            } else if (FtpUri.isFtpUri(uri)) {
+                val name = FtpUri.getRemotePath(uri).substringAfterLast('/').ifEmpty { "ftp_item" }
+                val meta = ResourceMetadata(name, "", null, null, false)
+                resolved.add(ResourceEntry(resourceRef(uri), meta, uri))
+            } else if (SmbUri.isSmbUri(uri)) {
+                val name = SmbUri.getRemotePath(uri).substringAfterLast('/').ifEmpty { "smb_item" }
+                val meta = ResourceMetadata(name, "", null, null, false)
+                resolved.add(ResourceEntry(resourceRef(uri), meta, uri))
+            }
+        }
+        return resolved
+    }
+
+    private fun isLikelyUriString(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || trimmed.contains('\n') || trimmed.contains('\r') || trimmed.contains(' ')) return false
+        if (WebMetadataResolver.isWebUri(trimmed)) return true
+        val uri = runCatching { Uri.parse(trimmed) }.getOrNull() ?: return false
+        val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return false
+        return scheme in setOf("http", "https", "ftp", "ftps", "mailto", "tel", "sms", "market", "intent", "ssh", "git") ||
+            (scheme.length in 2..20 && scheme.all { it.isLetterOrDigit() || it == '+' || it == '-' } && uri.schemeSpecificPart.isNotBlank())
+    }
+
+    private fun pasteFromClipboard(destDirUri: Uri) {
+        val isArchive = ArchiveUri.isArchiveUri(destDirUri)
+        val mountCheck = if (isArchive) archiveProvider.checkMounted(destDirUri) else null
+        if (mountCheck?.isMounted == true) {
+            notifyMountedPartitionBlocked(displayNameFor(destDirUri) ?: "Archive", mountCheck.reason)
+            return
+        }
+        val isWritableArchive = isArchive && archiveProvider.isWritable(destDirUri)
+        val writable = (!isArchive || isWritableArchive) && !AppsUri.isAppsUri(destDirUri)
+        if (!writable) {
+            Toast.makeText(this, "Cannot paste into read-only location.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val clipboard = getSystemService(ClipboardManager::class.java)
+        val clip = clipboard?.primaryClip
+        if (clip == null || clip.itemCount == 0) {
+            Toast.makeText(this, "Clipboard is empty.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val desc = clip.description
+        val hasImageMime = desc.hasMimeType("image/*") ||
+            desc.extras?.getBoolean("is_image_content") == true
+
+        val firstItem = clip.getItemAt(0)
+        val itemUri = firstItem?.uri
+        val uriMime = itemUri?.let { runCatching { contentResolver.getType(it) }.getOrNull() }
+        val isImage = hasImageMime || (uriMime != null && uriMime.startsWith("image/"))
+
+        // 1. Image in clipboard
+        if (isImage && itemUri != null) {
+            pasteImageFromClipboard(destDirUri, itemUri, uriMime ?: "image/png")
+            return
+        }
+
+        // 2. File(s) in clipboard
+        val entriesToCopy = resolveClipboardFileEntries(clip)
+        if (entriesToCopy.isNotEmpty()) {
+            startBatchTransfer(entriesToCopy, move = false, destination = destDirUri)
+            return
+        }
+
+        // 3. URI in clipboard (web URL or custom URI link)
+        val clipText = firstItem?.coerceToText(this)?.toString()?.trim() ?: ""
+        val parsedUri = itemUri ?: runCatching { Uri.parse(clipText) }.getOrNull()
+        val isLikelyUri = (parsedUri != null && parsedUri.scheme != null &&
+            (parsedUri.scheme !in setOf("file", "content", "apps", "archive", "sftp", "ftp", "smb") || WebMetadataResolver.isWebUri(clipText))) ||
+            isLikelyUriString(clipText)
+
+        if (isLikelyUri) {
+            showCreateUriLinkDialog(destDirUri, initialUri = clipText.ifEmpty { parsedUri?.toString() ?: "" })
+            return
+        }
+
+        // 4. Bit of text in clipboard
+        if (clipText.isNotEmpty()) {
+            pasteTextFromClipboard(destDirUri, clipText)
+            return
+        }
+
+        Toast.makeText(this, "Clipboard content cannot be pasted here.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun pasteTextFromClipboard(destDirUri: Uri, text: String) {
+        val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(java.util.Date())
+        val defaultName = "text_$timeStamp.txt"
+        val input = EditText(dialogContext()).apply {
+            setText(defaultName)
+            val dot = defaultName.lastIndexOf('.').takeIf { it > 0 } ?: defaultName.length
+            setSelection(0, dot)
+            setSingleLine(true)
+        }
+        val container = LinearLayout(dialogContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(10), dp(24), 0)
+            addView(input)
+        }
+        dialogBuilder()
+            .setTitle("Paste Text File")
+            .setMessage("Enter a name for the new text file:")
+            .setView(container)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Create") { _, _ ->
+                val fileName = input.text.toString().trim().ifEmpty { defaultName }
+                io.execute {
+                    try {
+                        val createRes = provider.createFile(resourceRef(destDirUri), fileName, "text/plain")
+                        if (createRes !is ProviderResult.Success) {
+                            throw java.io.IOException((createRes as? ProviderResult.Failure)?.message ?: "Cannot create file")
+                        }
+                        val writeRes = provider.openWrite(createRes.value.ref)
+                        if (writeRes !is ProviderResult.Success) {
+                            throw java.io.IOException((writeRes as? ProviderResult.Failure)?.message ?: "Cannot write to file")
+                        }
+                        writeRes.value.use { out ->
+                            out.write(text.toByteArray(Charsets.UTF_8))
+                            out.flush()
+                        }
+                        runOnUiThread {
+                            directoryIconCache.evictAll()
+                            refreshInternalSharedTree()
+                            current?.let { load(it) }
+                            Toast.makeText(this@MainActivity, "Created $fileName", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: Exception) {
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "Failed to create text file: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun pasteImageFromClipboard(destDirUri: Uri, imageUri: Uri, mimeType: String) {
+        val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(java.util.Date())
+        val ext = when {
+            mimeType.contains("png", ignoreCase = true) -> ".png"
+            mimeType.contains("jpeg", ignoreCase = true) || mimeType.contains("jpg", ignoreCase = true) -> ".jpg"
+            mimeType.contains("webp", ignoreCase = true) -> ".webp"
+            mimeType.contains("gif", ignoreCase = true) -> ".gif"
+            else -> ".png"
+        }
+        val defaultName = "image_$timeStamp$ext"
+        val input = EditText(dialogContext()).apply {
+            setText(defaultName)
+            val dot = defaultName.lastIndexOf('.').takeIf { it > 0 } ?: defaultName.length
+            setSelection(0, dot)
+            setSingleLine(true)
+        }
+        val container = LinearLayout(dialogContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(10), dp(24), 0)
+            addView(input)
+        }
+        dialogBuilder()
+            .setTitle("Paste Image File")
+            .setMessage("Enter a name for the new image file:")
+            .setView(container)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val fileName = input.text.toString().trim().ifEmpty { defaultName }
+                io.execute {
+                    try {
+                        val inStream = if (imageUri.scheme == "file" && imageUri.path != null) {
+                            File(imageUri.path!!).inputStream()
+                        } else {
+                            contentResolver.openInputStream(imageUri)
+                                ?: throw java.io.IOException("Cannot open image from clipboard")
+                        }
+                        val createRes = provider.createFile(resourceRef(destDirUri), fileName, mimeType)
+                        if (createRes !is ProviderResult.Success) {
+                            throw java.io.IOException((createRes as? ProviderResult.Failure)?.message ?: "Cannot create file")
+                        }
+                        val writeRes = provider.openWrite(createRes.value.ref)
+                        if (writeRes !is ProviderResult.Success) {
+                            throw java.io.IOException((writeRes as? ProviderResult.Failure)?.message ?: "Cannot write to file")
+                        }
+                        inStream.use { input ->
+                            writeRes.value.use { output ->
+                                input.copyTo(output, bufferSize = 128 * 1024)
+                                output.flush()
+                            }
+                        }
+                        runOnUiThread {
+                            directoryIconCache.evictAll()
+                            refreshInternalSharedTree()
+                            current?.let { load(it) }
+                            Toast.makeText(this@MainActivity, "Saved $fileName", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: Exception) {
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "Failed to save image: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+            .show()
     }
     private fun launchCustomIconPicker() {
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
@@ -5047,13 +7495,18 @@ class MainActivity : Activity() {
             return
         }
         val count = selectedEntries.size
-        val fileOpsGroup = listOf("Copy to…", "Move to…", "Delete", "Create archive", "Create shortcuts", "Deselect all")
+        val fileOpsGroup = listOf("Copy", "Copy to…", "Move to…", "Delete", "Create archive", "Create shortcuts", "Deselect all")
         val propertiesGroup = listOf("Properties")
         showGroupedMenuDialog(
             title = "$count item${if (count == 1) "" else "s"} selected",
+            subtitle = "Batch actions",
             groups = listOf(fileOpsGroup, propertiesGroup)
         ) { action ->
             when (action) {
+                "Copy" -> {
+                    copyEntriesToClipboard(selectedEntries)
+                    exitSelectionMode()
+                }
                 "Copy to…" -> {
                     val unextractable = selectedEntries.filter { AppsUri.isAppUri(it.uri) && !appsProvider.canExtract(AppsUri.getPackageName(it.uri) ?: "") }
                     if (unextractable.isNotEmpty()) {
@@ -5145,7 +7598,7 @@ class MainActivity : Activity() {
                 navigate(targetUri, displayName = targetName)
             } else if (ArchiveUri.isArchiveUri(targetUri) && ArchiveUri.getEntryPath(targetUri).isEmpty()) {
                 navigate(targetUri, displayName = targetName)
-            } else if (ArchiveFormats.isArchive(info.targetPath ?: targetName, info.targetMimeType ?: "")) {
+            } else if (ArchiveFormats.isDefaultBrowsableArchive(info.targetPath ?: targetName, info.targetMimeType ?: "")) {
                 if (ArchiveUri.isArchiveUri(targetUri)) {
                     val nestedVirtualPath = info.targetPath ?: targetName
                     io.execute {
@@ -5393,9 +7846,9 @@ class MainActivity : Activity() {
                 }
                 shortcutCache.put(createRes.value.uri.toString(), shortcut)
                 runOnUiThread {
-                    if (current == folderUri) {
-                        load(folderUri)
-                    }
+                    directoryIconCache.evictAll()
+                    refreshInternalSharedTree()
+                    current?.let { load(it) }
                     Toast.makeText(this, "Shortcut created: $cleanName", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
@@ -5631,7 +8084,14 @@ class MainActivity : Activity() {
         parentUri: Uri,
         onCreated: (ResourceEntry) -> Unit
     ) {
-        if (ArchiveUri.isArchiveUri(parentUri) || AppsUri.isAppsUri(parentUri)) {
+        if (ArchiveUri.isArchiveUri(parentUri)) {
+            val mountCheck = archiveProvider.checkMounted(parentUri)
+            if (mountCheck?.isMounted == true) {
+                notifyMountedPartitionBlocked(displayNameFor(parentUri) ?: "Archive", mountCheck.reason)
+                return
+            }
+        }
+        if ((ArchiveUri.isArchiveUri(parentUri) && !archiveProvider.isWritable(parentUri)) || AppsUri.isAppsUri(parentUri)) {
             Toast.makeText(this, "Cannot create directory in a read-only location.", Toast.LENGTH_SHORT).show()
             return
         }
@@ -5670,7 +8130,13 @@ class MainActivity : Activity() {
                                         onCreated(created)
                                     }
                                     is ProviderResult.Unsupported -> Toast.makeText(this, "This provider does not support creating directories.", Toast.LENGTH_LONG).show()
-                                    is ProviderResult.Failure -> Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
+                                    is ProviderResult.Failure -> {
+                                        if (result.cause is MountedPartitionException || result.message.contains("mounted", ignoreCase = true)) {
+                                            notifyMountedPartitionBlocked(name, result.message)
+                                        } else {
+                                            Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -5709,6 +8175,23 @@ class MainActivity : Activity() {
     }
 
     private fun startBatchTransfer(entries: List<ResourceEntry>, move: Boolean, destination: Uri) {
+        if (ArchiveUri.isArchiveUri(destination)) {
+            val mountCheck = archiveProvider.checkMounted(destination)
+            if (mountCheck?.isMounted == true) {
+                notifyMountedPartitionBlocked(displayNameFor(destination) ?: "Archive destination", mountCheck.reason)
+                return
+            }
+        }
+        if (move) {
+            val mountedSource = entries.firstOrNull {
+                ArchiveUri.isArchiveUri(it.uri) && archiveProvider.checkMounted(it.uri)?.isMounted == true
+            }
+            if (mountedSource != null) {
+                val mountCheck = archiveProvider.checkMounted(mountedSource.uri)!!
+                notifyMountedPartitionBlocked(mountedSource.metadata.name, mountCheck.reason)
+                return
+            }
+        }
         val count = entries.size
         val label = if (count == 1) {
             "${if (move) "Move" else "Copy"} ${entries[0].metadata.name}"
@@ -5733,6 +8216,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     directoryIconCache.evictAll()
                     refreshInternalSharedTree()
+                    current?.let { load(it) }
                 }
             }
             if (!cancelled() && isAppMove) {
@@ -5780,6 +8264,14 @@ class MainActivity : Activity() {
     }
 
     private fun startBatchDelete(entries: List<ResourceEntry>) {
+        val mountedEntry = entries.firstOrNull {
+            ArchiveUri.isArchiveUri(it.uri) && archiveProvider.checkMounted(it.uri)?.isMounted == true
+        }
+        if (mountedEntry != null) {
+            val mountCheck = archiveProvider.checkMounted(mountedEntry.uri)!!
+            notifyMountedPartitionBlocked(mountedEntry.metadata.name, mountCheck.reason)
+            return
+        }
         val count = entries.size
         val label = if (count == 1) "Delete ${entries[0].metadata.name}" else "Delete $count items"
         val id = operations.submit(label, null, count) { update, cancelled ->
@@ -6020,6 +8512,13 @@ class MainActivity : Activity() {
             }.show()
     }
     private fun confirmDelete(entry: ResourceEntry) {
+        if (ArchiveUri.isArchiveUri(entry.uri)) {
+            val mountCheck = archiveProvider.checkMounted(entry.uri)
+            if (mountCheck?.isMounted == true) {
+                notifyMountedPartitionBlocked(entry.metadata.name, mountCheck.reason)
+                return
+            }
+        }
         if (AppsUri.isAppUri(entry.uri)) {
             val pkg = AppsUri.getPackageName(entry.uri)
             if (pkg != null) {
@@ -6063,6 +8562,17 @@ class MainActivity : Activity() {
         return if (entry.metadata.isDirectory) "Folder · $date" else "$size · $date"
     }
     private fun iconFor(m: ResourceMetadata) = when {
+        ArchiveFormats.isDefaultBrowsableArchive(m.name, m.mimeType) -> "📦"
+        ArchiveFormats.isPackagedFormat(m.name, m.mimeType) -> {
+            val ext = m.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+            when (ext) {
+                "apk", "xapk", "apkm", "aab" -> "📱"
+                "jar", "war", "ear" -> "☕"
+                "love" -> "💖"
+                "ipa" -> "🍎"
+                else -> "📦"
+            }
+        }
         ArchiveFormats.isArchive(m.name, m.mimeType) -> "📦"
         m.mimeType.substringBefore('/') == "image" -> "🖼"
         m.mimeType.substringBefore('/') == "audio" -> "♫"
@@ -6176,6 +8686,15 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         operations.removeListener(operationsListener)
+        if (::sftpProvider.isInitialized) {
+            sftpProvider.clientPool.close()
+        }
+        if (::ftpProvider.isInitialized) {
+            ftpProvider.clientPool.close()
+        }
+        if (::smbProvider.isInitialized) {
+            smbProvider.clientPool.close()
+        }
         super.onDestroy()
     }
 
@@ -6195,14 +8714,45 @@ class MainActivity : Activity() {
             val entryPath = ArchiveUri.getEntryPath(treeUri)
             if (entryPath.isEmpty()) displayNameFor(ArchiveUri.getSourceUri(treeUri)) ?: "Archive"
             else entryPath.substringAfterLast('/')
+        } else if (SftpUri.isSftpUri(treeUri)) {
+            val remotePath = SftpUri.getRemotePath(treeUri)
+            val connId = SftpUri.getConnectionId(treeUri)
+            val conn = savedConnections().firstOrNull { it.id == connId }
+            if (remotePath == "/" || remotePath.isEmpty()) {
+                conn?.displayName ?: "SFTP Server"
+            } else {
+                remotePath.substringAfterLast('/')
+            }
+        } else if (FtpUri.isFtpUri(treeUri)) {
+            val remotePath = FtpUri.getRemotePath(treeUri)
+            val connId = FtpUri.getConnectionId(treeUri)
+            val conn = savedConnections().firstOrNull { it.id == connId }
+            if (remotePath == "/" || remotePath.isEmpty()) {
+                conn?.displayName ?: "FTP Server"
+            } else {
+                remotePath.substringAfterLast('/')
+            }
+        } else if (SmbUri.isSmbUri(treeUri)) {
+            val remotePath = SmbUri.getRemotePath(treeUri)
+            val connId = SmbUri.getConnectionId(treeUri)
+            val conn = savedConnections().firstOrNull { it.id == connId }
+            if (remotePath == "/" || remotePath.isEmpty()) {
+                conn?.displayName ?: "SMB Server"
+            } else {
+                remotePath.substringAfterLast('/')
+            }
         } else if (localProvider.owns(treeUri)) {
-            if (treeUri == localProvider.rootUri) "Internal shared storage" else localProvider.fileFor(treeUri).name
+            if (treeUri == localProvider.rootUri) "Internal shared storage" else runCatching { localProvider.fileFor(treeUri).name }.getOrNull()
+        } else if (treeUri.scheme == "file") {
+            File(treeUri.path ?: "").name.ifEmpty { "Root" }
         } else {
-        val id = uriDocumentId(treeUri)
-        val document = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
-        contentResolver.query(document, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) cursor.getString(0) else null
-        }
+            val id = uriDocumentId(treeUri)
+            val document = runCatching { DocumentsContract.buildDocumentUriUsingTree(treeUri, id) }.getOrNull()
+            if (document != null) {
+                contentResolver.query(document, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                }
+            } else null
         }
     } catch (_: Exception) { null }
 
@@ -6227,32 +8777,71 @@ class MainActivity : Activity() {
             val path = ArchiveUri.getEntryPath(treeUri)
             val base = displayPathFor(source) ?: displayNameFor(source) ?: source.lastPathSegment ?: "Archive"
             if (path.isEmpty()) base else "$base / $path"
-        } else if (localProvider.owns(treeUri)) localProvider.fileFor(treeUri).path else {
-        val selectedId = uriDocumentId(treeUri)
-        val selectedDocument = DocumentsContract.buildDocumentUriUsingTree(treeUri, selectedId)
-        val path = DocumentsContract.findDocumentPath(contentResolver, selectedDocument)?.path ?: return null
-        val names = path.mapNotNull { documentId ->
-            val uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
-            contentResolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0) else null
+        } else if (SftpUri.isSftpUri(treeUri)) {
+            val connId = SftpUri.getConnectionId(treeUri)
+            val conn = savedConnections().firstOrNull { it.id == connId }
+            val connName = conn?.displayName ?: "SFTP"
+            val remotePath = SftpUri.getRemotePath(treeUri)
+            if (remotePath == "/" || remotePath.isEmpty()) connName else "$connName / ${remotePath.trimStart('/')}"
+        } else if (FtpUri.isFtpUri(treeUri)) {
+            val connId = FtpUri.getConnectionId(treeUri)
+            val conn = savedConnections().firstOrNull { it.id == connId }
+            val connName = conn?.displayName ?: "FTP"
+            val remotePath = FtpUri.getRemotePath(treeUri)
+            if (remotePath == "/" || remotePath.isEmpty()) connName else "$connName / ${remotePath.trimStart('/')}"
+        } else if (SmbUri.isSmbUri(treeUri)) {
+            val connId = SmbUri.getConnectionId(treeUri)
+            val conn = savedConnections().firstOrNull { it.id == connId }
+            val connName = conn?.displayName ?: "SMB"
+            val remotePath = SmbUri.getRemotePath(treeUri)
+            if (remotePath == "/" || remotePath.isEmpty()) connName else "$connName / ${remotePath.trimStart('/')}"
+        } else if (localProvider.owns(treeUri)) {
+            runCatching { localProvider.fileFor(treeUri).path }.getOrNull()
+        } else if (treeUri.scheme == "file") {
+            treeUri.path
+        } else {
+            val selectedId = uriDocumentId(treeUri)
+            val selectedDocument = runCatching { DocumentsContract.buildDocumentUriUsingTree(treeUri, selectedId) }.getOrNull() ?: return null
+            val path = runCatching { DocumentsContract.findDocumentPath(contentResolver, selectedDocument)?.path }.getOrNull() ?: return null
+            val names = path.mapNotNull { documentId ->
+                val uri = runCatching { DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId) }.getOrNull() ?: return@mapNotNull null
+                contentResolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                }
             }
-        }
-        names.takeIf { it.isNotEmpty() }?.joinToString(" / ")
+            names.takeIf { it.isNotEmpty() }?.joinToString(" / ")
         }
     } catch (_: Exception) { null }
 
-    private fun uriDocumentId(uri: Uri): String = if (uri.pathSegments.firstOrNull() == "document" || uri.pathSegments.getOrNull(2) == "document") {
-        DocumentsContract.getDocumentId(uri)
-    } else {
-        DocumentsContract.getTreeDocumentId(uri)
+    private fun uriDocumentId(uri: Uri): String = try {
+        when {
+            uri.pathSegments.firstOrNull() == "document" || uri.pathSegments.getOrNull(2) == "document" ->
+                runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+                    ?: uri.lastPathSegment ?: uri.path?.removePrefix("/") ?: uri.toString()
+            uri.pathSegments.firstOrNull() == "tree" ->
+                runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+                    ?: uri.lastPathSegment ?: uri.path?.removePrefix("/") ?: uri.toString()
+            else ->
+                uri.lastPathSegment ?: uri.path?.removePrefix("/") ?: uri.toString()
+        }
+    } catch (_: Throwable) {
+        uri.lastPathSegment ?: uri.path?.removePrefix("/") ?: uri.toString()
     }
 
     /** SAF document IDs are opaque; pair them with their provider authority without parsing them as paths. */
-    private fun sourceIdentity(uri: Uri): String = when {
-        AppsUri.isAppsUri(uri) -> uri.toString()
-        ArchiveUri.isArchiveUri(uri) -> uri.toString()
-        localProvider.owns(uri) -> uri.toString()
-        else -> "${uri.authority.orEmpty()}|${uriDocumentId(uri)}"
+    private fun sourceIdentity(uri: Uri): String = try {
+        when {
+            AppsUri.isAppsUri(uri) -> uri.toString()
+            ArchiveUri.isArchiveUri(uri) -> uri.toString()
+            SftpUri.isSftpUri(uri) -> uri.toString()
+            FtpUri.isFtpUri(uri) -> uri.toString()
+            SmbUri.isSmbUri(uri) -> uri.toString()
+            localProvider.owns(uri) -> uri.toString()
+            uri.scheme != "content" -> uri.toString()
+            else -> "${uri.authority.orEmpty()}|${uriDocumentId(uri)}"
+        }
+    } catch (_: Throwable) {
+        uri.toString()
     }
     private fun isPrimaryExternalStorageUri(uri: Uri): Boolean = try {
         uri.scheme == "content" && uri.authority == externalStorageDocumentsAuthority && uriDocumentId(uri).substringBefore(':') == "primary"

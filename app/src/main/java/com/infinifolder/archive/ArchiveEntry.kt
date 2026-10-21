@@ -58,7 +58,11 @@ object ArchiveMimeTypes {
             "mp4" -> "video/mp4"
             "mkv" -> "video/x-matroska"
             "webm" -> "video/webm"
-            "zip", "jar", "apk", "aar", "cbz" -> "application/zip"
+            "apk", "xapk", "apkm", "aab" -> "application/vnd.android.package-archive"
+            "jar", "war", "ear", "aar" -> "application/java-archive"
+            "love" -> "application/x-love-game"
+            "ipa" -> "application/octet-stream"
+            "zip", "cbz" -> "application/zip"
             "tar", "cbt" -> "application/x-tar"
             "gz", "tgz" -> "application/gzip"
             "bz2", "tbz", "tbz2" -> "application/x-bzip2"
@@ -66,6 +70,9 @@ object ArchiveMimeTypes {
             "7z", "cb7" -> "application/x-7z-compressed"
             "cpio" -> "application/x-cpio"
             "ar", "deb" -> "application/x-archive"
+            "iso", "cdr" -> "application/x-iso9660-image"
+            "img", "raw", "ima", "flp", "fat", "vfat", "exfat", "ext2", "ext3", "ext4" -> "application/x-raw-disk-image"
+            "lnk" -> "application/x-ms-shortcut"
             else -> try {
                 android.webkit.MimeTypeMap.getSingleton()?.getMimeTypeFromExtension(ext) ?: "application/octet-stream"
             } catch (_: Throwable) {

@@ -1,5 +1,7 @@
 package com.infinifolder.archive
 
+import android.content.Context
+import android.net.TestUri
 import android.net.Uri
 import org.apache.commons.compress.archivers.sevenz.SevenZOutputFile
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
@@ -284,5 +286,73 @@ class ArchiveStorageTest {
 
         // Verify OtherFile.BIN was NEVER extracted
         assertFalse(File(cacheBase, "out/OtherFile.BIN").exists())
+    }
+
+    private class TestContext(private val cache: File) : android.content.ContextWrapper(null) {
+        override fun getCacheDir(): File = cache
+    }
+
+    private fun createMockContext(): Context {
+        return TestContext(tempFolder.newFolder("context_cache"))
+    }
+
+    @Test
+    fun testSftpStreamResolverForRemoteZip() {
+        val zipFile = tempFolder.newFile("remote.zip")
+        ZipArchiveOutputStream(zipFile).use { zos ->
+            val e = ZipArchiveEntry("server/config.json")
+            val c = "{\"port\": 22}".toByteArray()
+            e.size = c.size.toLong()
+            zos.putArchiveEntry(e)
+            zos.write(c)
+            zos.closeArchiveEntry()
+        }
+
+        val provider = ArchiveStorageProvider(
+            context = createMockContext(),
+            customCacheDir = tempFolder.newFolder("archive_provider_cache")
+        )
+        val sftpUri = TestUri("sftp://my-server-uuid/home/user/remote.zip")
+
+        provider.streamResolver = { uri ->
+            if (uri.toString() == sftpUri.toString()) zipFile.inputStream() else null
+        }
+        provider.metadataResolver = { uri ->
+            if (uri.toString() == sftpUri.toString()) Pair(zipFile.length(), zipFile.lastModified()) else null
+        }
+
+        val tree = provider.getArchiveTree(sftpUri)
+        val rootEntries = tree.list("")
+        assertEquals(1, rootEntries.size)
+        assertEquals("server", rootEntries.first().name)
+
+        val serverEntries = tree.list("server")
+        assertEquals(1, serverEntries.size)
+        assertEquals("config.json", serverEntries.first().name)
+    }
+
+    @Test
+    fun testLargeRemoteDiscImageSizeLimit() {
+        val provider = ArchiveStorageProvider(
+            context = createMockContext(),
+            customCacheDir = tempFolder.newFolder("archive_provider_disc_cache")
+        )
+        val sftpVdiUri = TestUri("sftp://94e3778c-140e-43a5-bc2e-b1c18f76f6d2/home/gretchen/VirtualBox VMs/echoesbbs/echoesbbs-u.vdi")
+
+        provider.streamResolver = { uri ->
+            java.io.ByteArrayInputStream(ByteArray(0))
+        }
+        provider.metadataResolver = { uri ->
+            // 20 GB file
+            Pair(20L * 1024L * 1024L * 1024L, 1700000000000L)
+        }
+
+        try {
+            provider.getArchiveTree(sftpVdiUri)
+            fail("Expected IOException due to large remote disk image limit")
+        } catch (e: java.io.IOException) {
+            assertTrue(e.message!!.contains("too large to stream over network"))
+            assertTrue(e.message!!.contains("echoesbbs-u.vdi"))
+        }
     }
 }

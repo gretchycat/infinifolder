@@ -155,7 +155,7 @@ object FileOperations {
                 throw IllegalStateException((writeResult as? ProviderResult.Failure)?.message ?: "Failed to open destination for $targetName")
             }
 
-            val buffer = ByteArray(64 * 1024)
+            val buffer = ByteArray(128 * 1024)
             try {
                 readResult.value.use { input ->
                     writeResult.value.use { output ->

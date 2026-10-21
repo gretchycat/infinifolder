@@ -7,6 +7,7 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.util.LruCache
 import com.infinifolder.model.*
+import com.infinifolder.sftp.SftpUri
 import com.infinifolder.storage.LocalStorageProvider
 import com.infinifolder.storage.StorageProvider
 import java.io.File
@@ -22,7 +23,10 @@ class ArchiveStorageProvider(
 
     override val id: String = "archive"
 
-    private val reader = ArchiveReader(File(context.cacheDir, "archive_temp"))
+    var streamResolver: ((Uri) -> InputStream?)? = null
+    var metadataResolver: ((Uri) -> Pair<Long?, Long?>?)? = null
+
+    private val reader = ArchiveReader(File(customCacheDir ?: context.cacheDir, "archive_temp"))
     private val treeCache = LruCache<String, ArchiveTree>(64)
 
     private fun sha256(str: String): String {
@@ -66,9 +70,10 @@ class ArchiveStorageProvider(
     }
 
     private fun resolveSource(sourceUri: Uri): Pair<() -> InputStream, File?> {
-        if (localProvider != null && localProvider.owns(sourceUri)) {
-            val file = localProvider.fileFor(sourceUri)
-            return Pair({ file.inputStream() }, file)
+        val lp = localProvider
+        if (lp != null && lp.owns(sourceUri)) {
+            val file = runCatching { lp.fileFor(sourceUri) }.getOrNull()
+            if (file != null) return Pair({ file.inputStream() }, file)
         }
         if (sourceUri.scheme == "file") {
             val file = File(sourceUri.path ?: "")
@@ -78,22 +83,47 @@ class ArchiveStorageProvider(
             val cachedFile = extractToCache(sourceUri)
             return Pair({ cachedFile.inputStream() }, cachedFile)
         }
-        val openStream: () -> InputStream = {
-            context.contentResolver.openInputStream(sourceUri)
-                ?: throw IOException("Cannot open input stream for: $sourceUri")
+        val customResolver = streamResolver
+        if (customResolver != null && (SftpUri.isSftpUri(sourceUri) || sourceUri.scheme != "content")) {
+            val openStream: () -> InputStream = {
+                customResolver(sourceUri)
+                    ?: throw IOException("Cannot open input stream for: $sourceUri")
+            }
+            return Pair(openStream, null)
         }
-        return Pair(openStream, null)
+        if (sourceUri.scheme == "content") {
+            val openStream: () -> InputStream = {
+                context.contentResolver.openInputStream(sourceUri)
+                    ?: throw IOException("Cannot open input stream for: $sourceUri")
+            }
+            return Pair(openStream, null)
+        }
+        if (customResolver != null) {
+            val openStream: () -> InputStream = {
+                customResolver(sourceUri)
+                    ?: throw IOException("Cannot open input stream for: $sourceUri")
+            }
+            return Pair(openStream, null)
+        }
+        throw IOException("Cannot resolve stream for URI scheme: ${sourceUri.scheme ?: "unknown"}")
     }
 
     private fun getSourceName(sourceUri: Uri): String {
-        if (localProvider != null && localProvider.owns(sourceUri)) {
-            return localProvider.fileFor(sourceUri).name
+        val lp = localProvider
+        if (lp != null && lp.owns(sourceUri)) {
+            val name = runCatching { lp.fileFor(sourceUri).name }.getOrNull()
+            if (name != null) return name
         }
         if (sourceUri.scheme == "file") {
             return File(sourceUri.path ?: "").name
         }
         if (ArchiveUri.isArchiveUri(sourceUri)) {
             return ArchiveUri.getEntryPath(sourceUri).substringAfterLast('/')
+        }
+        if (SftpUri.isSftpUri(sourceUri)) {
+            val remotePath = SftpUri.getRemotePath(sourceUri)
+            val name = remotePath.substringAfterLast('/')
+            if (name.isNotEmpty()) return name
         }
         if (sourceUri.scheme == "content") {
             try {
@@ -109,13 +139,25 @@ class ArchiveStorageProvider(
     }
 
     private fun getSourceMetadata(sourceUri: Uri): Pair<Long?, Long?> {
-        if (localProvider != null && localProvider.owns(sourceUri)) {
-            val file = localProvider.fileFor(sourceUri)
-            return Pair(file.length(), file.lastModified())
+        val lp = localProvider
+        if (lp != null && lp.owns(sourceUri)) {
+            val file = runCatching { lp.fileFor(sourceUri) }.getOrNull()
+            if (file != null) return Pair(file.length(), file.lastModified())
         }
         if (sourceUri.scheme == "file") {
             val file = File(sourceUri.path ?: "")
             return Pair(file.length(), file.lastModified())
+        }
+        val meta = metadataResolver?.invoke(sourceUri)
+        if (meta != null) return meta
+        if (sourceUri.scheme == "content") {
+            try {
+                context.contentResolver.query(sourceUri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst() && !cursor.isNull(0)) {
+                        return Pair(cursor.getLong(0), null)
+                    }
+                }
+            } catch (_: Exception) {}
         }
         return Pair(null, null)
     }
@@ -130,6 +172,10 @@ class ArchiveStorageProvider(
 
         val (openStream, localFile) = resolveSource(sourceUri)
         val archiveName = getSourceName(sourceUri)
+        if (localFile == null && ArchiveFormats.isDiscImage(archiveName) && size != null && size > MAX_REMOTE_DISC_IMAGE_SIZE) {
+            val formatted = android.text.format.Formatter.formatShortFileSize(context, size)
+            throw IOException("Disk image '$archiveName' ($formatted) is too large to stream over network. Download the file locally to inspect its contents.")
+        }
         val tree = reader.buildTree(sourceUri, archiveName, openStream, localFile)
 
         synchronized(treeCache) {
@@ -147,10 +193,13 @@ class ArchiveStorageProvider(
         val entryPath = ArchiveUri.getEntryPath(archiveUri)
 
         val sourceVirtualPath = when {
-            localProvider != null && localProvider.owns(sourceUri) -> {
-                val file = localProvider.fileFor(sourceUri)
-                val parts = listOf("Internal shared storage") + localProvider.store.components(file)
-                parts.joinToString("/")
+            localProvider != null && localProvider!!.owns(sourceUri) -> {
+                val lp = localProvider!!
+                val file = runCatching { lp.fileFor(sourceUri) }.getOrNull()
+                if (file != null) {
+                    val parts = listOf("Internal shared storage") + lp.store.components(file)
+                    parts.joinToString("/")
+                } else getSourceName(sourceUri)
             }
             sourceUri.scheme == "file" -> {
                 val file = File(sourceUri.path ?: "")
@@ -164,6 +213,10 @@ class ArchiveStorageProvider(
             }
             ArchiveUri.isArchiveUri(sourceUri) -> {
                 resolveVirtualPath(sourceUri)
+            }
+            SftpUri.isSftpUri(sourceUri) -> {
+                val remotePath = SftpUri.getRemotePath(sourceUri).trimStart('/')
+                "sftp/${SftpUri.getConnectionId(sourceUri)}/$remotePath"
             }
             sourceUri.scheme == "content" -> {
                 val auth = sourceUri.authority.orEmpty()
@@ -258,34 +311,180 @@ class ArchiveStorageProvider(
             )
         }
         ProviderResult.Success(resourceEntries)
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
         ProviderResult.Failure(e.message ?: "Failed to list archive contents", e)
     }
 
     override fun openRead(ref: ResourceRef): ProviderResult<InputStream> = try {
         val uri = Uri.parse(ref.documentId)
         ProviderResult.Success(openStream(uri))
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
         ProviderResult.Failure(e.message ?: "Failed to read archive entry", e)
     }
 
-    override fun openWrite(ref: ResourceRef): ProviderResult<java.io.OutputStream> =
-        ProviderResult.Unsupported(ResourceCapability.CREATE)
+    fun checkMounted(archiveUri: Uri): MountCheckResult? {
+        if (!ArchiveUri.isArchiveUri(archiveUri)) return null
+        val sourceUri = ArchiveUri.getSourceUri(archiveUri)
+        val (_, localFile) = try { resolveSource(sourceUri) } catch (_: Exception) { return null }
+        if (localFile == null) return null
+        return MountedPartitionDetector.checkMounted(localFile)
+    }
 
-    override fun createDirectory(parent: ResourceRef, name: String): ProviderResult<ResourceEntry> =
-        ProviderResult.Unsupported(ResourceCapability.CREATE)
-    override fun createFile(parent: ResourceRef, name: String, mimeType: String): ProviderResult<ResourceEntry> =
-        ProviderResult.Unsupported(ResourceCapability.CREATE)
+    fun isWritable(archiveUri: Uri): Boolean {
+        if (!ArchiveUri.isArchiveUri(archiveUri)) return false
+        val sourceUri = ArchiveUri.getSourceUri(archiveUri)
+        val (_, localFile) = try { resolveSource(sourceUri) } catch (_: Exception) { return false }
+        if (localFile == null || !localFile.exists() || !localFile.canWrite()) return false
+        val mountCheck = MountedPartitionDetector.checkMounted(localFile)
+        if (mountCheck.isMounted) return false
+        val archiveName = getSourceName(sourceUri)
+        return reader.isWritable(archiveName, localFile)
+    }
+
+    override fun openWrite(ref: ResourceRef): ProviderResult<java.io.OutputStream> = try {
+        val uri = Uri.parse(ref.documentId)
+        val mountCheck = checkMounted(uri)
+        if (mountCheck?.isMounted == true) {
+            val sourceUri = ArchiveUri.getSourceUri(uri)
+            val archiveName = getSourceName(sourceUri)
+            ProviderResult.Failure(
+                "Cannot write to '$archiveName': partition is currently mounted (${mountCheck.reason})",
+                MountedPartitionException(archiveName, mountCheck.reason)
+            )
+        } else if (!isWritable(uri)) {
+            ProviderResult.Unsupported(ResourceCapability.CREATE)
+        } else {
+            val sourceUri = ArchiveUri.getSourceUri(uri)
+            val entryPath = ArchiveUri.getEntryPath(uri)
+            val (_, localFile) = resolveSource(sourceUri)
+            val archiveName = getSourceName(sourceUri)
+            val baos = object : java.io.ByteArrayOutputStream() {
+                override fun close() {
+                    super.close()
+                    val data = toByteArray()
+                    reader.writeEntry(archiveName, localFile, entryPath, data)
+                    treeCache.remove(sourceUri.toString())
+                }
+            }
+            ProviderResult.Success(baos)
+        }
+    } catch (e: Exception) {
+        ProviderResult.Failure(e.message ?: "Failed to write archive entry", e)
+    }
+
+    override fun createDirectory(parent: ResourceRef, name: String): ProviderResult<ResourceEntry> = try {
+        val parentUri = Uri.parse(parent.documentId)
+        val mountCheck = checkMounted(parentUri)
+        if (mountCheck?.isMounted == true) {
+            val sourceUri = ArchiveUri.getSourceUri(parentUri)
+            val archiveName = getSourceName(sourceUri)
+            ProviderResult.Failure(
+                "Cannot create directory in '$archiveName': partition is currently mounted (${mountCheck.reason})",
+                MountedPartitionException(archiveName, mountCheck.reason)
+            )
+        } else if (!isWritable(parentUri)) {
+            ProviderResult.Unsupported(ResourceCapability.CREATE)
+        } else {
+            val sourceUri = ArchiveUri.getSourceUri(parentUri)
+            val parentPath = ArchiveUri.getEntryPath(parentUri)
+            val (_, localFile) = resolveSource(sourceUri)
+            val archiveName = getSourceName(sourceUri)
+            val newEntryPath = if (parentPath.isEmpty()) name else "$parentPath/$name"
+            reader.createDirectory(archiveName, localFile, newEntryPath)
+            treeCache.remove(sourceUri.toString())
+            val newUri = ArchiveUri.build(sourceUri, newEntryPath)
+            ProviderResult.Success(
+                ResourceEntry(
+                    ref = ResourceRef(id, newUri.toString()),
+                    metadata = ResourceMetadata(
+                        name = name,
+                        mimeType = "",
+                        sizeBytes = null,
+                        modifiedAtMillis = System.currentTimeMillis(),
+                        isDirectory = true
+                    ),
+                    uri = newUri
+                )
+            )
+        }
+    } catch (e: Exception) {
+        ProviderResult.Failure(e.message ?: "Failed to create directory in archive", e)
+    }
+
+    override fun createFile(parent: ResourceRef, name: String, mimeType: String): ProviderResult<ResourceEntry> = try {
+        val parentUri = Uri.parse(parent.documentId)
+        val mountCheck = checkMounted(parentUri)
+        if (mountCheck?.isMounted == true) {
+            val sourceUri = ArchiveUri.getSourceUri(parentUri)
+            val archiveName = getSourceName(sourceUri)
+            ProviderResult.Failure(
+                "Cannot create file in '$archiveName': partition is currently mounted (${mountCheck.reason})",
+                MountedPartitionException(archiveName, mountCheck.reason)
+            )
+        } else if (!isWritable(parentUri)) {
+            ProviderResult.Unsupported(ResourceCapability.CREATE)
+        } else {
+            val sourceUri = ArchiveUri.getSourceUri(parentUri)
+            val parentPath = ArchiveUri.getEntryPath(parentUri)
+            val (_, localFile) = resolveSource(sourceUri)
+            val archiveName = getSourceName(sourceUri)
+            val newEntryPath = if (parentPath.isEmpty()) name else "$parentPath/$name"
+            reader.createFile(archiveName, localFile, newEntryPath, ByteArray(0))
+            treeCache.remove(sourceUri.toString())
+            val newUri = ArchiveUri.build(sourceUri, newEntryPath)
+            ProviderResult.Success(
+                ResourceEntry(
+                    ref = ResourceRef(id, newUri.toString()),
+                    metadata = ResourceMetadata(
+                        name = name,
+                        mimeType = mimeType.ifEmpty { "application/octet-stream" },
+                        sizeBytes = 0L,
+                        modifiedAtMillis = System.currentTimeMillis(),
+                        isDirectory = false
+                    ),
+                    uri = newUri
+                )
+            )
+        }
+    } catch (e: Exception) {
+        ProviderResult.Failure(e.message ?: "Failed to create file in archive", e)
+    }
 
     override fun rename(ref: ResourceRef, name: String): ProviderResult<ResourceEntry> =
         ProviderResult.Unsupported(ResourceCapability.RENAME)
 
-    override fun delete(ref: ResourceRef): ProviderResult<Unit> =
-        ProviderResult.Unsupported(ResourceCapability.DELETE)
+    override fun delete(ref: ResourceRef): ProviderResult<Unit> = try {
+        val uri = Uri.parse(ref.documentId)
+        val mountCheck = checkMounted(uri)
+        if (mountCheck?.isMounted == true) {
+            val sourceUri = ArchiveUri.getSourceUri(uri)
+            val archiveName = getSourceName(sourceUri)
+            ProviderResult.Failure(
+                "Cannot delete from '$archiveName': partition is currently mounted (${mountCheck.reason})",
+                MountedPartitionException(archiveName, mountCheck.reason)
+            )
+        } else if (!isWritable(uri)) {
+            ProviderResult.Unsupported(ResourceCapability.DELETE)
+        } else {
+            val sourceUri = ArchiveUri.getSourceUri(uri)
+            val entryPath = ArchiveUri.getEntryPath(uri)
+            val (_, localFile) = resolveSource(sourceUri)
+            val archiveName = getSourceName(sourceUri)
+            reader.deleteEntry(archiveName, localFile, entryPath)
+            treeCache.remove(sourceUri.toString())
+            ProviderResult.Success(Unit)
+        }
+    } catch (e: Exception) {
+        ProviderResult.Failure(e.message ?: "Failed to delete archive entry", e)
+    }
 
     override fun copy(source: ResourceRef, destination: ResourceRef): ProviderResult<ResourceRef> =
         ProviderResult.Unsupported(ResourceCapability.COPY)
 
     override fun move(source: ResourceRef, destination: ResourceRef): ProviderResult<ResourceRef> =
         ProviderResult.Unsupported(ResourceCapability.MOVE)
+
+    companion object {
+        const val MAX_REMOTE_DISC_IMAGE_SIZE = 512L * 1024L * 1024L // 512 MB
+    }
 }

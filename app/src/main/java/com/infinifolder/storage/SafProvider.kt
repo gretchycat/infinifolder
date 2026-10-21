@@ -161,9 +161,15 @@ class SafProvider(private val resolver: ContentResolver) : StorageProvider {
     private fun <T> unsupported(capability: ResourceCapability) = ProviderResult.Unsupported(capability)
 
     /** Return the selected document ID for descendants, or the root ID for a picker tree URI. */
-    private fun documentId(uri: Uri): String = if (uri.pathSegments.firstOrNull() == "document" || uri.pathSegments.getOrNull(2) == "document") {
-        DocumentsContract.getDocumentId(uri)
-    } else {
-        DocumentsContract.getTreeDocumentId(uri)
+    private fun documentId(uri: Uri): String = try {
+        if (uri.pathSegments.firstOrNull() == "document" || uri.pathSegments.getOrNull(2) == "document") {
+            runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+                ?: uri.lastPathSegment ?: uri.path.orEmpty()
+        } else {
+            runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+                ?: uri.lastPathSegment ?: uri.path.orEmpty()
+        }
+    } catch (_: Throwable) {
+        uri.lastPathSegment ?: uri.path.orEmpty()
     }
 }

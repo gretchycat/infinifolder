@@ -55,6 +55,26 @@ class SharedFileProvider : FileProvider() {
         cursor.close()
         return matrix
     }
+
+    override fun getType(uri: Uri): String? {
+        val path = uri.path?.removePrefix("/shared/")?.removePrefix("/root/")?.removePrefix("/cache/")
+        val file = if (path != null) {
+            val ext = File(Environment.getExternalStorageDirectory(), path)
+            if (ext.exists()) ext else File("/", path)
+        } else null
+        if (file != null && file.exists()) {
+            val pkgMime = com.infinifolder.archive.ArchiveFormats.packageMimeType(file.name)
+            if (pkgMime != null) return pkgMime
+            val ext = file.extension.lowercase()
+            val extMime = MimeTypeMap.getSingleton()?.getMimeTypeFromExtension(ext)
+                ?: com.infinifolder.archive.ArchiveMimeTypes.guessMimeType(file.name, false)
+            if (FileMagicDetector.isAmbiguousOrUnknown(file.name, extMime)) {
+                return FileMagicDetector.detect(file)?.mimeType ?: extMime
+            }
+            return extMime
+        }
+        return super.getType(uri)
+    }
 }
 
 /** Primary shared storage only; root discovered from Android, enabled by an explicit system grant. */
@@ -68,9 +88,13 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
         else context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
             context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
 
-    fun owns(uri: Uri): Boolean = uri.scheme == "content" && uri.authority == authority
+    fun owns(uri: Uri): Boolean = try {
+        uri.scheme == "content" && uri.authority == authority && uri.pathSegments.firstOrNull() == "shared"
+    } catch (_: Throwable) {
+        false
+    }
     fun fileFor(uri: Uri): File {
-        require(owns(uri) && uri.pathSegments.firstOrNull() == "shared") { "Unknown local resource" }
+        require(owns(uri)) { "Unknown local resource: $uri" }
         return store.resolve(uri.pathSegments.drop(1))
     }
     fun uriFor(file: File): Uri {
@@ -81,8 +105,22 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
     fun entry(file: File): ResourceEntry {
         val uri = uriFor(file)
         val isDir = file.isDirectory
-        val mime = if (isDir) DocumentsContract.Document.MIME_TYPE_DIR else
-            MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
+        val mime = if (isDir) {
+            DocumentsContract.Document.MIME_TYPE_DIR
+        } else {
+            val pkgMime = com.infinifolder.archive.ArchiveFormats.packageMimeType(file.name)
+            if (pkgMime != null) {
+                pkgMime
+            } else {
+                val extMime = MimeTypeMap.getSingleton()?.getMimeTypeFromExtension(file.extension.lowercase())
+                    ?: com.infinifolder.archive.ArchiveMimeTypes.guessMimeType(file.name, false)
+                if (FileMagicDetector.isAmbiguousOrUnknown(file.name, extMime)) {
+                    FileMagicDetector.detect(file)?.mimeType ?: extMime
+                } else {
+                    extMime
+                }
+            }
+        }
         return ResourceEntry(ResourceRef(id, uri.toString()), ResourceMetadata(
             if (file == store.root) "Internal shared storage" else file.name, mime,
             if (isDir) null else file.length(), file.lastModified(), isDir

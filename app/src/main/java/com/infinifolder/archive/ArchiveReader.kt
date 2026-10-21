@@ -14,12 +14,59 @@ import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.apache.commons.compress.compressors.lzma.LZMACompressorInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
+import com.infinifolder.storage.FileMagicDetector
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.InputStream
-import java.io.OutputStream
 
 class ArchiveReader(private val tempDir: File) {
+
+    private val discImageReader = DiscImageReader(tempDir)
+
+    private fun resolveFormat(
+        archiveName: String,
+        openStream: () -> InputStream,
+        localFile: File?
+    ): Pair<String, Boolean> {
+        val rawExt = ArchiveFormats.archiveExtension(archiveName)
+        if (!FileMagicDetector.isAmbiguousOrUnknown(archiveName, "application/x-known")) {
+            return rawExt to ArchiveFormats.isDiscImage(archiveName)
+        }
+        val magic = if (localFile != null && localFile.exists()) {
+            FileMagicDetector.detect(localFile, peekCompressedPayload = true)
+        } else {
+            FileMagicDetector.detectFromStream(openStream)
+        }
+        return when (magic?.mimeType) {
+            "application/x-iso9660-image", "application/x-raw-disk-image",
+            "application/x-virtualbox-vdi", "application/x-qemu-disk",
+            "application/x-vmdk", "application/x-vhd", "application/x-vhdx" -> rawExt to true
+            "application/x-7z-compressed" -> "7z" to false
+            "application/zip" -> "zip" to false
+            "application/x-tar" -> (if (rawExt in setOf("gz", "bz2", "bz", "xz", "lzma", "zst")) "tar.$rawExt" else "tar") to false
+            "application/x-cpio" -> "cpio" to false
+            "application/x-archive" -> "ar" to false
+            else -> rawExt to ArchiveFormats.isDiscImage(archiveName)
+        }
+    }
+
+    fun isWritable(archiveName: String, localFile: File?): Boolean =
+        discImageReader.isWritable(archiveName, localFile)
+
+    fun checkMounted(archiveName: String, localFile: File?): MountCheckResult =
+        MountedPartitionDetector.checkMounted(localFile)
+
+    fun createFile(archiveName: String, localFile: File?, entryPath: String, data: ByteArray) =
+        discImageReader.createFile(archiveName, localFile, entryPath, data)
+
+    fun createDirectory(archiveName: String, localFile: File?, entryPath: String) =
+        discImageReader.createDirectory(archiveName, localFile, entryPath)
+
+    fun writeEntry(archiveName: String, localFile: File?, entryPath: String, data: ByteArray) =
+        discImageReader.writeEntry(archiveName, localFile, entryPath, data)
+
+    fun deleteEntry(archiveName: String, localFile: File?, entryPath: String) =
+        discImageReader.deleteEntry(archiveName, localFile, entryPath)
 
     private data class RawEntry(
         val name: String,
@@ -46,7 +93,18 @@ class ArchiveReader(private val tempDir: File) {
         openStream: () -> InputStream,
         localFile: File?
     ): List<RawEntry> {
-        val ext = ArchiveFormats.archiveExtension(archiveName)
+        val (ext, isDisc) = resolveFormat(archiveName, openStream, localFile)
+        if (isDisc) {
+            return discImageReader.readEntries(archiveName, openStream, localFile).map {
+                RawEntry(
+                    name = it.path,
+                    isDirectory = it.isDirectory,
+                    sizeBytes = it.sizeBytes,
+                    modifiedAtMillis = it.modifiedAtMillis
+                )
+            }
+        }
+
         if (ext == "7z" || ext == "cb7") {
             val file = localFile ?: materializeTempArchive(openStream)
             return try {
@@ -60,19 +118,42 @@ class ArchiveReader(private val tempDir: File) {
             return readZipFileEntries(localFile)
         }
 
-        return openArchiveInputStream(openStream(), ext).use { ais ->
-            val list = mutableListOf<RawEntry>()
-            var entry = ais.nextEntry
-            while (entry != null) {
-                list += RawEntry(
-                    name = entry.name,
-                    isDirectory = entry.isDirectory || entry.name.endsWith('/') || entry.name.endsWith('\\'),
-                    sizeBytes = if (entry.isDirectory) null else entry.size.takeIf { it >= 0 },
-                    modifiedAtMillis = entry.lastModifiedDate?.time
-                )
-                entry = ais.nextEntry
+        return try {
+            openArchiveInputStream(openStream(), ext).use { ais ->
+                val list = mutableListOf<RawEntry>()
+                var entry = ais.nextEntry
+                while (entry != null) {
+                    list += RawEntry(
+                        name = entry.name,
+                        isDirectory = entry.isDirectory || entry.name.endsWith('/') || entry.name.endsWith('\\'),
+                        sizeBytes = if (entry.isDirectory) null else entry.size.takeIf { it >= 0 },
+                        modifiedAtMillis = entry.lastModifiedDate?.time
+                    )
+                    entry = ais.nextEntry
+                }
+                if (list.isEmpty()) {
+                    // Check if it is actually a disc image with a generic name/extension
+                    try {
+                        return discImageReader.readEntries(archiveName, openStream, localFile).map {
+                            RawEntry(it.path, it.isDirectory, it.sizeBytes, it.modifiedAtMillis)
+                        }
+                    } catch (_: Exception) {}
+                }
+                list
             }
-            list
+        } catch (primaryError: Exception) {
+            try {
+                discImageReader.readEntries(archiveName, openStream, localFile).map {
+                    RawEntry(
+                        name = it.path,
+                        isDirectory = it.isDirectory,
+                        sizeBytes = it.sizeBytes,
+                        modifiedAtMillis = it.modifiedAtMillis
+                    )
+                }
+            } catch (_: Exception) {
+                throw primaryError
+            }
         }
     }
 
@@ -120,7 +201,11 @@ class ArchiveReader(private val tempDir: File) {
         val cleanTarget = normalizePath(entryPath)
         targetFile.parentFile?.mkdirs()
 
-        val ext = ArchiveFormats.archiveExtension(archiveName)
+        val (ext, isDisc) = resolveFormat(archiveName, openStream, localFile)
+        if (isDisc) {
+            return discImageReader.extractEntry(archiveName, cleanTarget, targetFile, openStream, localFile)
+        }
+
         if (ext == "7z" || ext == "cb7") {
             val file = localFile ?: materializeTempArchive(openStream)
             try {
@@ -161,18 +246,30 @@ class ArchiveReader(private val tempDir: File) {
             return targetFile
         }
 
-        openArchiveInputStream(openStream(), ext).use { ais ->
-            var entry = ais.nextEntry
-            while (entry != null) {
-                val norm = normalizePath(entry.name)
-                if (norm == cleanTarget || norm.equals(cleanTarget, ignoreCase = true)) {
-                    targetFile.outputStream().use { ais.copyTo(it) }
-                    return targetFile
+        try {
+            openArchiveInputStream(openStream(), ext).use { ais ->
+                var entry = ais.nextEntry
+                while (entry != null) {
+                    val norm = normalizePath(entry.name)
+                    if (norm == cleanTarget || norm.equals(cleanTarget, ignoreCase = true)) {
+                        targetFile.outputStream().use { ais.copyTo(it) }
+                        return targetFile
+                    }
+                    entry = ais.nextEntry
                 }
-                entry = ais.nextEntry
+            }
+        } catch (primaryError: Exception) {
+            return try {
+                discImageReader.extractEntry(archiveName, cleanTarget, targetFile, openStream, localFile)
+            } catch (_: Exception) {
+                throw primaryError
             }
         }
-        throw NoSuchElementException("Entry not found in archive: $entryPath")
+        return try {
+            discImageReader.extractEntry(archiveName, cleanTarget, targetFile, openStream, localFile)
+        } catch (_: Exception) {
+            throw NoSuchElementException("Entry not found in archive: $entryPath")
+        }
     }
 
     /**
@@ -185,7 +282,10 @@ class ArchiveReader(private val tempDir: File) {
         localFile: File? = null
     ): InputStream {
         val cleanTarget = normalizePath(entryPath)
-        val ext = ArchiveFormats.archiveExtension(archiveName)
+        val (ext, isDisc) = resolveFormat(archiveName, openStream, localFile)
+        if (isDisc) {
+            return discImageReader.openEntryStream(archiveName, cleanTarget, openStream, localFile)
+        }
 
         if (ext == "7z" || ext == "cb7") {
             val file = localFile ?: materializeTempArchive(openStream)
@@ -225,18 +325,30 @@ class ArchiveReader(private val tempDir: File) {
             return java.io.ByteArrayInputStream(bytes)
         }
 
-        openArchiveInputStream(openStream(), ext).use { ais ->
-            var entry = ais.nextEntry
-            while (entry != null) {
-                val norm = normalizePath(entry.name)
-                if (norm == cleanTarget || norm.equals(cleanTarget, ignoreCase = true)) {
-                    val bytes = ais.readBytes()
-                    return java.io.ByteArrayInputStream(bytes)
+        try {
+            openArchiveInputStream(openStream(), ext).use { ais ->
+                var entry = ais.nextEntry
+                while (entry != null) {
+                    val norm = normalizePath(entry.name)
+                    if (norm == cleanTarget || norm.equals(cleanTarget, ignoreCase = true)) {
+                        val bytes = ais.readBytes()
+                        return java.io.ByteArrayInputStream(bytes)
+                    }
+                    entry = ais.nextEntry
                 }
-                entry = ais.nextEntry
+            }
+        } catch (primaryError: Exception) {
+            return try {
+                discImageReader.openEntryStream(archiveName, cleanTarget, openStream, localFile)
+            } catch (_: Exception) {
+                throw primaryError
             }
         }
-        throw NoSuchElementException("Entry not found in archive: $entryPath")
+        return try {
+            discImageReader.openEntryStream(archiveName, cleanTarget, openStream, localFile)
+        } catch (_: Exception) {
+            throw NoSuchElementException("Entry not found in archive: $entryPath")
+        }
     }
 
     private fun openArchiveInputStream(raw: InputStream, ext: String): ArchiveInputStream<*> {

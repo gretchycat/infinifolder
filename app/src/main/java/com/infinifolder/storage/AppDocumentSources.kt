@@ -24,6 +24,7 @@ class AppDocumentSources(private val context: Context) {
             "com.android.providers.media.documents", "installed", "category", "package"
         )
         fun isAppAuthority(authority: String?): Boolean = authority != null && authority !in systemStorageAuthorities
+        fun isAppAuthority(uri: Uri?): Boolean = uri?.scheme == "content" && isAppAuthority(uri.authority)
     }
 
     fun discover(): List<AppDocumentSource> {
