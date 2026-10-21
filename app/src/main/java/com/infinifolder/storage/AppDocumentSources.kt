@@ -23,8 +23,40 @@ class AppDocumentSources(private val context: Context) {
             "com.android.externalstorage.documents", "com.android.providers.downloads.documents",
             "com.android.providers.media.documents", "installed", "category", "package"
         )
+        private val programNames = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+        fun recordProgramName(authority: String, name: String) {
+            if (authority.isNotBlank() && name.isNotBlank()) {
+                programNames[authority] = name
+            }
+        }
+
         fun isAppAuthority(authority: String?): Boolean = authority != null && authority !in systemStorageAuthorities
         fun isAppAuthority(uri: Uri?): Boolean = uri?.scheme == "content" && isAppAuthority(uri.authority)
+
+        fun getProgramName(context: Context?, authority: String?): String? {
+            if (authority == null) return null
+            programNames[authority]?.let { return it }
+            val pm = context?.packageManager ?: return null
+            val resolved = runCatching {
+                val provider = pm.resolveContentProvider(authority, 0)
+                val appInfo = provider?.applicationInfo ?: provider?.packageName?.let {
+                    runCatching { pm.getApplicationInfo(it, 0) }.getOrNull()
+                }
+                appInfo?.let { pm.getApplicationLabel(it).toString() }
+                    ?: provider?.loadLabel(pm)?.toString()
+            }.getOrNull()
+            if (!resolved.isNullOrBlank()) {
+                programNames[authority] = resolved
+                return resolved
+            }
+            return null
+        }
+
+        fun getProgramName(context: Context?, uri: Uri?): String? {
+            if (uri == null || !isAppAuthority(uri)) return null
+            return getProgramName(context, uri.authority)
+        }
     }
 
     fun discover(): List<AppDocumentSource> {
@@ -32,8 +64,13 @@ class AppDocumentSources(private val context: Context) {
         val labels = linkedMapOf<String, String>()
         packages.queryIntentContentProviders(Intent("android.content.action.DOCUMENTS_PROVIDER"), 0)
             .mapNotNull { it.providerInfo }.filter { it.enabled && it.exported }.forEach { provider ->
+                val appLabel = runCatching {
+                    val appInfo = provider.applicationInfo ?: packages.getApplicationInfo(provider.packageName, 0)
+                    packages.getApplicationLabel(appInfo).toString()
+                }.getOrNull() ?: provider.loadLabel(packages).toString()
                 provider.authority.orEmpty().split(';').filter { it.isNotBlank() && isAppAuthority(it) }.forEach {
-                    labels[it] = provider.loadLabel(packages).toString()
+                    labels[it] = appLabel
+                    recordProgramName(it, appLabel)
                 }
             }
         val grants = resolver.persistedUriPermissions.filter {
@@ -41,9 +78,15 @@ class AppDocumentSources(private val context: Context) {
         }.map { it.uri }
         grants.forEach { grant ->
             val authority = requireNotNull(grant.authority)
-            if (authority !in labels) labels[authority] = runCatching {
-                packages.resolveContentProvider(authority, 0)?.loadLabel(packages)?.toString()
-            }.getOrNull() ?: authority
+            if (authority !in labels) {
+                val resolvedName = runCatching {
+                    val p = packages.resolveContentProvider(authority, 0)
+                    val appInfo = p?.applicationInfo ?: p?.packageName?.let { packages.getApplicationInfo(it, 0) }
+                    appInfo?.let { packages.getApplicationLabel(it).toString() } ?: p?.loadLabel(packages)?.toString()
+                }.getOrNull() ?: authority
+                labels[authority] = resolvedName
+                recordProgramName(authority, resolvedName)
+            }
         }
         return labels.flatMap { (authority, label) ->
             val matchingGrants = grants.filter { it.authority == authority }

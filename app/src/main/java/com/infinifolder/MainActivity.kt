@@ -200,6 +200,7 @@ class MainActivity : Activity() {
     private var homeMode = false
     private var homePage = "root"
     private var logicalLocationPrefix: String? = null
+    private var currentProgramName: String? = null
     private val treeRoots = mutableListOf<TreeNode>()
     private val homeItems = mutableListOf<HomeItem>()
     private val applicationPublicItems = mutableListOf<HomeItem>()
@@ -372,6 +373,8 @@ class MainActivity : Activity() {
         pendingIconTargetMime = savedInstanceState?.getString("pending_icon_target_mime")
         buildUi()
         shared.edit().remove("tree_source_installed_apps").apply()
+        logicalLocationPrefix = savedInstanceState?.getString("logical_location_prefix")
+        currentProgramName = savedInstanceState?.getString("current_program_name")
         showHomeRoot()
         val saved = savedInstanceState?.getStringArrayList("history")?.map(Uri::parse)
         if (!saved.isNullOrEmpty()) {
@@ -2424,10 +2427,15 @@ class MainActivity : Activity() {
                     return
                 }
                 shared.edit().putString("tree_source_$requestedKey", uri.toString()).apply()
+                val progName = candidate?.detail?.ifBlank { candidate.title }
+                currentProgramName = progName
                 if (candidate != null) applicationPublicItems[candidateIndex] = candidate.copy(
                     treeUri = uri,
                     detail = "App-provided folder",
-                    action = { openRoot(uri, "Application public", false) },
+                    action = {
+                        currentProgramName = progName
+                        openRoot(uri, "Application public", false)
+                    },
                     needsAccessBadge = false
                 )
                 rebuildTreeRoots()
@@ -2557,11 +2565,21 @@ class MainActivity : Activity() {
             uri != localProvider.rootUri && (localProvider.owns(uri) || isPrimaryExternalStorageUri(uri)) -> "Internal shared storage"
             else -> null
         }
+        currentProgramName = if (logicalLocationPrefix == "Application public") {
+            AppDocumentSources.getProgramName(this, uri) ?: currentProgramName
+        } else null
         shared.edit().putString("root", uri.toString()).apply()
         history.clear(); historyNames.clear(); current = null
         status.text = "Loading folder…"
         io.execute {
-            val name = displayNameFor(uri) ?: "Storage"
+            val progName = if (logicalLocationPrefix == "Application public") {
+                currentProgramName ?: AppDocumentSources.getProgramName(this@MainActivity, uri)
+            } else null
+            val name = if (logicalLocationPrefix == "Application public" && !progName.isNullOrBlank()) {
+                progName
+            } else {
+                displayNameFor(uri) ?: "Storage"
+            }
             val path = displayPathFor(uri) ?: name
             val localRoute = if (localProvider.owns(uri)) runCatching {
                 var folder = localProvider.store.root
@@ -2651,6 +2669,12 @@ class MainActivity : Activity() {
                 }
                 renderTree()
                 return
+            }
+            if (logicalLocationPrefix == "Application public" && historyNames.isNotEmpty()) {
+                val prog = currentProgramName ?: AppDocumentSources.getProgramName(this, history.firstOrNull() ?: current)
+                if (!prog.isNullOrBlank() && (historyNames[0] == "Storage" || historyNames[0] == "home" || historyNames[0] == "Saved app folder")) {
+                    historyNames[0] = prog
+                }
             }
             breadcrumb.addView(crumbText("Virtual root", setTextColorForTheme(), false) { showHomeRoot() })
             logicalLocationPrefix?.let { prefix ->
@@ -3986,6 +4010,7 @@ class MainActivity : Activity() {
         homeMode = true
         homePage = "root"
         logicalLocationPrefix = null
+        currentProgramName = null
         updateCreateAction()
         renderLocation()
         status.text = "Locations and storage sources"
@@ -4190,6 +4215,7 @@ class MainActivity : Activity() {
         homeMode = true
         homePage = "internal_shared"
         logicalLocationPrefix = null
+        currentProgramName = null
         updateCreateAction()
         renderLocation()
         status.text = "Previously granted folders only. Allow storage access to see the actual root, including Downloads."
@@ -4256,6 +4282,7 @@ class MainActivity : Activity() {
         homeMode = true
         homePage = "application_public"
         logicalLocationPrefix = null
+        currentProgramName = null
         updateCreateAction()
         renderLocation()
         status.text = "Finding app-provided storage…"
@@ -4272,10 +4299,14 @@ class MainActivity : Activity() {
                 discovered.onSuccess { sources ->
                     applicationPublicItems.clear()
                     sources.forEach { source ->
+                        val progName = source.detail.ifBlank { source.title }
                         applicationPublicItems += HomeItem(
                             "📁", source.title, source.detail,
-                            { source.granted?.let { openRoot(it, "Application public", false) }
-                                ?: rootPicker(source.target, source.key, source.authority) },
+                            {
+                                currentProgramName = progName
+                                source.granted?.let { openRoot(it, "Application public", false) }
+                                    ?: rootPicker(source.target, source.key, source.authority)
+                            },
                             treeKey = source.key, treeUri = source.granted, treeExpandable = true,
                             showInHome = false, initialUri = source.target, treeParentKey = "application_public",
                             needsAccessBadge = source.granted == null, providerAuthority = source.authority
@@ -4526,10 +4557,17 @@ class MainActivity : Activity() {
                 applicationPublicItems.forEachIndexed { childIndex, childItem ->
                     val childKey = childItem.treeKey ?: "application_public_$childIndex"
                     val childUri = childItem.treeUri
+                    val progName = childItem.detail?.takeIf { it.isNotBlank() } ?: childItem.title
                     val childNode = priorNodes[childKey]?.takeIf { it.uri == childUri && it.name == childItem.title }
                         ?: TreeNode(childKey, childUri, childItem.title, childItem.icon, 2,
-                            { childUri?.let { openRoot(it, "Application public", false) } ?: childItem.action() }, true)
-                    childNode.onOpen = { childUri?.let { openRoot(it, "Application public", false) } ?: childItem.action() }
+                            {
+                                currentProgramName = progName
+                                childUri?.let { openRoot(it, "Application public", false) } ?: childItem.action()
+                            }, true)
+                    childNode.onOpen = {
+                        currentProgramName = progName
+                        childUri?.let { openRoot(it, "Application public", false) } ?: childItem.action()
+                    }
                     childNode.canExpand = childItem.treeExpandable
                     childNode.needsAccessBadge = childItem.needsAccessBadge
                     childNode.onRequestAccess = if (childItem.needsAccessBadge) {
@@ -4949,6 +4987,9 @@ class MainActivity : Activity() {
                 isPrimaryExternalStorageUri(target.uri) -> "Internal shared storage"
                 else -> null
             }
+            currentProgramName = if (prefix == "Application public") {
+                target.uri?.let { AppDocumentSources.getProgramName(this, it) } ?: target.name
+            } else null
             openRoot(target.uri, prefix)
             return
         }
@@ -4959,6 +5000,10 @@ class MainActivity : Activity() {
             route.any { it.key == "installed_apps" } -> "Installed Applications"
             else -> null
         }
+        currentProgramName = if (logicalLocationPrefix == "Application public") {
+            val appNode = route.firstOrNull { it.key.startsWith("app_provider_") || it.key.startsWith("application_public_") }
+            appNode?.name ?: target.uri?.let { AppDocumentSources.getProgramName(this, it) } ?: currentProgramName
+        } else null
         history.clear(); historyNames.clear()
         route.filter { it.uri != null }.forEach { node -> history += requireNotNull(node.uri); historyNames += node.name }
         current = target.uri; homeMode = false; updateCreateAction()
@@ -8583,6 +8628,8 @@ class MainActivity : Activity() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        outState.putString("logical_location_prefix", logicalLocationPrefix)
+        outState.putString("current_program_name", currentProgramName)
         outState.putStringArrayList("history", ArrayList(history.map(Uri::toString)))
         outState.putStringArrayList("history_names", ArrayList(historyNames))
         outState.putBoolean("storage_access_pending", waitingForStorageAccess)

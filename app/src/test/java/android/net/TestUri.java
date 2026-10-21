@@ -23,17 +23,7 @@ public class TestUri extends Uri {
     }
 
     @Override public String getAuthority() {
-        if (uriString.startsWith("apps://")) {
-            String rest = uriString.substring("apps://".length());
-            int slash = rest.indexOf('/');
-            int q = rest.indexOf('?');
-            int end = rest.length();
-            if (slash != -1) end = Math.min(end, slash);
-            if (q != -1) end = Math.min(end, q);
-            return rest.substring(0, end);
-        }
-        if (uriString.startsWith("sftp://") || uriString.startsWith("sshfs://") ||
-            uriString.startsWith("ftp://") || uriString.startsWith("ftps://") || uriString.startsWith("smb://")) {
+        if (uriString.contains("://")) {
             int schemeEnd = uriString.indexOf("://") + 3;
             String rest = uriString.substring(schemeEnd);
             int slash = rest.indexOf('/');
@@ -49,15 +39,7 @@ public class TestUri extends Uri {
     @Override public String getHost() { return getAuthority(); }
 
     @Override public String getPath() {
-        if (uriString.startsWith("apps://")) {
-            String rest = uriString.substring("apps://".length());
-            int slash = rest.indexOf('/');
-            if (slash == -1) return "";
-            int q = rest.indexOf('?');
-            return q != -1 ? rest.substring(slash, q) : rest.substring(slash);
-        }
-        if (uriString.startsWith("sftp://") || uriString.startsWith("sshfs://") ||
-            uriString.startsWith("ftp://") || uriString.startsWith("ftps://") || uriString.startsWith("smb://")) {
+        if (uriString.contains("://")) {
             int schemeEnd = uriString.indexOf("://") + 3;
             String rest = uriString.substring(schemeEnd);
             int slash = rest.indexOf('/');
