@@ -19,7 +19,7 @@ class SmbStorageProvider(
 
     override val id = "smb"
 
-    private fun resolveConfigAndCredentials(connectionId: String): Pair<SmbConfig, SmbCredentials> {
+    fun resolveConfigAndCredentials(connectionId: String): Pair<SmbConfig, SmbCredentials> {
         val conn = connectionLookup(connectionId)
             ?: throw IOException("Saved SMB connection not found: $connectionId")
         val creds = credentialStore.load(connectionId) ?: SmbCredentials()
@@ -82,6 +82,9 @@ class SmbStorageProvider(
                 val childUri = SmbUri.build(connId, childRemotePath)
                 val mimeType = if (isDir) "vnd.android.document/directory" else guessMimeType(filename)
 
+                val canRead = try { item.canRead() } catch (_: Throwable) { true }
+                val canWrite = try { item.canWrite() } catch (_: Throwable) { true }
+
                 list += ResourceEntry(
                     ref = ResourceRef(id, childUri.toString()),
                     metadata = ResourceMetadata(
@@ -89,7 +92,9 @@ class SmbStorageProvider(
                         mimeType = mimeType,
                         sizeBytes = sizeBytes,
                         modifiedAtMillis = mtime,
-                        isDirectory = isDir
+                        isDirectory = isDir,
+                        canRead = canRead,
+                        canWrite = canWrite
                     ),
                     uri = childUri
                 )

@@ -39,6 +39,7 @@ import com.infinifolder.archive.ArchiveFormats
 import com.infinifolder.archive.ArchiveStorageProvider
 import com.infinifolder.archive.ArchiveUri
 import com.infinifolder.archive.ArchiveWriter
+import com.infinifolder.viewer.*
 import com.infinifolder.sftp.SftpAuthType
 import com.infinifolder.sftp.SftpConfig
 import com.infinifolder.sftp.SftpCredentials
@@ -94,6 +95,29 @@ class MainActivity : Activity() {
     companion object {
         const val SAFETY_NOTIFICATION_CHANNEL_ID = "infinifolder_safety_channel"
         const val NOTIFICATION_ID_MOUNTED_BLOCKED = 3001
+
+        @Volatile
+        var activeProvider: StorageProvider? = null
+            internal set
+
+        @Volatile
+        var activeArchiveProvider: ArchiveStorageProvider? = null
+            internal set
+
+        fun resourceRef(uri: Uri): ResourceRef = ResourceRef(
+            when {
+                AppsUri.isAppsUri(uri) -> "apps"
+                ArchiveUri.isArchiveUri(uri) -> "archive"
+                SftpUri.isSftpUri(uri) -> "sftp"
+                FtpUri.isFtpUri(uri) -> "ftp"
+                SmbUri.isSmbUri(uri) -> "smb"
+                uri.scheme == "file" -> "local"
+                uri.authority?.contains(".files") == true -> "local"
+                uri.scheme == "content" -> "saf"
+                else -> "local"
+            },
+            uri.toString()
+        )
     }
     private val io = Executors.newFixedThreadPool(4)
     private val accessIo = Executors.newFixedThreadPool(2)
@@ -176,6 +200,16 @@ class MainActivity : Activity() {
     private var dark = false
     private var sortByName = true
     private var showHidden = false
+    private var useBuiltInViewersAndPlayers = true
+    private val themeListener = object : com.infinifolder.theme.ThemeChangeListener {
+        override fun onThemeChanged(theme: com.infinifolder.theme.ThemeColors) {
+            runOnUiThread {
+                dark = theme.isDark
+                buildUi()
+                if (homeMode) showHomeRoot() else current?.let { load(it) }
+            }
+        }
+    }
     private var selectionMode = false
     private val selectedUris = mutableSetOf<Uri>()
     private lateinit var operationsButton: TextView
@@ -311,8 +345,12 @@ class MainActivity : Activity() {
         initSafetyNotificationChannel()
         operations.addListener(operationsListener)
         shared = getSharedPreferences("browser", MODE_PRIVATE)
-        grid = shared.getBoolean("grid", true); dark = shared.getBoolean("dark", false); sortByName = shared.getBoolean("sort_name", true)
+        grid = shared.getBoolean("grid", true); sortByName = shared.getBoolean("sort_name", true)
         showHidden = shared.getBoolean("show_hidden", false)
+        useBuiltInViewersAndPlayers = shared.getBoolean("use_builtin_viewers_and_players", true)
+        com.infinifolder.theme.ThemeManager.init(applicationContext)
+        dark = com.infinifolder.theme.ThemeManager.activeTheme.isDark
+        com.infinifolder.theme.ThemeManager.addListener(themeListener)
         treeVisible = shared.getBoolean("tree_visible", false)
         iconSizeDp = shared.getInt("icon_size_dp", 56).coerceIn(32, 120)
         localProvider = LocalStorageProvider(applicationContext)
@@ -333,6 +371,18 @@ class MainActivity : Activity() {
         }
         smbProvider = smbFactory.provider
 
+        archiveProvider.deviceResolver = { uri, writable ->
+            com.infinifolder.archive.SeekableSourceResolver.resolve(
+                context = applicationContext,
+                sourceUri = uri,
+                writable = writable,
+                localProvider = localProvider,
+                sftpProvider = sftpProvider,
+                ftpProvider = ftpProvider,
+                smbProvider = smbProvider,
+                archiveProvider = archiveProvider
+            )
+        }
         archiveProvider.streamResolver = { uri ->
             when {
                 SftpUri.isSftpUri(uri) -> (sftpProvider.openRead(ResourceRef("sftp", uri.toString())) as? ProviderResult.Success)?.value
@@ -363,6 +413,8 @@ class MainActivity : Activity() {
             ftpProvider,
             smbProvider
         )
+        activeProvider = provider
+        activeArchiveProvider = archiveProvider
         hadStorageAccess = localProvider.hasAccess()
         waitingForStorageAccess = savedInstanceState?.getBoolean("storage_access_pending", false) ?: false
         pendingTreeSourceKey = savedInstanceState?.getString("pending_tree_source")
@@ -393,10 +445,12 @@ class MainActivity : Activity() {
     }
 
     private fun buildUi() {
-        val bg = if (dark) 0xFF171A16.toInt() else 0xFFF5F4EF.toInt()
-        val fg = if (dark) 0xFFF0F0E9.toInt() else 0xFF20231F.toInt()
+        val theme = com.infinifolder.theme.ThemeManager.activeTheme
+        val bg = theme.background
+        val fg = theme.textPrimary
+        val isThemeDark = theme.isDark
         window.statusBarColor = bg; window.navigationBarColor = bg
-        if (android.os.Build.VERSION.SDK_INT >= 26) window.decorView.systemUiVisibility = if (dark) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        if (android.os.Build.VERSION.SDK_INT >= 26) window.decorView.systemUiVisibility = if (isThemeDark) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         val horizontalInset = dp(16); val topInset = dp(10); val bottomInset = dp(8)
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setBackgroundColor(bg)
@@ -413,7 +467,13 @@ class MainActivity : Activity() {
                 insets
             }
         }
-        toolbar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; orientation = LinearLayout.HORIZONTAL }
+        val density = resources.displayMetrics.density
+        toolbar = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+            background = com.infinifolder.theme.ThemeManager.createToolbarDrawable(theme, density)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+        }
         button("☰", fg) { showSidebar() }; button("Home", fg) { showHomeRoot() }
         createButton = button("＋", fg) { onCreateAction() }
         createLinkButton = button("🔗+", fg) { showCreateUriLinkDialog() }
@@ -477,7 +537,7 @@ class MainActivity : Activity() {
         root.addView(unhideOperationBar)
         updateOperationVisibilityUi()
         status = TextView(this).apply {
-            textSize = 13f; setTextColor(if (dark) 0xFFBFC5BA.toInt() else 0xFF686D65.toInt()); setPadding(dp(4), dp(4), dp(4), dp(8))
+            textSize = 13f; setTextColor(theme.textSecondary); setPadding(dp(4), dp(4), dp(4), dp(8))
             setOnClickListener {
                 if (operations.activeSnapshots().isNotEmpty()) {
                     unhideOperationWindow()
@@ -684,6 +744,94 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun queueAllAudioInFolder(folderUri: Uri, startEntry: ResourceEntry? = null) {
+        io.execute {
+            val siblings = MediaSourceAdapter.listFolder(this@MainActivity, folderUri)
+            val audioTracks = siblings.filter {
+                !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.AUDIO
+            }
+            if (audioTracks.isEmpty()) {
+                runOnUiThread { Toast.makeText(this@MainActivity, "No audio files found in directory", Toast.LENGTH_SHORT).show() }
+                return@execute
+            }
+            val target = startEntry ?: audioTracks.first()
+            runOnUiThread {
+                val intent = Intent(this@MainActivity, com.infinifolder.viewer.AudioPlayerActivity::class.java).apply {
+                    data = target.uri
+                    putExtra("uri", target.uri.toString())
+                    putExtra("displayName", target.metadata.name)
+                    putExtra("parentUri", folderUri.toString())
+                }
+                startActivity(intent)
+            }
+        }
+    }
+
+    private fun queueAllVideoInFolder(folderUri: Uri, startEntry: ResourceEntry? = null) {
+        io.execute {
+            val siblings = MediaSourceAdapter.listFolder(this@MainActivity, folderUri)
+            val videoTracks = siblings.filter {
+                !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.VIDEO
+            }
+            if (videoTracks.isEmpty()) {
+                runOnUiThread { Toast.makeText(this@MainActivity, "No video files found in directory", Toast.LENGTH_SHORT).show() }
+                return@execute
+            }
+            val target = startEntry ?: videoTracks.first()
+            runOnUiThread {
+                val intent = Intent(this@MainActivity, com.infinifolder.viewer.VideoPlayerActivity::class.java).apply {
+                    data = target.uri
+                    putExtra("uri", target.uri.toString())
+                    putExtra("displayName", target.metadata.name)
+                    putExtra("parentUri", folderUri.toString())
+                }
+                startActivity(intent)
+            }
+        }
+    }
+
+    private fun queueAllMultimediaInFolder(folderUri: Uri, startEntry: ResourceEntry? = null) {
+        io.execute {
+            val siblings = MediaSourceAdapter.listFolder(this@MainActivity, folderUri)
+            val mediaTracks = siblings.filter {
+                if (it.metadata.isDirectory) return@filter false
+                val type = MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType)
+                type == MediaType.AUDIO || type == MediaType.VIDEO
+            }
+            if (mediaTracks.isEmpty()) {
+                runOnUiThread { Toast.makeText(this@MainActivity, "No multimedia files found in directory", Toast.LENGTH_SHORT).show() }
+                return@execute
+            }
+            val target = startEntry ?: mediaTracks.first()
+            val targetType = MediaTypeDetector.detect(target.metadata.name, target.metadata.mimeType)
+            runOnUiThread {
+                val targetActivity = if (targetType == MediaType.VIDEO) {
+                    com.infinifolder.viewer.VideoPlayerActivity::class.java
+                } else {
+                    com.infinifolder.viewer.AudioPlayerActivity::class.java
+                }
+                val intent = Intent(this@MainActivity, targetActivity).apply {
+                    data = target.uri
+                    putExtra("uri", target.uri.toString())
+                    putExtra("displayName", target.metadata.name)
+                    putExtra("parentUri", folderUri.toString())
+                    putExtra("queueMultimedia", true)
+                }
+                startActivity(intent)
+            }
+        }
+    }
+
+    private fun enqueueAudio(entry: ResourceEntry) {
+        val s = com.infinifolder.viewer.AudioPlayerService.currentService
+        if (s != null) {
+            s.enqueue(com.infinifolder.viewer.AudioTrack(entry.uri, entry.metadata.name))
+            Toast.makeText(this, "Queued: ${entry.metadata.name}", Toast.LENGTH_SHORT).show()
+        } else {
+            launchBuiltInViewer(entry, com.infinifolder.viewer.MediaType.AUDIO)
+        }
+    }
+
     private fun showCurrentDirectoryMenu(dirUri: Uri? = current) {
         val targetDirUri = dirUri ?: return
         val dirName = historyNames.lastOrNull() ?: displayNameFor(targetDirUri) ?: "Current directory"
@@ -692,8 +840,22 @@ class MainActivity : Activity() {
         val isMounted = mountCheck?.isMounted == true
         val isWritableArchive = isArchiveDir && !isMounted && archiveProvider.isWritable(targetDirUri)
         val writable = (!isArchiveDir || isWritableArchive) && !AppsUri.isAppsUri(targetDirUri) && !isMounted
+
+        val audioCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.AUDIO }
+        val videoCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.VIDEO }
+        val mediaGroup = mutableListOf<String>()
+        if (audioCount > 0) mediaGroup.add("Queue all audio ($audioCount)")
+        if (videoCount > 0) mediaGroup.add("Play all video ($videoCount)")
+        if (audioCount > 0 && videoCount > 0) mediaGroup.add("Queue all multimedia (${audioCount + videoCount})")
+
         val createGroup = if (writable) listOf("Paste", "Create folder", "Create link") else emptyList()
         val propertiesGroup = listOf("Properties")
+
+        val groups = mutableListOf<List<String>>()
+        if (mediaGroup.isNotEmpty()) groups.add(mediaGroup)
+        if (createGroup.isNotEmpty()) groups.add(createGroup)
+        groups.add(propertiesGroup)
+
         showGroupedMenuDialog(
             title = dirName,
             subtitle = when {
@@ -702,8 +864,20 @@ class MainActivity : Activity() {
                 isArchiveDir -> "Archive folder"
                 else -> "Current directory"
             },
-            groups = listOf(createGroup, propertiesGroup)
+            groups = groups
         ) { action ->
+            if (action.startsWith("Queue all audio")) {
+                queueAllAudioInFolder(targetDirUri)
+                return@showGroupedMenuDialog
+            }
+            if (action.startsWith("Play all video")) {
+                queueAllVideoInFolder(targetDirUri)
+                return@showGroupedMenuDialog
+            }
+            if (action.startsWith("Queue all multimedia")) {
+                queueAllMultimediaInFolder(targetDirUri)
+                return@showGroupedMenuDialog
+            }
             when (action) {
                 "Paste" -> {
                     if (isMounted) {
@@ -731,12 +905,27 @@ class MainActivity : Activity() {
         }
     }
     private fun showCurrentDirectoryProperties(dirUri: Uri, dirName: String) {
-        val modified = if (localProvider.owns(dirUri)) {
-            runCatching { localProvider.fileFor(dirUri).lastModified().takeIf { it > 0 } }.getOrNull()
+        val localDir = if (localProvider.owns(dirUri)) {
+            runCatching { localProvider.fileFor(dirUri) }.getOrNull()
         } else null
+        val perm = localDir?.let { runCatching { com.infinifolder.storage.PermissionHelper.getFilePermissions(it) }.getOrNull() }
+        val modified = localDir?.lastModified()?.takeIf { it > 0 }
         val entry = ResourceEntry(
             ref = resourceRef(dirUri),
-            metadata = ResourceMetadata(dirName, "vnd.android.document/directory", null, modified, true),
+            metadata = ResourceMetadata(
+                name = dirName,
+                mimeType = "vnd.android.document/directory",
+                sizeBytes = null,
+                modifiedAtMillis = modified,
+                isDirectory = true,
+                canRead = perm?.canRead ?: true,
+                canWrite = perm?.canWrite ?: true,
+                canExecute = perm?.canExecute ?: false,
+                permissionsMode = perm?.mode,
+                permissionsFormatted = perm?.formatted,
+                owner = perm?.owner,
+                group = perm?.group
+            ),
             uri = dirUri
         )
         showPropertiesDialog(entry)
@@ -2581,16 +2770,39 @@ class MainActivity : Activity() {
                 displayNameFor(uri) ?: "Storage"
             }
             val path = displayPathFor(uri) ?: name
-            val localRoute = if (localProvider.owns(uri)) runCatching {
-                var folder = localProvider.store.root
-                buildList {
-                    add(localProvider.rootUri to "Internal shared storage")
-                    localProvider.store.components(localProvider.fileFor(uri)).forEach { component ->
-                        folder = java.io.File(folder, component)
-                        add(localProvider.uriFor(folder) to component)
+            val localRoute: List<Pair<Uri, String>>? = if (localProvider.owns(uri)) runCatching {
+                val targetFile = localProvider.fileFor(uri)
+                val sharedRoot = localProvider.store.root.canonicalFile
+                if (targetFile.canonicalPath.startsWith(sharedRoot.canonicalPath)) {
+                    var folder = sharedRoot
+                    buildList<Pair<Uri, String>> {
+                        add(localProvider.rootUri to "Internal shared storage")
+                        sharedRoot.toPath().relativize(targetFile.toPath()).map { it.toString() }.filter { it.isNotEmpty() }
+                            .forEach { component ->
+                                folder = java.io.File(folder, component)
+                                add(localProvider.uriFor(folder) to component)
+                            }
                     }
+                } else {
+                    val matchingVol = getSystemService(StorageManager::class.java)?.storageVolumes?.firstOrNull { vol ->
+                        if (android.os.Build.VERSION.SDK_INT >= 30) {
+                            vol.directory?.let { targetFile.canonicalPath.startsWith(it.canonicalPath) } == true
+                        } else false
+                    }
+                    if (matchingVol != null && android.os.Build.VERSION.SDK_INT >= 30) {
+                        val volDir = matchingVol.directory!!.canonicalFile
+                        var folder = volDir
+                        buildList<Pair<Uri, String>> {
+                            add(localProvider.uriFor(volDir) to matchingVol.getDescription(this@MainActivity))
+                            volDir.toPath().relativize(targetFile.toPath()).map { it.toString() }.filter { it.isNotEmpty() }
+                                .forEach { component ->
+                                    folder = java.io.File(folder, component)
+                                    add(localProvider.uriFor(folder) to component)
+                                }
+                        }
+                    } else null
                 }
-            }.getOrNull() else null
+            }.getOrNull()?.let { it } else null
             shared.edit().putString("source_name_${uri}", name).apply()
             shared.edit().putString("source_path_v2_${uri}", path).apply()
             runOnUiThread {
@@ -3189,15 +3401,20 @@ class MainActivity : Activity() {
                 }
             }
             addView(rawIcon, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
-            if (isShortcut) {
+            if (isShortcut || entry.metadata.isSymbolicLink) {
+                val isBroken = entry.metadata.isBrokenLink
                 val linkBadge = TextView(context).apply {
-                    text = "↗"
+                    text = if (isBroken) "⊘" else "↗"
                     textSize = 10f
                     setTextColor(0xFFFFFFFF.toInt())
                     gravity = Gravity.CENTER
                     background = GradientDrawable().apply {
                         shape = GradientDrawable.OVAL
-                        setColor(if (dark) 0xFF1976D2.toInt() else 0xFF1565C0.toInt())
+                        setColor(
+                            if (isBroken) 0xFFD32F2F.toInt()
+                            else if (dark) 0xFF1976D2.toInt()
+                            else 0xFF1565C0.toInt()
+                        )
                     }
                     val badgeSize = dp(16)
                     layoutParams = FrameLayout.LayoutParams(badgeSize, badgeSize).apply {
@@ -3222,6 +3439,25 @@ class MainActivity : Activity() {
                     }
                 }
                 addView(badge)
+            }
+            if (!AppsUri.isAppsUri(entry.uri) && (!entry.metadata.canRead || !entry.metadata.canWrite)) {
+                val isNoRead = !entry.metadata.canRead
+                val permBadge = TextView(context).apply {
+                    text = if (isNoRead) "⊘" else "🔒"
+                    textSize = 9f
+                    setTextColor(0xFFFFFFFF.toInt())
+                    gravity = Gravity.CENTER
+                    includeFontPadding = false
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(if (isNoRead) 0xFFD32F2F.toInt() else (if (dark) 0xFF546E7A.toInt() else 0xFF455A64.toInt()))
+                    }
+                    val badgeSize = dp(16)
+                    layoutParams = FrameLayout.LayoutParams(badgeSize, badgeSize).apply {
+                        gravity = Gravity.BOTTOM or Gravity.START
+                    }
+                }
+                addView(permBadge)
             }
         }
 
@@ -3402,13 +3638,27 @@ class MainActivity : Activity() {
                 updateListingStatus()
                 return@OnClickListener
             }
+            if (entry.metadata.isBrokenLink) {
+                Toast.makeText(this@MainActivity, "Broken link: target does not exist (${entry.metadata.linkTarget ?: ""})", Toast.LENGTH_SHORT).show()
+                return@OnClickListener
+            }
             if (isShortcut) {
                 openShortcut(entry)
                 return@OnClickListener
             }
             if (entry.metadata.isDirectory) {
                 navigate(entry.uri, displayName = entry.metadata.name)
-            } else if (isDefaultArchive) {
+                return@OnClickListener
+            }
+
+            val cachedMagic = ambiguousMagicCache.get(entry.uri.toString())
+            val effectiveMime = cachedMagic?.mimeType ?: entry.metadata.mimeType
+            val isPkg = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isPackagedFormat(entry.metadata.name, effectiveMime)
+            val isArc = !AppsUri.isAppUri(entry.uri) && (
+                ArchiveFormats.isArchive(entry.metadata.name, effectiveMime) ||
+                (cachedMagic != null && (cachedMagic.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(entry.metadata.name, cachedMagic.mimeType)))
+            )
+            if (isArc && !isPkg) {
                 if (ArchiveUri.isArchiveUri(entry.uri)) {
                     val nestedVirtualPath = if (historyNames.isNotEmpty()) (historyNames + entry.metadata.name).joinToString("/") else null
                     io.execute {
@@ -3425,9 +3675,60 @@ class MainActivity : Activity() {
                     val archiveUri = ArchiveUri.toArchiveUri(entry.uri)
                     navigate(archiveUri, displayName = entry.metadata.name)
                 }
-            } else {
-                open(entry)
+                return@OnClickListener
             }
+
+            if (cachedMagic == null && !isPkg && FileMagicDetector.isAmbiguousOrUnknown(entry.metadata.name, entry.metadata.mimeType)) {
+                io.execute {
+                    val magic = try {
+                        if (localProvider.owns(entry.uri)) {
+                            FileMagicDetector.detect(localProvider.fileFor(entry.uri), peekCompressedPayload = true)
+                        } else {
+                            FileMagicDetector.detectFromStream {
+                                (provider.openRead(entry.ref) as? ProviderResult.Success)?.value
+                                    ?: throw java.io.IOException("Cannot open stream")
+                            }
+                        }
+                    } catch (_: Throwable) { null }
+                    if (magic != null) {
+                        ambiguousMagicCache.put(entry.uri.toString(), magic)
+                    }
+                    val probeMime = magic?.mimeType ?: entry.metadata.mimeType
+                    val probeIsPkg = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isPackagedFormat(entry.metadata.name, probeMime)
+                    val probeIsArc = !AppsUri.isAppUri(entry.uri) && (
+                        ArchiveFormats.isArchive(entry.metadata.name, probeMime) ||
+                        (magic != null && (magic.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(entry.metadata.name, magic.mimeType)))
+                    )
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        if (probeIsArc && !probeIsPkg) {
+                            if (ArchiveUri.isArchiveUri(entry.uri)) {
+                                val nestedVirtualPath = if (historyNames.isNotEmpty()) (historyNames + entry.metadata.name).joinToString("/") else null
+                                io.execute {
+                                    try {
+                                        val cached = archiveProvider.extractToCache(entry.uri, nestedVirtualPath)
+                                        val fileUri = Uri.fromFile(cached)
+                                        val nestedUri = ArchiveUri.toArchiveUri(fileUri)
+                                        runOnUiThread { navigate(nestedUri, displayName = entry.metadata.name) }
+                                    } catch (e: Exception) {
+                                        runOnUiThread { Toast.makeText(this@MainActivity, "Could not open archive: ${e.message}", Toast.LENGTH_SHORT).show() }
+                                    }
+                                }
+                            } else {
+                                navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
+                            }
+                        } else {
+                            val effectiveEntry = if (magic != null && magic.mimeType != entry.metadata.mimeType) {
+                                entry.copy(metadata = entry.metadata.copy(mimeType = magic.mimeType))
+                            } else entry
+                            open(effectiveEntry)
+                        }
+                    }
+                }
+                return@OnClickListener
+            }
+
+            open(entry)
         }
         val onEntryLongClick = View.OnLongClickListener {
             if (selectionMode) {
@@ -3843,6 +4144,39 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun launchBuiltInViewer(entry: ResourceEntry, mediaType: com.infinifolder.viewer.MediaType): Boolean {
+        val intent = when (mediaType) {
+            com.infinifolder.viewer.MediaType.IMAGE -> Intent(this, com.infinifolder.viewer.ImageViewerActivity::class.java)
+            com.infinifolder.viewer.MediaType.TEXT -> Intent(this, com.infinifolder.viewer.TextViewerActivity::class.java)
+            com.infinifolder.viewer.MediaType.MARKDOWN -> Intent(this, com.infinifolder.viewer.MarkdownViewerActivity::class.java)
+            com.infinifolder.viewer.MediaType.HTML -> Intent(this, com.infinifolder.viewer.HtmlViewerActivity::class.java)
+            com.infinifolder.viewer.MediaType.AUDIO -> Intent(this, com.infinifolder.viewer.AudioPlayerActivity::class.java)
+            com.infinifolder.viewer.MediaType.VIDEO -> Intent(this, com.infinifolder.viewer.VideoPlayerActivity::class.java)
+            com.infinifolder.viewer.MediaType.PDF -> Intent(this, com.infinifolder.viewer.PdfViewerActivity::class.java)
+            com.infinifolder.viewer.MediaType.EPUB -> Intent(this, com.infinifolder.viewer.EpubViewerActivity::class.java)
+            com.infinifolder.viewer.MediaType.SPREADSHEET -> Intent(this, com.infinifolder.viewer.CsvViewerActivity::class.java)
+            else -> return false
+        }
+        intent.data = entry.uri
+        intent.putExtra("uri", entry.uri.toString())
+        intent.putExtra("extra_uri", entry.uri.toString())
+        intent.putExtra("displayName", entry.metadata.name)
+        intent.putExtra("extra_name", entry.metadata.name)
+        intent.putExtra("mimeType", entry.metadata.mimeType)
+        intent.putExtra("extra_mime", entry.metadata.mimeType)
+        current?.let {
+            intent.putExtra("parentUri", it.toString())
+            intent.putExtra("extra_parent_uri", it.toString())
+        }
+        return try {
+            startActivity(intent)
+            true
+        } catch (e: Exception) {
+            Toast.makeText(this, "Failed to start built-in viewer: ${e.message}", Toast.LENGTH_SHORT).show()
+            false
+        }
+    }
+
     private fun open(entry: ResourceEntry) {
         if (AppsUri.isAppUri(entry.uri)) {
             val pkg = AppsUri.getPackageName(entry.uri)
@@ -3850,6 +4184,25 @@ class MainActivity : Activity() {
                 launchApp(pkg)
             }
             return
+        }
+        val cachedMagic = ambiguousMagicCache.get(entry.uri.toString())
+        val effectiveMime = cachedMagic?.mimeType ?: entry.metadata.mimeType
+        val isPkg = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isPackagedFormat(entry.metadata.name, effectiveMime)
+        val isArchiveOrDisc = !AppsUri.isAppUri(entry.uri) && (
+            ArchiveFormats.isArchive(entry.metadata.name, effectiveMime) ||
+            (cachedMagic != null && (cachedMagic.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(entry.metadata.name, cachedMagic.mimeType)))
+        )
+        if (isArchiveOrDisc && !isPkg) {
+            navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
+            return
+        }
+        if (useBuiltInViewersAndPlayers) {
+            val mediaType = com.infinifolder.viewer.MediaTypeDetector.detect(entry.metadata.name, effectiveMime)
+            if (mediaType != com.infinifolder.viewer.MediaType.UNSUPPORTED && mediaType != com.infinifolder.viewer.MediaType.ARCHIVE_OR_CONTAINER) {
+                if (launchBuiltInViewer(entry, mediaType)) {
+                    return
+                }
+            }
         }
         if (ArchiveUri.isArchiveUri(entry.uri)) {
             val virtualPath = archiveProvider.resolveVirtualPath(entry.uri)
@@ -3932,11 +4285,10 @@ class MainActivity : Activity() {
             return
         }
         val pkgMime = ArchiveFormats.packageMimeType(entry.metadata.name)
-        val cachedMagic = if (pkgMime != null) null else ambiguousMagicCache.get(entry.uri.toString())
-        val effectiveMime = pkgMime
+        val externalMime = pkgMime
             ?: cachedMagic?.mimeType?.takeIf { it.isNotEmpty() }
             ?: entry.metadata.mimeType
-        launchExternalViewIntent(entry.uri, effectiveMime, entry.metadata.name)
+        launchExternalViewIntent(entry.uri, externalMime, entry.metadata.name)
     }
 
     private fun launchExternalViewIntent(targetUri: Uri, mimeType: String? = null, displayName: String? = null) {
@@ -4135,11 +4487,15 @@ class MainActivity : Activity() {
                     val description = volume.getDescription(this)
                     val key = if (volume.isPrimary) "internal_shared" else "volume_${volume.uuid ?: description.hashCode()}"
                     val grantedUri = treeSourceUri(key)
+                    val volDir = if (android.os.Build.VERSION.SDK_INT >= 30) runCatching { volume.directory }.getOrNull() else null
+                    val hasDirectAccess = hasLocalAccess && volDir != null && volDir.canRead()
                     val detail = when {
                         !mounted -> "Not currently mounted"
-                        volume.isRemovable -> "Removable storage · choose a folder"
+                        volume.isRemovable -> if (hasDirectAccess) {
+                            if (volume.state == Environment.MEDIA_MOUNTED_READ_ONLY) "Removable storage · Read-only" else "Removable storage · Mounted"
+                        } else "Removable storage · choose a folder"
                         volume.isPrimary -> "Device storage · choose a folder"
-                        else -> "Available volume · choose a folder"
+                        else -> if (hasDirectAccess) "Available volume · Mounted" else "Available volume · choose a folder"
                     }
                     if (volume.isPrimary) {
                         discoveredItems += HomeItem("📱", "Internal shared storage", "Shared folders", {
@@ -4147,13 +4503,20 @@ class MainActivity : Activity() {
                         }, treeKey = key, treeExpandable = true, needsAccessBadge = !hasLocalAccess)
                     } else {
                         discoveredItems += HomeItem(if (volume.isRemovable) "💾" else "📱", description, detail, {
-                            if (grantedUri != null) openRoot(grantedUri)
-                            else if (mounted && android.os.Build.VERSION.SDK_INT >= 29) {
+                            if (grantedUri != null) {
+                                openRoot(grantedUri, description, false)
+                            } else if (hasDirectAccess) {
+                                val sdUri = localProvider.uriFor(volDir!!)
+                                openRoot(sdUri, description, false)
+                            } else if (mounted && android.os.Build.VERSION.SDK_INT >= 29) {
                                 pendingTreeSourceKey = key
                                 startActivityForResult(volume.createOpenDocumentTreeIntent(), pickTreeRequest)
+                            } else if (mounted) {
+                                rootPicker(sourceKey = key)
+                            } else {
+                                Toast.makeText(this, detail, Toast.LENGTH_SHORT).show()
                             }
-                            else if (mounted) rootPicker(sourceKey = key) else Toast.makeText(this, detail, Toast.LENGTH_SHORT).show()
-                        }, treeKey = key, treeUri = grantedUri, treeExpandable = mounted, needsAccessBadge = mounted && grantedUri == null)
+                        }, treeKey = key, treeUri = grantedUri, treeExpandable = mounted, needsAccessBadge = mounted && grantedUri == null && !hasDirectAccess)
                     }
                 }
             } catch (_: Exception) {}
@@ -5192,14 +5555,22 @@ class MainActivity : Activity() {
     }
     private fun showOptions() {
         val currentThemeName = iconThemeManager.getActiveThemeInfo()?.name ?: "System emojis"
+        val themeMode = com.infinifolder.theme.ThemeManager.getThemeMode(this)
+        val themeModeLabel = when (themeMode) {
+            com.infinifolder.theme.ThemeMode.SYSTEM -> "Theme: Follow system (Auto • ${if (dark) "Dark" else "Light"})"
+            com.infinifolder.theme.ThemeMode.DARK -> "Theme: Dark"
+            com.infinifolder.theme.ThemeMode.LIGHT -> "Theme: Light"
+        }
         val choices = arrayOf(
             if (grid) "List / details view" else "Grid view",
             if (sortByName) "Sort by modified" else "Sort by name",
             if (showHidden) "Hide hidden files" else "Show hidden files",
-            if (dark) "Light theme" else "Dark theme",
+            themeModeLabel,
+            if (useBuiltInViewersAndPlayers) "Built-in viewers & players (Enabled)" else "Built-in viewers & players (Disabled)",
             "Operations",
             "Icon size (${iconSizeDp} dp)",
-            "Icon theme ($currentThemeName)"
+            "Icon theme ($currentThemeName)",
+            "Interface theme (${com.infinifolder.theme.ThemeManager.activeTheme.name})"
         )
         dialogBuilder().setTitle("View options").setItems(choices) { _, i -> when (i) {
             0 -> { grid = !grid; shared.edit().putBoolean("grid", grid).apply(); renderCurrentContents() }
@@ -5214,11 +5585,98 @@ class MainActivity : Activity() {
                 refreshInternalSharedTree()
                 rebuildTreeRoots()
             }
-            3 -> { dark = !dark; shared.edit().putBoolean("dark", dark).apply(); buildUi(); if (homeMode) showHomeRoot() else current?.let { load(it) } }
-            4 -> showOperations()
-            5 -> showIconSizeDialog()
-            6 -> showIconThemeDialog()
+            3 -> showThemeModeDialog()
+            4 -> {
+                useBuiltInViewersAndPlayers = !useBuiltInViewersAndPlayers
+                shared.edit().putBoolean("use_builtin_viewers_and_players", useBuiltInViewersAndPlayers).apply()
+                val state = if (useBuiltInViewersAndPlayers) "enabled" else "disabled"
+                Toast.makeText(this, "Built-in viewers and players $state", Toast.LENGTH_SHORT).show()
+            }
+            5 -> showOperations()
+            6 -> showIconSizeDialog()
+            7 -> showIconThemeDialog()
+            8 -> showAppThemeDialog()
         } }.show()
+    }
+
+    private fun showThemeModeDialog() {
+        val currentMode = com.infinifolder.theme.ThemeManager.getThemeMode(this)
+        val modes = arrayOf(
+            com.infinifolder.theme.ThemeMode.SYSTEM,
+            com.infinifolder.theme.ThemeMode.DARK,
+            com.infinifolder.theme.ThemeMode.LIGHT
+        )
+        val labels = arrayOf(
+            "⚙️ Follow system (Automatic)",
+            "🌙 Dark mode",
+            "☀️ Light mode"
+        )
+        val selectedIdx = modes.indexOf(currentMode).coerceAtLeast(0)
+
+        dialogBuilder()
+            .setTitle("Theme mode")
+            .setSingleChoiceItems(labels, selectedIdx) { dialog, which ->
+                val chosenMode = modes[which]
+                com.infinifolder.theme.ThemeManager.setThemeMode(this, chosenMode)
+                dark = com.infinifolder.theme.ThemeManager.activeTheme.isDark
+                buildUi()
+                if (homeMode) showHomeRoot() else current?.let { load(it) }
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showAppThemeDialog() {
+        val themes = com.infinifolder.theme.ThemeManager.listPresetThemes(dark)
+        val activeTheme = com.infinifolder.theme.ThemeManager.activeTheme
+        val options = themes.map {
+            val mark = if (it.id == activeTheme.id) "● " else "○ "
+            "$mark${it.name}"
+        }.toMutableList()
+        options.add("📂 Import Winamp (.wsz) Skin…")
+
+        dialogBuilder().setTitle("Interface Theme").setItems(options.toTypedArray()) { _, which ->
+            if (which < themes.size) {
+                com.infinifolder.theme.ThemeManager.setTheme(this, themes[which])
+                buildUi()
+                if (homeMode) showHomeRoot() else current?.let { load(it) }
+            } else {
+                promptImportWszSkin()
+            }
+        }.show()
+    }
+
+    private fun promptImportWszSkin() {
+        val input = EditText(this).apply {
+            hint = "/sdcard/Download/classic.wsz"
+        }
+        val padding = dp(20)
+        val container = FrameLayout(this).apply {
+            setPadding(padding, padding / 2, padding, padding / 2)
+            addView(input)
+        }
+
+        dialogBuilder()
+            .setTitle("Import Winamp (.wsz) Skin")
+            .setMessage("Enter the local path or URI of a Winamp .wsz / .zip skin file:")
+            .setView(container)
+            .setPositiveButton("Import") { _, _ ->
+                val path = input.text.toString().trim()
+                if (path.isNotEmpty()) {
+                    val skinUri = if (path.startsWith("/")) Uri.fromFile(java.io.File(path)) else Uri.parse(path)
+                    val imported = com.infinifolder.theme.ThemeManager.importSkin(this, skinUri)
+                    if (imported != null) {
+                        Toast.makeText(this, "Skin '${imported.name}' applied!", Toast.LENGTH_SHORT).show()
+                        buildUi()
+                        if (homeMode) showHomeRoot() else current?.let { load(it) }
+                    } else {
+                        Toast.makeText(this, "Failed to parse skin file", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun showIconThemeDialog() {
@@ -5465,7 +5923,10 @@ class MainActivity : Activity() {
     private val operationsListener: (List<OperationSnapshot>) -> Unit = { snapshots ->
         runOnUiThread {
             if (isFinishing || isDestroyed) return@runOnUiThread
-            val activeList = snapshots.filter { it.state == OperationState.RUNNING || it.state == OperationState.QUEUED }
+            val activeList = snapshots.filter {
+                (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) &&
+                !it.id.startsWith("playback_")
+            }
             activeList.forEach { snap ->
                 if (snap.id !in operationWindowQueue) {
                     operationWindowQueue.addLast(snap.id)
@@ -5837,8 +6298,13 @@ class MainActivity : Activity() {
         val isShortcut = isSingle && ShortcutInfo.isShortcut(currentEntry.metadata.name, currentEntry.metadata.mimeType)
         var shortcut = if (isShortcut) shortcutCache.get(currentEntry.uri.toString()) else null
         val isDirectory = isSingle && !isShortcut && currentEntry.metadata.isDirectory
-        val isPackagedFormat = isSingle && !AppsUri.isAppUri(currentEntry.uri) && ArchiveFormats.isPackagedFormat(currentEntry.metadata.name, currentEntry.metadata.mimeType)
-        val isArchive = isSingle && !AppsUri.isAppUri(currentEntry.uri) && ArchiveFormats.isArchive(currentEntry.metadata.name, currentEntry.metadata.mimeType)
+        val cachedMagicForProps = ambiguousMagicCache.get(currentEntry.uri.toString())
+        val effectiveMimeForProps = cachedMagicForProps?.mimeType ?: currentEntry.metadata.mimeType
+        val isPackagedFormat = isSingle && !AppsUri.isAppUri(currentEntry.uri) && ArchiveFormats.isPackagedFormat(currentEntry.metadata.name, effectiveMimeForProps)
+        val isArchive = isSingle && !AppsUri.isAppUri(currentEntry.uri) && (
+            ArchiveFormats.isArchive(currentEntry.metadata.name, effectiveMimeForProps) ||
+            (cachedMagicForProps != null && (cachedMagicForProps.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(currentEntry.metadata.name, cachedMagicForProps.mimeType)))
+        )
         val inArchive = isSingle && ArchiveUri.isArchiveUri(currentEntry.uri)
         val isFile = isSingle && !isShortcut && !currentEntry.metadata.isDirectory && !AppsUri.isAppsUri(currentEntry.uri)
         val fileMimeKey = if (isFile) CustomIconStore.resolveMimeKey(currentEntry.metadata) else null
@@ -6172,6 +6638,8 @@ class MainActivity : Activity() {
         val typeView = textValue(typeDesc)
         propertyRow("Type", typeView)
 
+        var propertiesDialogRef: android.app.AlertDialog? = null
+
         if (isFile && !isPackagedFormat) {
             io.execute {
                 val magic = if (localProvider.owns(currentEntry.uri)) {
@@ -6186,9 +6654,24 @@ class MainActivity : Activity() {
                     } catch (_: Throwable) { null }
                 }
                 if (magic != null) {
+                    ambiguousMagicCache.put(currentEntry.uri.toString(), magic)
                     runOnUiThread {
                         if (!isFinishing && !isDestroyed) {
                             typeView.text = "${magic.description} (${magic.mimeType})"
+                            val dlg = propertiesDialogRef
+                            val isArcOrDisc = magic.isArchiveOrDiscImage ||
+                                ArchiveFormats.isArchive(currentEntry.metadata.name, magic.mimeType) ||
+                                ArchiveFormats.isDiscImage(currentEntry.metadata.name, magic.mimeType)
+                            if (dlg != null && dlg.isShowing && isArcOrDisc && !isPackagedFormat && !inArchive) {
+                                dlg.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)?.apply {
+                                    text = "Mount / Browse"
+                                    visibility = View.VISIBLE
+                                    setOnClickListener {
+                                        dlg.dismiss()
+                                        navigate(ArchiveUri.toArchiveUri(currentEntry.uri), displayName = currentEntry.metadata.name)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -6414,6 +6897,66 @@ class MainActivity : Activity() {
             propertyRow("URI", uriView)
         }
 
+        // 5b. Symbolic Link Info
+        if (isSingle && currentEntry.metadata.isSymbolicLink) {
+            val target = currentEntry.metadata.linkTarget ?: "—"
+            propertyRow("Link Target", textValue(target))
+            val status = if (currentEntry.metadata.isBrokenLink) {
+                "Broken symbolic link (target does not exist)"
+            } else {
+                "Valid link to ${if (currentEntry.metadata.isDirectory) "folder" else "file"}"
+            }
+            propertyRow("Link Status", textValue(status))
+        }
+
+        // 6. Permissions
+        if (isSingle) {
+            val localFile = runCatching { if (localProvider.owns(currentEntry.uri)) localProvider.fileFor(currentEntry.uri) else null }.getOrNull()
+            val meta = if (localFile != null && currentEntry.metadata.permissionsMode == null) {
+                val p = com.infinifolder.storage.PermissionHelper.getFilePermissions(localFile)
+                currentEntry.metadata.copy(
+                    canRead = p.canRead,
+                    canWrite = p.canWrite,
+                    canExecute = p.canExecute,
+                    permissionsMode = p.mode,
+                    permissionsFormatted = p.formatted,
+                    owner = p.owner,
+                    group = p.group
+                )
+            } else {
+                currentEntry.metadata
+            }
+            val permFormatted = meta.permissionsFormatted
+                ?: meta.permissionsMode?.let { com.infinifolder.storage.PermissionHelper.formatPosix(it, meta.isDirectory) }
+                ?: (if (meta.isDirectory) {
+                    if (meta.canWrite) "drwxr-xr-x (0755)" else "dr-xr-xr-x (0555)"
+                } else {
+                    if (meta.canWrite) "-rw-r--r-- (0644)" else "-r--r--r-- (0444)"
+                })
+            val permText = buildString {
+                append(permFormatted)
+                val statusParts = mutableListOf<String>()
+                statusParts.add(if (meta.canRead) "Read: Allowed" else "Read: Denied")
+                statusParts.add(if (meta.canWrite) "Write: Allowed" else "Write: Denied (Read-Only)")
+                if (meta.canExecute) statusParts.add("Execute: Allowed")
+                append("\n")
+                append(statusParts.joinToString(" • "))
+                if (!meta.owner.isNullOrEmpty() || !meta.group.isNullOrEmpty()) {
+                    append("\nOwner: ${meta.owner ?: "—"}   Group: ${meta.group ?: "—"}")
+                }
+            }
+            propertyRow("Permissions", textValue(permText))
+        } else {
+            val total = items.size
+            val readableCount = items.count { it.metadata.canRead }
+            val writableCount = items.count { it.metadata.canWrite }
+            val permSummary = buildString {
+                append("Read: $readableCount of $total accessible")
+                append("\nWrite: $writableCount of $total writable")
+            }
+            propertyRow("Permissions", textValue(permSummary))
+        }
+
         val onNameTapped: () -> Unit = {
             if (canRename) {
                 renameEntry(currentEntry) { renamed ->
@@ -6455,7 +6998,21 @@ class MainActivity : Activity() {
         } else {
             builder.setPositiveButton("Close", null)
         }
+        val canMountInitially = isArchive && !isPackagedFormat && !inArchive
+        if (canMountInitially) {
+            builder.setNeutralButton("Mount / Browse") { _, _ ->
+                navigate(ArchiveUri.toArchiveUri(currentEntry.uri), displayName = currentEntry.metadata.name)
+            }
+        } else if (isFile && !isPackagedFormat && !inArchive) {
+            builder.setNeutralButton("Mount / Browse", null)
+        }
         val dialog = builder.create()
+        propertiesDialogRef = dialog
+        dialog.setOnShowListener {
+            if (!canMountInitially && isFile && !inArchive) {
+                dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)?.visibility = View.GONE
+            }
+        }
 
         activePropertiesIconRefresh = {
             if (!isCancelled && dialog.isShowing) {
@@ -6602,7 +7159,7 @@ class MainActivity : Activity() {
 
         val isArchive = !isApp && (
             ArchiveFormats.isArchive(entry.metadata.name, entry.metadata.mimeType) ||
-            (detectedMagic != null && (detectedMagic.isArchiveOrDiscImage || ArchiveFormats.isArchive(entry.metadata.name, detectedMagic.mimeType)))
+            (detectedMagic != null && (detectedMagic.isArchiveOrDiscImage || ArchiveFormats.isArchive(entry.metadata.name, detectedMagic.mimeType) || ArchiveFormats.isDiscImage(entry.metadata.name, detectedMagic.mimeType)))
         )
         val isPackagedFormat = !isApp && (
             ArchiveFormats.isPackagedFormat(entry.metadata.name, entry.metadata.mimeType) ||
@@ -6612,6 +7169,8 @@ class MainActivity : Activity() {
             val pkg = AppsUri.getPackageName(entry.uri)
             pkg != null && appsProvider.canExtract(pkg)
         } else false
+
+        val detectedMediaType = MediaTypeDetector.detect(entry.metadata.name, (detectedMagic?.mimeType ?: entry.metadata.mimeType))
 
         val openGroup: List<String> = when {
             isApp -> listOf("Launch")
@@ -6635,10 +7194,47 @@ class MainActivity : Activity() {
                 else listOf("Open", "Browse archive", "Open with external app")
             }
             inArchive && entry.metadata.isDirectory -> listOf("Browse folder")
-            inArchive && isArchive -> listOf("Browse archive", "Open")
-            inArchive -> listOf("Open")
+            inArchive && isArchive -> listOf("Browse archive", "Open", "Open with external app")
+            inArchive -> listOf("Open", "Open with external app")
             isArchive -> listOf("Browse archive", "Open with external app")
-            entry.metadata.isDirectory -> listOf("Browse folder")
+            entry.metadata.isDirectory -> {
+                val list = mutableListOf("Browse folder")
+                val dir = MediaSourceAdapter.resolveLocalFile(this, entry.uri)
+                if (dir != null && dir.isDirectory) {
+                    val files = dir.listFiles() ?: emptyArray()
+                    var a = 0
+                    var v = 0
+                    for (f in files) {
+                        if (f.isFile) {
+                            val mt = MediaTypeDetector.detect(f.name, null)
+                            if (mt == MediaType.AUDIO) a++
+                            else if (mt == MediaType.VIDEO) v++
+                        }
+                    }
+                    if (a > 0) list.add("Queue all audio ($a)")
+                    if (v > 0) list.add("Play all video ($v)")
+                    if (a > 0 && v > 0) list.add("Queue all multimedia (${a + v})")
+                }
+                list
+            }
+            detectedMediaType == MediaType.AUDIO -> {
+                val audioCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.AUDIO }
+                val videoCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.VIDEO }
+                val list = mutableListOf("Open", "Queue audio")
+                if (audioCount > 1) list.add("Queue all audio ($audioCount)")
+                if (videoCount > 0) list.add("Queue all multimedia (${audioCount + videoCount})")
+                list.add("Open with external app")
+                list
+            }
+            detectedMediaType == MediaType.VIDEO -> {
+                val audioCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.AUDIO }
+                val videoCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.VIDEO }
+                val list = mutableListOf("Open")
+                if (videoCount > 1) list.add("Play all video ($videoCount)")
+                if (audioCount > 0) list.add("Queue all multimedia (${audioCount + videoCount})")
+                list.add("Open with external app")
+                list
+            }
             else -> listOf("Open", "Open with external app")
         }
 
@@ -6676,7 +7272,13 @@ class MainActivity : Activity() {
                 val lower = entry.metadata.name.lowercase(Locale.ROOT)
                 val isThemeArchive = isArchive && (lower.endsWith(".tar.gz") || lower.endsWith(".tar.xz") || lower.endsWith(".tar.bz2") || lower.endsWith(".tgz") || lower.endsWith(".txz") || lower.endsWith(".zip"))
                 if (isThemeArchive || (entry.metadata.isDirectory && (lower.contains("icon") || lower.contains("theme")))) {
-                    list.add("Install as icon theme")
+                    val canInstall = iconThemeManager.isIconTheme(entry) {
+                        (provider.openRead(entry.ref) as? ProviderResult.Success)?.value
+                            ?: throw java.io.IOException("Cannot read stream")
+                    }
+                    if (canInstall) {
+                        list.add("Install as icon theme")
+                    }
                 }
                 list
             }
@@ -6720,7 +7322,26 @@ class MainActivity : Activity() {
             subtitle = initialSubtitle,
             groups = listOf(openGroup, fileOpsGroup, propertiesGroup)
         ) { action ->
+            if (action.startsWith("Queue all audio")) {
+                val folder = if (entry.metadata.isDirectory) entry.uri else (current ?: entry.uri)
+                val start = if (entry.metadata.isDirectory) null else entry
+                queueAllAudioInFolder(folder, start)
+                return@showGroupedMenuDialog
+            }
+            if (action.startsWith("Play all video")) {
+                val folder = if (entry.metadata.isDirectory) entry.uri else (current ?: entry.uri)
+                val start = if (entry.metadata.isDirectory) null else entry
+                queueAllVideoInFolder(folder, start)
+                return@showGroupedMenuDialog
+            }
+            if (action.startsWith("Queue all multimedia")) {
+                val folder = if (entry.metadata.isDirectory) entry.uri else (current ?: entry.uri)
+                val start = if (entry.metadata.isDirectory) null else entry
+                queueAllMultimediaInFolder(folder, start)
+                return@showGroupedMenuDialog
+            }
             when (action) {
+                "Queue audio" -> enqueueAudio(entry)
                 "Launch", "Launch target app" -> {
                     if (isShortcut) openShortcut(entry)
                     else {
@@ -6772,10 +7393,12 @@ class MainActivity : Activity() {
                     }
                 }
                 "Open" -> {
+                    val currentMagic = ambiguousMagicCache.get(entry.uri.toString()) ?: detectedMagic
+                    val currentMime = currentMagic?.mimeType ?: entry.metadata.mimeType
                     val effectiveIsArchive = isArchive ||
-                        (ambiguousMagicCache.get(entry.uri.toString())?.let { it.isArchiveOrDiscImage || ArchiveFormats.isArchive(entry.metadata.name, it.mimeType) } == true)
+                        (currentMagic != null && (currentMagic.isArchiveOrDiscImage || ArchiveFormats.isArchive(entry.metadata.name, currentMime) || ArchiveFormats.isDiscImage(entry.metadata.name, currentMime)))
                     val effectiveIsPackaged = isPackagedFormat ||
-                        (ambiguousMagicCache.get(entry.uri.toString())?.let { ArchiveFormats.isPackagedFormat(entry.metadata.name, it.mimeType) } == true)
+                        ArchiveFormats.isPackagedFormat(entry.metadata.name, currentMime)
                     if (entry.metadata.isDirectory) navigate(entry.uri, displayName = entry.metadata.name)
                     else if (effectiveIsArchive && !effectiveIsPackaged) {
                         if (inArchive) {
@@ -8592,6 +9215,12 @@ class MainActivity : Activity() {
             }
             return "Shortcut ↗ · $target"
         }
+        if (entry.metadata.isSymbolicLink) {
+            val target = entry.metadata.linkTarget ?: "target"
+            val prefix = if (entry.metadata.isBrokenLink) "Broken link ↗" else "Link ↗"
+            val kind = if (entry.metadata.isDirectory) "Folder" else "File"
+            return "$prefix · $kind · $target"
+        }
         if (AppsUri.isCategoryUri(entry.uri)) {
             val count = appsProvider.getCategoryAppCount(entry.metadata.name)
             return "Virtual category · $count program${if (count == 1) "" else "s"}"
@@ -8607,6 +9236,7 @@ class MainActivity : Activity() {
         return if (entry.metadata.isDirectory) "Folder · $date" else "$size · $date"
     }
     private fun iconFor(m: ResourceMetadata) = when {
+        m.isBrokenLink -> "⛓️‍💥"
         ArchiveFormats.isDefaultBrowsableArchive(m.name, m.mimeType) -> "📦"
         ArchiveFormats.isPackagedFormat(m.name, m.mimeType) -> {
             val ext = m.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
@@ -8659,7 +9289,8 @@ class MainActivity : Activity() {
                     it.state == OperationState.RUNNING || it.state == OperationState.QUEUED
                 }
                 if (hasRunningOp) {
-                    confirmBackgroundPersistenceOnExit()
+                    // Auto-hide: keep the operation running in the background without prompting
+                    ensureBackgroundPermissionAndMinimize()
                 } else {
                     super.onBackPressed()
                 }
@@ -8725,10 +9356,18 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
-        val hasActive = operations.snapshots().any { it.state == OperationState.RUNNING || it.state == OperationState.QUEUED }
+        val hasActive = operations.snapshots().any {
+            (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) &&
+            !it.id.startsWith("playback_")
+        }
         if (hasActive) {
             OperationService.start(this)
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        com.infinifolder.theme.ThemeManager.handleConfigurationChanged(this, newConfig)
     }
 
     override fun onDestroy() {
@@ -8742,6 +9381,9 @@ class MainActivity : Activity() {
         if (::smbProvider.isInitialized) {
             smbProvider.clientPool.close()
         }
+        if (activeProvider === provider) activeProvider = null
+        if (activeArchiveProvider === archiveProvider) activeArchiveProvider = null
+        com.infinifolder.theme.ThemeManager.removeListener(themeListener)
         super.onDestroy()
     }
 

@@ -40,9 +40,10 @@ class DiscImageReader(private val tempDir: File) {
     fun readEntries(
         archiveName: String,
         openStream: () -> InputStream,
-        localFile: File?
+        localFile: File? = null,
+        device: BlockDevice? = null
     ): List<DiscEntry> {
-        return withBlockDevice(archiveName, openStream, localFile) { dev ->
+        return withBlockDevice(archiveName, openStream, localFile, writable = false, device = device) { dev ->
             parseDiscImage(dev)
         }
     }
@@ -52,11 +53,12 @@ class DiscImageReader(private val tempDir: File) {
         entryPath: String,
         targetFile: File,
         openStream: () -> InputStream,
-        localFile: File?
+        localFile: File? = null,
+        device: BlockDevice? = null
     ): File {
         val cleanTarget = normalizePath(entryPath)
         targetFile.parentFile?.mkdirs()
-        withBlockDevice(archiveName, openStream, localFile) { dev ->
+        withBlockDevice(archiveName, openStream, localFile, writable = false, device = device) { dev ->
             val entries = parseDiscImage(dev)
             val match = entries.firstOrNull { normalizePath(it.path) == cleanTarget }
                 ?: entries.firstOrNull { normalizePath(it.path).equals(cleanTarget, ignoreCase = true) }
@@ -74,10 +76,11 @@ class DiscImageReader(private val tempDir: File) {
         archiveName: String,
         entryPath: String,
         openStream: () -> InputStream,
-        localFile: File?
+        localFile: File? = null,
+        device: BlockDevice? = null
     ): InputStream {
         val cleanTarget = normalizePath(entryPath)
-        return withBlockDevice(archiveName, openStream, localFile) { dev ->
+        return withBlockDevice(archiveName, openStream, localFile, writable = false, device = device) { dev ->
             val entries = parseDiscImage(dev)
             val match = entries.firstOrNull { normalizePath(it.path) == cleanTarget }
                 ?: entries.firstOrNull { normalizePath(it.path).equals(cleanTarget, ignoreCase = true) }
@@ -90,17 +93,41 @@ class DiscImageReader(private val tempDir: File) {
         }
     }
 
-    fun isWritable(archiveName: String, localFile: File?): Boolean {
-        if (localFile == null || !localFile.exists() || !localFile.canWrite()) return false
-        val mountCheck = MountedPartitionDetector.checkMounted(localFile)
-        if (mountCheck.isMounted) return false
+    fun isWritable(archiveName: String, localFile: File?, device: BlockDevice? = null, entryPath: String? = null): Boolean {
+        if (localFile != null) {
+            val mountCheck = MountedPartitionDetector.checkMounted(localFile)
+            if (mountCheck.isMounted) return false
+        }
 
         val lowerName = archiveName.lowercase(Locale.ROOT)
         val isCompressed = lowerName.endsWith(".gz") || lowerName.endsWith(".bz2") ||
             lowerName.endsWith(".bz") || lowerName.endsWith(".xz") ||
             lowerName.endsWith(".lzma") || lowerName.endsWith(".zst") ||
-            isCompressedFileMagic(localFile)
+            (localFile != null && isCompressedFileMagic(localFile))
         if (isCompressed) return false
+
+        if (device != null && !device.isReadOnly) {
+            val dev = VmDiskDecoder.open(device, isReadOnly = false, baseFile = localFile) ?: device
+            if (dev.isReadOnly) return false
+            if (isFatFs(dev, 0L)) return true
+            val partitions = detectPartitions(dev)
+            if (entryPath != null) {
+                val cleanPath = normalizePath(entryPath)
+                for (part in partitions) {
+                    if (cleanPath == part.name || cleanPath.startsWith("${part.name}/")) {
+                        val slice = PartitionSliceBlockDevice(dev, part.offsetBytes, part.sizeBytes)
+                        return isFatFs(slice, 0L)
+                    }
+                }
+            }
+            for (part in partitions) {
+                val slice = PartitionSliceBlockDevice(dev, part.offsetBytes, part.sizeBytes)
+                if (isFatFs(slice, 0L)) return true
+            }
+            return false
+        }
+
+        if (localFile == null || !localFile.exists() || !localFile.canWrite()) return false
 
         return try {
             RandomAccessFile(localFile, "r").use { raf ->
@@ -109,6 +136,15 @@ class DiscImageReader(private val tempDir: File) {
                 if (dev.isReadOnly) return false
                 if (isFatFs(dev, 0L)) return true
                 val partitions = detectPartitions(dev)
+                if (entryPath != null) {
+                    val cleanPath = normalizePath(entryPath)
+                    for (part in partitions) {
+                        if (cleanPath == part.name || cleanPath.startsWith("${part.name}/")) {
+                            val slice = PartitionSliceBlockDevice(dev, part.offsetBytes, part.sizeBytes)
+                            return isFatFs(slice, 0L)
+                        }
+                    }
+                }
                 for (part in partitions) {
                     val slice = PartitionSliceBlockDevice(dev, part.offsetBytes, part.sizeBytes)
                     if (isFatFs(slice, 0L)) return true
@@ -123,15 +159,20 @@ class DiscImageReader(private val tempDir: File) {
     private fun <T> withWritableFat(
         archiveName: String,
         localFile: File?,
+        device: BlockDevice? = null,
         entryPath: String,
         block: (FatFileSystem, String) -> T
     ): T {
-        require(localFile != null && localFile.exists()) { "Local file required for disc writing" }
-        val mountCheck = MountedPartitionDetector.checkMounted(localFile)
-        if (mountCheck.isMounted) {
-            throw MountedPartitionException(localFile.name, mountCheck.reason)
+        if (localFile != null) {
+            val mountCheck = MountedPartitionDetector.checkMounted(localFile)
+            if (mountCheck.isMounted) {
+                throw MountedPartitionException(localFile.name, mountCheck.reason)
+            }
         }
-        return withBlockDevice(archiveName, { throw IOException("Local file required") }, localFile, writable = true) { dev ->
+        require((localFile != null && localFile.exists()) || (device != null && !device.isReadOnly)) {
+            "Writable file or BlockDevice required for disc writing"
+        }
+        return withBlockDevice(archiveName, { throw IOException("Writable target required") }, localFile, writable = true, device = device) { dev ->
             if (isFatFs(dev, 0L)) {
                 val fatFs = FatFileSystem(dev, 0L, "")
                 return@withBlockDevice block(fatFs, entryPath)
@@ -164,26 +205,26 @@ class DiscImageReader(private val tempDir: File) {
         }
     }
 
-    fun createFile(archiveName: String, localFile: File?, entryPath: String, data: ByteArray = ByteArray(0)) {
-        withWritableFat(archiveName, localFile, entryPath) { fatFs, relPath ->
+    fun createFile(archiveName: String, localFile: File? = null, entryPath: String, data: ByteArray = ByteArray(0), device: BlockDevice? = null) {
+        withWritableFat(archiveName, localFile, device, entryPath) { fatFs, relPath ->
             fatFs.createFile(relPath, data)
         }
     }
 
-    fun createDirectory(archiveName: String, localFile: File?, entryPath: String) {
-        withWritableFat(archiveName, localFile, entryPath) { fatFs, relPath ->
+    fun createDirectory(archiveName: String, localFile: File? = null, entryPath: String, device: BlockDevice? = null) {
+        withWritableFat(archiveName, localFile, device, entryPath) { fatFs, relPath ->
             fatFs.createDirectory(relPath)
         }
     }
 
-    fun writeEntry(archiveName: String, localFile: File?, entryPath: String, data: ByteArray) {
-        withWritableFat(archiveName, localFile, entryPath) { fatFs, relPath ->
+    fun writeEntry(archiveName: String, localFile: File? = null, entryPath: String, data: ByteArray, device: BlockDevice? = null) {
+        withWritableFat(archiveName, localFile, device, entryPath) { fatFs, relPath ->
             fatFs.writeEntry(relPath, data)
         }
     }
 
-    fun deleteEntry(archiveName: String, localFile: File?, entryPath: String) {
-        withWritableFat(archiveName, localFile, entryPath) { fatFs, relPath ->
+    fun deleteEntry(archiveName: String, localFile: File? = null, entryPath: String, device: BlockDevice? = null) {
+        withWritableFat(archiveName, localFile, device, entryPath) { fatFs, relPath ->
             fatFs.deleteEntry(relPath)
         }
     }
@@ -193,6 +234,7 @@ class DiscImageReader(private val tempDir: File) {
         openStream: () -> InputStream,
         localFile: File?,
         writable: Boolean = false,
+        device: BlockDevice? = null,
         block: (BlockDevice) -> T
     ): T {
         val lowerName = archiveName.lowercase(Locale.ROOT)
@@ -202,6 +244,13 @@ class DiscImageReader(private val tempDir: File) {
             lowerName.endsWith(".xz") ||
             lowerName.endsWith(".lzma") ||
             lowerName.endsWith(".zst")
+
+        if (device != null && !isCompressedByName) {
+            val dev = VmDiskDecoder.open(device, isReadOnly = !writable, baseFile = localFile) ?: device
+            val result = block(dev)
+            if (writable) dev.flush()
+            return result
+        }
 
         if (localFile != null && localFile.exists() && !isCompressedByName && !isCompressedFileMagic(localFile)) {
             val mode = if (writable) "rw" else "r"
@@ -334,7 +383,54 @@ class DiscImageReader(private val tempDir: File) {
             return parseIso9660(dev, 0L, "")
         }
 
-        // 2. Check direct filesystems at offset 0 (ext2/3/4, exFAT, FAT12/16/32)
+        // 2. Check standalone LVM Physical Volume
+        if (LvmDecoder.isLvm(dev, 0L)) {
+            val lvs = LvmDecoder.decode(dev, 0L)
+            if (lvs.isNotEmpty()) {
+                val combined = mutableListOf<DiscEntry>()
+                for (lv in lvs) {
+                    val lvPrefix = lv.name
+                    combined += DiscEntry(
+                        path = lvPrefix,
+                        isDirectory = true,
+                        sizeBytes = lv.sizeBytes,
+                        modifiedAtMillis = null
+                    )
+                    val lvEntries = try {
+                        parseFilesystemAtOffset(lv.device, 0L, "")
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (lvEntries != null) {
+                        for (entry in lvEntries) {
+                            val origExtractor = entry.extractor
+                            val wrappedExtractor = if (origExtractor != null) {
+                                { _: BlockDevice, out: OutputStream ->
+                                    origExtractor(lv.device, out)
+                                }
+                            } else null
+                            combined += entry.copy(
+                                path = "$lvPrefix/${entry.path}",
+                                extractor = wrappedExtractor
+                            )
+                        }
+                    } else {
+                        combined += DiscEntry(
+                            path = "$lvPrefix/${lv.name}.raw",
+                            isDirectory = false,
+                            sizeBytes = lv.sizeBytes,
+                            modifiedAtMillis = null,
+                            extractor = { _, out ->
+                                copyRangeToStream(lv.device, 0L, lv.sizeBytes, out)
+                            }
+                        )
+                    }
+                }
+                return combined
+            }
+        }
+
+        // 3. Check direct filesystems at offset 0 (ext2/3/4, exFAT, FAT12/16/32 / EFI)
         if (isExtFs(dev, 0L)) {
             return parseExtFs(dev, 0L, "")
         }
@@ -345,53 +441,180 @@ class DiscImageReader(private val tempDir: File) {
             return parseFatFs(dev, 0L, "")
         }
 
-        // 3. Check GPT or MBR partition tables
+        // 4. Check GPT or MBR partition tables
         val partitions = detectPartitions(dev)
         if (partitions.isNotEmpty()) {
-            val parsedPartitions = mutableListOf<Pair<PartitionSlice, List<DiscEntry>>>()
-            for (part in partitions) {
+            if (partitions.size == 1) {
+                val part = partitions.first()
+                val slice = PartitionSliceBlockDevice(dev, part.offsetBytes, part.sizeBytes)
+                if (LvmDecoder.isLvm(slice, 0L) || part.typeName == "Linux LVM") {
+                    val lvs = try { LvmDecoder.decode(slice, 0L) } catch (_: Exception) { emptyList() }
+                    if (lvs.isNotEmpty()) {
+                        val combined = mutableListOf<DiscEntry>()
+                        for (lv in lvs) {
+                            val lvPrefix = lv.name
+                            combined += DiscEntry(
+                                path = lvPrefix,
+                                isDirectory = true,
+                                sizeBytes = lv.sizeBytes,
+                                modifiedAtMillis = null
+                            )
+                            val lvEntries = try {
+                                parseFilesystemAtOffset(lv.device, 0L, "")
+                            } catch (_: Exception) {
+                                null
+                            }
+                            if (lvEntries != null) {
+                                for (entry in lvEntries) {
+                                    val origExtractor = entry.extractor
+                                    val wrappedExtractor = if (origExtractor != null) {
+                                        { _: BlockDevice, out: OutputStream ->
+                                            origExtractor(lv.device, out)
+                                        }
+                                    } else null
+                                    combined += entry.copy(
+                                        path = "$lvPrefix/${entry.path}",
+                                        extractor = wrappedExtractor
+                                    )
+                                }
+                            } else {
+                                combined += DiscEntry(
+                                    path = "$lvPrefix/${lv.name}.raw",
+                                    isDirectory = false,
+                                    sizeBytes = lv.sizeBytes,
+                                    modifiedAtMillis = null,
+                                    extractor = { _, out ->
+                                        copyRangeToStream(lv.device, 0L, lv.sizeBytes, out)
+                                    }
+                                )
+                            }
+                        }
+                        return combined
+                    }
+                }
                 val entries = try {
-                    val slice = PartitionSliceBlockDevice(dev, part.offsetBytes, part.sizeBytes)
                     parseFilesystemAtOffset(slice, 0L, "")
                 } catch (_: Exception) {
                     null
                 }
                 if (entries != null) {
-                    parsedPartitions += part to entries
+                    return entries.map { entry ->
+                        val origExtractor = entry.extractor
+                        if (origExtractor != null) {
+                            entry.copy(extractor = { parentDev, out ->
+                                val partSlice = PartitionSliceBlockDevice(parentDev, part.offsetBytes, part.sizeBytes)
+                                origExtractor(partSlice, out)
+                            })
+                        } else entry
+                    }
+                } else {
+                    return listOf(
+                        DiscEntry(
+                            path = part.name,
+                            isDirectory = true,
+                            sizeBytes = part.sizeBytes,
+                            modifiedAtMillis = null
+                        ),
+                        DiscEntry(
+                            path = "${part.name}/${part.name}.raw",
+                            isDirectory = false,
+                            sizeBytes = part.sizeBytes,
+                            modifiedAtMillis = null,
+                            extractor = { parentDev, out ->
+                                copyRangeToStream(parentDev, part.offsetBytes, part.sizeBytes, out)
+                            }
+                        )
+                    )
                 }
-            }
-            if (parsedPartitions.size == 1) {
-                val (part, entries) = parsedPartitions.first()
-                return entries.map { entry ->
-                    val origExtractor = entry.extractor
-                    if (origExtractor != null) {
-                        entry.copy(extractor = { parentDev, out ->
-                            val partSlice = PartitionSliceBlockDevice(parentDev, part.offsetBytes, part.sizeBytes)
-                            origExtractor(partSlice, out)
-                        })
-                    } else entry
-                }
-            } else if (parsedPartitions.size > 1) {
+            } else {
+                // Multiple partitions: provide an intermediate layer listing each partition by name
                 val combined = mutableListOf<DiscEntry>()
-                for ((part, entries) in parsedPartitions) {
+                for (part in partitions) {
                     val prefix = part.name
                     combined += DiscEntry(
                         path = prefix,
                         isDirectory = true,
-                        sizeBytes = null,
+                        sizeBytes = part.sizeBytes,
                         modifiedAtMillis = null
                     )
-                    for (entry in entries) {
-                        val origExtractor = entry.extractor
-                        val wrappedExtractor: ((BlockDevice, OutputStream) -> Unit)? = if (origExtractor != null) {
-                            { parentDev, out ->
-                                val partSlice = PartitionSliceBlockDevice(parentDev, part.offsetBytes, part.sizeBytes)
-                                origExtractor(partSlice, out)
+                    val slice = PartitionSliceBlockDevice(dev, part.offsetBytes, part.sizeBytes)
+
+                    // Check if partition is an LVM PV
+                    if (LvmDecoder.isLvm(slice, 0L) || part.typeName == "Linux LVM") {
+                        val lvs = try { LvmDecoder.decode(slice, 0L) } catch (_: Exception) { emptyList() }
+                        if (lvs.isNotEmpty()) {
+                            for (lv in lvs) {
+                                val lvPrefix = "$prefix/${lv.name}"
+                                combined += DiscEntry(
+                                    path = lvPrefix,
+                                    isDirectory = true,
+                                    sizeBytes = lv.sizeBytes,
+                                    modifiedAtMillis = null
+                                )
+                                val lvEntries = try {
+                                    parseFilesystemAtOffset(lv.device, 0L, "")
+                                } catch (_: Exception) {
+                                    null
+                                }
+                                if (lvEntries != null) {
+                                    for (entry in lvEntries) {
+                                        val origExtractor = entry.extractor
+                                        val wrappedExtractor = if (origExtractor != null) {
+                                            { _: BlockDevice, out: OutputStream ->
+                                                origExtractor(lv.device, out)
+                                            }
+                                        } else null
+                                        combined += entry.copy(
+                                            path = "$lvPrefix/${entry.path}",
+                                            extractor = wrappedExtractor
+                                        )
+                                    }
+                                } else {
+                                    combined += DiscEntry(
+                                        path = "$lvPrefix/${lv.name}.raw",
+                                        isDirectory = false,
+                                        sizeBytes = lv.sizeBytes,
+                                        modifiedAtMillis = null,
+                                        extractor = { _, out ->
+                                            copyRangeToStream(lv.device, 0L, lv.sizeBytes, out)
+                                        }
+                                    )
+                                }
                             }
-                        } else null
-                        combined += entry.copy(
-                            path = "$prefix/${entry.path}",
-                            extractor = wrappedExtractor
+                            continue
+                        }
+                    }
+
+                    val entries = try {
+                        parseFilesystemAtOffset(slice, 0L, "")
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (entries != null) {
+                        for (entry in entries) {
+                            val origExtractor = entry.extractor
+                            val wrappedExtractor: ((BlockDevice, OutputStream) -> Unit)? = if (origExtractor != null) {
+                                { parentDev, out ->
+                                    val partSlice = PartitionSliceBlockDevice(parentDev, part.offsetBytes, part.sizeBytes)
+                                    origExtractor(partSlice, out)
+                                }
+                            } else null
+                            combined += entry.copy(
+                                path = "$prefix/${entry.path}",
+                                extractor = wrappedExtractor
+                            )
+                        }
+                    } else {
+                        // Unrecognized, unformatted, or unsupported partition filesystem: expose raw partition slice
+                        val rawName = "${part.name}.raw"
+                        combined += DiscEntry(
+                            path = "$prefix/$rawName",
+                            isDirectory = false,
+                            sizeBytes = part.sizeBytes,
+                            modifiedAtMillis = null,
+                            extractor = { parentDev, out ->
+                                copyRangeToStream(parentDev, part.offsetBytes, part.sizeBytes, out)
+                            }
                         )
                     }
                 }
@@ -400,6 +623,37 @@ class DiscImageReader(private val tempDir: File) {
         }
 
         throw IOException("Unsupported or unrecognized disc image format")
+    }
+
+    fun getPartitionSlice(dev: BlockDevice, path: String): BlockDevice? {
+        val clean = normalizePath(path)
+        if (LvmDecoder.isLvm(dev, 0L)) {
+            val lvs = LvmDecoder.decode(dev, 0L)
+            for (lv in lvs) {
+                val norm = normalizePath(lv.name)
+                if (clean == norm || clean == "$norm/${norm}.raw" || clean.startsWith("$norm/")) {
+                    return lv.device
+                }
+            }
+        }
+        val partitions = detectPartitions(dev)
+        for (part in partitions) {
+            val partNorm = normalizePath(part.name)
+            val slice = PartitionSliceBlockDevice(dev, part.offsetBytes, part.sizeBytes, dev.isReadOnly)
+            if (LvmDecoder.isLvm(slice, 0L) || part.typeName == "Linux LVM") {
+                val lvs = try { LvmDecoder.decode(slice, 0L) } catch (_: Exception) { emptyList() }
+                for (lv in lvs) {
+                    val lvFull = "$partNorm/${normalizePath(lv.name)}"
+                    if (clean == lvFull || clean == "$lvFull/${lv.name}.raw" || clean.startsWith("$lvFull/")) {
+                        return lv.device
+                    }
+                }
+            }
+            if (clean == partNorm || clean == "$partNorm/${partNorm}.raw" || clean.startsWith("$partNorm/")) {
+                return slice
+            }
+        }
+        return null
     }
 
     private fun parseFilesystemAtOffset(dev: BlockDevice, offset: Long, prefix: String): List<DiscEntry> {
@@ -416,11 +670,164 @@ class DiscImageReader(private val tempDir: File) {
     // Partition Table Detection (GPT & MBR)
     // =========================================================================
 
-    private data class PartitionSlice(
+    data class PartitionSlice(
         val name: String,
         val offsetBytes: Long,
-        val sizeBytes: Long
+        val sizeBytes: Long,
+        val typeName: String? = null,
+        val label: String? = null
     )
+
+    private val GPT_TYPE_NAMES = mapOf(
+        "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" to "EFI System",
+        "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7" to "Basic Data",
+        "0fc63daf-8483-4772-8e79-3d69d8477de4" to "Linux filesystem",
+        "0657fd6d-a4ab-43c4-84e5-0933c84b4f4f" to "Linux swap",
+        "4f68bce3-e8cd-4db1-96e7-fbcaf984b709" to "Linux root (x86_64)",
+        "b921b045-1df0-41c3-afac-4474932e523c" to "Linux root (arm64)",
+        "69dad710-2ce4-4e3c-b16c-21a1d49abed3" to "Linux root (x86)",
+        "933ac7e2-d2a2-4e10-8611-239fa390b08f" to "Linux home",
+        "3b8f8425-20e0-4f3b-907f-1a25a76f98e8" to "Linux srv",
+        "7ffc8e0f-1323-4869-8857-57f6499e6144" to "Linux plain dm-crypt",
+        "ca7d7ccb-63ed-4c53-861c-1742536059cc" to "Linux LUKS",
+        "e6d6d379-f507-44c2-a23c-238f2a3df928" to "Linux LVM",
+        "21686148-6449-6e6f-744e-656564454649" to "BIOS Boot",
+        "e3c9e316-0b5c-4db8-817d-f92df00215ae" to "Microsoft Reserved",
+        "de94bba4-06d1-4d40-a16a-bfd50179d6ac" to "Windows Recovery",
+        "48465300-0000-11aa-aa11-00306543ecac" to "Apple HFS+",
+        "7c3457ef-0000-11aa-aa11-00306543ecac" to "Apple APFS"
+    )
+
+    private fun formatGptGuid(bytes: ByteArray, offset: Int): String {
+        if (bytes.size < offset + 16) return ""
+        val d1 = String.format("%02x%02x%02x%02x", bytes[offset + 3], bytes[offset + 2], bytes[offset + 1], bytes[offset])
+        val d2 = String.format("%02x%02x", bytes[offset + 5], bytes[offset + 4])
+        val d3 = String.format("%02x%02x", bytes[offset + 7], bytes[offset + 6])
+        val d4 = String.format("%02x%02x", bytes[offset + 8], bytes[offset + 9])
+        val d5 = (10..15).joinToString("") { String.format("%02x", bytes[offset + it]) }
+        return "$d1-$d2-$d3-$d4-$d5".lowercase(Locale.ROOT)
+    }
+
+    private fun mbrTypeName(type: Int): String? = when (type) {
+        0x01 -> "FAT12"
+        0x04, 0x06, 0x0E -> "FAT16"
+        0x07 -> "NTFS/exFAT"
+        0x0B, 0x0C -> "FAT32"
+        0x1B, 0x1C -> "FAT32 (Hidden)"
+        0x27 -> "Windows Recovery"
+        0x82 -> "Linux swap"
+        0x83 -> "Linux"
+        0x8E -> "Linux LVM"
+        0xEF -> "EFI System"
+        0xA5 -> "FreeBSD"
+        0xA6 -> "OpenBSD"
+        0xA9 -> "NetBSD"
+        0xAF -> "macOS"
+        else -> null
+    }
+
+    private fun detectVolumeLabel(dev: BlockDevice, offsetBytes: Long, sizeBytes: Long): String? {
+        if (sizeBytes < 1024L) return null
+        return try {
+            // 1. FAT
+            if (isFatFs(dev, offsetBytes)) {
+                val bpb = readBytesAt(dev, offsetBytes, 512)
+                if (bpb.size == 512) {
+                    val fat32Magic = String(bpb, 82, 8, StandardCharsets.US_ASCII)
+                    if (fat32Magic.startsWith("FAT32")) {
+                        val extSig = u8(bpb, 66)
+                        if (extSig == 0x28 || extSig == 0x29) {
+                            val label = String(bpb, 71, 11, StandardCharsets.US_ASCII).substringBefore('\u0000').trim()
+                            if (label.isNotEmpty() && !label.equals("NO NAME", ignoreCase = true) && label.all { it in ' '..'~' } && label.any { it.isLetterOrDigit() }) {
+                                return label
+                            }
+                        }
+                    }
+                    val fat16Magic = String(bpb, 54, 8, StandardCharsets.US_ASCII)
+                    if (fat16Magic.startsWith("FAT")) {
+                        val extSig = u8(bpb, 38)
+                        if (extSig == 0x28 || extSig == 0x29) {
+                            val label = String(bpb, 43, 11, StandardCharsets.US_ASCII).substringBefore('\u0000').trim()
+                            if (label.isNotEmpty() && !label.equals("NO NAME", ignoreCase = true) && label.all { it in ' '..'~' } && label.any { it.isLetterOrDigit() }) {
+                                return label
+                            }
+                        }
+                    }
+                }
+            }
+            // 2. EXT
+            if (sizeBytes >= 2048L && isExtFs(dev, offsetBytes)) {
+                val sb = readBytesAt(dev, offsetBytes + 1024L, 256)
+                if (sb.size >= 136 && u16le(sb, 56) == 0xEF53) {
+                    val volName = String(sb, 120, 16, StandardCharsets.UTF_8).substringBefore('\u0000').trim()
+                    if (volName.isNotEmpty() && volName.all { it in ' '..'~' } && volName.any { it.isLetterOrDigit() }) {
+                        return volName
+                    }
+                }
+            }
+            // 3. ISO9660
+            if (sizeBytes >= 34816L && isIso9660(dev, offsetBytes)) {
+                val pvd = readBytesAt(dev, offsetBytes + 16 * 2048L, 2048)
+                if (pvd.size >= 72 && String(pvd, 1, 5, StandardCharsets.US_ASCII) == "CD001") {
+                    val volId = String(pvd, 40, 32, StandardCharsets.US_ASCII).substringBefore('\u0000').trim()
+                    if (volId.isNotEmpty() && volId.all { it in ' '..'~' } && volId.any { it.isLetterOrDigit() }) {
+                        return volId
+                    }
+                }
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun formatPartitionName(partNum: Int, label: String?, typeName: String?): String {
+        val cleanLabel = label?.let { sanitizeSegment(it) }?.takeIf { it.isNotEmpty() }
+        val cleanType = typeName?.let { sanitizeSegment(it) }?.takeIf { it.isNotEmpty() }
+
+        return when {
+            cleanLabel != null && cleanLabel.startsWith("Partition", ignoreCase = true) -> cleanLabel
+            cleanLabel != null -> "Partition $partNum ($cleanLabel)"
+            cleanType != null -> "Partition $partNum ($cleanType)"
+            else -> "Partition $partNum"
+        }
+    }
+
+    private fun walkEbr(
+        dev: BlockDevice,
+        extendedStartLba: Long,
+        currentEbrLba: Long,
+        fileLen: Long,
+        depth: Int,
+        slices: MutableList<PartitionSlice>
+    ) {
+        if (depth > 32) return
+        val ebrOffset = currentEbrLba * 512L
+        if (ebrOffset + 512L > fileLen) return
+        val ebr = readBytesAt(dev, ebrOffset, 512)
+        if (ebr.size < 512 || u8(ebr, 510) != 0x55 || u8(ebr, 511) != 0xAA) return
+
+        val type1 = u8(ebr, 446 + 4)
+        val startLba1 = u32le(ebr, 446 + 8)
+        val numSectors1 = u32le(ebr, 446 + 12)
+        if (type1 != 0x00 && numSectors1 > 0L) {
+            val partStartBytes = (currentEbrLba + startLba1) * 512L
+            val partSizeBytes = numSectors1 * 512L
+            if (partStartBytes < fileLen) {
+                val partNum = slices.size + 1
+                val typeName = mbrTypeName(type1)
+                val fsLabel = detectVolumeLabel(dev, partStartBytes, partSizeBytes)
+                val name = formatPartitionName(partNum, fsLabel, typeName)
+                slices += PartitionSlice(name, partStartBytes, partSizeBytes, typeName, fsLabel)
+            }
+        }
+
+        val type2 = u8(ebr, 462 + 4)
+        val startLba2 = u32le(ebr, 462 + 8)
+        if ((type2 == 0x05 || type2 == 0x0F) && startLba2 > 0L) {
+            walkEbr(dev, extendedStartLba, extendedStartLba + startLba2, fileLen, depth + 1, slices)
+        }
+    }
 
     private fun detectPartitions(dev: BlockDevice): List<PartitionSlice> {
         val fileLen = dev.size
@@ -445,8 +852,39 @@ class DiscImageReader(private val tempDir: File) {
                 val sizeBytes = (lastLba - firstLba + 1L) * 512L
                 if (startBytes >= fileLen) continue
                 val rawLabel = String(entryBytes, 56, 72, StandardCharsets.UTF_16LE).substringBefore('\u0000').trim()
-                val label = if (rawLabel.isNotEmpty()) sanitizeSegment(rawLabel) else "Partition_${slices.size + 1}"
-                slices += PartitionSlice(label, startBytes, sizeBytes)
+                val guidStr = formatGptGuid(entryBytes, 0)
+                val typeName = GPT_TYPE_NAMES[guidStr]
+                val fsLabel = detectVolumeLabel(dev, startBytes, sizeBytes)
+                val effectiveLabel = rawLabel.takeIf { it.isNotEmpty() } ?: fsLabel
+                val partNum = slices.size + 1
+                val name = formatPartitionName(partNum, effectiveLabel, typeName)
+                slices += PartitionSlice(name, startBytes, sizeBytes, typeName, effectiveLabel)
+            }
+            if (slices.isNotEmpty()) return slices
+        }
+
+        // Check Apple Partition Map (APM) at sector 1
+        val apmSector = readBytesAt(dev, 512L, 512)
+        if (apmSector.size == 512 && apmSector[0] == 'P'.code.toByte() && apmSector[1] == 'M'.code.toByte()) {
+            val numEntries = u32be(apmSector, 4).toInt().coerceIn(1, 64)
+            val slices = mutableListOf<PartitionSlice>()
+            for (i in 0 until numEntries) {
+                val entryOffset = (i + 1) * 512L
+                if (entryOffset + 512L > fileLen) break
+                val entry = readBytesAt(dev, entryOffset, 512)
+                if (entry.size < 512 || entry[0] != 'P'.code.toByte() || entry[1] != 'M'.code.toByte()) break
+                val startLba = u32be(entry, 8)
+                val numSectors = u32be(entry, 12)
+                val partName = String(entry, 16, 32, StandardCharsets.US_ASCII).substringBefore('\u0000').trim()
+                val partType = String(entry, 48, 32, StandardCharsets.US_ASCII).substringBefore('\u0000').trim()
+                if (startLba > 0L && numSectors > 0L && partType != "Apple_partition_map" && partType != "Apple_Free") {
+                    val startBytes = startLba * 512L
+                    val sizeBytes = numSectors * 512L
+                    val partNum = slices.size + 1
+                    val label = partName.ifEmpty { partType }
+                    val name = formatPartitionName(partNum, label, partType)
+                    slices += PartitionSlice(name, startBytes, sizeBytes, partType, label)
+                }
             }
             if (slices.isNotEmpty()) return slices
         }
@@ -467,7 +905,16 @@ class DiscImageReader(private val tempDir: File) {
                 val startBytes = startLba * 512L
                 val sizeBytes = numSectors * 512L
                 if (startBytes + 512L > fileLen) continue
-                slices += PartitionSlice("Partition_${slices.size + 1}", startBytes, sizeBytes)
+
+                if (type == 0x05 || type == 0x0F) {
+                    walkEbr(dev, startLba, startLba, fileLen, 0, slices)
+                } else {
+                    val partNum = slices.size + 1
+                    val typeName = mbrTypeName(type)
+                    val fsLabel = detectVolumeLabel(dev, startBytes, sizeBytes)
+                    val name = formatPartitionName(partNum, fsLabel, typeName)
+                    slices += PartitionSlice(name, startBytes, sizeBytes, typeName, fsLabel)
+                }
             }
             if (slices.isNotEmpty()) return slices
         }
@@ -701,8 +1148,16 @@ class DiscImageReader(private val tempDir: File) {
         if (fsType16.startsWith("FAT") || fsType32.startsWith("FAT")) return true
 
         val jump0 = u8(bpb, 0)
-        val hasBootSig = u8(bpb, 510) == 0x55 && u8(bpb, 511) == 0xAA
-        return (jump0 == 0xEB || jump0 == 0xE9) && hasBootSig
+        val hasBootSig510 = u8(bpb, 510) == 0x55 && u8(bpb, 511) == 0xAA
+        val hasBootSigAtSec = if (bytesPerSector > 512 && dev.size >= baseOffset + bytesPerSector) {
+            val secEnd = readBytesAt(dev, baseOffset + bytesPerSector - 2, 2)
+            secEnd.size == 2 && u8(secEnd, 0) == 0x55 && u8(secEnd, 1) == 0xAA
+        } else false
+        val hasBootSig = hasBootSig510 || hasBootSigAtSec
+        if ((jump0 == 0xEB || jump0 == 0xE9) && hasBootSig) return true
+
+        // Accept EFI System Partitions and non-standard FAT with valid BPB geometry and signature
+        return hasBootSig || (jump0 == 0xEB || jump0 == 0xE9)
     }
 
     private fun parseFatFs(dev: BlockDevice, baseOffset: Long, prefix: String): List<DiscEntry> {
@@ -1119,6 +1574,12 @@ class DiscImageReader(private val tempDir: File) {
             ((buf[offset + 1].toLong() and 0xFFL) shl 8) or
             ((buf[offset + 2].toLong() and 0xFFL) shl 16) or
             ((buf[offset + 3].toLong() and 0xFFL) shl 24)
+
+    private fun u32be(buf: ByteArray, offset: Int): Long =
+        ((buf[offset].toLong() and 0xFFL) shl 24) or
+            ((buf[offset + 1].toLong() and 0xFFL) shl 16) or
+            ((buf[offset + 2].toLong() and 0xFFL) shl 8) or
+            (buf[offset + 3].toLong() and 0xFFL)
 
     private fun i64le(buf: ByteArray, offset: Int): Long =
         u32le(buf, offset) or (u32le(buf, offset + 4) shl 32)

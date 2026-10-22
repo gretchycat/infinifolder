@@ -3,8 +3,10 @@ package com.infinifolder.theme
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Bitmap
+import android.util.LruCache
 import com.infinifolder.archive.ArchiveFormats
 import com.infinifolder.archive.ArchiveMimeTypes
+import com.infinifolder.model.ResourceEntry
 import com.infinifolder.model.ResourceMetadata
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
@@ -20,6 +22,8 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
 
 class IconThemeManager(private val context: Context) {
 
@@ -212,6 +216,130 @@ class IconThemeManager(private val context: Context) {
             }
         }
         return null
+    }
+
+    private val themeCandidateCache = LruCache<String, Boolean>(200)
+
+    /**
+     * Checks if an archive or directory actually contains a FreeDesktop index.theme file.
+     * Prevents arbitrary zip files from displaying "Install as icon theme".
+     */
+    fun isIconTheme(entry: ResourceEntry, openStream: (() -> InputStream)? = null): Boolean {
+        val cacheKey = "${entry.uri}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}"
+        themeCandidateCache.get(cacheKey)?.let { return it }
+
+        val name = entry.metadata.name.lowercase(Locale.ROOT)
+
+        if (entry.metadata.isDirectory) {
+            val isTheme = if (entry.uri.scheme == "file") {
+                val f = File(entry.uri.path ?: "")
+                findIndexThemeFile(f) != null
+            } else {
+                name.contains("icon") || name.contains("theme")
+            }
+            themeCandidateCache.put(cacheKey, isTheme)
+            return isTheme
+        }
+
+        val isArchive = name.endsWith(".zip") || name.endsWith(".tar.gz") || name.endsWith(".tgz") ||
+            name.endsWith(".tar.xz") || name.endsWith(".txz") || name.endsWith(".tar.bz2") || name.endsWith(".tar")
+        if (!isArchive) {
+            themeCandidateCache.put(cacheKey, false)
+            return false
+        }
+
+        // Fast inspection for local files
+        if (entry.uri.scheme == "file") {
+            val file = File(entry.uri.path ?: "")
+            if (!file.isFile) return false
+
+            if (name.endsWith(".zip")) {
+                try {
+                    ZipFile(file).use { zf ->
+                        val hasIndex = zf.entries().asSequence().any {
+                            val n = it.name.trimStart('/')
+                            n.equals("index.theme", ignoreCase = true) || n.endsWith("/index.theme", ignoreCase = true)
+                        }
+                        themeCandidateCache.put(cacheKey, hasIndex)
+                        return hasIndex
+                    }
+                } catch (_: Exception) {
+                    themeCandidateCache.put(cacheKey, false)
+                    return false
+                }
+            }
+
+            // Tar archives (uncompressed or compressed)
+            try {
+                val bis = BufferedInputStream(file.inputStream())
+                val tarIn: TarArchiveInputStream = when {
+                    name.endsWith(".tar.gz") || name.endsWith(".tgz") -> TarArchiveInputStream(GzipCompressorInputStream(bis))
+                    name.endsWith(".tar.xz") || name.endsWith(".txz") -> TarArchiveInputStream(XZCompressorInputStream(bis))
+                    name.endsWith(".tar.bz2") -> TarArchiveInputStream(BZip2CompressorInputStream(bis))
+                    else -> TarArchiveInputStream(bis)
+                }
+                tarIn.use { input ->
+                    var count = 0
+                    var tarEntry: TarArchiveEntry? = input.nextEntry
+                    while (tarEntry != null && count < 100) {
+                        val n = tarEntry.name.trimStart('/')
+                        if (n.equals("index.theme", ignoreCase = true) || n.endsWith("/index.theme", ignoreCase = true)) {
+                            themeCandidateCache.put(cacheKey, true)
+                            return true
+                        }
+                        count++
+                        tarEntry = input.nextEntry
+                    }
+                }
+            } catch (_: Exception) {}
+            themeCandidateCache.put(cacheKey, false)
+            return false
+        }
+
+        // Non-local streams (SAF / SFTP / SMB / FTP)
+        if (openStream != null) {
+            try {
+                if (name.endsWith(".zip")) {
+                    ZipInputStream(BufferedInputStream(openStream())).use { zis ->
+                        var count = 0
+                        var ze = zis.nextEntry
+                        while (ze != null && count < 100) {
+                            val n = ze.name.trimStart('/')
+                            if (n.equals("index.theme", ignoreCase = true) || n.endsWith("/index.theme", ignoreCase = true)) {
+                                themeCandidateCache.put(cacheKey, true)
+                                return true
+                            }
+                            count++
+                            ze = zis.nextEntry
+                        }
+                    }
+                } else {
+                    val bis = BufferedInputStream(openStream())
+                    val tarIn: TarArchiveInputStream = when {
+                        name.endsWith(".tar.gz") || name.endsWith(".tgz") -> TarArchiveInputStream(GzipCompressorInputStream(bis))
+                        name.endsWith(".tar.xz") || name.endsWith(".txz") -> TarArchiveInputStream(XZCompressorInputStream(bis))
+                        name.endsWith(".tar.bz2") -> TarArchiveInputStream(BZip2CompressorInputStream(bis))
+                        else -> TarArchiveInputStream(bis)
+                    }
+                    tarIn.use { input ->
+                        var count = 0
+                        var tarEntry: TarArchiveEntry? = input.nextEntry
+                        while (tarEntry != null && count < 100) {
+                            val n = tarEntry.name.trimStart('/')
+                            if (n.equals("index.theme", ignoreCase = true) || n.endsWith("/index.theme", ignoreCase = true)) {
+                                themeCandidateCache.put(cacheKey, true)
+                                return true
+                            }
+                            count++
+                            tarEntry = input.nextEntry
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        themeCandidateCache.put(cacheKey, false)
+        return false
     }
 
     private fun extractArchive(openStream: () -> InputStream, archiveName: String, destination: File) {

@@ -7,6 +7,7 @@ import org.apache.commons.compress.archivers.ar.ArArchiveInputStream
 import org.apache.commons.compress.archivers.cpio.CpioArchiveInputStream
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream
 import org.apache.commons.compress.archivers.zip.ZipFile
 import org.apache.commons.compress.compressors.CompressorStreamFactory
@@ -50,29 +51,77 @@ class ArchiveReader(private val tempDir: File) {
         }
     }
 
-    fun isWritable(archiveName: String, localFile: File?): Boolean =
-        discImageReader.isWritable(archiveName, localFile)
+    fun isWritable(archiveName: String, localFile: File?, device: BlockDevice? = null, entryPath: String? = null): Boolean {
+        if (entryPath != null) {
+            val effectiveDev = device ?: localFile?.let { if (it.exists() && it.canWrite()) FileBlockDevice(java.io.RandomAccessFile(it, "rw"), false) else null }
+            if (effectiveDev != null && (archiveName.endsWith(".zip") || archiveName.endsWith(".jar") || archiveName.endsWith(".apk") || archiveName.endsWith(".cbz"))) {
+                if (ZipInPlaceModifier.canModifyInPlace(effectiveDev, entryPath)) return true
+            }
+        }
+        return discImageReader.isWritable(archiveName, localFile, device, entryPath)
+    }
 
     fun checkMounted(archiveName: String, localFile: File?): MountCheckResult =
         MountedPartitionDetector.checkMounted(localFile)
 
-    fun createFile(archiveName: String, localFile: File?, entryPath: String, data: ByteArray) =
-        discImageReader.createFile(archiveName, localFile, entryPath, data)
+    fun createFile(archiveName: String, localFile: File?, entryPath: String, data: ByteArray, device: BlockDevice? = null) =
+        discImageReader.createFile(archiveName, localFile, entryPath, data, device)
 
-    fun createDirectory(archiveName: String, localFile: File?, entryPath: String) =
-        discImageReader.createDirectory(archiveName, localFile, entryPath)
+    fun createDirectory(archiveName: String, localFile: File?, entryPath: String, device: BlockDevice? = null) =
+        discImageReader.createDirectory(archiveName, localFile, entryPath, device)
 
-    fun writeEntry(archiveName: String, localFile: File?, entryPath: String, data: ByteArray) =
-        discImageReader.writeEntry(archiveName, localFile, entryPath, data)
+    fun writeEntry(archiveName: String, localFile: File?, entryPath: String, data: ByteArray, device: BlockDevice? = null) {
+        val effectiveDev = device ?: localFile?.let { if (it.exists() && it.canWrite()) FileBlockDevice(java.io.RandomAccessFile(it, "rw"), false) else null }
+        if (effectiveDev != null && (archiveName.endsWith(".zip") || archiveName.endsWith(".jar") || archiveName.endsWith(".apk") || archiveName.endsWith(".cbz"))) {
+            if (ZipInPlaceModifier.canModifyInPlace(effectiveDev, entryPath)) {
+                ZipInPlaceModifier.modifyStoredEntry(effectiveDev, entryPath, data)
+                return
+            }
+        }
+        discImageReader.writeEntry(archiveName, localFile, entryPath, data, device)
+    }
 
-    fun deleteEntry(archiveName: String, localFile: File?, entryPath: String) =
-        discImageReader.deleteEntry(archiveName, localFile, entryPath)
+    fun deleteEntry(archiveName: String, localFile: File?, entryPath: String, device: BlockDevice? = null) =
+        discImageReader.deleteEntry(archiveName, localFile, entryPath, device)
+
+    fun getEntryBlockDevice(
+        archiveName: String,
+        entryPath: String,
+        device: BlockDevice
+    ): BlockDevice? {
+        val cleanTarget = normalizePath(entryPath)
+        val ext = ArchiveFormats.archiveExtension(archiveName)
+        if (ext == "zip" || ext == "jar" || ext == "apk" || ext == "aar" || ext == "cbz") {
+            try {
+                ZipFile.builder().setSeekableByteChannel(device.asSeekableByteChannel()).get().use { zf ->
+                    val entry = zf.getEntry(cleanTarget)
+                        ?: zf.getEntry("/$cleanTarget")
+                        ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name) == cleanTarget }
+                    if (entry != null && entry.method == org.apache.commons.compress.archivers.zip.ZipArchiveEntry.STORED && entry.size >= 0) {
+                        val localOffset = entry.localHeaderOffset
+                        val lfh = device.readBytes(localOffset, 30)
+                        if (lfh.size >= 30) {
+                            val nLen = (lfh[26].toInt() and 0xFF) or ((lfh[27].toInt() and 0xFF) shl 8)
+                            val eLen = (lfh[28].toInt() and 0xFF) or ((lfh[29].toInt() and 0xFF) shl 8)
+                            val dataOffset = localOffset + 30L + nLen + eLen
+                            return PartitionSliceBlockDevice(device, dataOffset, entry.size, device.isReadOnly)
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        val slice = discImageReader.getPartitionSlice(device, cleanTarget)
+        if (slice != null) return slice
+        return null
+    }
 
     private data class RawEntry(
         val name: String,
         val isDirectory: Boolean,
         val sizeBytes: Long?,
-        val modifiedAtMillis: Long?
+        val modifiedAtMillis: Long?,
+        val isSymbolicLink: Boolean = false,
+        val linkTarget: String? = null
     )
 
     private fun normalizePath(rawName: String): String =
@@ -82,20 +131,23 @@ class ArchiveReader(private val tempDir: File) {
         sourceUri: Uri?,
         archiveName: String,
         openStream: () -> InputStream,
-        localFile: File? = null
+        localFile: File? = null,
+        device: BlockDevice? = null
     ): ArchiveTree {
-        val rawEntries = readEntries(archiveName, openStream, localFile)
+        val rawEntries = readEntries(archiveName, openStream, localFile, device)
         return buildTreeFromRawEntries(sourceUri, rawEntries)
     }
 
     private fun readEntries(
         archiveName: String,
         openStream: () -> InputStream,
-        localFile: File?
+        localFile: File?,
+        device: BlockDevice? = null
     ): List<RawEntry> {
+        val effectiveDev = device ?: localFile?.let { if (it.exists()) FileBlockDevice(java.io.RandomAccessFile(it, "r"), true) else null }
         val (ext, isDisc) = resolveFormat(archiveName, openStream, localFile)
         if (isDisc) {
-            return discImageReader.readEntries(archiveName, openStream, localFile).map {
+            return discImageReader.readEntries(archiveName, openStream, localFile, effectiveDev).map {
                 RawEntry(
                     name = it.path,
                     isDirectory = it.isDirectory,
@@ -106,16 +158,24 @@ class ArchiveReader(private val tempDir: File) {
         }
 
         if (ext == "7z" || ext == "cb7") {
+            if (effectiveDev != null) {
+                return read7zEntries(effectiveDev)
+            }
             val file = localFile ?: materializeTempArchive(openStream)
             return try {
-                read7zEntries(file)
+                read7zEntries(FileBlockDevice(java.io.RandomAccessFile(file, "r"), true))
             } finally {
                 if (localFile == null) file.delete()
             }
         }
 
-        if ((ext == "zip" || ext == "jar" || ext == "apk" || ext == "aar" || ext == "cbz") && localFile != null) {
-            return readZipFileEntries(localFile)
+        if (ext == "zip" || ext == "jar" || ext == "apk" || ext == "aar" || ext == "cbz") {
+            if (effectiveDev != null) {
+                return readZipEntries(effectiveDev)
+            }
+            if (localFile != null) {
+                return readZipFileEntries(localFile)
+            }
         }
 
         return try {
@@ -123,11 +183,15 @@ class ArchiveReader(private val tempDir: File) {
                 val list = mutableListOf<RawEntry>()
                 var entry = ais.nextEntry
                 while (entry != null) {
+                    val isSymlink = if (entry is TarArchiveEntry) entry.isSymbolicLink else false
+                    val linkTarget = if (entry is TarArchiveEntry && isSymlink) entry.linkName else null
                     list += RawEntry(
                         name = entry.name,
                         isDirectory = entry.isDirectory || entry.name.endsWith('/') || entry.name.endsWith('\\'),
                         sizeBytes = if (entry.isDirectory) null else entry.size.takeIf { it >= 0 },
-                        modifiedAtMillis = entry.lastModifiedDate?.time
+                        modifiedAtMillis = entry.lastModifiedDate?.time,
+                        isSymbolicLink = isSymlink,
+                        linkTarget = linkTarget
                     )
                     entry = ais.nextEntry
                 }
@@ -157,6 +221,23 @@ class ArchiveReader(private val tempDir: File) {
         }
     }
 
+    private fun read7zEntries(device: BlockDevice): List<RawEntry> {
+        return SevenZFile.builder().setSeekableByteChannel(device.asSeekableByteChannel()).get().use { sz ->
+            val list = mutableListOf<RawEntry>()
+            var entry = sz.nextEntry
+            while (entry != null) {
+                list += RawEntry(
+                    name = entry.name,
+                    isDirectory = entry.isDirectory || entry.name.endsWith('/') || entry.name.endsWith('\\'),
+                    sizeBytes = if (entry.isDirectory) null else entry.size.takeIf { it >= 0 },
+                    modifiedAtMillis = entry.lastModifiedDate?.time
+                )
+                entry = sz.nextEntry
+            }
+            list
+        }
+    }
+
     private fun read7zEntries(file: File): List<RawEntry> {
         return SevenZFile.builder().setFile(file).get().use { sz ->
             val list = mutableListOf<RawEntry>()
@@ -169,6 +250,23 @@ class ArchiveReader(private val tempDir: File) {
                     modifiedAtMillis = entry.lastModifiedDate?.time
                 )
                 entry = sz.nextEntry
+            }
+            list
+        }
+    }
+
+    private fun readZipEntries(device: BlockDevice): List<RawEntry> {
+        return ZipFile.builder().setSeekableByteChannel(device.asSeekableByteChannel()).get().use { zf ->
+            val list = mutableListOf<RawEntry>()
+            val en = zf.entries
+            while (en.hasMoreElements()) {
+                val entry = en.nextElement()
+                list += RawEntry(
+                    name = entry.name,
+                    isDirectory = entry.isDirectory || entry.name.endsWith('/') || entry.name.endsWith('\\'),
+                    sizeBytes = if (entry.isDirectory) null else entry.size.takeIf { it >= 0 },
+                    modifiedAtMillis = entry.lastModifiedDate?.time
+                )
             }
             list
         }
@@ -196,17 +294,39 @@ class ArchiveReader(private val tempDir: File) {
         entryPath: String,
         targetFile: File,
         openStream: () -> InputStream,
-        localFile: File? = null
+        localFile: File? = null,
+        device: BlockDevice? = null
     ): File {
         val cleanTarget = normalizePath(entryPath)
         targetFile.parentFile?.mkdirs()
+        val effectiveDev = device ?: localFile?.let { if (it.exists()) FileBlockDevice(java.io.RandomAccessFile(it, "r"), true) else null }
 
         val (ext, isDisc) = resolveFormat(archiveName, openStream, localFile)
         if (isDisc) {
-            return discImageReader.extractEntry(archiveName, cleanTarget, targetFile, openStream, localFile)
+            return discImageReader.extractEntry(archiveName, cleanTarget, targetFile, openStream, localFile, effectiveDev)
         }
 
         if (ext == "7z" || ext == "cb7") {
+            if (effectiveDev != null) {
+                SevenZFile.builder().setSeekableByteChannel(effectiveDev.asSeekableByteChannel()).get().use { sz ->
+                    var entry = sz.nextEntry
+                    while (entry != null) {
+                        val norm = normalizePath(entry.name)
+                        if (norm == cleanTarget || norm.equals(cleanTarget, ignoreCase = true)) {
+                            targetFile.outputStream().use { out ->
+                                val buffer = ByteArray(8192)
+                                var count: Int
+                                while (sz.read(buffer).also { count = it } > 0) {
+                                    out.write(buffer, 0, count)
+                                }
+                            }
+                            return targetFile
+                        }
+                        entry = sz.nextEntry
+                    }
+                }
+                throw NoSuchElementException("Entry not found in 7z archive: $entryPath")
+            }
             val file = localFile ?: materializeTempArchive(openStream)
             try {
                 SevenZFile.builder().setFile(file).get().use { sz ->
@@ -232,18 +352,33 @@ class ArchiveReader(private val tempDir: File) {
             throw NoSuchElementException("Entry not found in 7z archive: $entryPath")
         }
 
-        if ((ext == "zip" || ext == "jar" || ext == "apk" || ext == "aar" || ext == "cbz") && localFile != null) {
-            ZipFile.builder().setFile(localFile).get().use { zf ->
-                val entry = zf.getEntry(cleanTarget)
-                    ?: zf.getEntry("/$cleanTarget")
-                    ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name) == cleanTarget }
-                    ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name).equals(cleanTarget, ignoreCase = true) }
-                    ?: throw NoSuchElementException("Entry not found in zip archive: $entryPath")
-                zf.getInputStream(entry).use { inStream ->
-                    targetFile.outputStream().use { inStream.copyTo(it) }
+        if (ext == "zip" || ext == "jar" || ext == "apk" || ext == "aar" || ext == "cbz") {
+            if (effectiveDev != null) {
+                ZipFile.builder().setSeekableByteChannel(effectiveDev.asSeekableByteChannel()).get().use { zf ->
+                    val entry = zf.getEntry(cleanTarget)
+                        ?: zf.getEntry("/$cleanTarget")
+                        ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name) == cleanTarget }
+                        ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name).equals(cleanTarget, ignoreCase = true) }
+                        ?: throw NoSuchElementException("Entry not found in zip archive: $entryPath")
+                    zf.getInputStream(entry).use { inStream ->
+                        targetFile.outputStream().use { inStream.copyTo(it) }
+                    }
                 }
+                return targetFile
             }
-            return targetFile
+            if (localFile != null) {
+                ZipFile.builder().setFile(localFile).get().use { zf ->
+                    val entry = zf.getEntry(cleanTarget)
+                        ?: zf.getEntry("/$cleanTarget")
+                        ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name) == cleanTarget }
+                        ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name).equals(cleanTarget, ignoreCase = true) }
+                        ?: throw NoSuchElementException("Entry not found in zip archive: $entryPath")
+                    zf.getInputStream(entry).use { inStream ->
+                        targetFile.outputStream().use { inStream.copyTo(it) }
+                    }
+                }
+                return targetFile
+            }
         }
 
         try {
@@ -260,13 +395,13 @@ class ArchiveReader(private val tempDir: File) {
             }
         } catch (primaryError: Exception) {
             return try {
-                discImageReader.extractEntry(archiveName, cleanTarget, targetFile, openStream, localFile)
+                discImageReader.extractEntry(archiveName, cleanTarget, targetFile, openStream, localFile, effectiveDev)
             } catch (_: Exception) {
                 throw primaryError
             }
         }
         return try {
-            discImageReader.extractEntry(archiveName, cleanTarget, targetFile, openStream, localFile)
+            discImageReader.extractEntry(archiveName, cleanTarget, targetFile, openStream, localFile, effectiveDev)
         } catch (_: Exception) {
             throw NoSuchElementException("Entry not found in archive: $entryPath")
         }
@@ -279,15 +414,40 @@ class ArchiveReader(private val tempDir: File) {
         archiveName: String,
         entryPath: String,
         openStream: () -> InputStream,
-        localFile: File? = null
+        localFile: File? = null,
+        device: BlockDevice? = null
     ): InputStream {
         val cleanTarget = normalizePath(entryPath)
+        val effectiveDev = device ?: localFile?.let { if (it.exists()) FileBlockDevice(java.io.RandomAccessFile(it, "r"), true) else null }
         val (ext, isDisc) = resolveFormat(archiveName, openStream, localFile)
         if (isDisc) {
-            return discImageReader.openEntryStream(archiveName, cleanTarget, openStream, localFile)
+            return discImageReader.openEntryStream(archiveName, cleanTarget, openStream, localFile, effectiveDev)
         }
 
         if (ext == "7z" || ext == "cb7") {
+            if (effectiveDev != null) {
+                val sz = SevenZFile.builder().setSeekableByteChannel(effectiveDev.asSeekableByteChannel()).get()
+                try {
+                    var entry = sz.nextEntry
+                    while (entry != null) {
+                        val norm = normalizePath(entry.name)
+                        if (norm == cleanTarget || norm.equals(cleanTarget, ignoreCase = true)) {
+                            val content = ByteArray(entry.size.toInt().coerceAtLeast(0))
+                            var read = 0
+                            while (read < content.size) {
+                                val count = sz.read(content, read, content.size - read)
+                                if (count <= 0) break
+                                read += count
+                            }
+                            return java.io.ByteArrayInputStream(content)
+                        }
+                        entry = sz.nextEntry
+                    }
+                } finally {
+                    sz.close()
+                }
+                throw NoSuchElementException("Entry not found in 7z archive: $entryPath")
+            }
             val file = localFile ?: materializeTempArchive(openStream)
             val sz = SevenZFile.builder().setFile(file).get()
             try {
@@ -313,16 +473,29 @@ class ArchiveReader(private val tempDir: File) {
             throw NoSuchElementException("Entry not found in 7z archive: $entryPath")
         }
 
-        if ((ext == "zip" || ext == "jar" || ext == "apk" || ext == "aar" || ext == "cbz") && localFile != null) {
-            val zf = ZipFile.builder().setFile(localFile).get()
-            val entry = zf.getEntry(cleanTarget)
-                ?: zf.getEntry("/$cleanTarget")
-                ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name) == cleanTarget }
-                ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name).equals(cleanTarget, ignoreCase = true) }
-                ?: throw NoSuchElementException("Entry not found in zip archive: $entryPath")
-            val bytes = zf.getInputStream(entry).use { it.readBytes() }
-            zf.close()
-            return java.io.ByteArrayInputStream(bytes)
+        if (ext == "zip" || ext == "jar" || ext == "apk" || ext == "aar" || ext == "cbz") {
+            if (effectiveDev != null) {
+                val zf = ZipFile.builder().setSeekableByteChannel(effectiveDev.asSeekableByteChannel()).get()
+                val entry = zf.getEntry(cleanTarget)
+                    ?: zf.getEntry("/$cleanTarget")
+                    ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name) == cleanTarget }
+                    ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name).equals(cleanTarget, ignoreCase = true) }
+                    ?: throw NoSuchElementException("Entry not found in zip archive: $entryPath")
+                val bytes = zf.getInputStream(entry).use { it.readBytes() }
+                zf.close()
+                return java.io.ByteArrayInputStream(bytes)
+            }
+            if (localFile != null) {
+                val zf = ZipFile.builder().setFile(localFile).get()
+                val entry = zf.getEntry(cleanTarget)
+                    ?: zf.getEntry("/$cleanTarget")
+                    ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name) == cleanTarget }
+                    ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name).equals(cleanTarget, ignoreCase = true) }
+                    ?: throw NoSuchElementException("Entry not found in zip archive: $entryPath")
+                val bytes = zf.getInputStream(entry).use { it.readBytes() }
+                zf.close()
+                return java.io.ByteArrayInputStream(bytes)
+            }
         }
 
         try {
@@ -442,7 +615,9 @@ class ArchiveReader(private val tempDir: File) {
                 isDirectory = isDir,
                 sizeBytes = if (isDir) null else entry.sizeBytes,
                 modifiedAtMillis = entry.modifiedAtMillis,
-                mimeType = ArchiveMimeTypes.guessMimeType(leafName, isDir)
+                mimeType = ArchiveMimeTypes.guessMimeType(leafName, isDir),
+                isSymbolicLink = entry.isSymbolicLink,
+                linkTarget = entry.linkTarget
             )
 
             if (isDir) {

@@ -25,7 +25,8 @@ class SafProvider(private val resolver: ContentResolver) : StorageProvider {
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
             DocumentsContract.Document.COLUMN_MIME_TYPE,
             DocumentsContract.Document.COLUMN_SIZE,
-            DocumentsContract.Document.COLUMN_LAST_MODIFIED
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            DocumentsContract.Document.COLUMN_FLAGS
         ), null, null, null)
         if (cursor == null) directoryQueryResult<ResourceEntry>(null) else cursor.use {
             val idCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
@@ -33,16 +34,37 @@ class SafProvider(private val resolver: ContentResolver) : StorageProvider {
             val mimeCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
             val sizeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
             val modifiedCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+            val flagsCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_FLAGS)
             while (cursor.moveToNext()) {
                 val documentId = cursor.getString(idCol)
                 val name = cursor.getString(nameCol) ?: "Unnamed"
                 val mime = cursor.getString(mimeCol) ?: "application/octet-stream"
                 val folder = mime == DocumentsContract.Document.MIME_TYPE_DIR
                 val uri = DocumentsContract.buildDocumentUriUsingTree(parentUri, documentId)
+                val flags = if (flagsCol >= 0 && !cursor.isNull(flagsCol)) cursor.getInt(flagsCol) else 0
+                val canWrite = if (folder) {
+                    (flags and DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE) != 0 ||
+                    (flags and DocumentsContract.Document.FLAG_SUPPORTS_WRITE) != 0
+                } else {
+                    (flags and DocumentsContract.Document.FLAG_SUPPORTS_WRITE) != 0
+                }
+                val mode = if (canWrite) (if (folder) 0b111_101_101 else 0b110_100_100)
+                           else (if (folder) 0b101_101_101 else 0b100_100_100)
+                val formatted = PermissionHelper.formatPosix(mode, folder)
                 rows += ResourceEntry(
                     ResourceRef(id, uri.toString()),
-                    ResourceMetadata(name, mime, if (sizeCol < 0 || cursor.isNull(sizeCol)) null else cursor.getLong(sizeCol),
-                        if (modifiedCol < 0 || cursor.isNull(modifiedCol)) null else cursor.getLong(modifiedCol), folder), uri
+                    ResourceMetadata(
+                        name = name,
+                        mimeType = mime,
+                        sizeBytes = if (sizeCol < 0 || cursor.isNull(sizeCol)) null else cursor.getLong(sizeCol),
+                        modifiedAtMillis = if (modifiedCol < 0 || cursor.isNull(modifiedCol)) null else cursor.getLong(modifiedCol),
+                        isDirectory = folder,
+                        canRead = true,
+                        canWrite = canWrite,
+                        permissionsMode = mode,
+                        permissionsFormatted = formatted
+                    ),
+                    uri
                 )
             }
             directoryQueryResult(rows, cursor.extras.getBoolean(DocumentsContract.EXTRA_LOADING, false),
@@ -100,14 +122,43 @@ class SafProvider(private val resolver: ContentResolver) : StorageProvider {
     private fun entry(uri: Uri): ResourceEntry {
         val idValue = documentId(uri)
         val query = DocumentsContract.buildDocumentUriUsingTree(uri, idValue)
-        val projection = arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE,
-            DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            DocumentsContract.Document.COLUMN_FLAGS
+        )
         resolver.query(query, projection, null, null, null)?.use { c ->
             if (c.moveToFirst()) {
-                val name = c.getString(0) ?: "Unnamed"; val mime = c.getString(1) ?: "application/octet-stream"
+                val name = c.getString(0) ?: "Unnamed"
+                val mime = c.getString(1) ?: "application/octet-stream"
                 val folder = mime == DocumentsContract.Document.MIME_TYPE_DIR
-                return ResourceEntry(ResourceRef(id, uri.toString()), ResourceMetadata(name, mime,
-                    if (c.isNull(2)) null else c.getLong(2), if (c.isNull(3)) null else c.getLong(3), folder), uri)
+                val flags = if (c.columnCount > 4 && !c.isNull(4)) c.getInt(4) else 0
+                val canWrite = if (folder) {
+                    (flags and DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE) != 0 ||
+                    (flags and DocumentsContract.Document.FLAG_SUPPORTS_WRITE) != 0
+                } else {
+                    (flags and DocumentsContract.Document.FLAG_SUPPORTS_WRITE) != 0
+                }
+                val mode = if (canWrite) (if (folder) 0b111_101_101 else 0b110_100_100)
+                           else (if (folder) 0b101_101_101 else 0b100_100_100)
+                val formatted = PermissionHelper.formatPosix(mode, folder)
+                return ResourceEntry(
+                    ResourceRef(id, uri.toString()),
+                    ResourceMetadata(
+                        name = name,
+                        mimeType = mime,
+                        sizeBytes = if (c.isNull(2)) null else c.getLong(2),
+                        modifiedAtMillis = if (c.isNull(3)) null else c.getLong(3),
+                        isDirectory = folder,
+                        canRead = true,
+                        canWrite = canWrite,
+                        permissionsMode = mode,
+                        permissionsFormatted = formatted
+                    ),
+                    uri
+                )
             }
         }
         throw FileNotFoundException("Created document is unavailable")

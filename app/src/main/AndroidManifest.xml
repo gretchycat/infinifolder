@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <queries>
         <intent>
@@ -21,6 +22,8 @@
         android:usesCleartextTraffic="true"
         android:theme="@style/AppTheme"
         android:label="InfiniFolder"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="true"
         android:supportsRtl="true">
         <provider
@@ -30,12 +33,67 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/shared_paths" />
         </provider>
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".viewer.ImageViewerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|uiMode"
+            android:theme="@style/AppTheme" />
+        <activity
+            android:name=".viewer.TextViewerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|uiMode"
+            android:theme="@style/AppTheme" />
+        <activity
+            android:name=".viewer.MarkdownViewerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|uiMode"
+            android:theme="@style/AppTheme" />
+        <activity
+            android:name=".viewer.HtmlViewerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|uiMode"
+            android:theme="@style/AppTheme" />
+        <activity
+            android:name=".viewer.PdfViewerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|uiMode"
+            android:theme="@style/AppTheme" />
+        <activity
+            android:name=".viewer.CsvViewerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|uiMode"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/AppTheme" />
+        <activity
+            android:name=".viewer.EpubViewerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|uiMode"
+            android:theme="@style/AppTheme" />
+        <activity
+            android:name=".viewer.AudioPlayerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|uiMode"
+            android:launchMode="singleTop"
+            android:theme="@style/AppTheme" />
+        <activity
+            android:name=".viewer.VideoPlayerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|uiMode"
+            android:supportsPictureInPicture="true"
+            android:theme="@style/AppTheme" />
+        <service
+            android:name=".viewer.AudioPlayerService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
         <service
             android:name=".ops.OperationService"
             android:exported="false"

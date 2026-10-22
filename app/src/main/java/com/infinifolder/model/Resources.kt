@@ -11,7 +11,17 @@ data class ResourceMetadata(
     val sizeBytes: Long?,
     val modifiedAtMillis: Long?,
     val isDirectory: Boolean,
-    val isHidden: Boolean = name.startsWith(".")
+    val isHidden: Boolean = name.startsWith("."),
+    val canRead: Boolean = true,
+    val canWrite: Boolean = true,
+    val canExecute: Boolean = false,
+    val permissionsMode: Int? = null,
+    val permissionsFormatted: String? = null,
+    val owner: String? = null,
+    val group: String? = null,
+    val isSymbolicLink: Boolean = false,
+    val linkTarget: String? = null,
+    val isBrokenLink: Boolean = false
 )
 
 data class ResourceEntry(val ref: ResourceRef, val metadata: ResourceMetadata, val uri: Uri)

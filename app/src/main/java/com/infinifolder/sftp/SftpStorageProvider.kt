@@ -23,7 +23,7 @@ class SftpStorageProvider(
 
     override val id = "sftp"
 
-    private fun resolveConfigAndCredentials(connectionId: String): Pair<SftpConfig, SftpCredentials> {
+    fun resolveConfigAndCredentials(connectionId: String): Pair<SftpConfig, SftpCredentials> {
         val conn = connectionLookup(connectionId)
             ?: throw IOException("Saved SFTP connection not found: $connectionId")
         val creds = credentialStore.load(connectionId)
@@ -58,6 +58,20 @@ class SftpStorageProvider(
             val list = mutableListOf<ResourceEntry>()
             @Suppress("UNCHECKED_CAST")
             val vector = channel.ls(remotePath) as Vector<ChannelSftp.LsEntry>
+            val remoteSubject = try {
+                val homeAttrs = channel.stat(channel.home)
+                com.infinifolder.storage.SubjectIdentity(
+                    uid = homeAttrs.uId,
+                    username = config.username,
+                    gid = homeAttrs.gId,
+                    isRoot = config.username.equals("root", ignoreCase = true) || homeAttrs.uId == 0
+                )
+            } catch (_: Throwable) {
+                com.infinifolder.storage.SubjectIdentity(
+                    username = config.username,
+                    isRoot = config.username.equals("root", ignoreCase = true)
+                )
+            }
 
             for (item in vector) {
                 val filename = item.filename
@@ -71,14 +85,65 @@ class SftpStorageProvider(
                 val childUri = SftpUri.build(connId, childRemotePath)
                 val mimeType = if (isDir) "vnd.android.document/directory" else guessMimeType(filename)
 
+                val isLink = attrs?.isLink == true
+                var targetIsDir = isDir
+                var targetSize = sizeBytes
+                var linkTarget: String? = null
+                var isBroken = false
+
+                if (isLink) {
+                    linkTarget = try { channel.readlink(childRemotePath) } catch (_: Throwable) { null }
+                    try {
+                        val statAttrs = channel.stat(childRemotePath)
+                        targetIsDir = statAttrs.isDir
+                        targetSize = if (targetIsDir) null else statAttrs.size
+                    } catch (_: Throwable) {
+                        isBroken = true
+                    }
+                }
+
+                val finalIsDir = if (isLink && !isBroken) targetIsDir else isDir
+                val finalMime = if (finalIsDir) "vnd.android.document/directory" else guessMimeType(filename)
+
+                val permMode = attrs?.permissions
+                val permString = attrs?.permissionsString
+                val permFormatted = if (permMode != null) {
+                    if (permString != null) "$permString (${String.format("%04o", permMode and 0xFFF)})"
+                    else com.infinifolder.storage.PermissionHelper.formatPosix(permMode, finalIsDir)
+                } else null
+                val (canRead, canWrite, canExec) = if (isBroken) {
+                    Triple(false, false, false)
+                } else if (permMode != null) {
+                    com.infinifolder.storage.PermissionHelper.evaluatePosixPermissions(
+                        mode = permMode,
+                        fileUid = attrs?.uId,
+                        fileGid = attrs?.gId,
+                        subject = remoteSubject
+                    )
+                } else {
+                    Triple(true, true, false)
+                }
+                val owner = attrs?.uId?.takeIf { it >= 0 }?.toString()
+                val group = attrs?.gId?.takeIf { it >= 0 }?.toString()
+
                 list += ResourceEntry(
                     ref = ResourceRef(id, childUri.toString()),
                     metadata = ResourceMetadata(
                         name = filename,
-                        mimeType = mimeType,
-                        sizeBytes = sizeBytes,
+                        mimeType = finalMime,
+                        sizeBytes = if (finalIsDir) null else (if (isBroken) 0L else targetSize),
                         modifiedAtMillis = mtime,
-                        isDirectory = isDir
+                        isDirectory = finalIsDir,
+                        canRead = canRead,
+                        canWrite = canWrite,
+                        canExecute = canExec,
+                        permissionsMode = permMode,
+                        permissionsFormatted = permFormatted,
+                        owner = owner,
+                        group = group,
+                        isSymbolicLink = isLink,
+                        linkTarget = linkTarget,
+                        isBrokenLink = isBroken
                     ),
                     uri = childUri
                 )

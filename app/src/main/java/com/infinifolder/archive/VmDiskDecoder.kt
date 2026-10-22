@@ -14,30 +14,29 @@ import java.util.zip.Inflater
  * - VMDK: VMware Monolithic Sparse & Flat disk images (.vmdk)
  * - VHD: Microsoft Virtual Hard Disk Fixed & Dynamic (.vhd)
  * - VHDX: Microsoft Hyper-V Virtual Hard Disk v2 (.vhdx)
+ *
+ * Operates across any seekable BlockDevice (local files, SMB, SFTP, slices, or range caches).
  */
 object VmDiskDecoder {
 
-    fun open(raf: RandomAccessFile, isReadOnly: Boolean = false, baseFile: File? = null): BlockDevice? {
-        val fileLength = raf.length()
+    fun open(dev: BlockDevice, isReadOnly: Boolean = dev.isReadOnly, baseFile: File? = null): BlockDevice? {
+        val fileLength = dev.size
         if (fileLength < 512) return null
 
-        val header = ByteArray(512)
-        synchronized(raf) {
-            raf.seek(0L)
-            raf.readFully(header)
-        }
+        val header = dev.readBytes(0L, 512)
+        if (header.size < 512) return null
 
         // 1. QCOW2 (Magic: QFI\xfb at 0)
         if (u8(header, 0) == 0x51 && u8(header, 1) == 0x46 && u8(header, 2) == 0x49 && u8(header, 3) == 0xFB) {
             return try {
-                Qcow2BlockDevice(raf, header, isReadOnly)
+                Qcow2BlockDevice(dev, header, isReadOnly)
             } catch (_: Exception) { null }
         }
 
         // 2. VDI (Magic: 0xBEDA107F at offset 0x40 = 64)
         if (fileLength >= 400 && u32le(header, 0x40) == 0xBEDA107FL) {
             return try {
-                VdiBlockDevice(raf, header, isReadOnly)
+                VdiBlockDevice(dev, header, isReadOnly)
             } catch (_: Exception) { null }
         }
 
@@ -46,7 +45,7 @@ object VmDiskDecoder {
             header[2] == 'M'.code.toByte() && header[3] == 'V'.code.toByte()
         ) {
             return try {
-                VmdkSparseBlockDevice(raf, header, isReadOnly)
+                VmdkSparseBlockDevice(dev, header, isReadOnly)
             } catch (_: Exception) { null }
         }
 
@@ -54,11 +53,7 @@ object VmDiskDecoder {
         if (fileLength < 1024 * 1024) {
             val textHead = String(header, 0, 64.coerceAtMost(header.size), StandardCharsets.US_ASCII)
             if (textHead.contains("# Disk DescriptorFile") || textHead.startsWith("# Disk DescriptorFile")) {
-                val fullText = ByteArray(fileLength.toInt())
-                synchronized(raf) {
-                    raf.seek(0L)
-                    raf.readFully(fullText)
-                }
+                val fullText = dev.readBytes(0L, fileLength.toInt())
                 val descStr = String(fullText, StandardCharsets.UTF_8)
                 val flatDev = openVmdkFlat(descStr, baseFile, isReadOnly)
                 if (flatDev != null) return flatDev
@@ -68,31 +63,30 @@ object VmDiskDecoder {
         // 4. VHDX (Magic: "vhdxfile" at 0)
         if (header.size >= 8 && String(header, 0, 8, StandardCharsets.US_ASCII) == "vhdxfile") {
             return try {
-                VhdxBlockDevice(raf, isReadOnly)
+                VhdxBlockDevice(dev, isReadOnly)
             } catch (_: Exception) { null }
         }
 
         // 5. VHD (Dynamic: "conectix" at 0, or Fixed: "conectix" at EOF - 512)
         if (String(header, 0, 8, StandardCharsets.US_ASCII) == "conectix") {
             return try {
-                VhdBlockDevice(raf, header, isReadOnly, isFooterAtEof = false)
+                VhdBlockDevice(dev, header, isReadOnly, isFooterAtEof = false)
             } catch (_: Exception) { null }
         }
         if (fileLength >= 1024) {
-            val footer = ByteArray(512)
-            synchronized(raf) {
-                raf.seek(fileLength - 512L)
-                raf.readFully(footer)
-            }
-            if (String(footer, 0, 8, StandardCharsets.US_ASCII) == "conectix") {
+            val footer = dev.readBytes(fileLength - 512L, 512)
+            if (footer.size == 512 && String(footer, 0, 8, StandardCharsets.US_ASCII) == "conectix") {
                 return try {
-                    VhdBlockDevice(raf, footer, isReadOnly, isFooterAtEof = true)
+                    VhdBlockDevice(dev, footer, isReadOnly, isFooterAtEof = true)
                 } catch (_: Exception) { null }
             }
         }
 
         return null
     }
+
+    fun open(raf: RandomAccessFile, isReadOnly: Boolean = false, baseFile: File? = null): BlockDevice? =
+        open(FileBlockDevice(raf, isReadOnly), isReadOnly, baseFile)
 
     private fun openVmdkFlat(descriptor: String, baseFile: File?, isReadOnly: Boolean): BlockDevice? {
         val lines = descriptor.lines()
@@ -146,9 +140,9 @@ object VmDiskDecoder {
  * Oracle VM VirtualBox VDI BlockDevice.
  */
 class VdiBlockDevice(
-    private val raf: RandomAccessFile,
+    private val dev: BlockDevice,
     header: ByteArray,
-    override val isReadOnly: Boolean
+    override val isReadOnly: Boolean = dev.isReadOnly
 ) : BlockDevice {
 
     override val size: Long
@@ -172,10 +166,9 @@ class VdiBlockDevice(
         }
 
         // Read block map
-        val mapBytes = ByteArray(totalBlocks * 4)
-        synchronized(raf) {
-            raf.seek(offBlocks)
-            raf.readFully(mapBytes)
+        val mapBytes = dev.readBytes(offBlocks, totalBlocks * 4)
+        if (mapBytes.size < totalBlocks * 4) {
+            throw IOException("Failed to read VDI block map")
         }
         blockMap = IntArray(totalBlocks) { i ->
             VmDiskDecoder.u32le(mapBytes, i * 4).toInt()
@@ -201,10 +194,7 @@ class VdiBlockDevice(
                 buffer.fill(0, dstOffset + bytesRead, dstOffset + bytesRead + chunk)
             } else {
                 val physOffset = offData + (physBlock.toLong() and 0xFFFFFFFFL) * blockSize + offsetInBlock
-                synchronized(raf) {
-                    raf.seek(physOffset)
-                    raf.readFully(buffer, dstOffset + bytesRead, chunk)
-                }
+                dev.readAt(physOffset, buffer, dstOffset + bytesRead, chunk)
             }
             bytesRead += chunk
         }
@@ -228,52 +218,42 @@ class VdiBlockDevice(
             var physBlock = blockMap[blockIdx]
             if (physBlock == -1 || (physBlock.toLong() and 0xFFFFFFFFL) >= 0xFFFFFFFEL) {
                 // Dynamically allocate a new block
-                synchronized(raf) {
-                    val newPhysBlock = allocatedBlocks
-                    val newBlockFileOffset = offData + newPhysBlock.toLong() * blockSize
-                    raf.setLength(newBlockFileOffset + blockSize)
+                val newPhysBlock = allocatedBlocks
+                val newBlockFileOffset = offData + newPhysBlock.toLong() * blockSize
+                dev.truncate(newBlockFileOffset + blockSize)
 
-                    // Write zeroes to the new block
-                    val zeroBlock = ByteArray(blockSize)
-                    raf.seek(newBlockFileOffset)
-                    raf.write(zeroBlock)
+                // Write zeroes to the new block
+                val zeroBlock = ByteArray(blockSize)
+                dev.writeAt(newBlockFileOffset, zeroBlock, 0, blockSize)
 
-                    // Update block map on disk and memory
-                    val entryBytes = ByteArray(4)
-                    entryBytes[0] = (newPhysBlock and 0xFF).toByte()
-                    entryBytes[1] = ((newPhysBlock ushr 8) and 0xFF).toByte()
-                    entryBytes[2] = ((newPhysBlock ushr 16) and 0xFF).toByte()
-                    entryBytes[3] = ((newPhysBlock ushr 24) and 0xFF).toByte()
-                    raf.seek(offBlocks + blockIdx * 4L)
-                    raf.write(entryBytes)
+                // Update block map on disk and in memory
+                val entryBytes = ByteArray(4)
+                entryBytes[0] = (newPhysBlock and 0xFF).toByte()
+                entryBytes[1] = ((newPhysBlock ushr 8) and 0xFF).toByte()
+                entryBytes[2] = ((newPhysBlock ushr 16) and 0xFF).toByte()
+                entryBytes[3] = ((newPhysBlock ushr 24) and 0xFF).toByte()
+                dev.writeAt(offBlocks + blockIdx * 4L, entryBytes, 0, 4)
 
-                    allocatedBlocks++
-                    val countBytes = ByteArray(4)
-                    countBytes[0] = (allocatedBlocks and 0xFF).toByte()
-                    countBytes[1] = ((allocatedBlocks ushr 8) and 0xFF).toByte()
-                    countBytes[2] = ((allocatedBlocks ushr 16) and 0xFF).toByte()
-                    countBytes[3] = ((allocatedBlocks ushr 24) and 0xFF).toByte()
-                    raf.seek(0x184L)
-                    raf.write(countBytes)
+                allocatedBlocks++
+                val countBytes = ByteArray(4)
+                countBytes[0] = (allocatedBlocks and 0xFF).toByte()
+                countBytes[1] = ((allocatedBlocks ushr 8) and 0xFF).toByte()
+                countBytes[2] = ((allocatedBlocks ushr 16) and 0xFF).toByte()
+                countBytes[3] = ((allocatedBlocks ushr 24) and 0xFF).toByte()
+                dev.writeAt(0x184L, countBytes, 0, 4)
 
-                    blockMap[blockIdx] = newPhysBlock
-                    physBlock = newPhysBlock
-                }
+                blockMap[blockIdx] = newPhysBlock
+                physBlock = newPhysBlock
             }
 
             val physOffset = offData + (physBlock.toLong() and 0xFFFFFFFFL) * blockSize + offsetInBlock
-            synchronized(raf) {
-                raf.seek(physOffset)
-                raf.write(buffer, srcOffset + bytesWritten, chunk)
-            }
+            dev.writeAt(physOffset, buffer, srcOffset + bytesWritten, chunk)
             bytesWritten += chunk
         }
     }
 
     override fun flush() {
-        synchronized(raf) {
-            try { raf.channel.force(true) } catch (_: Exception) {}
-        }
+        dev.flush()
     }
 
     override fun close() {}
@@ -283,9 +263,9 @@ class VdiBlockDevice(
  * QEMU QCOW2 BlockDevice supporting both uncompressed and zlib/deflate compressed clusters.
  */
 class Qcow2BlockDevice(
-    private val raf: RandomAccessFile,
+    private val dev: BlockDevice,
     header: ByteArray,
-    override val isReadOnly: Boolean
+    override val isReadOnly: Boolean = dev.isReadOnly
 ) : BlockDevice {
 
     override val size: Long
@@ -308,10 +288,9 @@ class Qcow2BlockDevice(
         }
 
         // Read L1 table
-        val l1Bytes = ByteArray(l1Size * 8)
-        synchronized(raf) {
-            raf.seek(l1TableOffset)
-            raf.readFully(l1Bytes)
+        val l1Bytes = dev.readBytes(l1TableOffset, l1Size * 8)
+        if (l1Bytes.size < l1Size * 8) {
+            throw IOException("Failed to read QCOW2 L1 table")
         }
         l1Table = LongArray(l1Size) { i ->
             VmDiskDecoder.u64be(l1Bytes, i * 8)
@@ -350,10 +329,7 @@ class Qcow2BlockDevice(
                     if (hostOffset == 0L) {
                         buffer.fill(0, dstOffset + bytesRead, dstOffset + bytesRead + chunk)
                     } else {
-                        synchronized(raf) {
-                            raf.seek(hostOffset + offsetInCluster)
-                            raf.readFully(buffer, dstOffset + bytesRead, chunk)
-                        }
+                        dev.readAt(hostOffset + offsetInCluster, buffer, dstOffset + bytesRead, chunk)
                     }
                 } else {
                     // Compressed cluster
@@ -369,11 +345,8 @@ class Qcow2BlockDevice(
     }
 
     private fun readL2Entry(l2TableOffset: Long, l2Idx: Int): Long {
-        val entryBytes = ByteArray(8)
-        synchronized(raf) {
-            raf.seek(l2TableOffset + l2Idx * 8L)
-            raf.readFully(entryBytes)
-        }
+        val entryBytes = dev.readBytes(l2TableOffset + l2Idx * 8L, 8)
+        if (entryBytes.size < 8) return 0L
         return VmDiskDecoder.u64be(entryBytes, 0)
     }
 
@@ -385,12 +358,7 @@ class Qcow2BlockDevice(
         val csizeBits = clusterBits - 9
         val csizeSectors = (((l2Entry shr (62 - csizeBits)) and ((1L shl csizeBits) - 1)) + 1).toInt()
         val coffset = l2Entry and ((1L shl (62 - csizeBits)) - 1)
-        val compressedBytes = ByteArray(csizeSectors * 512)
-
-        synchronized(raf) {
-            raf.seek(coffset)
-            raf.readFully(compressedBytes)
-        }
+        val compressedBytes = dev.readBytes(coffset, csizeSectors * 512)
 
         val outBuf = ByteArray(clusterSize.toInt())
         val inflater = Inflater(true)
@@ -436,18 +404,13 @@ class Qcow2BlockDevice(
             val hostOffset = l2Entry and 0x00FFFFFFFFFFFF00L
             if (hostOffset == 0L) throw IOException("Write to unallocated QCOW2 cluster is not supported")
 
-            synchronized(raf) {
-                raf.seek(hostOffset + offsetInCluster)
-                raf.write(buffer, srcOffset + bytesWritten, chunk)
-            }
+            dev.writeAt(hostOffset + offsetInCluster, buffer, srcOffset + bytesWritten, chunk)
             bytesWritten += chunk
         }
     }
 
     override fun flush() {
-        synchronized(raf) {
-            try { raf.channel.force(true) } catch (_: Exception) {}
-        }
+        dev.flush()
     }
 
     override fun close() {}
@@ -457,9 +420,9 @@ class Qcow2BlockDevice(
  * VMware VMDK Sparse BlockDevice (Monolithic Sparse).
  */
 class VmdkSparseBlockDevice(
-    private val raf: RandomAccessFile,
+    private val dev: BlockDevice,
     header: ByteArray,
-    override val isReadOnly: Boolean
+    override val isReadOnly: Boolean = dev.isReadOnly
 ) : BlockDevice {
 
     override val size: Long
@@ -486,10 +449,9 @@ class VmdkSparseBlockDevice(
         val totalGrains = (size + grainBytes - 1) / grainBytes
         val numGTs = ((totalGrains + numGTEsPerGT - 1) / numGTEsPerGT).toInt()
 
-        val gdBytes = ByteArray(numGTs * 4)
-        synchronized(raf) {
-            raf.seek(gdOffsetSectors * 512L)
-            raf.readFully(gdBytes)
+        val gdBytes = dev.readBytes(gdOffsetSectors * 512L, numGTs * 4)
+        if (gdBytes.size < numGTs * 4) {
+            throw IOException("Failed to read VMDK GD table")
         }
         gdTable = IntArray(numGTs) { i ->
             VmDiskDecoder.u32le(gdBytes, i * 4).toInt()
@@ -515,20 +477,13 @@ class VmdkSparseBlockDevice(
             if (gtSector == 0) {
                 buffer.fill(0, dstOffset + bytesRead, dstOffset + bytesRead + chunk)
             } else {
-                val gtEntryBytes = ByteArray(4)
-                synchronized(raf) {
-                    raf.seek((gtSector.toLong() and 0xFFFFFFFFL) * 512L + gtIdx * 4L)
-                    raf.readFully(gtEntryBytes)
-                }
-                val grainSector = VmDiskDecoder.u32le(gtEntryBytes, 0)
+                val gtEntryBytes = dev.readBytes((gtSector.toLong() and 0xFFFFFFFFL) * 512L + gtIdx * 4L, 4)
+                val grainSector = if (gtEntryBytes.size >= 4) VmDiskDecoder.u32le(gtEntryBytes, 0) else 0L
                 if (grainSector == 0L) {
                     buffer.fill(0, dstOffset + bytesRead, dstOffset + bytesRead + chunk)
                 } else if (compressAlgorithm == 0) {
                     val physOffset = (grainSector and 0xFFFFFFFFL) * 512L + offsetInGrain
-                    synchronized(raf) {
-                        raf.seek(physOffset)
-                        raf.readFully(buffer, dstOffset + bytesRead, chunk)
-                    }
+                    dev.readAt(physOffset, buffer, dstOffset + bytesRead, chunk)
                 } else {
                     val grainBuf = getOrDecompressGrain(grainIdx, grainSector)
                     System.arraycopy(grainBuf, offsetInGrain, buffer, dstOffset + bytesRead, chunk)
@@ -546,17 +501,9 @@ class VmdkSparseBlockDevice(
             decompressedGrainCache.get(grainIdx)?.let { return it }
         }
 
-        val marker = ByteArray(12)
-        synchronized(raf) {
-            raf.seek(grainSector * 512L)
-            raf.readFully(marker)
-        }
-        val compSize = VmDiskDecoder.u32le(marker, 8).toInt()
-        val compData = ByteArray(compSize)
-        synchronized(raf) {
-            raf.seek(grainSector * 512L + 12L)
-            raf.readFully(compData)
-        }
+        val marker = dev.readBytes(grainSector * 512L, 12)
+        val compSize = if (marker.size >= 12) VmDiskDecoder.u32le(marker, 8).toInt() else 0
+        val compData = dev.readBytes(grainSector * 512L + 12L, compSize)
 
         val outBuf = ByteArray(grainBytes.toInt())
         val inflater = Inflater(true)
@@ -593,27 +540,18 @@ class VmdkSparseBlockDevice(
             val gtSector = gdTable[gdIdx]
             if (gtSector == 0) throw IOException("Write to unallocated VMDK GT table is not supported")
 
-            val gtEntryBytes = ByteArray(4)
-            synchronized(raf) {
-                raf.seek((gtSector.toLong() and 0xFFFFFFFFL) * 512L + gtIdx * 4L)
-                raf.readFully(gtEntryBytes)
-            }
-            val grainSector = VmDiskDecoder.u32le(gtEntryBytes, 0)
+            val gtEntryBytes = dev.readBytes((gtSector.toLong() and 0xFFFFFFFFL) * 512L + gtIdx * 4L, 4)
+            val grainSector = if (gtEntryBytes.size >= 4) VmDiskDecoder.u32le(gtEntryBytes, 0) else 0L
             if (grainSector == 0L) throw IOException("Write to unallocated VMDK grain is not supported")
 
             val physOffset = (grainSector and 0xFFFFFFFFL) * 512L + offsetInGrain
-            synchronized(raf) {
-                raf.seek(physOffset)
-                raf.write(buffer, srcOffset + bytesWritten, chunk)
-            }
+            dev.writeAt(physOffset, buffer, srcOffset + bytesWritten, chunk)
             bytesWritten += chunk
         }
     }
 
     override fun flush() {
-        synchronized(raf) {
-            try { raf.channel.force(true) } catch (_: Exception) {}
-        }
+        dev.flush()
     }
 
     override fun close() {}
@@ -623,9 +561,9 @@ class VmdkSparseBlockDevice(
  * Microsoft VHD BlockDevice (Fixed and Dynamic).
  */
 class VhdBlockDevice(
-    private val raf: RandomAccessFile,
+    private val dev: BlockDevice,
     footer: ByteArray,
-    override val isReadOnly: Boolean,
+    override val isReadOnly: Boolean = dev.isReadOnly,
     private val isFooterAtEof: Boolean
 ) : BlockDevice {
 
@@ -650,11 +588,7 @@ class VhdBlockDevice(
         } else {
             // Dynamic VHD
             val dataOffset = VmDiskDecoder.u64be(footer, 16)
-            val dynHeader = ByteArray(1024)
-            synchronized(raf) {
-                raf.seek(dataOffset)
-                raf.readFully(dynHeader)
-            }
+            val dynHeader = dev.readBytes(dataOffset, 1024)
             val tableOffset = VmDiskDecoder.u64be(dynHeader, 16)
             maxTableEntries = VmDiskDecoder.u32be(dynHeader, 28).toInt()
             blockSize = VmDiskDecoder.u32be(dynHeader, 32).toInt()
@@ -662,13 +596,9 @@ class VhdBlockDevice(
             val bitmapBytes = (blockSize / 512 + 7) / 8
             bitmapSectors = (bitmapBytes + 511) / 512
 
-            val batBytes = ByteArray(maxTableEntries * 4)
-            synchronized(raf) {
-                raf.seek(tableOffset)
-                raf.readFully(batBytes)
-            }
+            val batBytes = dev.readBytes(tableOffset, maxTableEntries * 4)
             bat = IntArray(maxTableEntries) { i ->
-                VmDiskDecoder.u32be(batBytes, i * 4).toInt()
+                if (i * 4 + 4 <= batBytes.size) VmDiskDecoder.u32be(batBytes, i * 4).toInt() else -1
             }
         }
     }
@@ -678,10 +608,7 @@ class VhdBlockDevice(
         val toRead = length.toLong().coerceAtMost(size - offset).toInt()
 
         if (isFixed) {
-            synchronized(raf) {
-                raf.seek(offset)
-                return raf.read(buffer, dstOffset, toRead)
-            }
+            return dev.readAt(offset, buffer, dstOffset, toRead)
         }
 
         var bytesRead = 0
@@ -702,11 +629,7 @@ class VhdBlockDevice(
                 val blockSector = batEntry.toLong() and 0xFFFFFFFFL
                 val blockDataOffset = (blockSector * 512L) + (bitmapSectors * 512L)
                 val physOffset = blockDataOffset + offsetInBlock
-
-                synchronized(raf) {
-                    raf.seek(physOffset)
-                    raf.readFully(buffer, dstOffset + bytesRead, chunk)
-                }
+                dev.readAt(physOffset, buffer, dstOffset + bytesRead, chunk)
             }
 
             bytesRead += chunk
@@ -722,10 +645,7 @@ class VhdBlockDevice(
         }
 
         if (isFixed) {
-            synchronized(raf) {
-                raf.seek(offset)
-                raf.write(buffer, srcOffset, length)
-            }
+            dev.writeAt(offset, buffer, srcOffset, length)
             return
         }
 
@@ -748,29 +668,23 @@ class VhdBlockDevice(
             val blockDataOffset = (blockSector * 512L) + (bitmapSectors * 512L)
             val physOffset = blockDataOffset + offsetInBlock
 
-            synchronized(raf) {
-                raf.seek(physOffset)
-                raf.write(buffer, srcOffset + bytesWritten, chunk)
+            dev.writeAt(physOffset, buffer, srcOffset + bytesWritten, chunk)
 
-                // Update sector bitmap bit to 1
-                val sectorInBlock = offsetInBlock / 512
-                val bitmapByteOffset = (blockSector * 512L) + (sectorInBlock / 8)
-                raf.seek(bitmapByteOffset)
-                val curByte = raf.read()
-                if (curByte != -1) {
-                    val newByte = curByte or (0x80 ushr (sectorInBlock % 8))
-                    raf.seek(bitmapByteOffset)
-                    raf.write(newByte)
-                }
+            // Update sector bitmap bit to 1
+            val sectorInBlock = offsetInBlock / 512
+            val bitmapByteOffset = (blockSector * 512L) + (sectorInBlock / 8)
+            val curByteArr = dev.readBytes(bitmapByteOffset, 1)
+            if (curByteArr.isNotEmpty()) {
+                val curByte = curByteArr[0].toInt() and 0xFF
+                val newByte = curByte or (0x80 ushr (sectorInBlock % 8))
+                dev.writeBytes(bitmapByteOffset, byteArrayOf(newByte.toByte()))
             }
             bytesWritten += chunk
         }
     }
 
     override fun flush() {
-        synchronized(raf) {
-            try { raf.channel.force(true) } catch (_: Exception) {}
-        }
+        dev.flush()
     }
 
     override fun close() {}
@@ -780,8 +694,8 @@ class VhdBlockDevice(
  * Microsoft VHDX BlockDevice (Hyper-V Virtual Hard Disk v2).
  */
 class VhdxBlockDevice(
-    private val raf: RandomAccessFile,
-    override val isReadOnly: Boolean
+    private val dev: BlockDevice,
+    override val isReadOnly: Boolean = dev.isReadOnly
 ) : BlockDevice {
 
     override val size: Long
@@ -794,11 +708,9 @@ class VhdxBlockDevice(
         var regionBytes = ByteArray(65536)
         var validRegion = false
         for (candOffset in listOf(0x30000L, 0x40000L)) {
-            synchronized(raf) {
-                raf.seek(candOffset)
-                raf.readFully(regionBytes)
-            }
-            if (String(regionBytes, 0, 4, StandardCharsets.US_ASCII) == "regi") {
+            val r = dev.readBytes(candOffset, 65536)
+            if (r.size >= 4 && String(r, 0, 4, StandardCharsets.US_ASCII) == "regi") {
+                regionBytes = r
                 validRegion = true
                 break
             }
@@ -810,7 +722,6 @@ class VhdxBlockDevice(
         var metaOff = 0L
 
         // BAT GUID: 2DC27766-F623-4200-9D64-115E9BFD4A08
-        // Little-endian bytes: 66 77 C2 2D 23 F6 00 42 9D 64 11 5E 9B FD 4A 08
         val batGuid = byteArrayOf(
             0x66.toByte(), 0x77.toByte(), 0xC2.toByte(), 0x2D.toByte(),
             0x23.toByte(), 0xF6.toByte(), 0x00.toByte(), 0x42.toByte(),
@@ -818,7 +729,6 @@ class VhdxBlockDevice(
             0x9B.toByte(), 0xFD.toByte(), 0x4A.toByte(), 0x08.toByte()
         )
         // Metadata GUID: 8B7D40A2-B44E-4D43-B31B-423637464C9A
-        // Little-endian bytes: A2 40 7D 8B 4E B4 43 4D B3 1B 42 36 37 46 4C 9A
         val metaGuid = byteArrayOf(
             0xA2.toByte(), 0x40.toByte(), 0x7D.toByte(), 0x8B.toByte(),
             0x4E.toByte(), 0xB4.toByte(), 0x43.toByte(), 0x4D.toByte(),
@@ -840,12 +750,8 @@ class VhdxBlockDevice(
         batOffset = batOff
 
         // Read Metadata table
-        val metaBytes = ByteArray(65536)
-        synchronized(raf) {
-            raf.seek(metaOff)
-            raf.readFully(metaBytes)
-        }
-        if (String(metaBytes, 0, 8, StandardCharsets.US_ASCII) != "metadata") {
+        val metaBytes = dev.readBytes(metaOff, 65536)
+        if (metaBytes.size < 8 || String(metaBytes, 0, 8, StandardCharsets.US_ASCII) != "metadata") {
             throw IOException("Corrupt VHDX metadata table")
         }
 
@@ -854,21 +760,18 @@ class VhdxBlockDevice(
         var parsedVirtualSize = 0L
         var parsedLogicalSectorSize = 512
 
-        // File Parameters GUID: CAA16737-FA36-4D43-B3B6-33F0AA0EAD67
         val fileParamsGuid = byteArrayOf(
             0x37.toByte(), 0x67.toByte(), 0xA1.toByte(), 0xCA.toByte(),
             0x36.toByte(), 0xFA.toByte(), 0x43.toByte(), 0x4D.toByte(),
             0xB3.toByte(), 0xB6.toByte(), 0x33.toByte(), 0xF0.toByte(),
             0xAA.toByte(), 0x0E.toByte(), 0xAD.toByte(), 0x67.toByte()
         )
-        // Virtual Disk Size GUID: 2FA54261-B276-4ECF-B3B6-733848995C24
         val diskSizeGuid = byteArrayOf(
             0x61.toByte(), 0x42.toByte(), 0xA5.toByte(), 0x2F.toByte(),
             0x76.toByte(), 0xB2.toByte(), 0xCF.toByte(), 0x4E.toByte(),
             0xB3.toByte(), 0xB6.toByte(), 0x73.toByte(), 0x38.toByte(),
             0x48.toByte(), 0x99.toByte(), 0x5C.toByte(), 0x24.toByte()
         )
-        // Logical Sector Size GUID: 8141BF1D-ED6F-4709-AB77-9E99345837CE
         val sectorSizeGuid = byteArrayOf(
             0x1D.toByte(), 0xBF.toByte(), 0x41.toByte(), 0x81.toByte(),
             0x6F.toByte(), 0xED.toByte(), 0x09.toByte(), 0x47.toByte(),
@@ -912,22 +815,15 @@ class VhdxBlockDevice(
             val chunk = (blockSize - offsetInBlock).coerceAtMost(toRead - bytesRead)
 
             val batIndex = if (chunkRatio > 0) blockIdx + (blockIdx / chunkRatio).toInt() else blockIdx
-            val batEntryBytes = ByteArray(8)
-            synchronized(raf) {
-                raf.seek(batOffset + batIndex * 8L)
-                raf.readFully(batEntryBytes)
-            }
-            val batEntry = VmDiskDecoder.i64le(batEntryBytes, 0)
+            val batEntryBytes = dev.readBytes(batOffset + batIndex * 8L, 8)
+            val batEntry = if (batEntryBytes.size >= 8) VmDiskDecoder.i64le(batEntryBytes, 0) else 0L
             val state = (batEntry and 0x7L).toInt()
 
             if (state == 6) {
                 // PAYLOAD_BLOCK_FULLY_PRESENT
                 val fileOffset = (batEntry ushr 20) shl 20
                 val physOffset = fileOffset + offsetInBlock
-                synchronized(raf) {
-                    raf.seek(physOffset)
-                    raf.readFully(buffer, dstOffset + bytesRead, chunk)
-                }
+                dev.readAt(physOffset, buffer, dstOffset + bytesRead, chunk)
             } else {
                 buffer.fill(0, dstOffset + bytesRead, dstOffset + bytesRead + chunk)
             }
@@ -952,12 +848,8 @@ class VhdxBlockDevice(
             val chunk = (blockSize - offsetInBlock).coerceAtMost(length - bytesWritten)
 
             val batIndex = if (chunkRatio > 0) blockIdx + (blockIdx / chunkRatio).toInt() else blockIdx
-            val batEntryBytes = ByteArray(8)
-            synchronized(raf) {
-                raf.seek(batOffset + batIndex * 8L)
-                raf.readFully(batEntryBytes)
-            }
-            val batEntry = VmDiskDecoder.i64le(batEntryBytes, 0)
+            val batEntryBytes = dev.readBytes(batOffset + batIndex * 8L, 8)
+            val batEntry = if (batEntryBytes.size >= 8) VmDiskDecoder.i64le(batEntryBytes, 0) else 0L
             val state = (batEntry and 0x7L).toInt()
 
             if (state != 6) {
@@ -966,18 +858,13 @@ class VhdxBlockDevice(
 
             val fileOffset = (batEntry ushr 20) shl 20
             val physOffset = fileOffset + offsetInBlock
-            synchronized(raf) {
-                raf.seek(physOffset)
-                raf.write(buffer, srcOffset + bytesWritten, chunk)
-            }
+            dev.writeAt(physOffset, buffer, srcOffset + bytesWritten, chunk)
             bytesWritten += chunk
         }
     }
 
     override fun flush() {
-        synchronized(raf) {
-            try { raf.channel.force(true) } catch (_: Exception) {}
-        }
+        dev.flush()
     }
 
     override fun close() {}

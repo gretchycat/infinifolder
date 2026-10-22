@@ -22,7 +22,7 @@ class FtpStorageProvider(
 
     override val id = "ftp"
 
-    private fun resolveConfigAndCredentials(connectionId: String): Pair<FtpConfig, FtpCredentials> {
+    fun resolveConfigAndCredentials(connectionId: String): Pair<FtpConfig, FtpCredentials> {
         val conn = connectionLookup(connectionId)
             ?: throw IOException("Saved FTP connection not found: $connectionId")
         val creds = credentialStore.load(connectionId) ?: FtpCredentials()
@@ -78,6 +78,37 @@ class FtpStorageProvider(
                 val childUri = FtpUri.build(connId, childRemotePath)
                 val mimeType = if (isDir) "vnd.android.document/directory" else guessMimeType(filename)
 
+                val loggedInUser = config.username.ifEmpty { "anonymous" }
+                val owner = try { item.user?.ifEmpty { null } } catch (_: Throwable) { null }
+                val group = try { item.group?.ifEmpty { null } } catch (_: Throwable) { null }
+
+                val isOwner = loggedInUser.equals(owner, ignoreCase = true) || loggedInUser == "root"
+                val isGroup = loggedInUser.equals(group, ignoreCase = true)
+
+                val canRead = try {
+                    when {
+                        isOwner -> item.hasPermission(FTPFile.USER_ACCESS, FTPFile.READ_PERMISSION)
+                        isGroup -> item.hasPermission(FTPFile.GROUP_ACCESS, FTPFile.READ_PERMISSION)
+                        else -> item.hasPermission(FTPFile.WORLD_ACCESS, FTPFile.READ_PERMISSION)
+                    }
+                } catch (_: Throwable) { true }
+
+                val canWrite = try {
+                    when {
+                        isOwner -> item.hasPermission(FTPFile.USER_ACCESS, FTPFile.WRITE_PERMISSION)
+                        isGroup -> item.hasPermission(FTPFile.GROUP_ACCESS, FTPFile.WRITE_PERMISSION)
+                        else -> item.hasPermission(FTPFile.WORLD_ACCESS, FTPFile.WRITE_PERMISSION)
+                    }
+                } catch (_: Throwable) { true }
+
+                val canExec = try {
+                    when {
+                        isOwner -> item.hasPermission(FTPFile.USER_ACCESS, FTPFile.EXECUTE_PERMISSION)
+                        isGroup -> item.hasPermission(FTPFile.GROUP_ACCESS, FTPFile.EXECUTE_PERMISSION)
+                        else -> item.hasPermission(FTPFile.WORLD_ACCESS, FTPFile.EXECUTE_PERMISSION)
+                    }
+                } catch (_: Throwable) { false }
+
                 list += ResourceEntry(
                     ref = ResourceRef(id, childUri.toString()),
                     metadata = ResourceMetadata(
@@ -85,7 +116,12 @@ class FtpStorageProvider(
                         mimeType = mimeType,
                         sizeBytes = sizeBytes,
                         modifiedAtMillis = mtime,
-                        isDirectory = isDir
+                        isDirectory = isDir,
+                        canRead = canRead,
+                        canWrite = canWrite,
+                        canExecute = canExec,
+                        owner = owner,
+                        group = group
                     ),
                     uri = childUri
                 )

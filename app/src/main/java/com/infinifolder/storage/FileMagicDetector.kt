@@ -255,6 +255,40 @@ object FileMagicDetector {
             return FileMagicResult("application/x-raw-disk-image", "GPT Partitioned Disk Image", isArchiveOrDiscImage = true)
         }
 
+        // 5b. Check LVM2 Physical Volume ("LABELONE" / "LVM2 001")
+        for (sec in 0..3) {
+            val off = sec * 512
+            if (header.size >= off + 32 &&
+                String(header, off, 8, StandardCharsets.US_ASCII) == "LABELONE" &&
+                String(header, off + 24, 8, StandardCharsets.US_ASCII) == "LVM2 001"
+            ) {
+                return FileMagicResult("application/x-raw-disk-image", "LVM2 Physical Volume", isArchiveOrDiscImage = true)
+            }
+        }
+
+        // 5c. Check Apple Partition Map ("PM" at offset 512)
+        if (header.size >= 514 && header[512] == 'P'.code.toByte() && header[513] == 'M'.code.toByte()) {
+            return FileMagicResult("application/x-raw-disk-image", "Apple Partition Map (APM) Disk Image", isArchiveOrDiscImage = true)
+        }
+
+        // 5d. Check MBR Partition Table (0x55AA at 510..511 and valid partition entry)
+        if (header.size >= 512 && u8(header, 510) == 0x55 && u8(header, 511) == 0xAA) {
+            var hasValidPart = false
+            for (i in 0 until 4) {
+                val pos = 446 + i * 16
+                val status = u8(header, pos)
+                val type = u8(header, pos + 4)
+                val numSectors = u32le(header, pos + 12)
+                if ((status == 0x00 || status == 0x80) && type != 0x00 && numSectors > 0L) {
+                    hasValidPart = true
+                    break
+                }
+            }
+            if (hasValidPart) {
+                return FileMagicResult("application/x-raw-disk-image", "MBR Partitioned Disk Image", isArchiveOrDiscImage = true)
+            }
+        }
+
         // 6. Archives
         // ZIP / JAR / APK: 50 4B 03 04 or 50 4B 05 06
         if (header.size >= 4 && u8(header, 0) == 0x50 && u8(header, 1) == 0x4B &&

@@ -8,7 +8,9 @@ data class ArchiveEntry(
     val isDirectory: Boolean,
     val sizeBytes: Long?,
     val modifiedAtMillis: Long?,
-    val mimeType: String
+    val mimeType: String,
+    val isSymbolicLink: Boolean = false,
+    val linkTarget: String? = null
 )
 
 class ArchiveTree(
@@ -71,7 +73,7 @@ object ArchiveMimeTypes {
             "cpio" -> "application/x-cpio"
             "ar", "deb" -> "application/x-archive"
             "iso", "cdr" -> "application/x-iso9660-image"
-            "img", "raw", "ima", "flp", "fat", "vfat", "exfat", "ext2", "ext3", "ext4" -> "application/x-raw-disk-image"
+            "img", "raw", "ima", "flp", "fat", "vfat", "exfat", "ext2", "ext3", "ext4", "esp", "efi", "mbr", "gpt", "apm", "dd", "dsk", "dump", "bin" -> "application/x-raw-disk-image"
             "lnk" -> "application/x-ms-shortcut"
             else -> try {
                 android.webkit.MimeTypeMap.getSingleton()?.getMimeTypeFromExtension(ext) ?: "application/octet-stream"

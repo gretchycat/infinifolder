@@ -5,7 +5,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.security.MessageDigest
 
-/** Direct files only. Never accepts a SAF document ID or follows a symbolic link. */
+/** Direct files only. Never accepts a SAF document ID. Follows symbolic links on supported filesystems. */
 class LocalFileStore(root: File) {
     val root: File = root.canonicalFile
 
@@ -14,7 +14,6 @@ class LocalFileStore(root: File) {
         components.forEach { component ->
             validateName(component)
             file = File(file, component)
-            require(!Files.isSymbolicLink(file.toPath())) { "Symbolic links are not supported" }
         }
         val resolved = file.canonicalFile
         require(resolved == root || resolved.toPath().startsWith(root.toPath())) { "Outside shared storage" }
@@ -60,7 +59,7 @@ class LocalFileStore(root: File) {
     fun delete(file: File) {
         require(file != root) { "Cannot delete the storage root" }
         resolve(components(file))
-        if (file.isDirectory) list(file).forEach(::delete)
+        if (file.isDirectory && !Files.isSymbolicLink(file.toPath())) list(file).forEach(::delete)
         Files.delete(file.toPath())
     }
 

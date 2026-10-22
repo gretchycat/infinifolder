@@ -8,7 +8,9 @@ object ArchiveFormats {
         "img", "raw", "ima", "flp",
         "fat", "vfat", "exfat",
         "ext2", "ext3", "ext4",
-        "vdi", "qcow2", "vmdk", "vhd", "vhdx"
+        "vdi", "qcow2", "vmdk", "vhd", "vhdx",
+        "esp", "efi",
+        "mbr", "gpt", "apm", "dd", "dsk", "dump", "bin"
     )
 
     private val COMPRESSION_SUFFIXES = listOf(

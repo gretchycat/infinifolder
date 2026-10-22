@@ -129,10 +129,56 @@ class OperationCoordinator(private val concurrency: Int = 1) {
         work({ bytes -> update(OperationUpdate(bytes = bytes)) }, isCancelled)
     }
 
+    var onCancelExternal: ((String) -> Unit)? = null
+
     @Synchronized fun cancel(id: String) {
         cancelled[id]?.set(true)
         futures[id]?.cancel(true)
+        onCancelExternal?.invoke(id)
         update(id) { it.copy(state = OperationState.CANCELLED) }
+    }
+
+    @Synchronized fun registerExternal(
+        id: String,
+        label: String,
+        totalBytes: Long? = null,
+        currentItem: String? = null
+    ) {
+        records[id] = OperationSnapshot(
+            id = id,
+            label = label,
+            state = OperationState.RUNNING,
+            bytes = 0L,
+            totalBytes = totalBytes,
+            currentItem = currentItem,
+            startTimeMillis = System.currentTimeMillis()
+        )
+        notifyListeners()
+    }
+
+    @Synchronized fun updateExternal(
+        id: String,
+        bytes: Long,
+        totalBytes: Long? = null,
+        currentItem: String? = null,
+        message: String? = null
+    ) {
+        records[id]?.let {
+            records[id] = it.copy(
+                bytes = bytes,
+                totalBytes = totalBytes ?: it.totalBytes,
+                currentItem = currentItem ?: it.currentItem,
+                message = message ?: it.message
+            )
+            notifyListeners()
+        }
+    }
+
+    @Synchronized fun completeExternal(id: String) {
+        records[id]?.let {
+            records[id] = it.copy(state = OperationState.COMPLETE)
+            notifyListeners()
+        }
     }
 
     @Synchronized private fun update(id: String, transform: (OperationSnapshot) -> OperationSnapshot) {

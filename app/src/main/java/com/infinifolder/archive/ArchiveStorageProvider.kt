@@ -25,8 +25,9 @@ class ArchiveStorageProvider(
 
     var streamResolver: ((Uri) -> InputStream?)? = null
     var metadataResolver: ((Uri) -> Pair<Long?, Long?>?)? = null
+    var deviceResolver: ((Uri, Boolean) -> BlockDevice?)? = null
 
-    private val reader = ArchiveReader(File(customCacheDir ?: context.cacheDir, "archive_temp"))
+    val reader = ArchiveReader(File(customCacheDir ?: context.cacheDir, "archive_temp"))
     private val treeCache = LruCache<String, ArchiveTree>(64)
 
     private fun sha256(str: String): String {
@@ -69,19 +70,28 @@ class ArchiveStorageProvider(
         return internalCache
     }
 
-    private fun resolveSource(sourceUri: Uri): Pair<() -> InputStream, File?> {
+    fun resolveSource(sourceUri: Uri, writable: Boolean = false): Triple<() -> InputStream, File?, BlockDevice?> {
+        val dev = deviceResolver?.invoke(sourceUri, writable)
         val lp = localProvider
         if (lp != null && lp.owns(sourceUri)) {
             val file = runCatching { lp.fileFor(sourceUri) }.getOrNull()
-            if (file != null) return Pair({ file.inputStream() }, file)
+            if (file != null) {
+                val fileDev = dev ?: if (file.exists()) FileBlockDevice(java.io.RandomAccessFile(file, if (writable) "rw" else "r"), isReadOnly = !writable) else null
+                return Triple({ file.inputStream() }, file, fileDev)
+            }
         }
         if (sourceUri.scheme == "file") {
             val file = File(sourceUri.path ?: "")
-            return Pair({ file.inputStream() }, file)
+            val fileDev = dev ?: if (file.exists()) FileBlockDevice(java.io.RandomAccessFile(file, if (writable) "rw" else "r"), isReadOnly = !writable) else null
+            return Triple({ file.inputStream() }, file, fileDev)
+        }
+        if (dev != null) {
+            return Triple({ dev.asInputStream() }, null, dev)
         }
         if (ArchiveUri.isArchiveUri(sourceUri)) {
             val cachedFile = extractToCache(sourceUri)
-            return Pair({ cachedFile.inputStream() }, cachedFile)
+            val fileDev = if (cachedFile.exists()) FileBlockDevice(java.io.RandomAccessFile(cachedFile, if (writable) "rw" else "r"), isReadOnly = !writable) else null
+            return Triple({ cachedFile.inputStream() }, cachedFile, fileDev)
         }
         val customResolver = streamResolver
         if (customResolver != null && (SftpUri.isSftpUri(sourceUri) || sourceUri.scheme != "content")) {
@@ -89,26 +99,26 @@ class ArchiveStorageProvider(
                 customResolver(sourceUri)
                     ?: throw IOException("Cannot open input stream for: $sourceUri")
             }
-            return Pair(openStream, null)
+            return Triple(openStream, null, null)
         }
         if (sourceUri.scheme == "content") {
             val openStream: () -> InputStream = {
                 context.contentResolver.openInputStream(sourceUri)
                     ?: throw IOException("Cannot open input stream for: $sourceUri")
             }
-            return Pair(openStream, null)
+            return Triple(openStream, null, null)
         }
         if (customResolver != null) {
             val openStream: () -> InputStream = {
                 customResolver(sourceUri)
                     ?: throw IOException("Cannot open input stream for: $sourceUri")
             }
-            return Pair(openStream, null)
+            return Triple(openStream, null, null)
         }
         throw IOException("Cannot resolve stream for URI scheme: ${sourceUri.scheme ?: "unknown"}")
     }
 
-    private fun getSourceName(sourceUri: Uri): String {
+    fun getSourceName(sourceUri: Uri): String {
         val lp = localProvider
         if (lp != null && lp.owns(sourceUri)) {
             val name = runCatching { lp.fileFor(sourceUri).name }.getOrNull()
@@ -170,13 +180,13 @@ class ArchiveStorageProvider(
             if (cached != null) return cached
         }
 
-        val (openStream, localFile) = resolveSource(sourceUri)
+        val (openStream, localFile, dev) = resolveSource(sourceUri)
         val archiveName = getSourceName(sourceUri)
-        if (localFile == null && ArchiveFormats.isDiscImage(archiveName) && size != null && size > MAX_REMOTE_DISC_IMAGE_SIZE) {
+        if (dev == null && localFile == null && ArchiveFormats.isDiscImage(archiveName) && size != null && size > MAX_REMOTE_DISC_IMAGE_SIZE) {
             val formatted = android.text.format.Formatter.formatShortFileSize(context, size)
             throw IOException("Disk image '$archiveName' ($formatted) is too large to stream over network. Download the file locally to inspect its contents.")
         }
-        val tree = reader.buildTree(sourceUri, archiveName, openStream, localFile)
+        val tree = reader.buildTree(sourceUri, archiveName, openStream, localFile, dev)
 
         synchronized(treeCache) {
             treeCache.put(cacheKey, tree)
@@ -249,7 +259,7 @@ class ArchiveStorageProvider(
         require(ArchiveUri.isArchiveUri(archiveUri)) { "Expected archive URI: $archiveUri" }
         val sourceUri = ArchiveUri.getSourceUri(archiveUri)
         val entryPath = ArchiveUri.getEntryPath(archiveUri)
-        val (openStream, localFile) = resolveSource(sourceUri)
+        val (openStream, localFile, dev) = resolveSource(sourceUri)
         val archiveName = getSourceName(sourceUri)
 
         val virtualPath = virtualPathOverride ?: resolveVirtualPath(archiveUri)
@@ -272,7 +282,7 @@ class ArchiveStorageProvider(
 
         targetFile.parentFile?.mkdirs()
         val canonicalPath = entry?.path ?: entryPath
-        val extracted = reader.extractEntry(archiveName, canonicalPath, targetFile, openStream, localFile)
+        val extracted = reader.extractEntry(archiveName, canonicalPath, targetFile, openStream, localFile, dev)
         if (entry?.modifiedAtMillis != null && entry.modifiedAtMillis > 0L) {
             extracted.setLastModified(entry.modifiedAtMillis)
         }
@@ -282,11 +292,11 @@ class ArchiveStorageProvider(
     fun openStream(archiveUri: Uri): InputStream {
         val sourceUri = ArchiveUri.getSourceUri(archiveUri)
         val entryPath = ArchiveUri.getEntryPath(archiveUri)
-        val (openStream, localFile) = resolveSource(sourceUri)
+        val (openStream, localFile, dev) = resolveSource(sourceUri)
         val archiveName = getSourceName(sourceUri)
         val tree = try { getArchiveTree(sourceUri) } catch (_: Exception) { null }
         val canonicalPath = tree?.getEntry(entryPath)?.path ?: entryPath
-        return reader.openEntryStream(archiveName, canonicalPath, openStream, localFile)
+        return reader.openEntryStream(archiveName, canonicalPath, openStream, localFile, dev)
     }
 
     override fun list(parent: ResourceRef): ProviderResult<List<ResourceEntry>> = try {
@@ -296,6 +306,7 @@ class ArchiveStorageProvider(
         val tree = getArchiveTree(sourceUri)
         val entries = tree.list(parentPath)
 
+        val archiveWritable = try { isWritable(sourceUri) } catch (_: Throwable) { false }
         val resourceEntries = entries.map { entry ->
             val entryUri = ArchiveUri.build(sourceUri, entry.path)
             ResourceEntry(
@@ -305,7 +316,11 @@ class ArchiveStorageProvider(
                     mimeType = entry.mimeType,
                     sizeBytes = entry.sizeBytes,
                     modifiedAtMillis = entry.modifiedAtMillis,
-                    isDirectory = entry.isDirectory
+                    isDirectory = entry.isDirectory,
+                    canRead = true,
+                    canWrite = archiveWritable,
+                    isSymbolicLink = entry.isSymbolicLink,
+                    linkTarget = entry.linkTarget
                 ),
                 uri = entryUri
             )
@@ -325,7 +340,7 @@ class ArchiveStorageProvider(
     fun checkMounted(archiveUri: Uri): MountCheckResult? {
         if (!ArchiveUri.isArchiveUri(archiveUri)) return null
         val sourceUri = ArchiveUri.getSourceUri(archiveUri)
-        val (_, localFile) = try { resolveSource(sourceUri) } catch (_: Exception) { return null }
+        val (_, localFile, _) = try { resolveSource(sourceUri) } catch (_: Exception) { return null }
         if (localFile == null) return null
         return MountedPartitionDetector.checkMounted(localFile)
     }
@@ -333,12 +348,14 @@ class ArchiveStorageProvider(
     fun isWritable(archiveUri: Uri): Boolean {
         if (!ArchiveUri.isArchiveUri(archiveUri)) return false
         val sourceUri = ArchiveUri.getSourceUri(archiveUri)
-        val (_, localFile) = try { resolveSource(sourceUri) } catch (_: Exception) { return false }
-        if (localFile == null || !localFile.exists() || !localFile.canWrite()) return false
-        val mountCheck = MountedPartitionDetector.checkMounted(localFile)
-        if (mountCheck.isMounted) return false
+        val entryPath = ArchiveUri.getEntryPath(archiveUri)
+        val (_, localFile, dev) = try { resolveSource(sourceUri, writable = true) } catch (_: Exception) { return false }
+        if (localFile != null) {
+            val mountCheck = MountedPartitionDetector.checkMounted(localFile)
+            if (mountCheck.isMounted) return false
+        }
         val archiveName = getSourceName(sourceUri)
-        return reader.isWritable(archiveName, localFile)
+        return reader.isWritable(archiveName, localFile, dev, entryPath)
     }
 
     override fun openWrite(ref: ResourceRef): ProviderResult<java.io.OutputStream> = try {
@@ -356,13 +373,13 @@ class ArchiveStorageProvider(
         } else {
             val sourceUri = ArchiveUri.getSourceUri(uri)
             val entryPath = ArchiveUri.getEntryPath(uri)
-            val (_, localFile) = resolveSource(sourceUri)
+            val (_, localFile, dev) = resolveSource(sourceUri, writable = true)
             val archiveName = getSourceName(sourceUri)
             val baos = object : java.io.ByteArrayOutputStream() {
                 override fun close() {
                     super.close()
                     val data = toByteArray()
-                    reader.writeEntry(archiveName, localFile, entryPath, data)
+                    reader.writeEntry(archiveName, localFile, entryPath, data, dev)
                     treeCache.remove(sourceUri.toString())
                 }
             }
@@ -387,10 +404,10 @@ class ArchiveStorageProvider(
         } else {
             val sourceUri = ArchiveUri.getSourceUri(parentUri)
             val parentPath = ArchiveUri.getEntryPath(parentUri)
-            val (_, localFile) = resolveSource(sourceUri)
+            val (_, localFile, dev) = resolveSource(sourceUri, writable = true)
             val archiveName = getSourceName(sourceUri)
             val newEntryPath = if (parentPath.isEmpty()) name else "$parentPath/$name"
-            reader.createDirectory(archiveName, localFile, newEntryPath)
+            reader.createDirectory(archiveName, localFile, newEntryPath, dev)
             treeCache.remove(sourceUri.toString())
             val newUri = ArchiveUri.build(sourceUri, newEntryPath)
             ProviderResult.Success(
@@ -426,10 +443,10 @@ class ArchiveStorageProvider(
         } else {
             val sourceUri = ArchiveUri.getSourceUri(parentUri)
             val parentPath = ArchiveUri.getEntryPath(parentUri)
-            val (_, localFile) = resolveSource(sourceUri)
+            val (_, localFile, dev) = resolveSource(sourceUri, writable = true)
             val archiveName = getSourceName(sourceUri)
             val newEntryPath = if (parentPath.isEmpty()) name else "$parentPath/$name"
-            reader.createFile(archiveName, localFile, newEntryPath, ByteArray(0))
+            reader.createFile(archiveName, localFile, newEntryPath, ByteArray(0), dev)
             treeCache.remove(sourceUri.toString())
             val newUri = ArchiveUri.build(sourceUri, newEntryPath)
             ProviderResult.Success(
@@ -468,9 +485,9 @@ class ArchiveStorageProvider(
         } else {
             val sourceUri = ArchiveUri.getSourceUri(uri)
             val entryPath = ArchiveUri.getEntryPath(uri)
-            val (_, localFile) = resolveSource(sourceUri)
+            val (_, localFile, dev) = resolveSource(sourceUri, writable = true)
             val archiveName = getSourceName(sourceUri)
-            reader.deleteEntry(archiveName, localFile, entryPath)
+            reader.deleteEntry(archiveName, localFile, entryPath, dev)
             treeCache.remove(sourceUri.toString())
             ProviderResult.Success(Unit)
         }

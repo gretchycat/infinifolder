@@ -1,23 +1,59 @@
 package com.infinifolder.archive
 
+import android.os.ParcelFileDescriptor
 import java.io.Closeable
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+import java.nio.channels.ClosedChannelException
+import java.nio.channels.FileChannel
+import java.nio.channels.NonWritableChannelException
+import java.nio.channels.SeekableByteChannel
+
+/**
+ * Fundamental I/O capabilities for a seekable data source.
+ */
+enum class DeviceCapability {
+    READ,
+    WRITE,
+    TRUNCATE,
+    FLUSH,
+    SEEK
+}
 
 /**
  * Low-level random-access block abstraction allowing transparent read and write
- * across raw files, partition slices, and virtual machine disk containers
- * (VDI, QCOW2, VMDK, VHD, VHDX).
+ * across raw files, partition slices, virtual machine disk containers
+ * (VDI, QCOW2, VMDK, VHD, VHDX), and remote protocols (SMB, SFTP, FTP).
  */
 interface BlockDevice : Closeable {
     val size: Long
+
+    val capabilities: Set<DeviceCapability>
+        get() = if (isReadOnly) {
+            setOf(DeviceCapability.READ, DeviceCapability.SEEK)
+        } else {
+            setOf(DeviceCapability.READ, DeviceCapability.WRITE, DeviceCapability.FLUSH, DeviceCapability.SEEK)
+        }
+
     val isReadOnly: Boolean
+        get() = !capabilities.contains(DeviceCapability.WRITE)
 
     @Throws(IOException::class)
     fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int = 0, length: Int = buffer.size): Int
 
     @Throws(IOException::class)
     fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int = 0, length: Int = buffer.size)
+
+    @Throws(IOException::class)
+    fun truncate(newSize: Long) {
+        if (!capabilities.contains(DeviceCapability.TRUNCATE)) {
+            throw IOException("Truncate not supported on this BlockDevice")
+        }
+    }
 
     fun flush() {}
 }
@@ -41,6 +77,9 @@ fun BlockDevice.writeBytes(offset: Long, data: ByteArray) {
     }
 }
 
+fun BlockDevice.slice(startOffset: Long, size: Long, isReadOnly: Boolean = this.isReadOnly): BlockDevice =
+    PartitionSliceBlockDevice(this, startOffset, size, isReadOnly)
+
 /**
  * Standard BlockDevice backed directly by a RandomAccessFile.
  */
@@ -49,6 +88,19 @@ class FileBlockDevice(
     override val isReadOnly: Boolean = false,
     override val size: Long = raf.length()
 ) : BlockDevice {
+
+    override val capabilities: Set<DeviceCapability>
+        get() = if (isReadOnly) {
+            setOf(DeviceCapability.READ, DeviceCapability.SEEK)
+        } else {
+            setOf(
+                DeviceCapability.READ,
+                DeviceCapability.WRITE,
+                DeviceCapability.TRUNCATE,
+                DeviceCapability.FLUSH,
+                DeviceCapability.SEEK
+            )
+        }
 
     override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {
         if (offset < 0 || offset >= size || length <= 0) return 0
@@ -69,6 +121,14 @@ class FileBlockDevice(
         }
     }
 
+    override fun truncate(newSize: Long) {
+        if (isReadOnly) throw IOException("BlockDevice is read-only")
+        if (newSize < 0) throw IOException("Negative truncate size: $newSize")
+        synchronized(raf) {
+            raf.setLength(newSize)
+        }
+    }
+
     override fun flush() {
         synchronized(raf) {
             try {
@@ -83,15 +143,173 @@ class FileBlockDevice(
 }
 
 /**
- * Sub-slice of a parent BlockDevice (e.g. an MBR or GPT partition).
+ * BlockDevice backed by an in-memory byte buffer (ideal for synthetic files, tests, and extracted fragments).
+ */
+class MemoryBlockDevice(
+    initialData: ByteArray = ByteArray(0),
+    override val isReadOnly: Boolean = false
+) : BlockDevice {
+
+    private var data: ByteArray = initialData.clone()
+    private var currentSize: Long = initialData.size.toLong()
+
+    override val size: Long get() = currentSize
+
+    override val capabilities: Set<DeviceCapability>
+        get() = if (isReadOnly) {
+            setOf(DeviceCapability.READ, DeviceCapability.SEEK)
+        } else {
+            setOf(
+                DeviceCapability.READ,
+                DeviceCapability.WRITE,
+                DeviceCapability.TRUNCATE,
+                DeviceCapability.FLUSH,
+                DeviceCapability.SEEK
+            )
+        }
+
+    @Synchronized
+    override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {
+        if (offset < 0 || offset >= currentSize || length <= 0) return 0
+        val toRead = length.toLong().coerceAtMost(currentSize - offset).toInt()
+        System.arraycopy(data, offset.toInt(), buffer, dstOffset, toRead)
+        return toRead
+    }
+
+    @Synchronized
+    override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) {
+        if (isReadOnly) throw IOException("MemoryBlockDevice is read-only")
+        if (offset < 0 || length < 0) throw IOException("Invalid offset or length")
+        val requiredSize = offset + length
+        if (requiredSize > data.size) {
+            var newCap = (data.size * 2).coerceAtLeast(1024)
+            while (newCap < requiredSize) {
+                newCap *= 2
+            }
+            data = data.copyOf(newCap)
+        }
+        System.arraycopy(buffer, srcOffset, data, offset.toInt(), length)
+        if (requiredSize > currentSize) {
+            currentSize = requiredSize
+        }
+    }
+
+    @Synchronized
+    override fun truncate(newSize: Long) {
+        if (isReadOnly) throw IOException("MemoryBlockDevice is read-only")
+        if (newSize < 0) throw IOException("Negative size: $newSize")
+        if (newSize > data.size) {
+            data = data.copyOf(newSize.toInt())
+        }
+        currentSize = newSize
+    }
+
+    @Synchronized
+    fun toByteArray(): ByteArray = data.copyOf(currentSize.toInt())
+
+    override fun close() {}
+}
+
+/**
+ * BlockDevice backed by an Android ParcelFileDescriptor (e.g. from ContentResolver for SAF).
+ */
+class ContentUriBlockDevice(
+    private val pfd: ParcelFileDescriptor,
+    override val isReadOnly: Boolean = false
+) : BlockDevice {
+
+    private val inStream = FileInputStream(pfd.fileDescriptor)
+    private val outStream = if (!isReadOnly) FileOutputStream(pfd.fileDescriptor) else null
+    private val channel: FileChannel = inStream.channel
+
+    override val size: Long
+        get() = try {
+            channel.size()
+        } catch (_: Exception) {
+            pfd.statSize.takeIf { it >= 0 } ?: 0L
+        }
+
+    override val capabilities: Set<DeviceCapability>
+        get() = if (isReadOnly) {
+            setOf(DeviceCapability.READ, DeviceCapability.SEEK)
+        } else {
+            setOf(
+                DeviceCapability.READ,
+                DeviceCapability.WRITE,
+                DeviceCapability.TRUNCATE,
+                DeviceCapability.FLUSH,
+                DeviceCapability.SEEK
+            )
+        }
+
+    override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {
+        if (offset < 0 || offset >= size || length <= 0) return 0
+        val toRead = length.toLong().coerceAtMost(size - offset).toInt()
+        val byteBuf = ByteBuffer.wrap(buffer, dstOffset, toRead)
+        synchronized(channel) {
+            channel.position(offset)
+            val read = channel.read(byteBuf)
+            return if (read < 0) 0 else read
+        }
+    }
+
+    override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) {
+        if (isReadOnly) throw IOException("ContentUriBlockDevice is read-only")
+        if (offset < 0 || length < 0) throw IOException("Invalid offset or length")
+        val byteBuf = ByteBuffer.wrap(buffer, srcOffset, length)
+        synchronized(channel) {
+            channel.position(offset)
+            while (byteBuf.hasRemaining()) {
+                channel.write(byteBuf)
+            }
+        }
+    }
+
+    override fun truncate(newSize: Long) {
+        if (isReadOnly) throw IOException("ContentUriBlockDevice is read-only")
+        synchronized(channel) {
+            channel.truncate(newSize)
+        }
+    }
+
+    override fun flush() {
+        synchronized(channel) {
+            try {
+                channel.force(true)
+            } catch (_: Exception) {}
+        }
+    }
+
+    override fun close() {
+        try { channel.close() } catch (_: Exception) {}
+        try { inStream.close() } catch (_: Exception) {}
+        try { outStream?.close() } catch (_: Exception) {}
+        try { pfd.close() } catch (_: Exception) {}
+    }
+}
+
+/**
+ * Sub-slice of a parent BlockDevice (e.g. an MBR/GPT partition, or an uncompressed archive payload).
  */
 class PartitionSliceBlockDevice(
     val parent: BlockDevice,
     val startOffset: Long,
-    override val size: Long
+    override val size: Long,
+    private val readOnlyOverride: Boolean? = null
 ) : BlockDevice {
 
-    override val isReadOnly: Boolean get() = parent.isReadOnly
+    override val capabilities: Set<DeviceCapability>
+        get() {
+            val base = parent.capabilities.toMutableSet()
+            base.remove(DeviceCapability.TRUNCATE) // A sub-slice cannot be resized independently
+            if (readOnlyOverride == true || parent.isReadOnly) {
+                base.remove(DeviceCapability.WRITE)
+            }
+            return base
+        }
+
+    override val isReadOnly: Boolean
+        get() = readOnlyOverride == true || parent.isReadOnly
 
     override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {
         if (offset < 0 || offset >= size || length <= 0) return 0
@@ -100,8 +318,9 @@ class PartitionSliceBlockDevice(
     }
 
     override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) {
+        if (isReadOnly) throw IOException("SliceBlockDevice is read-only")
         if (offset < 0 || offset + length > size) {
-            throw IOException("Write out of partition bounds (offset=$offset, len=$length, partSize=$size)")
+            throw IOException("Write out of slice bounds (offset=$offset, len=$length, sliceSize=$size)")
         }
         parent.writeAt(startOffset + offset, buffer, srcOffset, length)
     }
@@ -112,3 +331,198 @@ class PartitionSliceBlockDevice(
         // Slices do not close the parent device
     }
 }
+
+/**
+ * Maps a series of logical segments across one or more underlying BlockDevices.
+ * Useful for LVM Logical Volumes, concatenated disks, or multi-extent storage.
+ */
+class CompositeBlockDevice(
+    val segments: List<SegmentMapping>,
+    private val readOnlyOverride: Boolean? = null
+) : BlockDevice {
+
+    data class SegmentMapping(
+        val logicalOffset: Long,
+        val physicalOffset: Long,
+        val length: Long,
+        val device: BlockDevice
+    )
+
+    override val size: Long = segments.sumOf { it.length }
+
+    override val capabilities: Set<DeviceCapability>
+        get() {
+            val caps = mutableSetOf(DeviceCapability.READ, DeviceCapability.SEEK)
+            if (!isReadOnly && segments.all { DeviceCapability.WRITE in it.device.capabilities }) {
+                caps += DeviceCapability.WRITE
+                caps += DeviceCapability.FLUSH
+            }
+            return caps
+        }
+
+    override val isReadOnly: Boolean
+        get() = readOnlyOverride == true || segments.any { it.device.isReadOnly }
+
+    override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {
+        if (offset < 0 || offset >= size || length <= 0) return 0
+        var totalRead = 0
+        var curLogical = offset
+        var curDst = dstOffset
+        var remaining = length.toLong().coerceAtMost(size - offset)
+
+        while (remaining > 0L) {
+            val seg = segments.firstOrNull { curLogical >= it.logicalOffset && curLogical < it.logicalOffset + it.length }
+                ?: break
+            val segOffset = curLogical - seg.logicalOffset
+            val toReadInSeg = (seg.length - segOffset).coerceAtMost(remaining).toInt()
+            val read = seg.device.readAt(seg.physicalOffset + segOffset, buffer, curDst, toReadInSeg)
+            if (read <= 0) break
+            totalRead += read
+            curLogical += read
+            curDst += read
+            remaining -= read
+        }
+        return totalRead
+    }
+
+    override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) {
+        if (isReadOnly) throw IOException("CompositeBlockDevice is read-only")
+        if (offset < 0 || offset + length > size) throw IOException("Write out of bounds")
+        var curLogical = offset
+        var curSrc = srcOffset
+        var remaining = length.toLong()
+
+        while (remaining > 0L) {
+            val seg = segments.firstOrNull { curLogical >= it.logicalOffset && curLogical < it.logicalOffset + it.length }
+                ?: throw IOException("No segment mapped for offset $curLogical")
+            val segOffset = curLogical - seg.logicalOffset
+            val toWriteInSeg = (seg.length - segOffset).coerceAtMost(remaining).toInt()
+            seg.device.writeAt(seg.physicalOffset + segOffset, buffer, curSrc, toWriteInSeg)
+            curLogical += toWriteInSeg
+            curSrc += toWriteInSeg
+            remaining -= toWriteInSeg
+        }
+    }
+
+    override fun flush() {
+        segments.map { it.device }.distinct().forEach { it.flush() }
+    }
+
+    override fun close() {
+        // Do not close parent devices
+    }
+}
+
+/**
+ * Implements standard Java NIO SeekableByteChannel on top of any BlockDevice,
+ * allowing full integration with Apache Commons Compress ZipFile and SevenZFile.
+ */
+class BlockDeviceSeekableByteChannel(private val dev: BlockDevice) : SeekableByteChannel {
+    private var pos: Long = 0L
+    private var open: Boolean = true
+
+    override fun isOpen(): Boolean = open
+
+    override fun close() {
+        open = false
+    }
+
+    override fun position(): Long = pos
+
+    override fun position(newPosition: Long): SeekableByteChannel {
+        if (!open) throw ClosedChannelException()
+        require(newPosition >= 0) { "Negative position: $newPosition" }
+        pos = newPosition
+        return this
+    }
+
+    override fun size(): Long {
+        if (!open) throw ClosedChannelException()
+        return dev.size
+    }
+
+    override fun read(dst: ByteBuffer): Int {
+        if (!open) throw ClosedChannelException()
+        if (pos >= dev.size) return -1
+        val remaining = dst.remaining()
+        if (remaining == 0) return 0
+        val toRead = remaining.toLong().coerceAtMost(dev.size - pos).toInt()
+        val buf = ByteArray(toRead)
+        val read = dev.readAt(pos, buf, 0, toRead)
+        if (read <= 0) return -1
+        dst.put(buf, 0, read)
+        pos += read
+        return read
+    }
+
+    override fun write(src: ByteBuffer): Int {
+        if (!open) throw ClosedChannelException()
+        if (dev.isReadOnly) throw NonWritableChannelException()
+        val remaining = src.remaining()
+        if (remaining == 0) return 0
+        val buf = ByteArray(remaining)
+        src.get(buf)
+        dev.writeAt(pos, buf, 0, remaining)
+        pos += remaining
+        return remaining
+    }
+
+    override fun truncate(size: Long): SeekableByteChannel {
+        if (!open) throw ClosedChannelException()
+        if (dev.isReadOnly) throw NonWritableChannelException()
+        dev.truncate(size)
+        if (pos > size) pos = size
+        return this
+    }
+}
+
+fun BlockDevice.asSeekableByteChannel(): SeekableByteChannel = BlockDeviceSeekableByteChannel(this)
+
+/**
+ * Sequential InputStream adapter for a range within a BlockDevice.
+ */
+class BlockDeviceInputStream(
+    private val dev: BlockDevice,
+    private val startOffset: Long = 0L,
+    private val length: Long = (dev.size - startOffset).coerceAtLeast(0L)
+) : InputStream() {
+    private var currentPos: Long = startOffset
+    private val endOffset: Long = startOffset + length
+
+    override fun read(): Int {
+        if (currentPos >= endOffset) return -1
+        val b = ByteArray(1)
+        val read = dev.readAt(currentPos, b, 0, 1)
+        return if (read > 0) {
+            currentPos++
+            b[0].toInt() and 0xFF
+        } else -1
+    }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+        if (currentPos >= endOffset) return -1
+        val toRead = len.toLong().coerceAtMost(endOffset - currentPos).toInt()
+        if (toRead <= 0) return 0
+        val read = dev.readAt(currentPos, b, off, toRead)
+        if (read > 0) {
+            currentPos += read
+        }
+        return read
+    }
+
+    override fun available(): Int {
+        return (endOffset - currentPos).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    }
+
+    override fun skip(n: Long): Long {
+        if (n <= 0) return 0L
+        val toSkip = n.coerceAtMost(endOffset - currentPos)
+        currentPos += toSkip
+        return toSkip
+    }
+}
+
+fun BlockDevice.asInputStream(
+    startOffset: Long = 0L,
+    length: Long = (size - startOffset).coerceAtLeast(0L)
+): InputStream = BlockDeviceInputStream(this, startOffset, length)

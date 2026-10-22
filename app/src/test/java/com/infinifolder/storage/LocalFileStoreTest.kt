@@ -26,6 +26,22 @@ class LocalFileStoreTest {
         Files.createSymbolicLink(File(store.root, "link").toPath(), temporary.newFolder().toPath())
         assertThrows(IllegalArgumentException::class.java) { store.resolve(listOf("link")) }
     }
+    @Test fun symbolicLinksInsideStorageRootAreFollowed() {
+        val store = store()
+        val targetDir = store.createDirectory(store.root, "target")
+        File(targetDir, "file.txt").writeText("hello symlink")
+        val linkDir = File(store.root, "link_to_target")
+        Files.createSymbolicLink(linkDir.toPath(), targetDir.toPath())
+
+        val resolved = store.resolve(listOf("link_to_target", "file.txt"))
+        assertEquals("hello symlink", resolved.readText())
+
+        // Deleting the symlink must delete only the link, not the target directory or its contents
+        store.delete(linkDir)
+        assertFalse("Symlink file should be deleted", linkDir.exists())
+        assertTrue("Target directory should still exist", targetDir.exists())
+        assertEquals("hello symlink", File(targetDir, "file.txt").readText())
+    }
     @Test fun recursiveCopyKeepsBothAndPreservesOriginalContents() {
         val store = store()
         val source = store.createDirectory(store.root, "source")
