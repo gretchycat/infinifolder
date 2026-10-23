@@ -20,10 +20,18 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.os.storage.StorageManager
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.drawable.BitmapDrawable
+import android.os.SystemClock
 import android.util.LruCache
 import android.view.Gravity
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.ContextThemeWrapper
@@ -32,6 +40,7 @@ import android.util.TypedValue
 import android.widget.*
 import android.graphics.drawable.GradientDrawable
 import androidx.core.content.FileProvider
+import kotlin.math.abs
 import com.infinifolder.apps.AppsStorageProvider
 import com.infinifolder.apps.AppsUri
 import com.infinifolder.apps.InstalledAppItem
@@ -91,33 +100,78 @@ import java.util.concurrent.Executors
 import org.json.JSONArray
 import org.json.JSONObject
 
-class MainActivity : Activity() {
+class MainActivity : Activity(), DebugDumpObserver {
+    private data class BrowserDragPayload(
+        val entries: List<ResourceEntry>,
+        val canMove: Boolean,
+        val sourceDirectory: Uri?,
+        val sourceScrollY: Int,
+        val sourceDisplayName: String?
+    )
+
+    private class DragHoldIndicatorView(context: android.content.Context) : View(context) {
+        private val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            val themedAccent = resolveAccent(context)
+            // 25% transparent: keep the theme accent legible over the icon beneath it.
+            color = (themedAccent and 0x00FFFFFF) or 0xBF000000.toInt()
+        }
+        private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            val themedAccent = resolveAccent(context)
+            color = (themedAccent and 0x00FFFFFF) or 0xBF000000.toInt()
+        }
+        var progress: Float = -1f
+            set(value) {
+                field = if (value < 0f) -1f else value.coerceIn(0f, 1f)
+                visibility = if (field < 0f) View.GONE else View.VISIBLE
+                invalidate()
+            }
+
+        init {
+            isClickable = false
+            isFocusable = false
+            visibility = View.GONE
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            if (progress < 0f) return
+            val diameter = width.coerceAtMost(height).toFloat()
+            borderPaint.strokeWidth = (diameter * 0.035f).coerceAtLeast(2f)
+            val inset = borderPaint.strokeWidth / 2f
+            val ring = RectF((width - diameter) / 2f + inset, (height - diameter) / 2f + inset,
+                (width + diameter) / 2f - inset, (height + diameter) / 2f - inset)
+            if (progress > 0f) canvas.drawArc(ring, -90f, 360f * progress, true, progressPaint)
+            canvas.drawCircle(ring.centerX(), ring.centerY(), ring.width() / 2f - borderPaint.strokeWidth / 2f, borderPaint)
+        }
+
+        companion object {
+            private fun resolveAccent(context: android.content.Context): Int {
+                val value = TypedValue()
+                return if (context.theme.resolveAttribute(android.R.attr.colorAccent, value, true)) {
+                    if (value.resourceId != 0) context.getColor(value.resourceId) else value.data
+                } else 0xFF4CAF50.toInt()
+            }
+        }
+    }
+
+    private class SnapshotDragShadowBuilder(private val snapshot: Bitmap) : View.DragShadowBuilder() {
+        override fun onProvideShadowMetrics(size: android.graphics.Point, touch: android.graphics.Point) {
+            size.set(snapshot.width, snapshot.height)
+            touch.set(snapshot.width / 2, snapshot.height / 2)
+        }
+        override fun onDrawShadow(canvas: Canvas) { canvas.drawBitmap(snapshot, 0f, 0f, null) }
+    }
+
     companion object {
         const val SAFETY_NOTIFICATION_CHANNEL_ID = "infinifolder_safety_channel"
         const val NOTIFICATION_ID_MOUNTED_BLOCKED = 3001
 
-        @Volatile
-        var activeProvider: StorageProvider? = null
-            internal set
+        private var applicationStorage: StorageProvider? = null
+        fun resourceRef(uri: Uri): ResourceRef = applicationStorage?.refForUri(uri)
+            ?: throw IllegalArgumentException("No storage provider owns $uri")
 
-        @Volatile
-        var activeArchiveProvider: ArchiveStorageProvider? = null
-            internal set
-
-        fun resourceRef(uri: Uri): ResourceRef = ResourceRef(
-            when {
-                AppsUri.isAppsUri(uri) -> "apps"
-                ArchiveUri.isArchiveUri(uri) -> "archive"
-                SftpUri.isSftpUri(uri) -> "sftp"
-                FtpUri.isFtpUri(uri) -> "ftp"
-                SmbUri.isSmbUri(uri) -> "smb"
-                uri.scheme == "file" -> "local"
-                uri.authority?.contains(".files") == true -> "local"
-                uri.scheme == "content" -> "saf"
-                else -> "local"
-            },
-            uri.toString()
-        )
     }
     private val io = Executors.newFixedThreadPool(4)
     private val accessIo = Executors.newFixedThreadPool(2)
@@ -158,6 +212,21 @@ class MainActivity : Activity() {
         }
     }
     private lateinit var provider: StorageProvider
+    private var activeDragOverlayHost: ViewGroup? = null
+    private var activeDragOverlay: BitmapDrawable? = null
+    private val activeDragSourceIconAlphas = mutableMapOf<View, Float>()
+    private var activeDragLocationEvents = 0
+    private var activeDragDropHandled = false
+    private var activeBrowserDragPayload: BrowserDragPayload? = null
+    private var pendingDragSelfDropMenuEntries: List<ResourceEntry>? = null
+    private var pendingLocationScrollRestore: Pair<Uri, Int>? = null
+    private var dragTreeRevealRunnable: Runnable? = null
+    private var dragTreeExpandRunnable: Runnable? = null
+    private var dragTreeExpandKey: String? = null
+    private var dragHoveredTreeRow: View? = null
+    private var dragHoveredTreeRowSelected = false
+    private var dragHoveredTreeNodeKey: String? = null
+    private var lastDragScreenPosition: Pair<Float, Float>? = null
     private lateinit var localProvider: LocalStorageProvider
     private lateinit var archiveProvider: ArchiveStorageProvider
     private lateinit var appsProvider: AppsStorageProvider
@@ -168,11 +237,12 @@ class MainActivity : Activity() {
     private var pendingSftpFileCallback: ((String) -> Unit)? = null
     private var internalSharedEntries = emptyList<ResourceEntry>()
     private var internalListGeneration = 0
+    private val pendingInternalTreeRefreshCallbacks = mutableListOf<() -> Unit>()
     private var installedAppCategories = emptyList<String>()
     private var appsListGeneration = 0
     private var waitingForStorageAccess = false
     private var hadStorageAccess = false
-    private val providerRegistry = StorageProviderRegistry().apply { register(SafProviderFactory()) }
+    private lateinit var providerRegistry: StorageProviderRegistry
     private lateinit var root: LinearLayout
     private lateinit var toolbar: LinearLayout
     private lateinit var createButton: TextView
@@ -184,7 +254,11 @@ class MainActivity : Activity() {
     private var pinchIndicator: TextView? = null
     private lateinit var treePanel: LinearLayout
     private lateinit var treeContent: LinearLayout
+    private lateinit var treeScrollView: ScrollView
     private lateinit var breadcrumb: LinearLayout
+    private var browserPanePagerGestureInProgress = false
+    private var browserPaneTransitionInProgress = false
+    private var browserPaneTransitionGeneration = 0
     private lateinit var status: TextView
     private lateinit var shared: android.content.SharedPreferences
     private val operations = AppOperations.coordinator
@@ -193,6 +267,8 @@ class MainActivity : Activity() {
     private var current: Uri? = null
     @Volatile private var loadGeneration = 0
     private var entries = emptyList<ResourceEntry>()
+    private val entryIconViews = mutableMapOf<Uri, View>()
+    private var renderedFileLocation: Uri? = null
     private var listingIsLoading = false
     private var listingNotice: String? = null
     private var listingError: String? = null
@@ -330,18 +406,7 @@ class MainActivity : Activity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val defaultCrashHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            try {
-                val trace = android.util.Log.getStackTraceString(throwable)
-                android.util.Log.e("InfiniFolderCrash", trace)
-                try { File("/sdcard/infinifolder_crash.txt").writeText(trace) } catch (_: Throwable) {}
-                try { File("/sdcard/infinifolder/crash.txt").writeText(trace) } catch (_: Throwable) {}
-                try { File(cacheDir, "crash.txt").writeText(trace) } catch (_: Throwable) {}
-                try { File(filesDir, "crash.txt").writeText(trace) } catch (_: Throwable) {}
-            } catch (_: Throwable) {}
-            defaultCrashHandler?.uncaughtException(thread, throwable)
-        }
+        com.infinifolder.viewer.DebugTools.install(application)
         initSafetyNotificationChannel()
         operations.addListener(operationsListener)
         shared = getSharedPreferences("browser", MODE_PRIVATE)
@@ -353,68 +418,16 @@ class MainActivity : Activity() {
         com.infinifolder.theme.ThemeManager.addListener(themeListener)
         treeVisible = shared.getBoolean("tree_visible", false)
         iconSizeDp = shared.getInt("icon_size_dp", 56).coerceIn(32, 120)
-        localProvider = LocalStorageProvider(applicationContext)
-        archiveProvider = ArchiveStorageProvider(applicationContext, localProvider)
-        appsProvider = AppsStorageProvider(applicationContext)
-        val sftpFactory = SftpProviderFactory(applicationContext) { id ->
-            savedConnections().firstOrNull { it.id == id }
-        }
-        sftpProvider = sftpFactory.provider
-
-        val ftpFactory = FtpProviderFactory(applicationContext) { id ->
-            savedConnections().firstOrNull { it.id == id }
-        }
-        ftpProvider = ftpFactory.provider
-
-        val smbFactory = SmbProviderFactory(applicationContext) { id ->
-            savedConnections().firstOrNull { it.id == id }
-        }
-        smbProvider = smbFactory.provider
-
-        archiveProvider.deviceResolver = { uri, writable ->
-            com.infinifolder.archive.SeekableSourceResolver.resolve(
-                context = applicationContext,
-                sourceUri = uri,
-                writable = writable,
-                localProvider = localProvider,
-                sftpProvider = sftpProvider,
-                ftpProvider = ftpProvider,
-                smbProvider = smbProvider,
-                archiveProvider = archiveProvider
-            )
-        }
-        archiveProvider.streamResolver = { uri ->
-            when {
-                SftpUri.isSftpUri(uri) -> (sftpProvider.openRead(ResourceRef("sftp", uri.toString())) as? ProviderResult.Success)?.value
-                FtpUri.isFtpUri(uri) -> (ftpProvider.openRead(ResourceRef("ftp", uri.toString())) as? ProviderResult.Success)?.value
-                SmbUri.isSmbUri(uri) -> (smbProvider.openRead(ResourceRef("smb", uri.toString())) as? ProviderResult.Success)?.value
-                uri.scheme == "file" -> uri.path?.let { File(it).inputStream() }
-                uri.scheme == "content" -> contentResolver.openInputStream(uri)
-                else -> null
-            }
-        }
-        archiveProvider.metadataResolver = { uri ->
-            when {
-                SftpUri.isSftpUri(uri) -> sftpProvider.getMetadata(uri)
-                FtpUri.isFtpUri(uri) -> ftpProvider.getMetadata(uri)
-                SmbUri.isSmbUri(uri) -> smbProvider.getMetadata(uri)
-                else -> null
-            }
-        }
-        providerRegistry.register(sftpFactory)
-        providerRegistry.register(ftpFactory)
-        providerRegistry.register(smbFactory)
-        provider = RoutingStorageProvider(
-            requireNotNull(providerRegistry.create("saf", contentResolver)),
-            localProvider,
-            archiveProvider,
-            appsProvider,
-            sftpProvider,
-            ftpProvider,
-            smbProvider
-        )
-        activeProvider = provider
-        activeArchiveProvider = archiveProvider
+        val runtime = com.infinifolder.storage.StorageRuntime.get(applicationContext)
+        localProvider = runtime.local
+        archiveProvider = runtime.archives
+        appsProvider = runtime.apps
+        sftpProvider = runtime.sftp
+        ftpProvider = runtime.ftp
+        smbProvider = runtime.smb
+        providerRegistry = runtime.registry
+        provider = runtime.provider
+        applicationStorage = provider
         hadStorageAccess = localProvider.hasAccess()
         waitingForStorageAccess = savedInstanceState?.getBoolean("storage_access_pending", false) ?: false
         pendingTreeSourceKey = savedInstanceState?.getString("pending_tree_source")
@@ -424,6 +437,15 @@ class MainActivity : Activity() {
         pendingIconTargetUri = savedInstanceState?.getString("pending_icon_target_uri")?.let(Uri::parse)
         pendingIconTargetMime = savedInstanceState?.getString("pending_icon_target_mime")
         buildUi()
+        if (savedInstanceState == null) io.execute {
+            val copies = com.infinifolder.storage.SaveRecovery.pending(File(filesDir, "save_recovery"))
+            if (copies.isNotEmpty()) runOnUiThread {
+                if (!isFinishing) dialogBuilder().setTitle("Recovery copies available")
+                    .setMessage("${copies.size} saved recovery copies can be reviewed.")
+                    .setPositiveButton("Review") { _, _ -> startActivity(Intent(this, com.infinifolder.viewer.SaveRecoveryActivity::class.java)) }
+                    .setNegativeButton("Later", null).show()
+            }
+        }
         shared.edit().remove("tree_source_installed_apps").apply()
         logicalLocationPrefix = savedInstanceState?.getString("logical_location_prefix")
         currentProgramName = savedInstanceState?.getString("current_program_name")
@@ -477,16 +499,7 @@ class MainActivity : Activity() {
         button("☰", fg) { showSidebar() }; button("Home", fg) { showHomeRoot() }
         createButton = button("＋", fg) { onCreateAction() }
         createLinkButton = button("🔗+", fg) { showCreateUriLinkDialog() }
-        button("↻", fg) {
-            if (homeMode) when (homePage) {
-                "internal_shared" -> showInternalShared(false)
-                "application_public" -> showApplicationPublic()
-                else -> showHomeRoot()
-            } else current?.let {
-                if (AppsUri.isAppsUri(it)) appsProvider.invalidateCache()
-                load(it)
-            }
-        }
+        button("↻", fg) { refreshCurrentLocation() }
         button(if (grid) "☷" else "▦", fg) { grid = !grid; shared.edit().putBoolean("grid", grid).apply(); renderCurrentContents() }
         operationsButton = button("⚡", 0xFFFFB300.toInt()) { unhideOperationWindow() }
         operationsButton.visibility = if (operations.activeSnapshots().isNotEmpty()) View.VISIBLE else View.GONE
@@ -627,30 +640,198 @@ class MainActivity : Activity() {
                 }
             })
         }
+        fileScroll.setOnDragListener { view, event ->
+            val payload = event.localState as? BrowserDragPayload
+            moveActiveDragOverlayFromEvent(view, event)
+            when (event.action) {
+                android.view.DragEvent.ACTION_DRAG_STARTED -> !homeMode && payload != null
+                android.view.DragEvent.ACTION_DRAG_LOCATION -> true
+                android.view.DragEvent.ACTION_DROP -> false
+                else -> true
+            }
+        }
         fileScrollContainer = FrameLayout(this).apply {
             clipChildren = false
             addView(fileScroll, FrameLayout.LayoutParams(-1, -1))
         }
         fileScroll.setupHeaderInParent(fileScrollContainer)
-        browserArea = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        browserArea = object : LinearLayout(this) {
+            private var swipeDownX = 0f
+            private var swipeDownY = 0f
+            private var pagingSwipeIntercepted = false
+            private var pagerStartOffset = 0f
+
+            private fun setPagerOffset(offset: Float) {
+                treePanel.translationX = offset
+                fileScrollContainer.translationX = offset
+            }
+
+            private fun animatePagerToCurrentPage(fromOffset: Float) {
+                val targetOffset = if (treeVisible) 0f else -width.toFloat()
+                browserPanePagerGestureInProgress = false
+                val generation = ++browserPaneTransitionGeneration
+                browserPaneTransitionInProgress = true
+                treePanel.animate().cancel()
+                fileScrollContainer.animate().cancel()
+                setPagerOffset(fromOffset)
+                treePanel.animate().translationX(targetOffset).setDuration(180).withEndAction {
+                    if (generation == browserPaneTransitionGeneration) {
+                        browserPaneTransitionInProgress = false
+                        updateBrowserPanes()
+                    }
+                }.start()
+                fileScrollContainer.animate().translationX(targetOffset).setDuration(180).start()
+            }
+
+            override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        swipeDownX = event.x
+                        swipeDownY = event.y
+                        pagingSwipeIntercepted = false
+                        pagerStartOffset = if (treeVisible) 0f else -width.toFloat()
+                        browserPanePagerGestureInProgress = false
+                        browserPaneTransitionInProgress = false
+                        browserPaneTransitionGeneration++
+                        treePanel.animate().cancel()
+                        fileScrollContainer.animate().cancel()
+                        if (isCompactPortrait()) setPagerOffset(pagerStartOffset)
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = event.x - swipeDownX
+                        val dy = event.y - swipeDownY
+                        if (isBrowserPaneSwipe(dx, dy)) {
+                            pagingSwipeIntercepted = true
+                            browserPanePagerGestureInProgress = true
+                            return true
+                        }
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        val dx = event.x - swipeDownX
+                        val dy = event.y - swipeDownY
+                        if (isBrowserPaneSwipe(dx, dy)) {
+                            pagingSwipeIntercepted = true
+                            browserPanePagerGestureInProgress = true
+                            return true
+                        }
+                    }
+                    MotionEvent.ACTION_CANCEL -> {
+                        pagingSwipeIntercepted = false
+                        browserPanePagerGestureInProgress = false
+                    }
+                }
+                return false
+            }
+
+            override fun onTouchEvent(event: MotionEvent): Boolean {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_MOVE -> {
+                        if (pagingSwipeIntercepted) {
+                            val offset = (pagerStartOffset + event.x - swipeDownX).coerceIn(-width.toFloat(), 0f)
+                            setPagerOffset(offset)
+                            return true
+                        }
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (pagingSwipeIntercepted) {
+                            val dx = event.x - swipeDownX
+                            val showTree = if (treeVisible) dx > -dp(56) else dx > dp(56)
+                            val releaseOffset = (pagerStartOffset + dx).coerceIn(-width.toFloat(), 0f)
+                            pagingSwipeIntercepted = false
+                            browserPanePagerGestureInProgress = false
+                            completeBrowserPaneSwipe(showTree, releaseOffset)
+                            com.infinifolder.storage.DiagnosticLog.record(
+                                "browser.pane.swipe", "showTree=$showTree"
+                            )
+                            return true
+                        }
+                    }
+                    MotionEvent.ACTION_CANCEL -> {
+                        val currentOffset = treePanel.translationX
+                        pagingSwipeIntercepted = false
+                        animatePagerToCurrentPage(currentOffset)
+                        return true
+                    }
+                }
+                return pagingSwipeIntercepted
+            }
+        }.apply {
+            orientation = LinearLayout.HORIZONTAL
+            clipChildren = true
+            clipToPadding = true
+        }
         treePanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(if (dark) 0xFF20241F.toInt() else 0xFFEAE9E3.toInt())
             visibility = if (treeVisible) View.VISIBLE else View.GONE
         }
+        treePanel.setOnDragListener { target, event -> handleTreePanelDrag(target, event) }
         treePanel.addView(TextView(this).apply {
             text = "VIRTUAL FILE SYSTEM"; textSize = 12f; setTextColor(if (dark) 0xFFB8CCAF.toInt() else 0xFF52644F.toInt())
             setPadding(dp(12), dp(12), dp(8), dp(8))
         })
         treeContent = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        treePanel.addView(ScrollView(this).apply { addView(treeContent) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        treeScrollView = ScrollView(this).apply {
+            addView(treeContent)
+            // Give the scroll viewport its own stable drop target. Rows are recreated
+            // during expansion, so per-row drag listeners can disappear mid-drag.
+            setOnDragListener { target, event -> handleTreePanelDrag(target, event) }
+        }
+        treePanel.addView(treeScrollView, LinearLayout.LayoutParams(-1, 0, 1f))
         browserArea.addView(treePanel, LinearLayout.LayoutParams(dp(180), -1))
         browserArea.addView(fileScrollContainer, LinearLayout.LayoutParams(0, -1, 1f))
         root.addView(browserArea, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
+        root.setOnDragListener { host, event ->
+            when (event.action) {
+                android.view.DragEvent.ACTION_DRAG_STARTED -> event.localState is BrowserDragPayload
+                android.view.DragEvent.ACTION_DRAG_LOCATION -> {
+                    moveActiveDragOverlayFromEvent(host, event)
+                    true
+                }
+                android.view.DragEvent.ACTION_DROP -> dispatchTreeDropAtScreen(host, event)
+                android.view.DragEvent.ACTION_DRAG_ENDED -> {
+                    val finishedPayload = event.localState as? BrowserDragPayload
+                    com.infinifolder.storage.DiagnosticLog.record(
+                        "browser.drag.ended", "result=${event.result} locations=$activeDragLocationEvents"
+                    )
+                    if (!event.result && !activeDragDropHandled && finishedPayload != null && treeVisible) {
+                        val lastPosition = lastDragScreenPosition
+                        val hadValidTreeHover = dragHoveredTreeNodeKey != null
+                        val fallbackHit = lastPosition?.takeIf {
+                            hadValidTreeHover && isInsideTreeViewport(it.first, it.second)
+                        }
+                            ?.let { resolveTreeDropTarget(it.first, it.second, finishedPayload) }
+                        if (fallbackHit != null) {
+                            com.infinifolder.storage.DiagnosticLog.record(
+                                "browser.drag.tree-ended-fallback",
+                                "node=${fallbackHit.second.key} name=${fallbackHit.second.name} items=${finishedPayload.entries.size}"
+                            )
+                            dispatchTreeDrop(fallbackHit.second, finishedPayload)
+                        } else if (lastPosition?.let { isInsideTreeViewport(it.first, it.second) } == true) {
+                            com.infinifolder.storage.DiagnosticLog.record(
+                                "browser.drag.tree-ended-fallback-rejected",
+                                "reason=${if (hadValidTreeHover) "no-valid-row" else "no-active-tree-hover"} " +
+                                    "x=${lastPosition.first.toInt()} y=${lastPosition.second.toInt()}"
+                            )
+                        }
+                    }
+                    val selfDropMenuEntries = pendingDragSelfDropMenuEntries
+                    clearActiveDragOverlay()
+                    if (finishedPayload != null && selectionMode) exitSelectionMode()
+                    if (selfDropMenuEntries != null) root.post {
+                        if (selfDropMenuEntries.size == 1) showEntryMenu(selfDropMenuEntries.first())
+                        else showBatchActionMenu(selfDropMenuEntries)
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
         root.requestApplyInsets()
         updateCreateAction()
         updateBrowserPanes()
+        browserArea.post { updateBrowserPanes() }
         rebuildTreeRoots()
     }
 
@@ -675,7 +856,7 @@ class MainActivity : Activity() {
     }
     private fun updateCreateAction() {
         if (!::createButton.isInitialized) return
-        val inArchive = current?.let { ArchiveUri.isArchiveUri(it) && !archiveProvider.isWritable(it) } ?: false
+        val inArchive = current?.let { ArchiveUri.isArchiveUri(it) && !archiveProvider.cachedWritable(it) } ?: false
         val inApps = current?.let { AppsUri.isAppsUri(it) } ?: false
         val canWriteDir = !homeMode && current != null && !inArchive && !inApps
         createButton.visibility = if ((homeMode && homePage != "root") || inArchive || inApps) View.GONE else View.VISIBLE
@@ -833,74 +1014,17 @@ class MainActivity : Activity() {
     }
 
     private fun showCurrentDirectoryMenu(dirUri: Uri? = current) {
-        val targetDirUri = dirUri ?: return
-        val dirName = historyNames.lastOrNull() ?: displayNameFor(targetDirUri) ?: "Current directory"
-        val isArchiveDir = ArchiveUri.isArchiveUri(targetDirUri)
-        val mountCheck = if (isArchiveDir) archiveProvider.checkMounted(targetDirUri) else null
-        val isMounted = mountCheck?.isMounted == true
-        val isWritableArchive = isArchiveDir && !isMounted && archiveProvider.isWritable(targetDirUri)
-        val writable = (!isArchiveDir || isWritableArchive) && !AppsUri.isAppsUri(targetDirUri) && !isMounted
-
-        val audioCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.AUDIO }
-        val videoCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.VIDEO }
-        val mediaGroup = mutableListOf<String>()
-        if (audioCount > 0) mediaGroup.add("Queue all audio ($audioCount)")
-        if (videoCount > 0) mediaGroup.add("Play all video ($videoCount)")
-        if (audioCount > 0 && videoCount > 0) mediaGroup.add("Queue all multimedia (${audioCount + videoCount})")
-
-        val createGroup = if (writable) listOf("Paste", "Create folder", "Create link") else emptyList()
-        val propertiesGroup = listOf("Properties")
-
-        val groups = mutableListOf<List<String>>()
-        if (mediaGroup.isNotEmpty()) groups.add(mediaGroup)
-        if (createGroup.isNotEmpty()) groups.add(createGroup)
-        groups.add(propertiesGroup)
-
-        showGroupedMenuDialog(
-            title = dirName,
-            subtitle = when {
-                isMounted -> "Mounted filesystem (Read-only safety lock)"
-                isWritableArchive -> "Writable archive folder"
-                isArchiveDir -> "Archive folder"
-                else -> "Current directory"
-            },
-            groups = groups
-        ) { action ->
-            if (action.startsWith("Queue all audio")) {
-                queueAllAudioInFolder(targetDirUri)
-                return@showGroupedMenuDialog
-            }
-            if (action.startsWith("Play all video")) {
-                queueAllVideoInFolder(targetDirUri)
-                return@showGroupedMenuDialog
-            }
-            if (action.startsWith("Queue all multimedia")) {
-                queueAllMultimediaInFolder(targetDirUri)
-                return@showGroupedMenuDialog
-            }
-            when (action) {
-                "Paste" -> {
-                    if (isMounted) {
-                        notifyMountedPartitionBlocked(dirName, mountCheck?.reason ?: "Partition is mounted")
-                    } else {
-                        pasteFromClipboard(targetDirUri)
-                    }
+        val target = dirUri ?: return
+        val location = loadGeneration
+        io.execute {
+            val result = provider.stat(resourceRef(target))
+            runOnUiThread {
+                if (location != loadGeneration || current != target || isFinishing || isDestroyed) return@runOnUiThread
+                when (result) {
+                    is ProviderResult.Success -> showEntryMenu(result.value)
+                    is ProviderResult.Failure -> Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
+                    is ProviderResult.Unsupported -> Toast.makeText(this, "Folder information is unavailable", Toast.LENGTH_LONG).show()
                 }
-                "Create folder" -> {
-                    if (isMounted) {
-                        notifyMountedPartitionBlocked(dirName, mountCheck?.reason ?: "Partition is mounted")
-                    } else {
-                        showCreateDirectoryDialog()
-                    }
-                }
-                "Create link" -> {
-                    if (isMounted) {
-                        notifyMountedPartitionBlocked(dirName, mountCheck?.reason ?: "Partition is mounted")
-                    } else {
-                        showCreateUriLinkDialog(targetDirUri)
-                    }
-                }
-                "Properties" -> showCurrentDirectoryProperties(targetDirUri, dirName)
             }
         }
     }
@@ -1311,13 +1435,13 @@ class MainActivity : Activity() {
                         return@setOnClickListener
                     }
                 }
-                if ((ArchiveUri.isArchiveUri(targetFolderUri) && !archiveProvider.isWritable(targetFolderUri)) || AppsUri.isAppsUri(targetFolderUri)) {
+                if ((ArchiveUri.isArchiveUri(targetFolderUri) && !archiveProvider.cachedWritable(targetFolderUri)) || AppsUri.isAppsUri(targetFolderUri)) {
                     Toast.makeText(this, "Cannot create link in a read-only location.", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
                 val normalizedUri = WebMetadataResolver.normalizeInputUri(rawUri)
                 val userEnteredName = nameInput.text.toString().trim()
-                    .removeSuffix(".lnk")
+                    .removeSuffix(".lnk").removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION)
                     .removeSuffix(".LNK")
                     .trim()
                 val isWeb = WebMetadataResolver.isWebUri(normalizedUri)
@@ -1338,7 +1462,7 @@ class MainActivity : Activity() {
                         val fetched = WebMetadataResolver.fetchWebMetadata(normalizedUri, dp(128))
                         finalUrl = fetched.normalizedUrl.ifEmpty { normalizedUri }
                         if (userEnteredName.isEmpty() && !fetched.title.isNullOrBlank()) {
-                            finalTitle = fetched.title
+                            finalTitle = fetched.title ?: finalTitle
                         }
                         if (finalIconBase64 == null && !fetched.faviconBase64.isNullOrBlank()) {
                             finalIconBase64 = fetched.faviconBase64
@@ -1371,7 +1495,7 @@ class MainActivity : Activity() {
                         targetIsDirectory = targetIsDir,
                         iconBase64 = finalIconBase64
                     )
-                    createShortcutFile(targetFolderUri, "$cleanStem.lnk", shortcutInfo)
+                    createShortcutFile(targetFolderUri, "$cleanStem${ShortcutInfo.SHORTCUT_EXTENSION}", shortcutInfo)
                 }
             }
         }
@@ -1468,66 +1592,14 @@ class MainActivity : Activity() {
                 dialog.show()
             }
     }
-    private fun savedConnections(): List<ProviderConnection> = try {
-        val json = JSONArray(shared.getString("saved_connections", "[]"))
-        (0 until json.length()).mapNotNull { index ->
-            val item = json.optJSONObject(index) ?: return@mapNotNull null
-            val type = item.optString("type").takeIf(String::isNotBlank) ?: return@mapNotNull null
-            val name = item.optString("name").takeIf(String::isNotBlank) ?: return@mapNotNull null
-            val optionsJson = item.optJSONObject("options")
-            val options = mutableMapOf<String, String>()
-            if (optionsJson != null) {
-                val keys = optionsJson.keys()
-                while (keys.hasNext()) {
-                    val k = keys.next()
-                    options[k] = optionsJson.optString(k)
-                }
-            }
-            ProviderConnection(
-                id = item.optString("id").takeIf(String::isNotBlank) ?: UUID.randomUUID().toString(),
-                sourceTypeId = type,
-                displayName = name,
-                endpoint = item.optString("endpoint").takeIf(String::isNotBlank),
-                options = options,
-                credentialHandle = item.optString("credentialHandle").takeIf(String::isNotBlank)
-            )
-        }
-    } catch (_: Exception) { emptyList() }
+    private fun savedConnections(): List<ProviderConnection> = com.infinifolder.storage.StorageRuntime.get(this).connections.list()
 
     private fun saveConnection(connection: ProviderConnection) {
-        val all = (savedConnections().filterNot { it.id == connection.id } + connection)
-        val json = JSONArray()
-        all.forEach { item ->
-            val obj = JSONObject()
-                .put("id", item.id)
-                .put("type", item.sourceTypeId)
-                .put("name", item.displayName)
-                .put("endpoint", item.endpoint ?: "")
-                .put("credentialHandle", item.credentialHandle ?: "")
-            val opts = JSONObject()
-            item.options.forEach { (k, v) -> opts.put(k, v) }
-            obj.put("options", opts)
-            json.put(obj)
-        }
-        shared.edit().putString("saved_connections", json.toString()).apply()
+        com.infinifolder.storage.StorageRuntime.get(this).connections.save(connection)
     }
 
     private fun removeConnection(connectionId: String) {
-        val all = savedConnections().filterNot { it.id == connectionId }
-        val json = JSONArray()
-        all.forEach { item ->
-            val obj = JSONObject()
-                .put("id", item.id)
-                .put("type", item.sourceTypeId)
-                .put("name", item.displayName)
-                .put("endpoint", item.endpoint ?: "")
-                .put("credentialHandle", item.credentialHandle ?: "")
-            val opts = JSONObject()
-            item.options.forEach { (k, v) -> opts.put(k, v) }
-            obj.put("options", opts)
-            json.put(obj)
-        }
-        shared.edit().putString("saved_connections", json.toString()).apply()
+        com.infinifolder.storage.StorageRuntime.get(this).connections.remove(connectionId)
         sftpProvider.credentialStore.remove(connectionId)
         sftpProvider.clientPool.disconnect(connectionId)
         ftpProvider.credentialStore.remove(connectionId)
@@ -2448,7 +2520,7 @@ class MainActivity : Activity() {
                         dialog.dismiss()
                         showHomeRoot()
 
-                        val initialPath = if (!config.initialShare.isNullOrBlank()) "/${config.initialShare.trim('/')}" else "/"
+                        val initialPath = if (!config.initialShare.isNullOrBlank()) "/${config.initialShare.orEmpty().trim('/')}" else "/"
                         val rootUri = SmbUri.build(connectionId, initialPath)
                         openRoot(rootUri, rememberAuthorizedRoot = false)
                     }
@@ -2861,7 +2933,7 @@ class MainActivity : Activity() {
             load(uri)
         } catch (t: Throwable) {
             android.util.Log.e("InfiniFolder", "Error navigating to $uri", t)
-            try { File("/sdcard/infinifolder_crash.txt").writeText(android.util.Log.getStackTraceString(t)) } catch (_: Throwable) {}
+            com.infinifolder.storage.DiagnosticLog.record("browser.failure", error = t)
             status.text = "Error opening folder: ${t.message}"
             Toast.makeText(this, "Error opening folder: ${t.message}", Toast.LENGTH_SHORT).show()
         }
@@ -2906,13 +2978,15 @@ class MainActivity : Activity() {
             }
             historyNames.forEachIndexed { index, name ->
                 if (index > 0) breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
-                breadcrumb.addView(crumbText(name, setTextColorForTheme(), index == historyNames.lastIndex) { selectLocation(index) })
+                val crumb = crumbText(name, setTextColorForTheme(), index == historyNames.lastIndex) { selectLocation(index) }
+                history.getOrNull(index)?.let { installBreadcrumbDropTarget(crumb, it, name) }
+                breadcrumb.addView(crumb)
             }
             breadcrumb.post { (breadcrumb.parent as? HorizontalScrollView)?.fullScroll(View.FOCUS_RIGHT) }
             renderTree()
         } catch (t: Throwable) {
             android.util.Log.e("InfiniFolder", "Error rendering location", t)
-            try { File("/sdcard/infinifolder_crash.txt").writeText(android.util.Log.getStackTraceString(t)) } catch (_: Throwable) {}
+            com.infinifolder.storage.DiagnosticLog.record("browser.failure", error = t)
         }
     }
     private fun selectLocation(index: Int) {
@@ -2937,8 +3011,13 @@ class MainActivity : Activity() {
         homeMode = false
         listingError = null
         if (loadingAttempt == 0) {
-            entries = emptyList(); listingIsLoading = true; listingNotice = null
-            status.text = "Loading…"; content.removeAllViews()
+            listingIsLoading = true; listingNotice = null
+            status.text = "Loading…"
+            // Keep the current rows and scroll extent while refreshing the same folder.
+            if (renderedFileLocation != uri) {
+                entries = emptyList()
+                content.removeAllViews()
+            }
         }
         val ref = try {
             resourceRef(uri)
@@ -2991,13 +3070,13 @@ class MainActivity : Activity() {
                         }
                     } catch (t: Throwable) {
                         android.util.Log.e("InfiniFolder", "Error rendering listing for $uri", t)
-                        try { File("/sdcard/infinifolder_crash.txt").writeText(android.util.Log.getStackTraceString(t)) } catch (_: Throwable) {}
+                        com.infinifolder.storage.DiagnosticLog.record("browser.failure", error = t)
                         status.text = "Error rendering folder: ${t.message}"
                     }
                 }
             } catch (t: Throwable) {
                 android.util.Log.e("InfiniFolder", "Background list error for $uri", t)
-                try { File("/sdcard/infinifolder_crash.txt").writeText(android.util.Log.getStackTraceString(t)) } catch (_: Throwable) {}
+                com.infinifolder.storage.DiagnosticLog.record("browser.failure", error = t)
                 runOnUiThread {
                     if (requestGeneration == loadGeneration && current == uri) {
                         status.text = "Failed to list folder: ${t.message}"
@@ -3108,9 +3187,19 @@ class MainActivity : Activity() {
     }
 
     private fun renderEntries() {
+        val location = current
+        val generation = loadGeneration
+        val forcedScrollRestore = pendingLocationScrollRestore
+            ?.takeIf { it.first == location }
+            ?.also { pendingLocationScrollRestore = null }
+            ?.second
+        val savedScrollY = forcedScrollRestore
+            ?: if (renderedFileLocation == location) fileScroll.scrollY else 0
+        renderedFileLocation = location
         try {
             pendingCardProbes.clear()
             visibleProbeScheduled = false
+            entryIconViews.clear()
             content.removeAllViews()
             val visible = if (showHidden) entries else entries.filterNot { it.metadata.isHidden }
             val rows = if (sortByName) visible.sortedWith(compareBy<ResourceEntry> { !it.metadata.isDirectory }.thenBy { it.metadata.name.lowercase() }) else visible.sortedByDescending { it.metadata.modifiedAtMillis ?: 0L }
@@ -3169,8 +3258,22 @@ class MainActivity : Activity() {
             scheduleVisibleProbe()
         } catch (t: Throwable) {
             android.util.Log.e("InfiniFolder", "Error rendering entries", t)
-            try { File("/sdcard/infinifolder_crash.txt").writeText(android.util.Log.getStackTraceString(t)) } catch (_: Throwable) {}
+            com.infinifolder.storage.DiagnosticLog.record("browser.failure", error = t)
             status.text = "Error displaying folder contents: ${t.message}"
+        } finally {
+            // Restore after measurement, when ScrollView knows the new content bounds.
+            val listener = object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                override fun onGlobalLayout() {
+                    if (fileScroll.viewTreeObserver.isAlive)
+                        fileScroll.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                    if (!isDestroyed && !homeMode && current == location && loadGeneration == generation) {
+                        fileScroll.scrollTo(0, savedScrollY)
+                        scheduleVisibleProbe()
+                    }
+                }
+            }
+            fileScroll.viewTreeObserver.addOnGlobalLayoutListener(listener)
+            fileScroll.requestLayout()
         }
     }
     private fun renderCurrentContents() { if (homeMode) renderHomeItems() else renderEntries() }
@@ -3204,7 +3307,7 @@ class MainActivity : Activity() {
             }
         }
 
-        if (meta.name.endsWith(".apk", ignoreCase = true) && localProvider.owns(entry.uri)) {
+        if (com.infinifolder.mime.MimeRegistry.effective(meta.name, meta.mimeType) == "application/vnd.android.package-archive" && localProvider.owns(entry.uri)) {
             val localFile = localProvider.fileFor(entry.uri)
             val apkIcon = appsProvider.getApkFileIconBitmap(localFile.absolutePath, sidePx)
             if (apkIcon != null) {
@@ -3295,7 +3398,7 @@ class MainActivity : Activity() {
             val targetMimeKey = if (!shortcut.targetIsDirectory && !WebMetadataResolver.isWebUri(shortcut.targetUri)) CustomIconStore.resolveMimeKey(targetMeta) else null
             when {
                 !shortcut.iconBase64.isNullOrBlank() -> {
-                    shortcutCustomIconPreview(entry.uri, shortcut.iconBase64, asGrid)
+                    shortcutCustomIconPreview(entry.uri, shortcut.iconBase64.orEmpty(), asGrid)
                 }
                 WebMetadataResolver.isWebUri(shortcut.targetUri) -> TextView(this).apply {
                     text = "🌐"
@@ -3390,13 +3493,7 @@ class MainActivity : Activity() {
                 if (asGrid) bottomMargin = dp(4)
             }
             if (asGrid) {
-                if (isSelected) {
-                    background = GradientDrawable().apply {
-                        setColor(if (dark) 0x334CAF50.toInt() else 0x3381C784.toInt())
-                        cornerRadius = dp(8).toFloat()
-                        setStroke(dp(1), if (dark) 0xFF4CAF50.toInt() else 0xFF2E7D32.toInt())
-                    }
-                } else {
+                if (!isSelected) {
                     setBackgroundResource(android.R.drawable.list_selector_background)
                 }
             }
@@ -3423,23 +3520,6 @@ class MainActivity : Activity() {
                 }
                 addView(linkBadge)
             }
-            if (isSelected) {
-                val badge = TextView(context).apply {
-                    text = "✓"
-                    textSize = 12f
-                    setTextColor(0xFFFFFFFF.toInt())
-                    gravity = Gravity.CENTER
-                    background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(0xFF2E7D32.toInt())
-                    }
-                    val badgeSize = dp(20)
-                    layoutParams = FrameLayout.LayoutParams(badgeSize, badgeSize).apply {
-                        gravity = Gravity.BOTTOM or Gravity.END
-                    }
-                }
-                addView(badge)
-            }
             if (!AppsUri.isAppsUri(entry.uri) && (!entry.metadata.canRead || !entry.metadata.canWrite)) {
                 val isNoRead = !entry.metadata.canRead
                 val permBadge = TextView(context).apply {
@@ -3458,6 +3538,33 @@ class MainActivity : Activity() {
                     }
                 }
                 addView(permBadge)
+            }
+            if (isSelected) {
+                // Draw selection in the icon foreground so detailed artwork stays
+                // legible beneath the tint and the outline remains easy to see.
+                addView(View(context).apply {
+                    isClickable = false
+                    isFocusable = false
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(8).toFloat()
+                        setColor(if (dark) 0x554CAF50 else 0x5581C784)
+                        setStroke(dp(2), if (dark) 0xFF81C784.toInt() else 0xFF2E7D32.toInt())
+                    }
+                }, FrameLayout.LayoutParams(-1, -1))
+                addView(TextView(context).apply {
+                    text = "✓"
+                    textSize = 12f
+                    setTextColor(0xFFFFFFFF.toInt())
+                    gravity = Gravity.CENTER
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(0xFF2E7D32.toInt())
+                    }
+                    val badgeSize = dp(20)
+                    layoutParams = FrameLayout.LayoutParams(badgeSize, badgeSize).apply {
+                        gravity = Gravity.BOTTOM or Gravity.END
+                    }
+                })
             }
         }
 
@@ -3510,7 +3617,7 @@ class MainActivity : Activity() {
         val displayName = if (isShortcut && !shortcut?.displayNameOverride.isNullOrBlank()) {
             "${shortcut.displayNameOverride} ↗"
         } else if (isShortcut) {
-            "${entry.metadata.name.removeSuffix(".lnk")} ↗"
+            "${entry.metadata.name.removeSuffix(".lnk").removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION)} ↗"
         } else {
             entry.metadata.name
         }
@@ -3556,6 +3663,7 @@ class MainActivity : Activity() {
                 setTextColor(if (dark) 0xFFBFC5BA.toInt() else 0xFF686D65.toInt())
             }.also { labels.addView(it) }
         } else null
+        entryIconViews[entry.uri] = icon
         box.addView(icon); box.addView(labels)
 
         if (isShortcut && shortcut == null) {
@@ -3616,7 +3724,7 @@ class MainActivity : Activity() {
                         val updatedDisplayName = if (!info.displayNameOverride.isNullOrBlank()) {
                             "${info.displayNameOverride} ↗"
                         } else {
-                            "${entry.metadata.name.removeSuffix(".lnk")} ↗"
+                            "${entry.metadata.name.removeSuffix(".lnk").removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION)} ↗"
                         }
                         nameView.setFileName(updatedDisplayName, info.targetIsDirectory)
                         metaView?.text = metadataLine(entry)
@@ -3652,7 +3760,7 @@ class MainActivity : Activity() {
             }
 
             val cachedMagic = ambiguousMagicCache.get(entry.uri.toString())
-            val effectiveMime = cachedMagic?.mimeType ?: entry.metadata.mimeType
+            val effectiveMime = com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType, cachedMagic?.mimeType)
             val isPkg = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isPackagedFormat(entry.metadata.name, effectiveMime)
             val isArc = !AppsUri.isAppUri(entry.uri) && (
                 ArchiveFormats.isArchive(entry.metadata.name, effectiveMime) ||
@@ -3730,36 +3838,134 @@ class MainActivity : Activity() {
 
             open(entry)
         }
-        val onEntryLongClick = View.OnLongClickListener {
-            if (selectionMode) {
-                if (!isSelected) {
-                    selectedUris.add(entry.uri)
-                    renderEntries()
-                    updateListingStatus()
+        run {
+            val holdTimeout = ViewConfiguration.getLongPressTimeout().toLong()
+            val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+            val indicator = DragHoldIndicatorView(this)
+            icon.addView(indicator, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+            val gesture = object : View.OnTouchListener {
+                private var downX = 0f
+                private var downY = 0f
+                private var downAt = 0L
+                private var armed = false
+                private var moved = false
+                private var dragStarted = false
+                private var dragAttempted = false
+                private var holding = false
+                private var target: View? = null
+                private fun armIfTimerElapsed() {
+                    if (!armed && SystemClock.uptimeMillis() - downAt >= holdTimeout) {
+                        armed = true
+                        indicator.progress = 1f
+                        target?.parent?.requestDisallowInterceptTouchEvent(true)
+                    }
                 }
-                showBatchActionMenu()
-                true
-            } else {
-                showEntryMenu(entry)
-                true
+                private val updateHold = object : Runnable {
+                    override fun run() {
+                        val view = target ?: return
+                        if (!holding || moved || dragStarted) return
+                        val progress = ((SystemClock.uptimeMillis() - downAt).toFloat() / holdTimeout).coerceIn(0f, 1f)
+                        indicator.progress = progress
+                        if (progress >= 1f) {
+                            armed = true
+                            view.parent?.requestDisallowInterceptTouchEvent(true)
+                        } else view.postOnAnimation(this)
+                    }
+                }
+
+                override fun onTouch(view: View, event: MotionEvent): Boolean {
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            target = view
+                            downX = event.x
+                            downY = event.y
+                            downAt = SystemClock.uptimeMillis()
+                            armed = false
+                            moved = false
+                            dragStarted = false
+                            dragAttempted = false
+                            holding = true
+                            indicator.progress = 0f
+                            view.postOnAnimation(updateHold)
+                        }
+                        MotionEvent.ACTION_MOVE -> {
+                            armIfTimerElapsed()
+                            val dx = event.x - downX
+                            val dy = event.y - downY
+                            if (dx * dx + dy * dy > touchSlop * touchSlop) {
+                                moved = true
+                                holding = false
+                                view.removeCallbacks(updateHold)
+                                if (!armed) view.parent?.requestDisallowInterceptTouchEvent(false)
+                                if (armed && !dragAttempted) {
+                                    dragAttempted = true
+                                    indicator.progress = -1f
+                                    dragStarted = startEntryDrag(view, icon, entry)
+                                }
+                                indicator.progress = -1f
+                                if (dragStarted) view.parent?.requestDisallowInterceptTouchEvent(false)
+                            }
+                        }
+                        MotionEvent.ACTION_UP -> {
+                            armIfTimerElapsed()
+                            view.removeCallbacks(updateHold)
+                            holding = false
+                            indicator.progress = -1f
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                            val dx = event.x - downX
+                            val dy = event.y - downY
+                            val paneSwipe = moved && !armed && !dragStarted && isBrowserPaneSwipe(dx, dy)
+                            if (paneSwipe) {
+                                val width = browserArea.width.takeIf { it > 0 }
+                                    ?: dp(resources.configuration.screenWidthDp.coerceAtLeast(1))
+                                val startOffset = if (treeVisible) 0f else -width.toFloat()
+                                completeBrowserPaneSwipe(
+                                    showTree = !treeVisible,
+                                    releaseOffset = (startOffset + dx).coerceIn(-width.toFloat(), 0f)
+                                )
+                                com.infinifolder.storage.DiagnosticLog.record(
+                                    "browser.pane.swipe", "source=entry-icon showTree=$treeVisible"
+                                )
+                            } else when {
+                                armed && !moved && !dragStarted -> {
+                                    if (selectionMode) {
+                                        if (entry.uri !in selectedUris) selectedUris.add(entry.uri)
+                                        renderEntries()
+                                        updateListingStatus()
+                                        showBatchActionMenu()
+                                    } else showEntryMenu(entry)
+                                }
+                                !moved && !dragStarted -> onEntryClick.onClick(view)
+                            }
+                            target = null
+                        }
+                        MotionEvent.ACTION_CANCEL -> {
+                            view.removeCallbacks(updateHold)
+                            holding = false
+                            indicator.progress = -1f
+                            moved = true
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                            target = null
+                        }
+                    }
+                    return true
+                }
+            }
+            icon.isClickable = true
+            icon.isLongClickable = false
+            icon.setOnTouchListener(gesture)
+            if (asGrid) {
+                nameView.isClickable = true
+                nameView.isLongClickable = false
+                nameView.setOnTouchListener(gesture)
+            }
+            if (!asGrid) {
+                box.isClickable = true
+                box.isLongClickable = false
+                box.setOnTouchListener(gesture)
             }
         }
-        if (asGrid) {
-            icon.isClickable = true
-            icon.isFocusable = true
-            icon.isLongClickable = true
-            icon.setOnClickListener(onEntryClick)
-            icon.setOnLongClickListener(onEntryLongClick)
-
-            nameView.isClickable = true
-            nameView.isFocusable = true
-            nameView.isLongClickable = true
-            nameView.setOnClickListener(onEntryClick)
-            nameView.setOnLongClickListener(onEntryLongClick)
-        } else {
-            box.setOnClickListener(onEntryClick)
-            box.setOnLongClickListener(onEntryLongClick)
-        }
+        installEntryDropTarget(box, entry, asGrid)
         return box
     }
     private fun shortcutCustomIconPreview(entryUri: Uri, base64: String, asGrid: Boolean): View {
@@ -4145,29 +4351,7 @@ class MainActivity : Activity() {
     }
 
     private fun launchBuiltInViewer(entry: ResourceEntry, mediaType: com.infinifolder.viewer.MediaType): Boolean {
-        val intent = when (mediaType) {
-            com.infinifolder.viewer.MediaType.IMAGE -> Intent(this, com.infinifolder.viewer.ImageViewerActivity::class.java)
-            com.infinifolder.viewer.MediaType.TEXT -> Intent(this, com.infinifolder.viewer.TextViewerActivity::class.java)
-            com.infinifolder.viewer.MediaType.MARKDOWN -> Intent(this, com.infinifolder.viewer.MarkdownViewerActivity::class.java)
-            com.infinifolder.viewer.MediaType.HTML -> Intent(this, com.infinifolder.viewer.HtmlViewerActivity::class.java)
-            com.infinifolder.viewer.MediaType.AUDIO -> Intent(this, com.infinifolder.viewer.AudioPlayerActivity::class.java)
-            com.infinifolder.viewer.MediaType.VIDEO -> Intent(this, com.infinifolder.viewer.VideoPlayerActivity::class.java)
-            com.infinifolder.viewer.MediaType.PDF -> Intent(this, com.infinifolder.viewer.PdfViewerActivity::class.java)
-            com.infinifolder.viewer.MediaType.EPUB -> Intent(this, com.infinifolder.viewer.EpubViewerActivity::class.java)
-            com.infinifolder.viewer.MediaType.SPREADSHEET -> Intent(this, com.infinifolder.viewer.CsvViewerActivity::class.java)
-            else -> return false
-        }
-        intent.data = entry.uri
-        intent.putExtra("uri", entry.uri.toString())
-        intent.putExtra("extra_uri", entry.uri.toString())
-        intent.putExtra("displayName", entry.metadata.name)
-        intent.putExtra("extra_name", entry.metadata.name)
-        intent.putExtra("mimeType", entry.metadata.mimeType)
-        intent.putExtra("extra_mime", entry.metadata.mimeType)
-        current?.let {
-            intent.putExtra("parentUri", it.toString())
-            intent.putExtra("extra_parent_uri", it.toString())
-        }
+        val intent = com.infinifolder.viewer.ViewerLaunch.intent(this, entry, mediaType, current) ?: return false
         return try {
             startActivity(intent)
             true
@@ -4177,7 +4361,26 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun open(entry: ResourceEntry) {
+    private fun open(entry: ResourceEntry, externalOnly: Boolean = false) {
+        if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null) {
+            io.execute {
+                val resolved = com.infinifolder.storage.LinkResolver.resolve(provider, entry)
+                runOnUiThread {
+                    when (resolved) {
+                        is ProviderResult.Success -> {
+                            val target = resolved.value
+                            val targetEntry = target.entry
+                            if (targetEntry == null) launchExternalViewIntent(target.uri, target.mime, target.name)
+                            else if (targetEntry.metadata.isDirectory && !externalOnly) navigate(targetEntry.uri, displayName = targetEntry.metadata.name)
+                            else open(targetEntry, externalOnly)
+                        }
+                        is ProviderResult.Failure -> Toast.makeText(this, resolved.message, Toast.LENGTH_LONG).show()
+                        else -> Unit
+                    }
+                }
+            }
+            return
+        }
         if (AppsUri.isAppUri(entry.uri)) {
             val pkg = AppsUri.getPackageName(entry.uri)
             if (pkg != null) {
@@ -4186,20 +4389,20 @@ class MainActivity : Activity() {
             return
         }
         val cachedMagic = ambiguousMagicCache.get(entry.uri.toString())
-        val effectiveMime = cachedMagic?.mimeType ?: entry.metadata.mimeType
+        val effectiveMime = com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType, cachedMagic?.mimeType)
         val isPkg = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isPackagedFormat(entry.metadata.name, effectiveMime)
         val isArchiveOrDisc = !AppsUri.isAppUri(entry.uri) && (
             ArchiveFormats.isArchive(entry.metadata.name, effectiveMime) ||
             (cachedMagic != null && (cachedMagic.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(entry.metadata.name, cachedMagic.mimeType)))
         )
-        if (isArchiveOrDisc && !isPkg) {
+        if (isArchiveOrDisc && !isPkg && !externalOnly) {
             navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
             return
         }
-        if (useBuiltInViewersAndPlayers) {
+        if (useBuiltInViewersAndPlayers && !externalOnly) {
             val mediaType = com.infinifolder.viewer.MediaTypeDetector.detect(entry.metadata.name, effectiveMime)
             if (mediaType != com.infinifolder.viewer.MediaType.UNSUPPORTED && mediaType != com.infinifolder.viewer.MediaType.ARCHIVE_OR_CONTAINER) {
-                if (launchBuiltInViewer(entry, mediaType)) {
+                if (launchBuiltInViewer(entry.copy(metadata = entry.metadata.copy(mimeType = effectiveMime)), mediaType)) {
                     return
                 }
             }
@@ -4214,14 +4417,14 @@ class MainActivity : Activity() {
                     runOnUiThread {
                         val intent = Intent(Intent.ACTION_VIEW).apply {
                             setDataAndType(fileUri, mimeType)
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             clipData = ClipData.newRawUri(cachedFile.name, fileUri)
                         }
                         val resInfoList = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
                         for (resolveInfo in resInfoList) {
                             grantUriPermission(resolveInfo.activityInfo.packageName, fileUri,
-                                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         try {
                             startActivity(intent)
@@ -4246,7 +4449,7 @@ class MainActivity : Activity() {
             val fileName = remotePath.substringAfterLast('/').ifEmpty { "file" }
             io.execute {
                 try {
-                    val cacheDir = File(cacheDir, "${providerId}_cache/$connId").apply { mkdirs() }
+                    val cacheDir = File(cacheDir, "${providerId}_cache/$connId/${java.util.UUID.randomUUID()}").apply { mkdirs() }
                     val cachedFile = File(cacheDir, fileName)
                     val res = provider.openRead(ResourceRef(providerId, entry.uri.toString()))
                     if (res is ProviderResult.Success) {
@@ -4260,14 +4463,14 @@ class MainActivity : Activity() {
                         runOnUiThread {
                             val intent = Intent(Intent.ACTION_VIEW).apply {
                                 setDataAndType(fileUri, mimeType)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 clipData = ClipData.newRawUri(cachedFile.name, fileUri)
                             }
                             val resInfoList = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
                             for (resolveInfo in resInfoList) {
                                 grantUriPermission(resolveInfo.activityInfo.packageName, fileUri,
-                                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                                    Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
                             try {
                                 startActivity(intent)
@@ -4626,9 +4829,15 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun refreshInternalSharedTree() {
+    private fun refreshInternalSharedTree(onRefreshed: (() -> Unit)? = null) {
+        onRefreshed?.let(pendingInternalTreeRefreshCallbacks::add)
         val generation = ++internalListGeneration
-        if (!localProvider.hasAccess()) { internalSharedEntries = emptyList(); rebuildTreeRoots(); return }
+        if (!localProvider.hasAccess()) {
+            internalSharedEntries = emptyList()
+            rebuildTreeRoots()
+            runPendingInternalTreeRefreshCallbacks()
+            return
+        }
         io.execute {
             val result = localProvider.list(resourceRef(localProvider.rootUri))
             runOnUiThread {
@@ -4636,8 +4845,15 @@ class MainActivity : Activity() {
                 if (result is ProviderResult.Success) internalSharedEntries = result.value
                 else internalSharedEntries = emptyList()
                 rebuildTreeRoots()
+                runPendingInternalTreeRefreshCallbacks()
             }
         }
+    }
+
+    private fun runPendingInternalTreeRefreshCallbacks() {
+        val callbacks = pendingInternalTreeRefreshCallbacks.toList()
+        pendingInternalTreeRefreshCallbacks.clear()
+        callbacks.forEach { callback -> runCatching(callback) }
     }
     private fun showApplicationPublic() {
         loadGeneration++
@@ -4689,6 +4905,7 @@ class MainActivity : Activity() {
     }
     private fun treeSourceUri(key: String): Uri? = shared.getString("tree_source_$key", null)?.let(Uri::parse)
     private fun renderHomeItems() {
+        renderedFileLocation = null
         content.removeAllViews()
         val visibleItems = if (homePage == "internal_shared") {
             homeItems.filter { it.treeParentKey == "internal_shared" }
@@ -4824,27 +5041,760 @@ class MainActivity : Activity() {
         treeVisible = visible
         shared.edit().putBoolean("tree_visible", treeVisible).apply()
         updateBrowserPanes()
+        if (!homeMode) renderEntries()
         if (homeMode && homePage != "application_public") renderHomeItems()
+    }
+    private fun completeBrowserPaneSwipe(showTree: Boolean, releaseOffset: Float) {
+        if (!isCompactPortrait() || !::browserArea.isInitialized) {
+            browserPaneTransitionInProgress = false
+            setTreeVisible(showTree)
+            return
+        }
+        val generation = ++browserPaneTransitionGeneration
+        browserPaneTransitionInProgress = true
+        setTreeVisible(showTree)
+        val width = browserArea.width.takeIf { it > 0 }
+            ?: dp(resources.configuration.screenWidthDp.coerceAtLeast(1))
+        val start = releaseOffset.coerceIn(-width.toFloat(), 0f)
+        val target = if (showTree) 0f else -width.toFloat()
+        treePanel.animate().cancel()
+        fileScrollContainer.animate().cancel()
+        treePanel.translationX = start
+        fileScrollContainer.translationX = start
+        treePanel.animate().translationX(target).setDuration(180).withEndAction {
+            if (generation == browserPaneTransitionGeneration) {
+                browserPaneTransitionInProgress = false
+                updateBrowserPanes()
+            }
+        }.start()
+        fileScrollContainer.animate().translationX(target).setDuration(180).start()
     }
     private fun isCompactPortrait(): Boolean =
         resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT &&
             resources.configuration.screenWidthDp < 600
+
+    private fun isBrowserPaneSwipe(dx: Float, dy: Float): Boolean =
+        isCompactPortrait() && !homeMode && activeBrowserDragPayload == null &&
+            abs(dx) >= dp(48) && abs(dx) > abs(dy) &&
+            ((treeVisible && dx < 0f) || (!treeVisible && dx > 0f))
+
     private fun updateBrowserPanes() {
         if (!::treePanel.isInitialized || !::fileScroll.isInitialized || !::fileScrollContainer.isInitialized) return
-        val treeOnly = treeVisible && isCompactPortrait()
-        treePanel.visibility = if (treeVisible) View.VISIBLE else View.GONE
-        fileScrollContainer.visibility = if (treeOnly) View.GONE else View.VISIBLE
-        (treePanel.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
-            params.width = if (treeOnly) LinearLayout.LayoutParams.MATCH_PARENT else dp(180)
-            params.weight = 0f
-            treePanel.layoutParams = params
-        }
-        (fileScrollContainer.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
-            params.width = 0
-            params.weight = if (treeOnly) 0f else 1f
-            fileScrollContainer.layoutParams = params
+        val pagerMode = isCompactPortrait()
+        treePanel.visibility = View.VISIBLE
+        fileScrollContainer.visibility = View.VISIBLE
+        val pageWidth = browserArea.width.takeIf { it > 0 }
+            ?: dp(resources.configuration.screenWidthDp.coerceAtLeast(1))
+        if (pagerMode) {
+            (treePanel.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+                params.width = pageWidth
+                params.weight = 0f
+                treePanel.layoutParams = params
+            }
+            (fileScrollContainer.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+                params.width = pageWidth
+                params.weight = 0f
+                fileScrollContainer.layoutParams = params
+            }
+            if (!browserPanePagerGestureInProgress && !browserPaneTransitionInProgress) {
+                val pageOffset = if (treeVisible) 0f else -pageWidth.toFloat()
+                treePanel.translationX = pageOffset
+                fileScrollContainer.translationX = pageOffset
+            }
+        } else {
+            (treePanel.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+                params.width = if (treeVisible) requiredTreePanelWidthPx() else 0
+                params.weight = 0f
+                treePanel.layoutParams = params
+            }
+            (fileScrollContainer.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+                params.width = 0
+                params.weight = 1f
+                fileScrollContainer.layoutParams = params
+            }
+            treePanel.translationX = 0f
+            fileScrollContainer.translationX = 0f
         }
         browserArea.requestLayout()
+    }
+
+    private fun requiredTreePanelWidthPx(): Int {
+        val availableWidth = browserArea.width.takeIf { it > 0 }
+            ?: dp(resources.configuration.screenWidthDp.coerceAtLeast(180))
+        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 13f, resources.displayMetrics)
+        }
+        var required = dp(180)
+        val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 12f, resources.displayMetrics)
+        }
+        required = maxOf(required, headerPaint.measureText("VIRTUAL FILE SYSTEM").toInt() + dp(24))
+        if (::treeContent.isInitialized) {
+            for (index in 0 until treeContent.childCount) {
+                val row = treeContent.getChildAt(index)
+                val key = row.tag as? String ?: continue
+                val node = findTreeNodeByKey(key) ?: continue
+                val textAndIndent = dp(node.depth * 24 + 48 + 32 + 16) + titlePaint.measureText(node.name).toInt()
+                required = maxOf(required, textAndIndent)
+            }
+        }
+        return required.coerceAtMost(availableWidth.coerceAtLeast(dp(180)))
+    }
+    private fun startEntryDrag(handle: View, icon: View, entry: ResourceEntry): Boolean {
+        val selectedEntries = entries.filter { it.uri in selectedUris }
+        val draggedEntries = selectedEntries.ifEmpty { listOf(entry) }
+        if (draggedEntries.isEmpty()) return false
+        val canMove = draggedEntries.none {
+            it.metadata.isSymbolicLink || AppsUri.isAppsUri(it.uri) || AppsUri.isCategoryUri(it.uri)
+        }
+        val payload = BrowserDragPayload(
+            entries = draggedEntries,
+            canMove = canMove,
+            sourceDirectory = current,
+            sourceScrollY = fileScroll.scrollY,
+            sourceDisplayName = historyNames.lastOrNull()
+        )
+        val clip = ClipData.newPlainText("InfiniFolder items", draggedEntries.joinToString(", ") { it.metadata.name })
+        val snapshot = captureDragIcon(icon, draggedEntries.size)
+        showActiveDragOverlay(icon, snapshot)
+        (draggedEntries.mapNotNull { entryIconViews[it.uri] } + icon).distinct().forEach { sourceIcon ->
+            activeDragSourceIconAlphas[sourceIcon] = sourceIcon.alpha
+            sourceIcon.alpha = 0.35f
+        }
+        activeDragLocationEvents = 0
+        activeDragDropHandled = false
+        pendingDragSelfDropMenuEntries = null
+        com.infinifolder.storage.DiagnosticLog.record(
+            "browser.drag.request", "items=${draggedEntries.size} handle=${handle.javaClass.simpleName} icon=${icon.width}x${icon.height}"
+        )
+        activeBrowserDragPayload = payload
+        val started = handle.startDragAndDrop(clip, SnapshotDragShadowBuilder(snapshot), payload, 0)
+        com.infinifolder.storage.DiagnosticLog.record(
+            "browser.drag.started", "accepted=$started items=${draggedEntries.size} overlay=${activeDragOverlay != null}"
+        )
+        if (!started) clearActiveDragOverlay()
+        if (started) {
+            val action = if (canMove) "Move or copy" else "Copy"
+            Toast.makeText(this, "Drag to a folder to $action", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Android could not start dragging this item", Toast.LENGTH_SHORT).show()
+        }
+        return started
+    }
+
+    private fun captureDragIcon(icon: View, itemCount: Int): Bitmap {
+        val front = Bitmap.createBitmap(
+            icon.width.coerceAtLeast(1), icon.height.coerceAtLeast(1), Bitmap.Config.ARGB_8888
+        ).also { bitmap -> icon.draw(Canvas(bitmap)) }
+        if (itemCount <= 1) return front
+
+        val pad = dp(7)
+        val layerCount = (itemCount - 1).coerceAtMost(3)
+        val layerStep = dp(3)
+        val bitmap = Bitmap.createBitmap(
+            front.width + pad * 2 + layerCount * layerStep,
+            front.height + pad * 2 + layerCount * layerStep,
+            Bitmap.Config.ARGB_8888
+        )
+        val canvas = Canvas(bitmap)
+        val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = if (dark) 0xFF45534A.toInt() else 0xFFE7EFE4.toInt()
+        }
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = dp(1).toFloat()
+            color = if (dark) 0xFFD2E3D3.toInt() else 0xFF637565.toInt()
+        }
+        val radius = dp(8).toFloat()
+        for (layer in layerCount downTo 1) {
+            val left = (pad + layer * layerStep).toFloat()
+            val top = (pad + layer * layerStep).toFloat()
+            val rect = RectF(left, top, left + front.width, top + front.height)
+            canvas.drawRoundRect(rect, radius, radius, cardPaint)
+            canvas.drawRoundRect(rect, radius, radius, strokePaint)
+        }
+        canvas.drawBitmap(front, pad.toFloat(), pad.toFloat(), null)
+
+        val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = if (dark) 0xFF2E7D32.toInt() else 0xFF388E3C.toInt()
+        }
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textAlign = Paint.Align.CENTER
+            textSize = dp(12).toFloat()
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        val label = itemCount.toString()
+        val badgeWidth = maxOf(dp(20), textPaint.measureText(label).toInt() + dp(12))
+        val badgeHeight = dp(20)
+        val badgeLeft = pad + front.width - badgeWidth + dp(4)
+        val badgeTop = pad - dp(4)
+        val badgeRect = RectF(
+            badgeLeft.toFloat(), badgeTop.toFloat(),
+            (badgeLeft + badgeWidth).toFloat(), (badgeTop + badgeHeight).toFloat()
+        )
+        canvas.drawRoundRect(badgeRect, badgeHeight / 2f, badgeHeight / 2f, badgePaint)
+        val textBaseline = badgeRect.centerY() - (textPaint.ascent() + textPaint.descent()) / 2f
+        canvas.drawText(label, badgeRect.centerX(), textBaseline, textPaint)
+        front.recycle()
+        return bitmap
+    }
+
+    private fun showActiveDragOverlay(icon: View, snapshot: Bitmap) {
+        clearActiveDragOverlay()
+        val width = snapshot.width
+        val height = snapshot.height
+        val drawable = BitmapDrawable(resources, snapshot)
+        val host = window.decorView.findViewById<ViewGroup>(android.R.id.content)?.getChildAt(0) as? ViewGroup
+            ?: return
+        val iconLocation = IntArray(2)
+        val hostLocation = IntArray(2)
+        icon.getLocationOnScreen(iconLocation)
+        host.getLocationOnScreen(hostLocation)
+        val left = iconLocation[0] - hostLocation[0] - (width - icon.width) / 2
+        val top = iconLocation[1] - hostLocation[1] - (height - icon.height) / 2
+        drawable.setBounds(left, top, left + width, top + height)
+        host.overlay.add(drawable)
+        host.invalidate()
+        activeDragOverlayHost = host
+        activeDragOverlay = drawable
+    }
+
+    private fun moveActiveDragOverlay(host: View, x: Float, y: Float) {
+        val drawable = activeDragOverlay ?: return
+        val overlayHost = activeDragOverlayHost ?: return
+        val sourceLocation = IntArray(2)
+        val hostLocation = IntArray(2)
+        host.getLocationOnScreen(sourceLocation)
+        overlayHost.getLocationOnScreen(hostLocation)
+        val hostX = sourceLocation[0] - hostLocation[0] + x
+        val hostY = sourceLocation[1] - hostLocation[1] + y
+        val width = drawable.intrinsicWidth.coerceAtLeast(1)
+        val height = drawable.intrinsicHeight.coerceAtLeast(1)
+        drawable.setBounds(
+            (hostX - width / 2f).toInt(), (hostY - height / 2f).toInt(),
+            (hostX + width / 2f).toInt(), (hostY + height / 2f).toInt()
+        )
+        overlayHost.postInvalidateOnAnimation()
+    }
+
+    private fun moveActiveDragOverlayFromEvent(view: View, event: android.view.DragEvent) {
+        if (event.action == android.view.DragEvent.ACTION_DRAG_LOCATION) {
+            activeDragLocationEvents++
+            lastDragScreenPosition = dragEventScreenPosition(view, event)
+            if (activeDragLocationEvents == 1 || activeDragLocationEvents % 50 == 0) {
+                com.infinifolder.storage.DiagnosticLog.record(
+                    "browser.drag.location", "count=$activeDragLocationEvents target=${view.javaClass.simpleName} x=${event.x.toInt()} y=${event.y.toInt()} overlay=${activeDragOverlay != null}"
+                )
+            }
+            moveActiveDragOverlay(view, event.x, event.y)
+            updateDragEdgeAutoScroll(view, event)
+            updateDragTreeRevealHover(view, event)
+            updateDragTreeNodeHover(view, event)
+        }
+    }
+
+    private fun updateDragTreeNodeHover(view: View, event: android.view.DragEvent) {
+        if (activeBrowserDragPayload == null || homeMode || !treeVisible) return
+        val (screenX, screenY) = dragEventScreenPosition(view, event)
+        val hit = treeTargetAtScreen(screenX, screenY)
+        setDragHoveredTreeTarget(hit)
+        if (hit != null) updateTreeNodeExpandHover(hit.first, hit.second)
+        else cancelTreeNodeExpandHover()
+    }
+
+    private fun dragEventScreenPosition(view: View, event: android.view.DragEvent): Pair<Float, Float> {
+        val location = IntArray(2)
+        view.getLocationOnScreen(location)
+        return location[0] + event.x to location[1] + event.y
+    }
+
+    private fun updateDragEdgeAutoScroll(view: View, event: android.view.DragEvent) {
+        if (homeMode || !fileScrollContainer.isShown || !fileScroll.isShown) return
+        val (screenX, screenY) = dragEventScreenPosition(view, event)
+        val location = IntArray(2)
+        fileScroll.getLocationOnScreen(location)
+        val left = location[0].toFloat()
+        val top = location[1].toFloat()
+        val right = left + fileScroll.width
+        val bottom = top + fileScroll.height
+        if (screenX !in left..right) return
+
+        val edge = dp(64).toFloat()
+        val topProgress = ((top + edge - screenY) / edge).coerceIn(0f, 1f)
+        val bottomProgress = ((screenY - (bottom - edge)) / edge).coerceIn(0f, 1f)
+        val scroll = when {
+            topProgress > 0f -> -dp((2f + 14f * topProgress).toInt())
+            bottomProgress > 0f -> dp((2f + 14f * bottomProgress).toInt())
+            else -> 0
+        }
+        if (scroll != 0) fileScroll.scrollBy(0, scroll)
+    }
+
+    private fun updateDragTreeRevealHover(view: View, event: android.view.DragEvent) {
+        if (activeBrowserDragPayload == null || homeMode || treeVisible ||
+            !fileScrollContainer.isShown || !fileScroll.isShown
+        ) {
+            cancelDragTreeReveal()
+            return
+        }
+        val (screenX, screenY) = dragEventScreenPosition(view, event)
+        val location = IntArray(2)
+        fileScroll.getLocationOnScreen(location)
+        val left = location[0].toFloat()
+        val top = location[1].toFloat()
+        val inLeftEdge = screenX >= left && screenX <= left + dp(40) &&
+            screenY >= top && screenY <= top + fileScroll.height
+        if (!inLeftEdge) {
+            cancelDragTreeReveal()
+            return
+        }
+        if (dragTreeRevealRunnable != null) return
+        val reveal = Runnable {
+            dragTreeRevealRunnable = null
+            if (activeBrowserDragPayload != null && !homeMode && !treeVisible) {
+                setTreeVisible(true)
+                com.infinifolder.storage.DiagnosticLog.record("browser.drag.tree-revealed", "hovered at left edge")
+            }
+        }
+        dragTreeRevealRunnable = reveal
+        root.postDelayed(reveal, 650)
+    }
+
+    private fun cancelDragTreeReveal() {
+        dragTreeRevealRunnable?.let(root::removeCallbacks)
+        dragTreeRevealRunnable = null
+    }
+
+    private fun clearActiveDragOverlay() {
+        cancelDragTreeReveal()
+        cancelTreeNodeExpandHover()
+        setDragHoveredTreeTarget(null)
+        activeDragSourceIconAlphas.forEach { (icon, alpha) -> icon.alpha = alpha }
+        activeDragSourceIconAlphas.clear()
+        activeDragDropHandled = false
+        pendingDragSelfDropMenuEntries = null
+        dragHoveredTreeNodeKey = null
+        lastDragScreenPosition = null
+        val host = activeDragOverlayHost
+        val drawable = activeDragOverlay
+        if (host != null && drawable != null) {
+            host.overlay.remove(drawable)
+            host.invalidate()
+        }
+        activeDragOverlayHost = null
+        activeDragOverlay = null
+        activeBrowserDragPayload = null
+    }
+
+    private fun treeContainsUri(root: TreeNode, uri: Uri): Boolean =
+        root.uri == uri || root.children.any { treeContainsUri(it, uri) }
+
+    private fun wouldDropIntoDraggedFolder(entries: List<ResourceEntry>, destination: Uri): Boolean {
+        fun findNode(nodes: List<TreeNode>, uri: Uri): TreeNode? {
+            nodes.forEach { node ->
+                if (node.uri == uri) return node
+                findNode(node.children, uri)?.let { return it }
+            }
+            return null
+        }
+        return entries.any { source ->
+            source.uri == destination || (source.metadata.isDirectory &&
+                findNode(treeRoots, source.uri)?.let { treeContainsUri(it, destination) } == true)
+        }
+    }
+
+    private fun setTreeDropTarget(row: View, selected: Boolean, active: Boolean) {
+        row.background = GradientDrawable().apply {
+            cornerRadius = dp(6).toFloat()
+            val color = when {
+                active -> if (dark) 0xFF405B3A.toInt() else 0xFFCBE8C2.toInt()
+                selected -> if (dark) 0xFF3A4935.toInt() else 0xFFD9E8D1.toInt()
+                else -> if (dark) 0x0020241F else 0x00EAE9E3
+            }
+            setColor(color)
+            if (active) setStroke(dp(2), if (dark) 0xFF9CCC65.toInt() else 0xFF388E3C.toInt())
+        }
+    }
+
+    private fun handleTreeDrop(node: TreeNode, payload: BrowserDragPayload) {
+        val destination = node.uri ?: return
+        if (node.needsAccessBadge || isCreateDirectoryNode(node) || AppsUri.isAppsUri(destination) || AppsUri.isCategoryUri(destination)) return
+        performBrowserDrop(payload, destination, node.name)
+    }
+
+    private fun sameResourceUri(first: Uri, second: Uri): Boolean =
+        runCatching { sourceIdentity(first) == sourceIdentity(second) }.getOrDefault(first == second)
+
+    private fun queueDragSelfDropMenu(payload: BrowserDragPayload, selfEntry: ResourceEntry): Boolean {
+        if (activeDragDropHandled) return true
+        activeDragDropHandled = true
+        pendingDragSelfDropMenuEntries = if (payload.entries.size > 1) payload.entries else listOf(selfEntry)
+        com.infinifolder.storage.DiagnosticLog.record(
+            "browser.drag.self-drop", "item=${selfEntry.metadata.name} items=${payload.entries.size}"
+        )
+        return true
+    }
+
+    private fun dispatchTreeDropAtScreen(view: View, event: android.view.DragEvent): Boolean {
+        val payload = event.localState as? BrowserDragPayload ?: return false
+        if (activeDragDropHandled || !treeVisible) return activeDragDropHandled
+        val (screenX, screenY) = dragEventScreenPosition(view, event)
+        val hit = resolveTreeDropTarget(screenX, screenY, payload)
+        if (hit == null) {
+            com.infinifolder.storage.DiagnosticLog.record(
+                "browser.drag.tree-drop-rejected", "reason=no-row x=${screenX.toInt()} y=${screenY.toInt()}"
+            )
+            return false
+        }
+        return dispatchTreeDrop(hit.second, payload)
+    }
+
+    private fun dispatchTreeDrop(node: TreeNode, payload: BrowserDragPayload): Boolean {
+        if (activeDragDropHandled) return true
+        if (!canDropOnTreeNode(node, payload)) {
+            com.infinifolder.storage.DiagnosticLog.record(
+                "browser.drag.tree-drop-rejected", "reason=unsupported-node key=${node.key} name=${node.name}"
+            )
+            return false
+        }
+        val destination = node.uri ?: run {
+            com.infinifolder.storage.DiagnosticLog.record(
+                "browser.drag.tree-drop-rejected", "reason=missing-uri key=${node.key}"
+            )
+            return false
+        }
+        payload.entries.firstOrNull { sameResourceUri(it.uri, destination) }?.let {
+            return queueDragSelfDropMenu(payload, it)
+        }
+        activeDragDropHandled = true
+        com.infinifolder.storage.DiagnosticLog.record(
+            "browser.drag.tree-drop", "node=${node.key} name=${node.name} items=${payload.entries.size}"
+        )
+        handleTreeDrop(node, payload)
+        return true
+    }
+
+    private fun canDropOnTreeNode(node: TreeNode, payload: BrowserDragPayload?): Boolean =
+        !homeMode && payload != null && node.uri != null && !node.needsAccessBadge &&
+            !isCreateDirectoryNode(node) && !AppsUri.isAppsUri(node.uri) && !AppsUri.isCategoryUri(node.uri)
+
+    private fun findTreeNodeByKey(key: String): TreeNode? {
+        fun find(nodes: List<TreeNode>): TreeNode? {
+            nodes.forEach { node ->
+                if (node.key == key) return node
+                find(node.children)?.let { return it }
+            }
+            return null
+        }
+        return find(treeRoots)
+    }
+
+    private fun treeTargetAtScreen(screenX: Float, screenY: Float): Pair<View, TreeNode>? {
+        val scroller = treeContent.parent as? View ?: return null
+        val scrollLocation = IntArray(2)
+        scroller.getLocationOnScreen(scrollLocation)
+        if (screenX < scrollLocation[0] || screenX >= scrollLocation[0] + scroller.width ||
+            screenY < scrollLocation[1] || screenY >= scrollLocation[1] + scroller.height
+        ) return null
+        for (index in treeContent.childCount - 1 downTo 0) {
+            val row = treeContent.getChildAt(index)
+            if (row.visibility != View.VISIBLE) continue
+            val location = IntArray(2)
+            row.getLocationOnScreen(location)
+            if (screenX >= location[0] && screenX < location[0] + row.width &&
+                screenY >= location[1] && screenY < location[1] + row.height
+            ) {
+                val key = row.tag as? String ?: return null
+                val node = findTreeNodeByKey(key) ?: return null
+                return row to node
+            }
+        }
+        return null
+    }
+
+    private fun isInsideTreeViewport(screenX: Float, screenY: Float): Boolean {
+        if (!::treeScrollView.isInitialized || !treeScrollView.isShown) return false
+        val location = IntArray(2)
+        treeScrollView.getLocationOnScreen(location)
+        return screenX >= location[0] && screenX < location[0] + treeScrollView.width &&
+            screenY >= location[1] && screenY < location[1] + treeScrollView.height
+    }
+
+    private fun resolveTreeDropTarget(
+        screenX: Float,
+        screenY: Float,
+        payload: BrowserDragPayload
+    ): Pair<View, TreeNode>? {
+        val exactHit = treeTargetAtScreen(screenX, screenY)
+        if (exactHit != null) return exactHit.takeIf { canDropOnTreeNode(it.second, payload) }
+
+        // Some Android targets report ACTION_DROP in a different view's coordinate
+        // space, including a point that still lands inside the viewport but misses the
+        // row. Use the last row actually hovered; blank-space movement clears this key.
+        return lastHoveredTreeTarget(payload)
+    }
+
+    private fun lastHoveredTreeTarget(payload: BrowserDragPayload): Pair<View, TreeNode>? {
+        val lastPosition = lastDragScreenPosition ?: return null
+        if (!isInsideTreeViewport(lastPosition.first, lastPosition.second)) return null
+        treeTargetAtScreen(lastPosition.first, lastPosition.second)?.let { hit ->
+            return hit.takeIf { canDropOnTreeNode(it.second, payload) }
+        }
+        val key = dragHoveredTreeNodeKey ?: return null
+        val row = (0 until treeContent.childCount)
+            .map { treeContent.getChildAt(it) }
+            .firstOrNull { it.isAttachedToWindow && it.tag == key } ?: return null
+        val node = findTreeNodeByKey(key) ?: return null
+        return (row to node).takeIf { canDropOnTreeNode(node, payload) }
+    }
+
+    private fun setDragHoveredTreeTarget(hit: Pair<View, TreeNode>?) {
+        val row = hit?.first
+        val node = hit?.second
+        val payload = activeBrowserDragPayload
+        if (dragHoveredTreeRow !== row) {
+            dragHoveredTreeRow?.let { setTreeDropTarget(it, dragHoveredTreeRowSelected, false) }
+            dragHoveredTreeRow = null
+        }
+        if (row != null && node != null && canDropOnTreeNode(node, payload)) {
+            dragHoveredTreeRow = row
+            dragHoveredTreeRowSelected = isTreeNodeSelected(node)
+            dragHoveredTreeNodeKey = node.key
+            setTreeDropTarget(row, dragHoveredTreeRowSelected, true)
+        } else {
+            dragHoveredTreeRow = null
+            dragHoveredTreeNodeKey = null
+        }
+    }
+
+    private fun updateTreeNodeExpandHover(row: View, node: TreeNode) {
+        if (activeBrowserDragPayload == null || homeMode || !node.canExpand || node.expanded ||
+            node.loading || node.needsAccessBadge
+        ) {
+            cancelTreeNodeExpandHover()
+            return
+        }
+        if (dragTreeExpandKey == node.key && dragTreeExpandRunnable != null) return
+        cancelTreeNodeExpandHover()
+        dragTreeExpandKey = node.key
+        val expand = Runnable {
+            dragTreeExpandRunnable = null
+            dragTreeExpandKey = null
+            if (activeBrowserDragPayload != null && !homeMode && !node.expanded && row.isAttachedToWindow) {
+                com.infinifolder.storage.DiagnosticLog.record("browser.drag.tree-expand", "node=${node.key}")
+                toggleTreeNode(node)
+            }
+        }
+        dragTreeExpandRunnable = expand
+        root.postDelayed(expand, 650)
+    }
+
+    private fun cancelTreeNodeExpandHover() {
+        dragTreeExpandRunnable?.let(root::removeCallbacks)
+        dragTreeExpandRunnable = null
+        dragTreeExpandKey = null
+    }
+
+    private fun handleTreePanelDrag(target: View, event: android.view.DragEvent): Boolean {
+        val payload = event.localState as? BrowserDragPayload
+        when (event.action) {
+            android.view.DragEvent.ACTION_DRAG_STARTED -> {
+                val accepted = !homeMode && payload != null
+                com.infinifolder.storage.DiagnosticLog.record(
+                    "browser.drag.tree-target-started", "target=${target.javaClass.simpleName} accepted=$accepted items=${payload?.entries?.size ?: 0}"
+                )
+                return accepted
+            }
+            android.view.DragEvent.ACTION_DRAG_LOCATION -> {
+                moveActiveDragOverlayFromEvent(target, event)
+                val (screenX, screenY) = dragEventScreenPosition(target, event)
+                val hit = treeTargetAtScreen(screenX, screenY)
+                setDragHoveredTreeTarget(hit)
+                if (hit != null) updateTreeNodeExpandHover(hit.first, hit.second)
+                else cancelTreeNodeExpandHover()
+                return true
+            }
+            android.view.DragEvent.ACTION_DRAG_EXITED -> {
+                setDragHoveredTreeTarget(null)
+                cancelTreeNodeExpandHover()
+                return true
+            }
+            android.view.DragEvent.ACTION_DROP -> {
+                val (screenX, screenY) = dragEventScreenPosition(target, event)
+                val hit = payload?.let { resolveTreeDropTarget(screenX, screenY, it) }
+                if (hit == null) {
+                    com.infinifolder.storage.DiagnosticLog.record(
+                        "browser.drag.tree-drop-rejected", "reason=no-row x=${screenX.toInt()} y=${screenY.toInt()} target=${target.javaClass.simpleName}"
+                    )
+                    // Keep the last valid hover alive for the root listener, which may
+                    // receive the same drop with coordinates relative to a different view.
+                    return false
+                }
+                setDragHoveredTreeTarget(null)
+                cancelTreeNodeExpandHover()
+                return dispatchTreeDrop(hit.second, payload ?: return false)
+            }
+            android.view.DragEvent.ACTION_DRAG_ENDED -> {
+                setDragHoveredTreeTarget(null)
+                cancelTreeNodeExpandHover()
+                return true
+            }
+            else -> return false
+        }
+    }
+
+    private fun performBrowserDrop(payload: BrowserDragPayload, destination: Uri, targetName: String) {
+        if (wouldDropIntoDraggedFolder(payload.entries, destination)) {
+            Toast.makeText(this, "A folder cannot be dropped into itself or one of its subfolders", Toast.LENGTH_LONG).show()
+            return
+        }
+        val targetDevice = provider.deviceIdentity(resourceRef(destination))
+        val sameDevice = targetDevice != null && payload.entries.all {
+            provider.deviceIdentity(it.ref) == targetDevice
+        }
+        val move = payload.canMove && sameDevice
+        startBatchTransfer(
+            payload.entries,
+            move,
+            destination,
+            refreshLocationAfterTransfer = payload.sourceDirectory,
+            restoreScrollYAfterTransfer = payload.sourceScrollY,
+            refreshLocationDisplayName = payload.sourceDisplayName
+        )
+        Toast.makeText(this, if (move) "Moving to $targetName" else "Copying to $targetName", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun entryDropDestination(entry: ResourceEntry): Uri? {
+        if (AppsUri.isAppsUri(entry.uri) || AppsUri.isCategoryUri(entry.uri) || entry.metadata.isSymbolicLink) return null
+        return when {
+            entry.metadata.isDirectory && entry.metadata.canWrite -> entry.uri
+            !entry.metadata.isDirectory && ArchiveFormats.isArchive(entry.metadata.name, entry.metadata.mimeType) ->
+                ArchiveUri.toArchiveUri(entry.uri)
+            else -> null
+        }
+    }
+
+    private fun installEntryDropTarget(card: View, entry: ResourceEntry, asGrid: Boolean) {
+        val destination = entryDropDestination(entry)
+        card.setOnDragListener { view, event ->
+            moveActiveDragOverlayFromEvent(view, event)
+            val payload = event.localState as? BrowserDragPayload
+            val selfEntry = payload?.entries?.firstOrNull { sameResourceUri(it.uri, entry.uri) }
+            val enabled = !homeMode && payload != null && (destination != null || selfEntry != null)
+            when (event.action) {
+                android.view.DragEvent.ACTION_DRAG_STARTED -> enabled
+                android.view.DragEvent.ACTION_DRAG_ENTERED -> {
+                    if (enabled) setEntryDropHighlight(view, true, asGrid)
+                    enabled
+                }
+                android.view.DragEvent.ACTION_DRAG_EXITED -> {
+                    setEntryDropHighlight(view, false, asGrid)
+                    enabled
+                }
+                android.view.DragEvent.ACTION_DROP -> {
+                    setEntryDropHighlight(view, false, asGrid)
+                    if (enabled && payload != null) {
+                        when {
+                            selfEntry != null -> queueDragSelfDropMenu(payload, selfEntry)
+                            destination != null -> performBrowserDrop(payload, destination, entry.metadata.name)
+                        }
+                    }
+                    enabled
+                }
+                android.view.DragEvent.ACTION_DRAG_ENDED -> {
+                    setEntryDropHighlight(view, false, asGrid)
+                    true
+                }
+                else -> enabled
+            }
+        }
+    }
+
+    private fun setEntryDropHighlight(view: View, active: Boolean, asGrid: Boolean) {
+        view.background = if (!active && asGrid) null else GradientDrawable().apply {
+            cornerRadius = dp(8).toFloat()
+            setColor(if (active) {
+                if (dark) 0xFF405B3A.toInt() else 0xFFCBE8C2.toInt()
+            } else if (dark) 0x0020241F else 0x00EAE9E3)
+            if (active) setStroke(dp(2), if (dark) 0xFF9CCC65.toInt() else 0xFF388E3C.toInt())
+        }
+    }
+
+    private fun installBreadcrumbDropTarget(view: View, destination: Uri, name: String) {
+        view.setOnDragListener { crumb, event ->
+            moveActiveDragOverlayFromEvent(crumb, event)
+            val payload = event.localState as? BrowserDragPayload
+            val enabled = !homeMode && payload != null
+            when (event.action) {
+                android.view.DragEvent.ACTION_DRAG_STARTED -> enabled
+                android.view.DragEvent.ACTION_DRAG_ENTERED -> {
+                    if (enabled) crumb.setBackgroundColor(if (dark) 0xFF405B3A.toInt() else 0xFFCBE8C2.toInt())
+                    enabled
+                }
+                android.view.DragEvent.ACTION_DRAG_EXITED -> {
+                    crumb.background = null
+                    enabled
+                }
+                android.view.DragEvent.ACTION_DROP -> {
+                    crumb.background = null
+                    if (enabled && payload != null) performBrowserDrop(payload, destination, name)
+                    enabled
+                }
+                android.view.DragEvent.ACTION_DRAG_ENDED -> {
+                    crumb.background = null
+                    true
+                }
+                else -> enabled
+            }
+        }
+    }
+
+    private fun installTreeDropTarget(row: View, node: TreeNode, selected: Boolean) {
+        row.setOnDragListener { target, event ->
+            moveActiveDragOverlayFromEvent(target, event)
+            if (event.action == android.view.DragEvent.ACTION_DRAG_LOCATION) {
+                updateTreeNodeExpandHover(row, node)
+            } else if (event.action == android.view.DragEvent.ACTION_DRAG_EXITED ||
+                event.action == android.view.DragEvent.ACTION_DRAG_ENDED
+            ) {
+                if (dragTreeExpandKey == node.key) cancelTreeNodeExpandHover()
+            }
+            val payload = event.localState as? BrowserDragPayload
+            val enabled = canDropOnTreeNode(node, payload)
+            when (event.action) {
+                android.view.DragEvent.ACTION_DRAG_STARTED -> {
+                    if (enabled) com.infinifolder.storage.DiagnosticLog.record(
+                        "browser.drag.tree-row-started", "key=${node.key} name=${node.name} items=${payload?.entries?.size ?: 0}"
+                    )
+                    enabled
+                }
+                android.view.DragEvent.ACTION_DRAG_ENTERED -> {
+                    if (enabled) setTreeDropTarget(row, selected, true)
+                    enabled
+                }
+                android.view.DragEvent.ACTION_DRAG_EXITED -> {
+                    setTreeDropTarget(row, selected, false)
+                    enabled
+                }
+                android.view.DragEvent.ACTION_DROP -> {
+                    setTreeDropTarget(row, selected, false)
+                    if (enabled && payload != null) {
+                        com.infinifolder.storage.DiagnosticLog.record(
+                            "browser.drag.tree-row-drop", "key=${node.key} name=${node.name} items=${payload.entries.size}"
+                        )
+                        dispatchTreeDrop(node, payload)
+                    } else enabled
+                }
+                android.view.DragEvent.ACTION_DRAG_ENDED -> {
+                    setTreeDropTarget(row, selected, false)
+                    true
+                }
+                else -> enabled
+            }
+        }
     }
     private fun rebuildTreeRoots() {
         val priorNodes = mutableMapOf<String, TreeNode>()
@@ -4891,10 +5841,13 @@ class MainActivity : Activity() {
             if (key == "internal_shared") {
                 node.children.clear()
                 val childItems = if (localProvider.hasAccess()) internalSharedEntries
-                    .filter { it.metadata.isDirectory && (showHidden || !it.metadata.isHidden) }.sortedBy { it.metadata.name.lowercase() }.map { entry ->
-                        HomeItem("📁", entry.metadata.name, "Folder", { openRoot(entry.uri, rememberAuthorizedRoot = false) },
-                            longAction = { showEntryMenu(entry) },
-                            treeKey = "local_${entry.uri}", treeUri = entry.uri, treeExpandable = true)
+                    .filter { (it.metadata.isDirectory || ArchiveFormats.isArchive(it.metadata.name, it.metadata.mimeType)) &&
+                        (showHidden || !it.metadata.isHidden) }.sortedBy { it.metadata.name.lowercase() }.map { entry ->
+                        val container = !entry.metadata.isDirectory && ArchiveFormats.isArchive(entry.metadata.name, entry.metadata.mimeType)
+                        val uri = if (container) ArchiveUri.toArchiveUri(entry.uri) else entry.uri
+                        HomeItem(if (container) "📦" else "📁", entry.metadata.name, if (container) "Container" else "Folder",
+                            { openRoot(uri, rememberAuthorizedRoot = false) }, longAction = { showEntryMenu(entry) },
+                            treeKey = "local_$uri", treeUri = uri, treeExpandable = true)
                     }
                     else homeItems.filter { it.treeParentKey == key }.distinctBy { it.treeUri?.let(::sourceIdentity) ?: it.treeKey }
                 val childIdentities = mutableSetOf<String>()
@@ -4981,9 +5934,39 @@ class MainActivity : Activity() {
     private fun renderTree() {
         if (::treeContent.isInitialized) {
             treeContent.removeAllViews()
-            renderTreeNodes(treeContent, treeRoots, ::selectTreeNode, ::renderTree)
+            // Existing rows can handle direct drops. The panel and viewport listeners
+            // remain as fallbacks for rows created while a drag expands the tree.
+            renderTreeNodes(treeContent, treeRoots, ::selectTreeNode, ::renderTree, enableDropTarget = true)
+            if (::treePanel.isInitialized) updateBrowserPanes()
+            treeContent.post { scrollSelectedTreeRowIntoView() }
         }
         activePickerRerender?.invoke()
+    }
+
+    private fun scrollSelectedTreeRowIntoView() {
+        if (!::treeContent.isInitialized || !::treeScrollView.isInitialized) return
+        val selectedRow = (0 until treeContent.childCount)
+            .map { treeContent.getChildAt(it) }
+            .firstOrNull { row ->
+                val key = row.tag as? String ?: return@firstOrNull false
+                findTreeNodeByKey(key)?.let(::isTreeNodeSelected) == true
+            } ?: return
+        treeScrollView.post {
+            if (!selectedRow.isAttachedToWindow) return@post
+            val bounds = android.graphics.Rect()
+            selectedRow.getDrawingRect(bounds)
+            treeScrollView.offsetDescendantRectToMyCoords(selectedRow, bounds)
+            val scrollTop = treeScrollView.scrollY
+            val viewportHeight = treeScrollView.height
+            if (viewportHeight <= 0) return@post
+            val middleBandTop = scrollTop + viewportHeight / 6
+            val middleBandBottom = scrollTop + viewportHeight * 5 / 6
+            if (bounds.top < middleBandTop || bounds.bottom > middleBandBottom) {
+                val desiredTop = bounds.centerY() - viewportHeight / 2
+                val maxScroll = (treeContent.height - viewportHeight).coerceAtLeast(0)
+                treeScrollView.smoothScrollTo(0, desiredTop.coerceIn(0, maxScroll))
+            }
+        }
     }
     private fun selectTreeNode(node: TreeNode) {
         if (node.needsAccessBadge) {
@@ -5013,10 +5996,13 @@ class MainActivity : Activity() {
         blockedSelectionUri: Uri? = null,
         isNodeSelected: (TreeNode) -> Boolean = ::isTreeNodeSelected,
         selectOnExpand: Boolean = false,
-        onCreateDirectoryInNode: ((TreeNode, Uri) -> Unit)? = null
+        expandOnSelect: Boolean = false,
+        includeNode: (TreeNode) -> Boolean = { true },
+        onCreateDirectoryInNode: ((TreeNode, Uri) -> Unit)? = null,
+        enableDropTarget: Boolean = true
     ) {
         updateTreeBranches(nodes)
-        val visibleRoots = nodes.filter { excludedUri == null || it.uri != excludedUri }
+        val visibleRoots = nodes.filter { (excludedUri == null || it.uri != excludedUri) && includeNode(it) }
         visibleRoots.forEachIndexed { index, node ->
             node.isLast = index == visibleRoots.lastIndex
             node.ancestorContinues = emptyList()
@@ -5030,7 +6016,10 @@ class MainActivity : Activity() {
                 ancestorLastFlags = emptyList(),
                 isNodeSelected = isNodeSelected,
                 selectOnExpand = selectOnExpand,
-                onCreateDirectoryInNode = onCreateDirectoryInNode
+                expandOnSelect = expandOnSelect,
+                includeNode = includeNode,
+                onCreateDirectoryInNode = onCreateDirectoryInNode,
+                enableDropTarget = enableDropTarget
             )
         }
     }
@@ -5044,7 +6033,10 @@ class MainActivity : Activity() {
         ancestorLastFlags: List<Boolean> = emptyList(),
         isNodeSelected: (TreeNode) -> Boolean = ::isTreeNodeSelected,
         selectOnExpand: Boolean = false,
-        onCreateDirectoryInNode: ((TreeNode, Uri) -> Unit)? = null
+        expandOnSelect: Boolean = false,
+        includeNode: (TreeNode) -> Boolean = { true },
+        onCreateDirectoryInNode: ((TreeNode, Uri) -> Unit)? = null,
+        enableDropTarget: Boolean = true
     ) {
         val isCreateDirNode = isCreateDirectoryNode(node)
         fun activateNode() {
@@ -5053,7 +6045,10 @@ class MainActivity : Activity() {
                 return
             }
             activateTreeItem(node.uri, blockedSelectionUri, node.needsAccessBadge,
-                { (node.onRequestAccess ?: node.onOpen).invoke() }, { onSelect(node) })
+                { (node.onRequestAccess ?: node.onOpen).invoke() }, {
+                    onSelect(node)
+                    if (expandOnSelect && node.canExpand && !node.expanded) toggleTreeNode(node, rerender)
+                })
         }
         val selected = !isCreateDirNode && isNodeSelected(node)
         val showCreateDirChild = onCreateDirectoryInNode != null &&
@@ -5061,7 +6056,7 @@ class MainActivity : Activity() {
             node.expanded &&
             !node.needsAccessBadge &&
             node.uri != null &&
-            !ArchiveUri.isArchiveUri(node.uri) &&
+            (!ArchiveUri.isArchiveUri(node.uri) || archiveProvider.cachedWritable(node.uri)) &&
             !AppsUri.isAppsUri(node.uri)
         val visibleChildren = prepareVisibleChildren(
             parentNode = node,
@@ -5069,7 +6064,7 @@ class MainActivity : Activity() {
             excludedUri = excludedUri,
             includeCreateDirectory = showCreateDirChild,
             onCreateDirectory = onCreateDirectoryInNode
-        )
+        ).filter(includeNode)
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(48)
             background = GradientDrawable().apply {
@@ -5081,11 +6076,12 @@ class MainActivity : Activity() {
                 })
             }
             isFocusable = true
+            tag = node.key
             contentDescription = if (selected) "${node.name}, current folder" else node.name
             isSelected = selected
             setOnClickListener { activateNode() }
-            setOnLongClickListener { node.onLongPress?.invoke(); node.onLongPress != null }
         }
+        if (enableDropTarget) installTreeDropTarget(row, node, selected)
         row.addView(TreeBranchView(this, node.depth, node.ancestorContinues, node.isLast).apply {
             setOnClickListener { activateNode() }
         }, LinearLayout.LayoutParams(dp(node.depth * 24), -1))
@@ -5189,16 +6185,13 @@ class MainActivity : Activity() {
                 FrameLayout.LayoutParams(dp(16), dp(16), Gravity.END or Gravity.TOP))
         }
         iconStack.setOnClickListener { activateNode() }
-        iconStack.setOnLongClickListener { node.onLongPress?.invoke(); node.onLongPress != null }
         titleCell.addView(iconStack, LinearLayout.LayoutParams(dp(32), dp(36)))
         titleCell.setOnClickListener { activateNode() }
-        titleCell.setOnLongClickListener { node.onLongPress?.invoke(); node.onLongPress != null }
         val title = TextView(this).apply {
             text = node.name; textSize = 13f; gravity = Gravity.CENTER_VERTICAL
             setTextColor(setTextColorForTheme()); maxLines = 2; setPadding(dp(4), dp(4), dp(4), dp(4))
             alpha = if (blockedSelectionUri != null && node.uri == blockedSelectionUri) 0.55f else 1f
             setOnClickListener { activateNode() }
-            setOnLongClickListener { node.onLongPress?.invoke(); node.onLongPress != null }
         }
         titleCell.addView(title, LinearLayout.LayoutParams(0, -1, 1f))
         row.addView(titleCell, LinearLayout.LayoutParams(0, -1, 1f))
@@ -5216,7 +6209,10 @@ class MainActivity : Activity() {
                     ancestorLastFlags = childAncestorFlags,
                     isNodeSelected = isNodeSelected,
                     selectOnExpand = selectOnExpand,
-                    onCreateDirectoryInNode = onCreateDirectoryInNode
+                    expandOnSelect = expandOnSelect,
+                    includeNode = includeNode,
+                    onCreateDirectoryInNode = onCreateDirectoryInNode,
+                    enableDropTarget = enableDropTarget
                 )
             }
         }
@@ -5286,25 +6282,40 @@ class MainActivity : Activity() {
             runOnUiThread {
                 if (isFinishing || isDestroyed || request != node.loadId || !node.expanded || findTreeRoute(treeRoots, node) == null) return@runOnUiThread
                 node.loading = false
+                var expandedChildrenToRefresh = emptyList<TreeNode>()
                 when (result) {
                     is ProviderResult.Success -> {
+                        val previousChildren = node.children.associateBy { it.key }
                         node.children.clear()
                         val folders = result.value.filter {
                             !AppsUri.isAppUri(it.uri) &&
-                            (it.metadata.isDirectory || ArchiveFormats.isDefaultBrowsableArchive(it.metadata.name, it.metadata.mimeType)) &&
+                            (it.metadata.isDirectory || ArchiveFormats.isArchive(it.metadata.name, it.metadata.mimeType)) &&
                             (showHidden || !it.metadata.isHidden)
                         }
                         folders.forEachIndexed { index, child ->
-                            val childIsArchive = !AppsUri.isAppUri(child.uri) && ArchiveFormats.isDefaultBrowsableArchive(child.metadata.name, child.metadata.mimeType)
-                            val childUri = if (childIsArchive && !ArchiveUri.isArchiveUri(child.uri)) ArchiveUri.toArchiveUri(child.uri) else child.uri
+                            val childIsArchive = !AppsUri.isAppUri(child.uri) && ArchiveFormats.isArchive(child.metadata.name, child.metadata.mimeType)
+                            val childUri = if (childIsArchive) ArchiveUri.toArchiveUri(child.uri) else child.uri
                             val icon = if (childIsArchive) "📦" else "📁"
+                            val previousChild = previousChildren["${node.key}/${sourceIdentity(childUri)}"]
                             lateinit var childNode: TreeNode
                             childNode = TreeNode(
-                                "${node.key}/${sourceIdentity(childUri)}", childUri, child.metadata.name, icon, node.depth + 1,
-                                { openTreeNode(childNode) }, true, node.ancestorContinues + !node.isLast, index == folders.lastIndex,
+                                key = "${node.key}/${sourceIdentity(childUri)}",
+                                uri = childUri,
+                                name = child.metadata.name,
+                                icon = icon,
+                                depth = node.depth + 1,
+                                onOpen = { openTreeNode(childNode) },
+                                canExpand = true,
+                                ancestorContinues = node.ancestorContinues + !node.isLast,
+                                isLast = index == folders.lastIndex,
+                                expanded = previousChild?.expanded ?: false,
+                                children = previousChild?.children ?: mutableListOf(),
                                 onLongPress = { showEntryMenu(child) }
                             )
                             node.children += childNode
+                        }
+                        expandedChildrenToRefresh = node.children.filter {
+                            it.expanded && it.canExpand && !it.needsAccessBadge
                         }
                         if (result.notice != null) status.text = result.notice
                         if (result.isLoading) {
@@ -5335,8 +6346,33 @@ class MainActivity : Activity() {
                     is ProviderResult.Unsupported -> Unit
                 }
                 rerender()
+                expandedChildrenToRefresh.forEach { child -> loadTreeChildren(child, rerender) }
             }
         }
+    }
+
+    private fun refreshTreeAfterTransfer(destination: Uri) {
+        val destinationIdentity = sourceIdentity(destination)
+        fun find(nodes: List<TreeNode>): TreeNode? {
+            nodes.forEach { node ->
+                if (node.uri?.let { sourceIdentity(it) == destinationIdentity } == true) return node
+                find(node.children)?.let { return it }
+            }
+            return null
+        }
+        val destinationNode = find(treeRoots)
+        if (destinationNode == null || !destinationNode.canExpand || destinationNode.needsAccessBadge) {
+            com.infinifolder.storage.DiagnosticLog.record(
+                "browser.tree.refresh-after-transfer-skipped",
+                "reason=${if (destinationNode == null) "destination-not-in-tree" else "not-expandable-or-needs-access"}"
+            )
+            return
+        }
+        destinationNode.expanded = true
+        com.infinifolder.storage.DiagnosticLog.record(
+            "browser.tree.refresh-after-transfer", "name=${destinationNode.name} uri=$destination"
+        )
+        loadTreeChildren(destinationNode, ::renderTree)
     }
     private fun openTreeNode(target: TreeNode) {
         if (target.uri == null) { target.onOpen(); return }
@@ -5570,7 +6606,10 @@ class MainActivity : Activity() {
             "Operations",
             "Icon size (${iconSizeDp} dp)",
             "Icon theme ($currentThemeName)",
-            "Interface theme (${com.infinifolder.theme.ThemeManager.activeTheme.name})"
+            "Interface theme (${com.infinifolder.theme.ThemeManager.activeTheme.name})",
+            "Recover interrupted saves",
+            "Debug dump settings",
+            "Offload debug information"
         )
         dialogBuilder().setTitle("View options").setItems(choices) { _, i -> when (i) {
             0 -> { grid = !grid; shared.edit().putBoolean("grid", grid).apply(); renderCurrentContents() }
@@ -5596,6 +6635,9 @@ class MainActivity : Activity() {
             6 -> showIconSizeDialog()
             7 -> showIconThemeDialog()
             8 -> showAppThemeDialog()
+            9 -> startActivity(Intent(this, com.infinifolder.viewer.SaveRecoveryActivity::class.java))
+            10 -> startActivity(Intent(this, com.infinifolder.viewer.DiagnosticsActivity::class.java))
+            11 -> com.infinifolder.viewer.DebugTools.offload(this)
         } }.show()
     }
 
@@ -6056,7 +7098,7 @@ class MainActivity : Activity() {
         progressQueueView = queueView
 
         val currentItemView = TextView(context).apply {
-            text = active.currentItem ?: active.message ?: "Starting…"
+            text = active.message ?: active.currentItem ?: "Starting…"
             textSize = 13f
             setTextColor(if (dark) 0xFFBFC5BA.toInt() else 0xFF686D65.toInt())
             maxLines = 1
@@ -6233,7 +7275,7 @@ class MainActivity : Activity() {
         }
 
         progressTitleView?.text = op.label
-        progressCurrentItemView?.text = op.currentItem ?: op.message ?: if (op.state == OperationState.QUEUED) "Waiting in queue…" else "Starting…"
+        progressCurrentItemView?.text = op.message ?: op.currentItem ?: if (op.state == OperationState.QUEUED) "Waiting in queue…" else "Starting…"
         val pct = op.progressPercent
         if (pct >= 0) {
             progressBar?.isIndeterminate = false
@@ -6258,7 +7300,12 @@ class MainActivity : Activity() {
                 }
                 OperationState.FAILED -> {
                     progressTitleView?.text = "${op.label} failed"
-                    progressCurrentItemView?.text = op.message ?: "Operation failed"
+                    progressCurrentItemView?.apply {
+                        text = op.message ?: "Operation failed"
+                        maxLines = 8
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        setTextIsSelectable(true)
+                    }
                     if (op.message?.contains("mounted", ignoreCase = true) == true) {
                         notifyMountedPartitionBlocked(op.label, op.message ?: "Partition is mounted")
                     }
@@ -6266,6 +7313,7 @@ class MainActivity : Activity() {
                 else -> Unit
             }
         } else {
+            progressCurrentItemView?.apply { maxLines = 2; setTextIsSelectable(false) }
             progressCancelButton?.visibility = View.VISIBLE
             progressCancelButton?.isEnabled = true
             progressCancelButton?.text = "Cancel"
@@ -6274,9 +7322,10 @@ class MainActivity : Activity() {
     }
 
     private fun formatProgressSnapshot(op: OperationSnapshot): String = when {
-        op.totalBytes != null && op.totalBytes > 0 -> {
+        op.indeterminate -> "Working…"
+        (op.totalBytes ?: 0L) > 0 -> {
             val cur = android.text.format.Formatter.formatShortFileSize(this, op.bytes)
-            val total = android.text.format.Formatter.formatShortFileSize(this, op.totalBytes)
+            val total = android.text.format.Formatter.formatShortFileSize(this, op.totalBytes ?: 0L)
             val pct = op.progressPercent
             "$cur / $total ($pct%)"
         }
@@ -6622,7 +7671,7 @@ class MainActivity : Activity() {
         // 1. Type
         val typeDesc = when {
             !isSingle -> "Multiple items"
-            isShortcut -> "Shortcut (.lnk)"
+            isShortcut -> "Shortcut link"
             inArchive && isDirectory -> "Folder inside archive"
             isSingle && AppsUri.isAppUri(currentEntry.uri) -> "Android Application (APK)"
             isSingle && AppsUri.isCategoryUri(currentEntry.uri) -> "Virtual Application Category"
@@ -6683,7 +7732,7 @@ class MainActivity : Activity() {
             val pkg = AppsUri.getPackageName(currentEntry.uri)
             val appItem = if (pkg != null) appsProvider.getAppItem(pkg) else null
             if (pkg != null) propertyRow("Package", textValue(pkg))
-            if (appItem?.versionName != null) propertyRow("Version", textValue(appItem.versionName))
+            if (appItem?.versionName != null) propertyRow("Version", textValue(appItem.versionName.orEmpty()))
             val cat = appItem?.category ?: AppsUri.getCategoryName(currentEntry.uri)
             if (cat != null) propertyRow("Category", textValue(cat))
             val extractable = if (appItem?.canExtract == true) "Yes (can be copied / moved / archived)" else "No (restricted platform access)"
@@ -6861,6 +7910,26 @@ class MainActivity : Activity() {
         }
         val locationView = textValue(locationStr)
         propertyRow("Location", locationView)
+
+        if (isDirectory) {
+            val fsTypeView = textValue("Checking…")
+            val fsLimitView = textValue("Checking…")
+            val fsNameView = textValue("Checking…")
+            propertyRow("Filesystem", fsTypeView)
+            propertyRow("Maximum file size", fsLimitView)
+            propertyRow("Filename rules", fsNameView)
+            val folderRef = currentEntry.ref
+            io.execute {
+                val info = (provider.fileSystemInfo(folderRef) as? ProviderResult.Success)?.value
+                runOnUiThread {
+                    if (!isCancelled && !isFinishing && !isDestroyed) {
+                        fsTypeView.text = info?.displayName ?: "Not reported by this storage provider"
+                        fsLimitView.text = info?.limitDescription ?: "Not reported"
+                        fsNameView.text = info?.nameDescription ?: "Not reported"
+                    }
+                }
+            }
+        }
 
         // 3. Size & Contains
         val sizeView = textValue(
@@ -7138,9 +8207,25 @@ class MainActivity : Activity() {
         return dialog
     }
 
+    private var entryMenuRequest = 0
     private fun showEntryMenu(entry: ResourceEntry) {
-        val isShortcut = ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)
-        val shortcut = if (isShortcut) (shortcutCache.get(entry.uri.toString()) ?: readShortcutInfo(entry)) else null
+        val request = ++entryMenuRequest
+        val location = loadGeneration
+        io.execute {
+            val capabilities = (provider.capabilities(entry.ref) as? ProviderResult.Success)?.value
+            val archiveWritable = ArchiveUri.isArchiveUri(entry.uri) && archiveProvider.isWritable(entry.uri)
+            val shortcut = if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null && !entry.metadata.isSymbolicLink)
+                readShortcutInfo(entry) else null
+            runOnUiThread {
+                if (request != entryMenuRequest || location != loadGeneration || isFinishing || isDestroyed) return@runOnUiThread
+                showPreparedEntryMenu(entry, capabilities, archiveWritable, shortcut)
+            }
+        }
+    }
+
+    private fun showPreparedEntryMenu(entry: ResourceEntry, capabilities: ResourceCapabilities?,
+        archiveWritable: Boolean, shortcut: ShortcutInfo?) {
+        val isShortcut = com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null
         val inArchive = ArchiveUri.isArchiveUri(entry.uri)
         val isApp = AppsUri.isAppUri(entry.uri)
         val isCategory = AppsUri.isCategoryUri(entry.uri)
@@ -7241,24 +8326,26 @@ class MainActivity : Activity() {
         val canCopyContents = !entry.metadata.isDirectory && !isApp && !isCategory &&
             (isTextEntry(entry, detectedMagic) || isImageEntry(entry, detectedMagic))
         val isArchiveEntry = ArchiveUri.isArchiveUri(entry.uri)
-        val isWritableArchiveEntry = isArchiveEntry && archiveProvider.isWritable(entry.uri)
+        val isWritableArchiveEntry = isArchiveEntry && archiveWritable
         val canPaste = entry.metadata.isDirectory && !AppsUri.isAppsUri(entry.uri) && (!isArchiveEntry || isWritableArchiveEntry)
 
         val fileOpsGroup: List<String> = when {
             isApp -> {
                 if (canExtractApp) {
-                    listOf("Select", "Copy", "Create shortcut", "Create archive", "Copy to…", "Move to…", "Uninstall")
+                    listOf("Select", "Copy", "Link to…", "Create archive", "Copy to…", "Move to…", "Uninstall")
                 } else {
-                    listOf("Select", "Copy", "Create shortcut", "Uninstall")
+                    listOf("Select", "Copy", "Link to…", "Uninstall")
                 }
             }
-            isCategory -> listOf("Select", "Copy", "Copy to…", "Create shortcut")
-            isShortcut -> listOf("Select", "Copy", "Create archive", "Copy to…", "Move to…", "Rename", "Delete")
+            isCategory -> listOf("Select", "Copy", "Copy to…", "Link to…")
+            isShortcut -> if (entry.metadata.isSymbolicLink)
+                listOf("Select", "Copy", "Copy to…", "Link to…", "Rename", "Delete")
+                else listOf("Select", "Copy", "Create archive", "Copy to…", "Move to…", "Link to…", "Rename", "Delete")
             inArchive -> {
-                val list = mutableListOf("Select", "Copy")
+                val list = mutableListOf("Select", "Copy", "Copy to…")
                 if (canCopyContents) list.add("Copy contents")
                 if (canPaste) list.add("Paste into folder")
-                list.add("Create shortcut")
+                list.add("Link to…")
                 if (isWritableArchiveEntry) {
                     list.add("Delete")
                 }
@@ -7268,7 +8355,7 @@ class MainActivity : Activity() {
                 val list = mutableListOf("Select", "Copy")
                 if (canCopyContents) list.add("Copy contents")
                 if (canPaste) list.add("Paste into folder")
-                list.addAll(listOf("Create shortcut", "Create archive", "Copy to…", "Move to…", "Rename", "Delete"))
+                list.addAll(listOf("Link to…", "Create archive", "Copy to…", "Move to…", "Rename", "Delete"))
                 val lower = entry.metadata.name.lowercase(Locale.ROOT)
                 val isThemeArchive = isArchive && (lower.endsWith(".tar.gz") || lower.endsWith(".tar.xz") || lower.endsWith(".tar.bz2") || lower.endsWith(".tgz") || lower.endsWith(".txz") || lower.endsWith(".zip"))
                 if (isThemeArchive || (entry.metadata.isDirectory && (lower.contains("icon") || lower.contains("theme")))) {
@@ -7284,6 +8371,19 @@ class MainActivity : Activity() {
             }
         }
 
+        val allowedFileOps = fileOpsGroup.filter { action ->
+            val capability = when (action) {
+                "Copy to…", "Create archive" -> ResourceCapability.COPY
+                "Move to…" -> ResourceCapability.MOVE
+                "Rename" -> ResourceCapability.RENAME
+                "Delete" -> ResourceCapability.DELETE
+                "Paste into folder" -> ResourceCapability.CREATE
+                else -> null
+            }
+            (entry.metadata.isSymbolicLink && action == "Copy to…") ||
+                capability == null || capabilities?.mayAttempt(capability) != false
+        }.toMutableList()
+        if (entry.metadata.isDirectory && !isApp && !isCategory && capabilities?.mayAttempt(ResourceCapability.CREATE) != false) allowedFileOps.add("Use as debug dump folder")
         val propertiesGroup = listOf("Properties")
 
         val initialSubtitle = when {
@@ -7295,13 +8395,13 @@ class MainActivity : Activity() {
             isCategory -> "Virtual Application Category"
             isShortcut -> {
                 val target = shortcut?.targetPath ?: shortcut?.targetUri
-                if (!target.isNullOrBlank()) "Shortcut (.lnk) → $target" else "Shortcut (.lnk)"
+                if (!target.isNullOrBlank()) "Link → $target" else "Link"
             }
             entry.metadata.isDirectory -> if (inArchive) "Folder in archive" else "Folder"
             isPackagedFormat -> {
                 val pkgMime = ArchiveFormats.packageMimeType(entry.metadata.name)
                 val ext = entry.metadata.name.substringAfterLast('.', "").uppercase(Locale.ROOT)
-                " Application Package · ${pkgMime ?: entry.metadata.mimeType}"
+                "Packaged file · ${pkgMime ?: entry.metadata.mimeType}"
             }
             detectedMagic != null -> "${detectedMagic.description} · ${detectedMagic.mimeType}"
             else -> {
@@ -7320,7 +8420,7 @@ class MainActivity : Activity() {
         val dialog = showGroupedMenuDialog(
             title = entry.metadata.name,
             subtitle = initialSubtitle,
-            groups = listOf(openGroup, fileOpsGroup, propertiesGroup)
+            groups = listOf(openGroup, allowedFileOps, propertiesGroup)
         ) { action ->
             if (action.startsWith("Queue all audio")) {
                 val folder = if (entry.metadata.isDirectory) entry.uri else (current ?: entry.uri)
@@ -7363,66 +8463,13 @@ class MainActivity : Activity() {
                 "Open link", "Open target URI", "Open target folder", "Open target file" -> openShortcut(entry)
                 "Open target with external app" -> openShortcutWithExternalApp(entry)
                 "Browse folder" -> navigate(entry.uri, displayName = entry.metadata.name)
-                "Browse archive", "Browse" -> {
-                    if (inArchive) {
-                        val nestedVirtualPath = if (historyNames.isNotEmpty()) (historyNames + entry.metadata.name).joinToString("/") else null
-                        io.execute {
-                            try {
-                                val cached = archiveProvider.extractToCache(entry.uri, nestedVirtualPath)
-                                val fileUri = Uri.fromFile(cached)
-                                val nestedUri = ArchiveUri.toArchiveUri(fileUri)
-                                runOnUiThread { navigate(nestedUri, displayName = entry.metadata.name) }
-                            } catch (e: Exception) {
-                                runOnUiThread { Toast.makeText(this@MainActivity, "Could not open archive: ${e.message}", Toast.LENGTH_SHORT).show() }
-                            }
-                        }
-                    } else {
-                        val archiveUri = ArchiveUri.toArchiveUri(entry.uri)
-                        navigate(archiveUri, displayName = entry.metadata.name)
-                    }
-                }
-                "Open with external app" -> {
-                    val pkgMime = ArchiveFormats.packageMimeType(entry.metadata.name)
-                    val mime = pkgMime
-                        ?: (ambiguousMagicCache.get(entry.uri.toString()) ?: detectedMagic)?.mimeType
-                        ?.takeIf { it.isNotEmpty() } ?: entry.metadata.mimeType
-                    if (SftpUri.isSftpUri(entry.uri) || FtpUri.isFtpUri(entry.uri) || SmbUri.isSmbUri(entry.uri)) {
-                        open(entry)
-                    } else {
-                        launchExternalViewIntent(entry.uri, mime, entry.metadata.name)
-                    }
-                }
-                "Open" -> {
-                    val currentMagic = ambiguousMagicCache.get(entry.uri.toString()) ?: detectedMagic
-                    val currentMime = currentMagic?.mimeType ?: entry.metadata.mimeType
-                    val effectiveIsArchive = isArchive ||
-                        (currentMagic != null && (currentMagic.isArchiveOrDiscImage || ArchiveFormats.isArchive(entry.metadata.name, currentMime) || ArchiveFormats.isDiscImage(entry.metadata.name, currentMime)))
-                    val effectiveIsPackaged = isPackagedFormat ||
-                        ArchiveFormats.isPackagedFormat(entry.metadata.name, currentMime)
-                    if (entry.metadata.isDirectory) navigate(entry.uri, displayName = entry.metadata.name)
-                    else if (effectiveIsArchive && !effectiveIsPackaged) {
-                        if (inArchive) {
-                            val nestedVirtualPath = if (historyNames.isNotEmpty()) (historyNames + entry.metadata.name).joinToString("/") else null
-                            io.execute {
-                                try {
-                                    val cached = archiveProvider.extractToCache(entry.uri, nestedVirtualPath)
-                                    val fileUri = Uri.fromFile(cached)
-                                    val nestedUri = ArchiveUri.toArchiveUri(fileUri)
-                                    runOnUiThread { navigate(nestedUri, displayName = entry.metadata.name) }
-                                } catch (e: Exception) {
-                                    runOnUiThread { Toast.makeText(this@MainActivity, "Could not open archive: ${e.message}", Toast.LENGTH_SHORT).show() }
-                                }
-                            }
-                        } else {
-                            navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
-                        }
-                    } else {
-                        val magic = ambiguousMagicCache.get(entry.uri.toString()) ?: detectedMagic
-                        val effectiveEntry = if (magic != null && magic.mimeType != entry.metadata.mimeType) {
-                            entry.copy(metadata = entry.metadata.copy(mimeType = magic.mimeType))
-                        } else entry
-                        open(effectiveEntry)
-                    }
+                "Browse archive", "Browse" -> navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
+                "Open with external app" -> open(entry, externalOnly = true)
+                "Open" -> if (entry.metadata.isDirectory) navigate(entry.uri, displayName = entry.metadata.name) else open(entry)
+                "Use as debug dump folder" -> {
+                    com.infinifolder.storage.DebugDumpDestination.set(this, entry.ref)
+                    com.infinifolder.viewer.DebugTools.onActivityResumed(this)
+                    Toast.makeText(this, "Debug dumps will be written to this folder", Toast.LENGTH_LONG).show()
                 }
                 "Select" -> {
                     selectionMode = true
@@ -7434,7 +8481,7 @@ class MainActivity : Activity() {
                 "Copy" -> copyEntriesToClipboard(listOf(entry))
                 "Copy contents" -> copyEntryContentsToClipboard(entry, detectedMagic)
                 "Paste into folder", "Paste" -> pasteFromClipboard(entry.uri)
-                "Create shortcut" -> promptCreateShortcut(entry)
+                "Link to…" -> showLinkDestinationPicker(listOf(entry))
                 "Create archive" -> promptCreateArchive(listOf(entry))
                 "Copy to…" -> showDestinationPicker(entry, false)
                 "Move to…" -> showDestinationPicker(entry, true)
@@ -7688,7 +8735,7 @@ class MainActivity : Activity() {
             notifyMountedPartitionBlocked(displayNameFor(destDirUri) ?: "Archive", mountCheck.reason)
             return
         }
-        val isWritableArchive = isArchive && archiveProvider.isWritable(destDirUri)
+        val isWritableArchive = isArchive && archiveProvider.cachedWritable(destDirUri)
         val writable = (!isArchive || isWritableArchive) && !AppsUri.isAppsUri(destDirUri)
         if (!writable) {
             Toast.makeText(this, "Cannot paste into read-only location.", Toast.LENGTH_SHORT).show()
@@ -8156,14 +9203,16 @@ class MainActivity : Activity() {
         renderCurrentContents()
         updateListingStatus()
     }
-    private fun showBatchActionMenu() {
-        val selectedEntries = entries.filter { it.uri in selectedUris }
+    private fun showBatchActionMenu(entriesOverride: List<ResourceEntry>? = null) {
+        val selectedEntries = entriesOverride ?: entries.filter { it.uri in selectedUris }
         if (selectedEntries.isEmpty()) {
             exitSelectionMode()
             return
         }
         val count = selectedEntries.size
-        val fileOpsGroup = listOf("Copy", "Copy to…", "Move to…", "Delete", "Create archive", "Create shortcuts", "Deselect all")
+        val fileOpsGroup = listOf("Copy", "Copy to…", "Move to…", "Delete", "Create archive", "Link to…", "Deselect all").filterNot {
+            it == "Move to…" && selectedEntries.any { entry -> entry.metadata.isSymbolicLink }
+        }
         val propertiesGroup = listOf("Properties")
         showGroupedMenuDialog(
             title = "$count item${if (count == 1) "" else "s"} selected",
@@ -8209,157 +9258,15 @@ class MainActivity : Activity() {
                     }
                     promptCreateArchive(selectedEntries.filterNot { it in unextractable })
                 }
-                "Create shortcuts" -> {
-                    val defaultFolder = current?.takeIf { !ArchiveUri.isArchiveUri(it) && !AppsUri.isAppsUri(it) }
-                        ?: defaultWritableFolderUri()
-                        ?: return@showGroupedMenuDialog
-                    showFolderPicker("Select Location for Shortcuts", defaultFolder) { destFolder, _ ->
-                        exitSelectionMode()
-                        io.execute {
-                            selectedEntries.forEach { e ->
-                                val base = e.metadata.name.removeSuffix(".apk").removeSuffix(".lnk")
-                                val info = ShortcutInfo(
-                                    targetUri = e.uri.toString(),
-                                    targetPath = getPathDisplay(e.uri),
-                                    displayNameOverride = base,
-                                    targetMimeType = e.metadata.mimeType,
-                                    targetIsDirectory = e.metadata.isDirectory
-                                )
-                                createShortcutFile(destFolder, "$base.lnk", info)
-                            }
-                        }
-                    }
-                }
+                "Link to…" -> showLinkDestinationPicker(selectedEntries)
                 "Properties" -> showEntriesPropertiesDialog(selectedEntries, "$count items")
                 "Deselect all" -> exitSelectionMode()
             }
         }
     }
 
-    private fun openShortcut(entry: ResourceEntry) {
-        fun handle(info: ShortcutInfo) {
-            val normalizedTarget = WebMetadataResolver.normalizeInputUri(info.targetUri)
-            val targetUri = Uri.parse(normalizedTarget)
-            val targetName = info.displayNameOverride
-                ?: info.targetPath?.trimEnd('/')?.substringAfterLast('/')?.takeIf { it.isNotEmpty() }
-                ?: normalizedTarget.trimEnd('/').substringAfterLast('/').ifEmpty { normalizedTarget }
-            if (WebMetadataResolver.isWebUri(normalizedTarget)) {
-                launchExternalViewIntent(targetUri, null, targetName)
-                return
-            }
-            if (AppsUri.isAppUri(targetUri)) {
-                val pkg = AppsUri.getPackageName(targetUri)
-                if (pkg != null) {
-                    launchApp(pkg)
-                    return
-                }
-            } else if (AppsUri.isCategoryUri(targetUri)) {
-                openInstalledApps(AppsUri.getCategoryName(targetUri))
-                return
-            } else if (AppsUri.isRoot(targetUri)) {
-                openInstalledApps()
-                return
-            }
-            val isLocalDir = localProvider.owns(targetUri) &&
-                runCatching { localProvider.fileFor(targetUri).isDirectory }.getOrDefault(false)
-            if (info.targetIsDirectory || isLocalDir) {
-                navigate(targetUri, displayName = targetName)
-            } else if (ArchiveUri.isArchiveUri(targetUri) && ArchiveUri.getEntryPath(targetUri).isEmpty()) {
-                navigate(targetUri, displayName = targetName)
-            } else if (ArchiveFormats.isDefaultBrowsableArchive(info.targetPath ?: targetName, info.targetMimeType ?: "")) {
-                if (ArchiveUri.isArchiveUri(targetUri)) {
-                    val nestedVirtualPath = info.targetPath ?: targetName
-                    io.execute {
-                        try {
-                            val cached = archiveProvider.extractToCache(targetUri, nestedVirtualPath)
-                            val fileUri = Uri.fromFile(cached)
-                            val nestedUri = ArchiveUri.toArchiveUri(fileUri)
-                            runOnUiThread { navigate(nestedUri, displayName = targetName) }
-                        } catch (e: Exception) {
-                            runOnUiThread { Toast.makeText(this@MainActivity, "Could not open archive shortcut: ${e.message}", Toast.LENGTH_SHORT).show() }
-                        }
-                    }
-                } else {
-                    val archiveUri = ArchiveUri.toArchiveUri(targetUri)
-                    navigate(archiveUri, displayName = targetName)
-                }
-            } else if (targetUri.scheme != null && targetUri.scheme !in setOf("file", "content", "apps", "archive")) {
-                launchExternalViewIntent(targetUri, info.targetMimeType, targetName)
-            } else {
-                val targetRef = resourceRef(targetUri)
-                val targetEntry = ResourceEntry(
-                    targetRef,
-                    ResourceMetadata(
-                        targetName,
-                        info.targetMimeType ?: "application/octet-stream",
-                        null, null, false
-                    ),
-                    targetUri
-                )
-                open(targetEntry)
-            }
-        }
-
-        val cached = shortcutCache.get(entry.uri.toString())
-        if (cached != null) {
-            handle(cached)
-        } else {
-            io.execute {
-                try {
-                    val readRes = provider.openRead(entry.ref)
-                    if (readRes is ProviderResult.Success) {
-                        val text = readRes.value.use { it.reader().readText() }
-                        val info = ShortcutInfo.fromJson(text)
-                        if (info != null) {
-                            shortcutCache.put(entry.uri.toString(), info)
-                            runOnUiThread { handle(info) }
-                            return@execute
-                        }
-                    }
-                    runOnUiThread { Toast.makeText(this@MainActivity, "Invalid or broken shortcut file.", Toast.LENGTH_SHORT).show() }
-                } catch (e: Exception) {
-                    runOnUiThread { Toast.makeText(this@MainActivity, "Error opening shortcut: ${e.message}", Toast.LENGTH_SHORT).show() }
-                }
-            }
-        }
-    }
-
-    private fun openShortcutWithExternalApp(entry: ResourceEntry) {
-        val shortcut = shortcutCache.get(entry.uri.toString())
-        fun launchExternal(info: ShortcutInfo) {
-            val normalizedTarget = WebMetadataResolver.normalizeInputUri(info.targetUri)
-            val targetUri = Uri.parse(normalizedTarget)
-            if (AppsUri.isAppUri(targetUri)) {
-                val pkg = AppsUri.getPackageName(targetUri)
-                if (pkg != null) {
-                    launchApp(pkg)
-                    return
-                }
-            }
-            launchExternalViewIntent(
-                targetUri,
-                info.targetMimeType,
-                info.displayNameOverride ?: targetUri.lastPathSegment ?: "link"
-            )
-        }
-        if (shortcut != null) {
-            launchExternal(shortcut)
-        } else {
-            io.execute {
-                val readRes = provider.openRead(entry.ref)
-                if (readRes is ProviderResult.Success) {
-                    val text = readRes.value.use { it.reader().readText() }
-                    val info = ShortcutInfo.fromJson(text)
-                    if (info != null) {
-                        shortcutCache.put(entry.uri.toString(), info)
-                        runOnUiThread { launchExternal(info) }
-                        return@execute
-                    }
-                }
-                runOnUiThread { Toast.makeText(this, "Invalid shortcut file.", Toast.LENGTH_SHORT).show() }
-            }
-        }
-    }
+    private fun openShortcut(entry: ResourceEntry) = open(entry)
+    private fun openShortcutWithExternalApp(entry: ResourceEntry) = open(entry, externalOnly = true)
 
     private fun promptCreateShortcut(entry: ResourceEntry) {
         val defaultTargetFolder = current?.takeIf { !ArchiveUri.isArchiveUri(it) && !AppsUri.isAppsUri(it) }
@@ -8368,8 +9275,8 @@ class MainActivity : Activity() {
 
         var targetFolderUri: Uri = defaultTargetFolder
         val isApp = AppsUri.isAppUri(entry.uri)
-        val baseName = if (isApp) entry.metadata.name.removeSuffix(".apk") else entry.metadata.name.removeSuffix(".lnk")
-        val defaultShortcutName = "$baseName.lnk"
+        val baseName = if (isApp) entry.metadata.name.removeSuffix(".apk") else entry.metadata.name.removeSuffix(".lnk").removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION)
+        val defaultShortcutName = "$baseName${ShortcutInfo.SHORTCUT_EXTENSION}"
 
         val context = dialogContext()
         val layout = LinearLayout(context).apply {
@@ -8603,10 +9510,16 @@ class MainActivity : Activity() {
             ?: homeItems.mapNotNull { it.treeUri }.firstOrNull { !ArchiveUri.isArchiveUri(it) && !AppsUri.isAppsUri(it) }
     }
 
+    private fun lastChosenDestination(): Uri? = runCatching {
+        shared.getString("last_chosen_destination", null)?.let(Uri::parse)
+            ?.takeUnless { AppsUri.isAppsUri(it) }
+    }.getOrNull()
+
     private fun showFolderPicker(
         title: String,
         initialSelection: Uri?,
         blockedUri: Uri? = null,
+        forMove: Boolean = false,
         onFolderSelected: (Uri, String) -> Unit
     ) {
         val context = dialogContext()
@@ -8614,27 +9527,47 @@ class MainActivity : Activity() {
             if (a == null || b == null) return false
             return try { sourceIdentity(a) == sourceIdentity(b) } catch (_: Exception) { a == b }
         }
-        fun isWritableDestination(uri: Uri?): Boolean =
-            uri != null && !ArchiveUri.isArchiveUri(uri) && !AppsUri.isAppsUri(uri)
+        val destinationCapabilities = mutableMapOf<Uri, ProviderResult<ResourceCapabilities>>()
+        val pendingChecks = mutableSetOf<Uri>()
+        var pickerClosed = false
+        var capabilitiesChanged: () -> Unit = {}
+        fun isWritableDestination(uri: Uri?): Boolean {
+            if (uri == null || AppsUri.isAppsUri(uri)) return false
+            val result = destinationCapabilities[uri]
+            if (result == null && pendingChecks.add(uri)) io.execute {
+                val checked = provider.capabilities(resourceRef(uri))
+                runOnUiThread {
+                    if (!pickerClosed && !isFinishing && !isDestroyed) {
+                        pendingChecks.remove(uri)
+                        destinationCapabilities[uri] = checked
+                        capabilitiesChanged()
+                    }
+                }
+            }
+            val capabilities = (result as? ProviderResult.Success)?.value ?: return false
+            return capabilities[ResourceCapability.CREATE] != Support.UNSUPPORTED &&
+                (!forMove || capabilities[ResourceCapability.ACCEPT_MOVE] != Support.UNSUPPORTED)
+        }
 
-        val defaultStart = if (AppsUri.isAppsUri(current) || initialSelection == null || AppsUri.isAppsUri(initialSelection)) {
-            defaultWritableFolderUri()
-        } else initialSelection
-        var selected: Uri? = defaultStart?.takeIf { isWritableDestination(it) }
+        val defaultStart = initialSelection?.takeUnless { AppsUri.isAppsUri(it) }
+            ?: lastChosenDestination() ?: defaultWritableFolderUri()
+        var selected: Uri? = defaultStart?.takeUnless { AppsUri.isAppsUri(it) }
+        var selectedPath = selected?.let { getPathDisplay(it) } ?: "Choose a folder"
         val body = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(8), dp(12), dp(4))
         }
         val selectedLabel = TextView(context).apply {
-            text = selected?.let { getPathDisplay(it) } ?: "Choose a folder"
+            text = selectedPath
             textSize = 14f
             setTextColor(setTextColorForTheme())
             setPadding(dp(4), dp(4), dp(4), dp(8))
             minHeight = dp(40)
         }
         val nodes = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val treeScrollView = ScrollView(context).apply { addView(nodes) }
         body.addView(selectedLabel)
-        body.addView(ScrollView(context).apply { addView(nodes) }, LinearLayout.LayoutParams(-1, dp(360)))
+        body.addView(treeScrollView, LinearLayout.LayoutParams(-1, dp(360)))
 
         val dialog = dialogBuilder()
             .setTitle(title)
@@ -8645,14 +9578,58 @@ class MainActivity : Activity() {
 
         fun updateSelectButtonState() {
             val dest = selected
+            val writable = isWritableDestination(dest)
+            val result = dest?.let { destinationCapabilities[it] }
+            val detail = when {
+                dest == null -> ""
+                result == null -> "Checking destination capabilities…"
+                result is ProviderResult.Failure -> result.message
+                !writable && forMove && (result as? ProviderResult.Success)?.value?.get(ResourceCapability.ACCEPT_MOVE) == Support.UNSUPPORTED ->
+                    "Use Copy for this container; move metadata preservation is not available yet"
+                !writable -> (result as? ProviderResult.Success)?.notice ?: "Read-only location: creating entries is unsupported here"
+                else -> ""
+            }
+            selectedLabel.text = selectedPath + if (detail.isNotBlank()) "\n$detail" else ""
             dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)?.isEnabled =
-                dest != null && !isSameUri(dest, blockedUri)
+                dest != null && !isSameUri(dest, blockedUri) && writable
+        }
+
+        fun selectedTreeNode(list: List<TreeNode>): TreeNode? {
+            for (node in list) {
+                if (isSameUri(node.uri, selected)) return node
+                selectedTreeNode(node.children)?.let { return it }
+            }
+            return null
+        }
+
+        fun scrollSelectedTreeRow() {
+            val key = selectedTreeNode(treeRoots)?.key ?: return
+            treeScrollView.post {
+                if (!dialog.isShowing) return@post
+                fun findRow(view: View): View? {
+                    if (view.tag == key) return view
+                    if (view is android.view.ViewGroup) {
+                        for (index in 0 until view.childCount) findRow(view.getChildAt(index))?.let { return it }
+                    }
+                    return null
+                }
+                val row = findRow(nodes) ?: return@post
+                val bounds = android.graphics.Rect()
+                row.getDrawingRect(bounds)
+                treeScrollView.offsetDescendantRectToMyCoords(row, bounds)
+                val scrollTop = treeScrollView.scrollY
+                val visibleBottom = scrollTop + treeScrollView.height
+                when {
+                    bounds.top < scrollTop -> treeScrollView.scrollTo(0, bounds.top)
+                    bounds.bottom > visibleBottom -> treeScrollView.scrollTo(0, bounds.bottom - treeScrollView.height)
+                }
+            }
         }
 
         fun renderPickerTree() {
             nodes.removeAllViews()
             fun hasDestinations(list: List<TreeNode>): Boolean = list.any { node ->
-                (node.uri != null && node.canExpand && !ArchiveUri.isArchiveUri(node.uri) && !AppsUri.isAppsUri(node.uri)) || hasDestinations(node.children)
+                (node.uri != null && node.canExpand && !AppsUri.isAppsUri(node.uri)) || hasDestinations(node.children)
             }
             if (!hasDestinations(treeRoots)) {
                 nodes.addView(TextView(context).apply {
@@ -8668,11 +9645,11 @@ class MainActivity : Activity() {
                 nodes = treeRoots,
                 onSelect = { node ->
                     val destination = node.uri
-                    if (isWritableDestination(destination)) {
+                    if (destination != null && !AppsUri.isAppsUri(destination)) {
                         selected = destination
                         val route = findTreeRoute(treeRoots, node).orEmpty().filter { it.uri != null }
                         val display = if (route.isNotEmpty()) route.joinToString(" / ") { it.name } else node.name
-                        selectedLabel.text = display
+                        selectedPath = display
                         updateSelectButtonState()
                         if (dialog.isShowing) renderPickerTree()
                     }
@@ -8682,6 +9659,12 @@ class MainActivity : Activity() {
                 blockedSelectionUri = null,
                 isNodeSelected = { node -> isSameUri(selected, node.uri) },
                 selectOnExpand = true,
+                expandOnSelect = true,
+                includeNode = { node ->
+                    (node.canExpand || isCreateDirectoryNode(node)) &&
+                        (node.uri == null || !AppsUri.isAppsUri(node.uri))
+                },
+                enableDropTarget = false,
                 onCreateDirectoryInNode = { parentNode, parentUri ->
                     promptCreateDirectoryInPicker(parentUri) { created ->
                         val childKey = if (parentNode.key == "internal_shared") {
@@ -8720,15 +9703,21 @@ class MainActivity : Activity() {
                         } else {
                             "${getPathDisplay(parentUri)} / ${created.metadata.name}"
                         }
-                        selectedLabel.text = display
+                        selectedPath = display
                         updateSelectButtonState()
-                        renderTree()
+                        renderPickerTree()
                     }
                 }
             )
+            scrollSelectedTreeRow()
         }
 
+        capabilitiesChanged = {
+            updateSelectButtonState()
+            if (dialog.isShowing) renderPickerTree()
+        }
         dialog.setOnDismissListener {
+            pickerClosed = true
             activePickerRerender = null
         }
 
@@ -8738,9 +9727,23 @@ class MainActivity : Activity() {
             updateSelectButtonState()
             selectBtn.setOnClickListener {
                 val destination = selected
-                if (destination != null && !isSameUri(destination, blockedUri)) {
+                if (destination != null && !isSameUri(destination, blockedUri) && isWritableDestination(destination)) {
+                    shared.edit().putString("last_chosen_destination", destination.toString()).apply()
                     dialog.dismiss()
-                    onFolderSelected(destination, selectedLabel.text.toString())
+                    onFolderSelected(destination, selectedPath)
+                }
+            }
+            fun revealSelection(list: List<TreeNode>): TreeNode? {
+                for (node in list) {
+                    if (isSameUri(node.uri, selected)) return node
+                    revealSelection(node.children)?.let { return it }
+                }
+                return null
+            }
+            revealSelection(treeRoots)?.let { target ->
+                findTreeRoute(treeRoots, target)?.dropLast(1)?.forEach { it.expanded = true }
+                if (target.canExpand && !target.expanded) toggleTreeNode(target) {
+                    if (dialog.isShowing) renderPickerTree()
                 }
             }
             renderPickerTree()
@@ -8759,7 +9762,7 @@ class MainActivity : Activity() {
                 return
             }
         }
-        if ((ArchiveUri.isArchiveUri(parentUri) && !archiveProvider.isWritable(parentUri)) || AppsUri.isAppsUri(parentUri)) {
+        if ((ArchiveUri.isArchiveUri(parentUri) && !archiveProvider.cachedWritable(parentUri)) || AppsUri.isAppsUri(parentUri)) {
             Toast.makeText(this, "Cannot create directory in a read-only location.", Toast.LENGTH_SHORT).show()
             return
         }
@@ -8814,6 +9817,13 @@ class MainActivity : Activity() {
             }
     }
 
+    private fun showLinkDestinationPicker(items: List<ResourceEntry>) {
+        showFolderPicker("Link to…", lastChosenDestination()) { destination, _ ->
+            exitSelectionMode()
+            startBatchTransfer(items, false, destination, createLinks = true)
+        }
+    }
+
     private fun showDestinationPicker(entry: ResourceEntry, move: Boolean) {
         showBatchDestinationPicker(listOf(entry), move)
     }
@@ -8824,10 +9834,10 @@ class MainActivity : Activity() {
         } else {
             if (move) "Move ${entries.size} items to" else "Copy ${entries.size} items to"
         }
-        val defaultStart = if (AppsUri.isAppsUri(start)) {
+        val defaultStart = lastChosenDestination() ?: if (AppsUri.isAppsUri(start)) {
             localProvider.rootUri.takeIf { localProvider.hasAccess() }
         } else null
-        showFolderPicker(title, defaultStart, blockedUri = start) { destination, _ ->
+        showFolderPicker(title, defaultStart, blockedUri = start, forMove = move) { destination, _ ->
             if (destination != start) {
                 if (entries.size == 1) {
                     startTransfer(entries[0], move, destination)
@@ -8842,7 +9852,15 @@ class MainActivity : Activity() {
         startBatchTransfer(listOf(entry), move, destination)
     }
 
-    private fun startBatchTransfer(entries: List<ResourceEntry>, move: Boolean, destination: Uri) {
+    private fun startBatchTransfer(
+        entries: List<ResourceEntry>,
+        move: Boolean,
+        destination: Uri,
+        createLinks: Boolean = false,
+        refreshLocationAfterTransfer: Uri? = null,
+        restoreScrollYAfterTransfer: Int? = null,
+        refreshLocationDisplayName: String? = null
+    ) {
         if (ArchiveUri.isArchiveUri(destination)) {
             val mountCheck = archiveProvider.checkMounted(destination)
             if (mountCheck?.isMounted == true) {
@@ -8861,33 +9879,51 @@ class MainActivity : Activity() {
             }
         }
         val count = entries.size
-        val label = if (count == 1) {
+        val label = if (createLinks) "Create $count shortcut${if (count == 1) "" else "s"}" else if (count == 1) {
             "${if (move) "Move" else "Copy"} ${entries[0].metadata.name}"
         } else {
             "${if (move) "Move" else "Copy"} $count items"
         }
         val appEntries = entries.filter { AppsUri.isAppUri(it.uri) }
-        val hasApps = appEntries.isNotEmpty()
+        val hasApps = appEntries.isNotEmpty() && !createLinks
         val isAppMove = move && hasApps
 
         val id = operations.submit(label, null, count) { update, cancelled ->
-            FileOperations.batchTransfer(
-                entries = entries,
-                destinationFolderUri = destination,
-                move = move && !hasApps,
-                provider = provider,
-                resourceRef = { uri -> resourceRef(uri) },
-                update = update,
-                isCancelled = cancelled
-            )
-            if (!cancelled()) {
+            var transferSucceeded = false
+            try {
+                FileOperations.batchTransfer(
+                    entries = entries,
+                    destinationFolderUri = destination,
+                    move = move && !hasApps,
+                    provider = provider,
+                    resourceRef = { uri -> resourceRef(uri) },
+                    update = update,
+                    isCancelled = cancelled,
+                    createLinks = createLinks
+                )
+                transferSucceeded = !cancelled()
+            } finally {
                 runOnUiThread {
+                    if (isDestroyed) return@runOnUiThread
                     directoryIconCache.evictAll()
-                    refreshInternalSharedTree()
-                    current?.let { load(it) }
+                    val refreshDestination = { refreshTreeAfterTransfer(destination) }
+                    if (destination == localProvider.rootUri) refreshInternalSharedTree(refreshDestination)
+                    else refreshDestination()
+                    val sourceLocation = refreshLocationAfterTransfer
+                    if (sourceLocation == null) {
+                        current?.let { load(it) }
+                    } else {
+                        restoreScrollYAfterTransfer?.let { pendingLocationScrollRestore = sourceLocation to it }
+                        val sourceHistoryIndex = history.indexOfLast { it == sourceLocation }
+                        when {
+                            !homeMode && current == sourceLocation -> load(sourceLocation)
+                            sourceHistoryIndex >= 0 -> selectLocation(sourceHistoryIndex)
+                            else -> navigate(sourceLocation, push = true, displayName = refreshLocationDisplayName)
+                        }
+                    }
                 }
             }
-            if (!cancelled() && isAppMove) {
+            if (transferSucceeded && isAppMove) {
                 val nonAppEntries = entries.filterNot { AppsUri.isAppUri(it.uri) }
                 for (nonApp in nonAppEntries) {
                     try { provider.delete(nonApp.ref) } catch (_: Exception) {}
@@ -8912,9 +9948,16 @@ class MainActivity : Activity() {
         }
         val appItems = items.filter { AppsUri.isAppUri(it.uri) }
         val title = if (appItems.size == items.size) "Uninstall ${items.size} applications?" else "Delete ${items.size} items?"
-        val msg = if (appItems.isNotEmpty()) "This will request Android to uninstall ${appItems.size} application${if (appItems.size == 1) "" else "s"} and delete selected files. This cannot be undone." else "This cannot be undone."
+        val hasFolders = items.any { it.metadata.isDirectory && !it.metadata.isSymbolicLink }
+        val msg = when {
+            appItems.isNotEmpty() && hasFolders -> "This will request Android to uninstall ${appItems.size} application${if (appItems.size == 1) "" else "s"}. Selected folders will be deleted recursively with all their contents. This cannot be undone."
+            appItems.isNotEmpty() -> "This will request Android to uninstall ${appItems.size} application${if (appItems.size == 1) "" else "s"} and delete selected files. This cannot be undone."
+            hasFolders -> "Selected folders will be deleted recursively, including all files and folders inside them. This cannot be undone."
+            else -> "This cannot be undone."
+        }
+        val deleteLabel = if (hasFolders) "Delete all" else "Delete"
         dialogBuilder().setTitle(title).setMessage(msg)
-            .setNegativeButton("Cancel", null).setPositiveButton(if (appItems.size == items.size) "Uninstall" else "Delete") { _, _ ->
+            .setNegativeButton("Cancel", null).setPositiveButton(if (appItems.size == items.size) "Uninstall" else deleteLabel) { _, _ ->
                 exitSelectionMode()
                 if (appItems.isNotEmpty()) {
                     val nonApps = items.filterNot { AppsUri.isAppUri(it.uri) }
@@ -9198,8 +10241,13 @@ class MainActivity : Activity() {
             }
             return
         }
-        dialogBuilder().setTitle("Delete ${entry.metadata.name}?").setMessage("This cannot be undone.")
-            .setNegativeButton("Cancel", null).setPositiveButton("Delete") { _, _ ->
+        val isDirectory = entry.metadata.isDirectory && !entry.metadata.isSymbolicLink
+        val title = if (isDirectory) "Delete folder and its contents?" else "Delete ${entry.metadata.name}?"
+        val message = if (isDirectory) {
+            "This will recursively delete '${entry.metadata.name}' and all files and folders inside it. This cannot be undone."
+        } else "This cannot be undone."
+        dialogBuilder().setTitle(title).setMessage(message)
+            .setNegativeButton("Cancel", null).setPositiveButton(if (isDirectory) "Delete all" else "Delete") { _, _ ->
                 startBatchDelete(listOf(entry))
             }.show()
     }
@@ -9235,26 +10283,8 @@ class MainActivity : Activity() {
         val date = entry.metadata.modifiedAtMillis?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)) } ?: ""
         return if (entry.metadata.isDirectory) "Folder · $date" else "$size · $date"
     }
-    private fun iconFor(m: ResourceMetadata) = when {
-        m.isBrokenLink -> "⛓️‍💥"
-        ArchiveFormats.isDefaultBrowsableArchive(m.name, m.mimeType) -> "📦"
-        ArchiveFormats.isPackagedFormat(m.name, m.mimeType) -> {
-            val ext = m.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
-            when (ext) {
-                "apk", "xapk", "apkm", "aab" -> "📱"
-                "jar", "war", "ear" -> "☕"
-                "love" -> "💖"
-                "ipa" -> "🍎"
-                else -> "📦"
-            }
-        }
-        ArchiveFormats.isArchive(m.name, m.mimeType) -> "📦"
-        m.mimeType.substringBefore('/') == "image" -> "🖼"
-        m.mimeType.substringBefore('/') == "audio" -> "♫"
-        m.mimeType.substringBefore('/') == "video" -> "▶"
-        m.mimeType.substringBefore('/') == "text" -> "▤"
-        else -> "📄"
-    }
+    private fun iconFor(m: ResourceMetadata): String = if (m.isDirectory) "📁" else
+        com.infinifolder.mime.MimeRegistry.fallbackIcon(com.infinifolder.mime.MimeRegistry.effective(m.name, m.mimeType))
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
@@ -9330,8 +10360,27 @@ class MainActivity : Activity() {
         moveTaskToBack(true)
     }
 
+    private var lastDumpRefresh = 0L
+
+    private fun refreshCurrentLocation() {
+        if (homeMode) when (homePage) {
+            "internal_shared" -> showInternalShared(false)
+            "application_public" -> showApplicationPublic()
+            else -> showHomeRoot()
+        } else current?.let {
+            if (AppsUri.isAppsUri(it)) appsProvider.invalidateCache()
+            load(it)
+        }
+    }
+
+    override fun onDebugDumpFinished() {
+        lastDumpRefresh = DebugTools.dumpGeneration
+        refreshCurrentLocation()
+    }
+
     override fun onResume() {
         super.onResume()
+        if (lastDumpRefresh != DebugTools.dumpGeneration) onDebugDumpFinished()
         val snapshots = operations.snapshots()
         val hasActive = snapshots.any { it.state == OperationState.RUNNING || it.state == OperationState.QUEUED }
         if (hasActive && !isOperationWindowHidden && currentProgressDialog?.isShowing != true) {
@@ -9368,21 +10417,13 @@ class MainActivity : Activity() {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         com.infinifolder.theme.ThemeManager.handleConfigurationChanged(this, newConfig)
+        updateBrowserPanes()
+        renderTree()
+        if (!homeMode) renderEntries()
     }
 
     override fun onDestroy() {
         operations.removeListener(operationsListener)
-        if (::sftpProvider.isInitialized) {
-            sftpProvider.clientPool.close()
-        }
-        if (::ftpProvider.isInitialized) {
-            ftpProvider.clientPool.close()
-        }
-        if (::smbProvider.isInitialized) {
-            smbProvider.clientPool.close()
-        }
-        if (activeProvider === provider) activeProvider = null
-        if (activeArchiveProvider === archiveProvider) activeArchiveProvider = null
         com.infinifolder.theme.ThemeManager.removeListener(themeListener)
         super.onDestroy()
     }

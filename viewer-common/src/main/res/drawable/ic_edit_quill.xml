@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Monochromatic line-art quill / pen symbol with transparent background -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20.71,3.29 C20.06,2.64 19.01,2.64 18.36,3.29 L16.12,5.53 C15.69,5.08 15.13,4.74 14.5,4.56 C12.5,4 9.5,5.5 8,7 L10.5,9.5 C9.5,10.5 7.5,11.5 6.5,12.5 C5.5,13.5 4.5,15.5 4,17.5 L6.5,16.5 C7.5,15.5 8.5,14.5 9.5,13.5 L12,16 C13.5,14.5 15,11.5 14.5,9.5 C14.32,8.87 13.98,8.31 13.53,7.88 L15.77,5.64 L16.88,6.75 C17.08,6.95 17.4,6.95 17.59,6.75 L20.71,3.63 C20.9,3.44 20.9,3.1 20.71,3.29 Z M3,21 L5.5,20.2 L3.8,18.5 L3,21 Z" />
+</vector>

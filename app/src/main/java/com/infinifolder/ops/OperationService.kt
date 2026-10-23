@@ -159,8 +159,8 @@ class OperationService : Service() {
         val rateText = if (rate.isNotEmpty()) " · $rate" else ""
         val contentText = when {
             op.currentItem != null -> "${op.currentItem}$rateText"
-            op.totalBytes != null && op.totalBytes > 0 ->
-                "${android.text.format.Formatter.formatShortFileSize(this, op.bytes)} / ${android.text.format.Formatter.formatShortFileSize(this, op.totalBytes)}$rateText"
+            (op.totalBytes ?: 0L) > 0 ->
+                "${android.text.format.Formatter.formatShortFileSize(this, op.bytes)} / ${android.text.format.Formatter.formatShortFileSize(this, op.totalBytes ?: 0L)}$rateText"
             op.totalItems > 0 -> "${op.itemsProcessed} / ${op.totalItems} items$rateText"
             else -> "In progress$rateText"
         }
