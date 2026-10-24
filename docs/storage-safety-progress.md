@@ -5,7 +5,7 @@ Updated: 2026-10-22. Tracks implementation following the [original consistency a
 ## Debug dumps without ADB
 
 1. Browse to the intended destination, such as the project's `build` directory through Termux's document provider. Long-press its folder and select **Use as debug dump folder**. Alternatively, open **View options → Debug dump settings → Choose debug dump folder** and grant access through Android's picker.
-2. Reproduce the problem. Press **Offload debug information**, available as an in-app button once a folder is configured and through View options.
+2. Reproduce the problem. Press the bug icon (**Offload debug information**) in the browser or viewer toolbar in debug builds, or use View options. The toolbar button opens dump-folder configuration if needed; it does not overlay file or document content and is absent from release builds.
 3. The chosen directory receives timestamped `infinifolder-debug-*.png`, `.log`, and `.json` files. JSON records device/application details, capture method, dimensions, and activity. Screenshot capture failure still permits log and metadata export.
 
 The picker also creates a live log in the selected folder. Choosing a folder from the browser configures on-demand dumps and stops any previous live-log mirror. The bounded private log remains available without a configured destination. Existing dump files are never intentionally overwritten; backend-assigned unique names are retained. Export errors report how many artifacts completed.

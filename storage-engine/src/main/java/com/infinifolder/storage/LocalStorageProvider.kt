@@ -94,7 +94,9 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
 
     override fun fileSystemInfo(ref: ResourceRef): ProviderResult<FileSystemInfo> = access { StorageFileSystems.forFile(file(ref)) }
     override fun parent(ref: ResourceRef): ProviderResult<ResourceRef?> = access {
-        file(ref).parentFile?.let { ResourceRef(id, uriFor(it).toString()) }
+        val selected = file(ref)
+        if (selected == store.root || selected == context.cacheDir.canonicalFile) null
+        else selected.parentFile?.let { ResourceRef(id, uriFor(it).toString()) }
     }
     override fun resolveLink(ref: ResourceRef): ProviderResult<ResourceRef> = access {
         val selected = file(ref)

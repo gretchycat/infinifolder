@@ -29,6 +29,7 @@ class RoutingStorageProvider(vararg providers: StorageProvider) : StorageProvide
     override fun beginWriteBatch(destination: ResourceRef, isCancelled: () -> Boolean): ProviderResult<StorageWriteBatch> =
         call("batch.begin", destination) { it.beginWriteBatch(destination, isCancelled) }
     override fun backingResource(ref: ResourceRef): ResourceRef? = byId[ref.providerId]?.backingResource(ref)
+    override fun recoverySource(ref: ResourceRef): ResourceRef? = byId[ref.providerId]?.recoverySource(ref)
     override fun deviceIdentity(ref: ResourceRef): String? = byId[ref.providerId]?.deviceIdentity(ref)
     override fun capabilities(ref: ResourceRef): ProviderResult<ResourceCapabilities> = call("capabilities", ref) { it.capabilities(ref) }
     override fun fileSystemInfo(ref: ResourceRef): ProviderResult<FileSystemInfo> = call("filesystem", ref) { it.fileSystemInfo(ref) }
@@ -46,6 +47,8 @@ class RoutingStorageProvider(vararg providers: StorageProvider) : StorageProvide
             else -> result
         }
     }
+    override fun openPartialRecovery(ref: ResourceRef): ProviderResult<RecoveryExport> =
+        call("recovery.partial", ref) { it.openPartialRecovery(ref) }
     override fun openSeekable(ref: ResourceRef, writable: Boolean): ProviderResult<BlockDevice> = call("seekable", ref) { backend ->
         val result = backend.openSeekable(ref, writable)
         if (result is ProviderResult.Success && writable && result.value.isReadOnly) {

@@ -5,6 +5,7 @@ import org.apache.commons.compress.compressors.CompressorStreamFactory
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
+import org.apache.commons.compress.compressors.z.ZCompressorInputStream
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.InputStream
@@ -56,7 +57,7 @@ object FileMagicDetector {
 
         val detected = try {
             RandomAccessFile(file, "r").use { raf ->
-                val headLen = len.coerceAtMost(1024L).toInt()
+                val headLen = len.coerceAtMost(2048L).toInt()
                 val header = ByteArray(headLen)
                 raf.readFully(header)
 
@@ -80,6 +81,13 @@ object FileMagicDetector {
                     raf.readFully(b)
                     b
                 } else null
+                val ufsMagic = listOf(65536L, 8192L, 0L, 262144L).firstNotNullOfOrNull { offset ->
+                    if (len < offset + 1376) null else {
+                        val bytes = ByteArray(4)
+                        raf.seek(offset + 1372); raf.readFully(bytes)
+                        ufsVersion(bytes, 0)
+                    }
+                }
 
                 // Check if outer wrapper is compressed (.gz, .bz2, .xz, .zst)
                 val compressor = detectOuterCompressor(header)
@@ -88,7 +96,7 @@ object FileMagicDetector {
                         try {
                             file.inputStream().use { rawIn ->
                                 openCompressedStream(rawIn, compressor).use { decIn ->
-                                    val innerBuf = readUpTo(decIn, 36864)
+                                    val innerBuf = readUpTo(decIn, 69632)
                                     detectFromBytes(innerBuf, null, null, null)
                                 }
                             }
@@ -115,7 +123,7 @@ object FileMagicDetector {
                         )
                     }
                 } else {
-                    detectFromBytes(header, extMagic, isoMagic, vhdFooter)
+                    detectFromBytes(header, extMagic, isoMagic, vhdFooter, ufsMagic)
                 }
             }
         } catch (_: Exception) {
@@ -132,13 +140,13 @@ object FileMagicDetector {
 
     fun detectFromStream(openStream: () -> InputStream): FileMagicResult? {
         return try {
-            val prefix = openStream().use { readUpTo(it, 36864) }
+            val prefix = openStream().use { readUpTo(it, 69632) }
             if (prefix.isEmpty()) return null
             val compressor = detectOuterCompressor(prefix)
             if (compressor != null) {
                 val innerResult = try {
                     openCompressedStream(prefix.inputStream(), compressor).use { decIn ->
-                        val innerBuf = readUpTo(decIn, 36864)
+                        val innerBuf = readUpTo(decIn, 69632)
                         detectFromBytes(innerBuf, null, null)
                     }
                 } catch (_: Throwable) {
@@ -171,9 +179,32 @@ object FileMagicDetector {
         header: ByteArray,
         extMagicAt1080: ByteArray? = null,
         isoMagicAt32769: ByteArray? = null,
-        vhdFooterAtEof: ByteArray? = null
+        vhdFooterAtEof: ByteArray? = null,
+        ufsMagicAtSuperblock: Int? = null
     ): FileMagicResult? {
         if (header.isEmpty()) return null
+        if (header.size >= 4 && String(header, 0, 4, StandardCharsets.US_ASCII) == "MSCF")
+            return FileMagicResult("application/vnd.ms-cab-compressed", "Microsoft Cabinet Archive", true)
+        if (header.size >= 4 && header[0] == 0x60.toByte() && header[1] == 0xea.toByte())
+            return FileMagicResult("application/x-arj", "ARJ Archive", true)
+        if (header.size >= 1028) {
+            val signature = ((header[1024].toInt() and 255) shl 8) or (header[1025].toInt() and 255)
+            val version = ((header[1026].toInt() and 255) shl 8) or (header[1027].toInt() and 255)
+            val label = when {
+                signature == 0x4244 -> "HFS"
+                signature == 0x482b && version == 4 -> "HFS+"
+                signature == 0x4858 && version == 5 -> "HFSX"
+                else -> null
+            }
+            if (label != null) return FileMagicResult("application/x-raw-disk-image", "$label Filesystem Image", true)
+        }
+        if (header.size >= 512 && String(header, 3, 8, StandardCharsets.US_ASCII) == "NTFS    " && u16le(header, 510) == 0xaa55)
+            return FileMagicResult("application/x-raw-disk-image", "NTFS Filesystem Image", true)
+
+        val ufs = ufsMagicAtSuperblock ?: listOf(65536, 8192, 0, 262144).firstNotNullOfOrNull {
+            if (header.size >= it + 1376) ufsVersion(header, it + 1372) else null
+        }
+        if (ufs != null) return FileMagicResult("application/x-raw-disk-image", "BSD UFS$ufs Filesystem Image", true)
 
         // 1. Virtual Machine Disk Images
         // QCOW2: 51 46 49 FB ("QFI\xfb")
@@ -308,7 +339,7 @@ object FileMagicDetector {
         if (header.size >= 6 && u8(header, 0) == 0x52 && u8(header, 1) == 0x61 &&
             u8(header, 2) == 0x72 && u8(header, 3) == 0x21 && u8(header, 4) == 0x1A && u8(header, 5) == 0x07
         ) {
-            return FileMagicResult("application/vnd.rar", "RAR Archive", isArchiveOrDiscImage = false)
+            return FileMagicResult("application/vnd.rar", "RAR Archive", isArchiveOrDiscImage = true)
         }
 
         // TAR ("ustar" at offset 257)
@@ -479,10 +510,12 @@ object FileMagicDetector {
         GZIP("Gzip", "application/gzip"),
         BZIP2("BZip2", "application/x-bzip2"),
         XZ("XZ", "application/x-xz"),
-        ZSTD("Zstandard", "application/zstd")
+        ZSTD("Zstandard", "application/zstd"),
+        COMPRESS("Unix compress", "application/x-compress")
     }
 
     private fun detectOuterCompressor(header: ByteArray): OuterCompressor? {
+        if (header.size >= 2 && u8(header, 0) == 0x1F && u8(header, 1) == 0x9D) return OuterCompressor.COMPRESS
         if (header.size >= 2 && u8(header, 0) == 0x1F && u8(header, 1) == 0x8B) {
             return OuterCompressor.GZIP
         }
@@ -509,6 +542,18 @@ object FileMagicDetector {
             OuterCompressor.BZIP2 -> BZip2CompressorInputStream(bis, true)
             OuterCompressor.XZ -> XZCompressorInputStream(bis, true)
             OuterCompressor.ZSTD -> CompressorStreamFactory().createCompressorInputStream(bis)
+            OuterCompressor.COMPRESS -> ZCompressorInputStream(bis)
+        }
+    }
+
+    private fun ufsVersion(bytes: ByteArray, offset: Int): Int? {
+        val little = u32le(bytes, offset)
+        val big = ((little and 255) shl 24) or ((little and 0xff00) shl 8) or
+            ((little ushr 8) and 0xff00) or ((little ushr 24) and 255)
+        return when {
+            little == 0x011954L || big == 0x011954L -> 1
+            little == 0x19540119L || big == 0x19540119L -> 2
+            else -> null
         }
     }
 

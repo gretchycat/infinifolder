@@ -177,6 +177,7 @@ class HtmlViewerActivity : ViewerActivity() {
         }
         toolbar.addView(openExternalBtn, LinearLayout.LayoutParams(dp(40), dp(40)))
 
+        DebugTools.attachToolbarButton(this, toolbar)
         mainColumn.addView(toolbar, LinearLayout.LayoutParams(-1, -2))
 
         // Content Area Frame

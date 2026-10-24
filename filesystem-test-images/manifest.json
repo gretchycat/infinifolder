@@ -1,0 +1,486 @@
+{
+  "archives/7z/archive.7z": {
+    "bytes": 1481,
+    "sha256": "5bb5390c96211ec67e18b1cf0bf0744578e0d62d95edd1616b3887406aa290b5"
+  },
+  "archives/ar/archive.ar": {
+    "bytes": 8446,
+    "sha256": "4a17996f04dca7295f2acb98d09d6deb8c768cd992a8b302db60f8daa0979398"
+  },
+  "archives/ar/archive.deb": {
+    "bytes": 3344,
+    "sha256": "bdfe1dc9d5680c2110cf68042adf5f6ce66132b5561588ee486ec14d345a6686"
+  },
+  "archives/cab/LIBMSPACK-LICENSE.txt": {
+    "bytes": 26430,
+    "sha256": "a190dc9c8043755d90f8b0a75fa66b9e42d4af4c980bf5ddc633f0124db3cee7"
+  },
+  "archives/cab/PROVENANCE.md": {
+    "bytes": 818,
+    "sha256": "6879d6750f105e53a2d8574945c310e6261d7c201c03b82cd3c8486db93ebcab"
+  },
+  "archives/cab/damaged-member.cab": {
+    "bytes": 4409,
+    "sha256": "3956cd3ae8f5d02bf71b1c9ca670a693efa87f802995fe2e8ff0df76e5351513"
+  },
+  "archives/cab/expected.json": {
+    "bytes": 19149,
+    "sha256": "2010c82ef0bded3b947a964687d0df404e5b3d41b358920389a1a2daf4d0acf4"
+  },
+  "archives/cab/independent-folders.cab": {
+    "bytes": 4409,
+    "sha256": "064822bfeba9251e7799bf046fb5ab9e4236290fe1e7fbcabda160344e9f949e"
+  },
+  "archives/cab/methods.cab": {
+    "bytes": 379,
+    "sha256": "0ce0b55fe705b744d41bb361170c0467db30da0c7f9bdd386d5dade71a78e171"
+  },
+  "archives/cab/missing-volume/cabd_multi_basic_pt1.cab": {
+    "bytes": 221,
+    "sha256": "3658aaf68b0d538a5b321919f1de3eb1bcc258cba44e97b07a1938230995c632"
+  },
+  "archives/cab/missing-volume/cabd_multi_basic_pt2.cab": {
+    "bytes": 274,
+    "sha256": "ce5fac4470fb850ae593de70ab03d3493069b77f8f81376216768bbf74e52321"
+  },
+  "archives/cab/missing-volume/cabd_multi_basic_pt4.cab": {
+    "bytes": 274,
+    "sha256": "fbcd45e503c3cffd5f5946ccc45bbc46b9884fe47abef7d09247154c7f8148fb"
+  },
+  "archives/cab/missing-volume/cabd_multi_basic_pt5.cab": {
+    "bytes": 221,
+    "sha256": "16ebbb274c8dc09f98415795212683b9ea8b2d6450080a79ab63cd5cdbac7cc4"
+  },
+  "archives/cab/mszip.cab": {
+    "bytes": 5126,
+    "sha256": "3c274a135982ea8c3ba5bad9d9f6bfe6bf9f732c2d42e0362bd8bd3a752fa77c"
+  },
+  "archives/cab/multipart/cabd_multi_basic_pt1.cab": {
+    "bytes": 221,
+    "sha256": "3658aaf68b0d538a5b321919f1de3eb1bcc258cba44e97b07a1938230995c632"
+  },
+  "archives/cab/multipart/cabd_multi_basic_pt2.cab": {
+    "bytes": 274,
+    "sha256": "ce5fac4470fb850ae593de70ab03d3493069b77f8f81376216768bbf74e52321"
+  },
+  "archives/cab/multipart/cabd_multi_basic_pt3.cab": {
+    "bytes": 274,
+    "sha256": "e58b57f63ac0858effa75ceb6f242b447fbce6a910d3840c37228fdbc9e7bc95"
+  },
+  "archives/cab/multipart/cabd_multi_basic_pt4.cab": {
+    "bytes": 274,
+    "sha256": "fbcd45e503c3cffd5f5946ccc45bbc46b9884fe47abef7d09247154c7f8148fb"
+  },
+  "archives/cab/multipart/cabd_multi_basic_pt5.cab": {
+    "bytes": 221,
+    "sha256": "16ebbb274c8dc09f98415795212683b9ea8b2d6450080a79ab63cd5cdbac7cc4"
+  },
+  "archives/cpio/archive.cpio": {
+    "bytes": 25600,
+    "sha256": "2f826c64859ea3b8f2553bfcb432bda2159b3833da2af0f6f3f03249b1577ed0"
+  },
+  "archives/legacy/JUNRAR-LICENSE.txt": {
+    "bytes": 1861,
+    "sha256": "9d90c3649d4eb064ce2fff366a7421107fbbc3c65d8eede45df5dec95e4e016c"
+  },
+  "archives/legacy/RAR-FIXTURES-CC0.txt": {
+    "bytes": 7049,
+    "sha256": "7179683e8000e6bdc9bbc60d85edf0a4ac8e76f951857f54fcb775d5886f1309"
+  },
+  "archives/legacy/RAR5-UPSTREAM-RECIPE.md": {
+    "bytes": 5551,
+    "sha256": "218ce498a94ac091ab79feabac79863154d7b70cbf636c66ecf30880e473d292"
+  },
+  "archives/legacy/arj-missing-volume/volumes.a01": {
+    "bytes": 49400,
+    "sha256": "0065e0e447c6b4635ce8535312759f65d7ff86097f1ddee9bec694483c0de21b"
+  },
+  "archives/legacy/arj-missing-volume/volumes.a02": {
+    "bytes": 49400,
+    "sha256": "f19a106e82c112254902bf49327c29ead17c65c526a3b77b3d0bb5bc152a1bf9"
+  },
+  "archives/legacy/arj-missing-volume/volumes.a04": {
+    "bytes": 49400,
+    "sha256": "77c70acd6504937c99665b8ef14604daec5fce11bcf6d76f57371f9bf5412d8a"
+  },
+  "archives/legacy/arj-missing-volume/volumes.a05": {
+    "bytes": 16154,
+    "sha256": "c8ef5c05468304e3f4e792060604262abfa0f49dc468610762d19e09ba2cb6d2"
+  },
+  "archives/legacy/arj-missing-volume/volumes.arj": {
+    "bytes": 49400,
+    "sha256": "06a8b77cd96170e95655d995452c35bdc2bbdfc9bde852c5f36a7d1e392cb804"
+  },
+  "archives/legacy/arj-multipart/volumes.a01": {
+    "bytes": 49400,
+    "sha256": "0065e0e447c6b4635ce8535312759f65d7ff86097f1ddee9bec694483c0de21b"
+  },
+  "archives/legacy/arj-multipart/volumes.a02": {
+    "bytes": 49400,
+    "sha256": "f19a106e82c112254902bf49327c29ead17c65c526a3b77b3d0bb5bc152a1bf9"
+  },
+  "archives/legacy/arj-multipart/volumes.a03": {
+    "bytes": 49400,
+    "sha256": "5223d5cae221fb7817b542d8d4da02c967893d0eb03b019e2cd9449cf2edf55d"
+  },
+  "archives/legacy/arj-multipart/volumes.a04": {
+    "bytes": 49400,
+    "sha256": "77c70acd6504937c99665b8ef14604daec5fce11bcf6d76f57371f9bf5412d8a"
+  },
+  "archives/legacy/arj-multipart/volumes.a05": {
+    "bytes": 16154,
+    "sha256": "c8ef5c05468304e3f4e792060604262abfa0f49dc468610762d19e09ba2cb6d2"
+  },
+  "archives/legacy/arj-multipart/volumes.arj": {
+    "bytes": 49400,
+    "sha256": "06a8b77cd96170e95655d995452c35bdc2bbdfc9bde852c5f36a7d1e392cb804"
+  },
+  "archives/legacy/arj/compressed.arj": {
+    "bytes": 845,
+    "sha256": "7334527e84f969ed660bcc70a6e6f6e5eba55ee35468ebec9fc49cbadc9dde0f"
+  },
+  "archives/legacy/arj/damaged.arj": {
+    "bytes": 16832,
+    "sha256": "26c89c0f47cdc2b41be0f1f95993bd618eadfa718758f3f80ca0134df62be05b"
+  },
+  "archives/legacy/arj/stored.arj": {
+    "bytes": 16832,
+    "sha256": "2f42f90caae86310efc24bb744677979df0a6275939850c38c2f53e9eae5d01b"
+  },
+  "archives/legacy/rar/rar4.rar": {
+    "bytes": 98,
+    "sha256": "dce342bc0c2852fcaa36a03da5e55abb7dd69c045bbd812faebebc1a3844f5a4"
+  },
+  "archives/legacy/rar/rar5-solid.rar": {
+    "bytes": 97,
+    "sha256": "7b4ca6b02ab7affd2f67827a6a938c4d02bb1fc84e548512b42e5b7a0109eb4b"
+  },
+  "archives/legacy/rar/rar5.rar": {
+    "bytes": 82,
+    "sha256": "a546b39c1aa42669543ef81f5ec8c4ef49fc7c2e5b8d08ab10549e919996e1a4"
+  },
+  "archives/legacy/rar4-multipart/test-documents.part1.rar": {
+    "bytes": 30720,
+    "sha256": "1ab1fbda1164ac560c908f98be13bd85fcbbd0346b2828c6156b8e70dd201236"
+  },
+  "archives/legacy/rar4-multipart/test-documents.part2.rar": {
+    "bytes": 30720,
+    "sha256": "b747d1b9086c7d75614d64ce9792816c22ce9ac88d2940734802685a2b87f3dd"
+  },
+  "archives/legacy/rar4-multipart/test-documents.part3.rar": {
+    "bytes": 6886,
+    "sha256": "3251d3886174e0447e641fcd28d3dfe29f9633f5baef929afa92c9eb67a20a0f"
+  },
+  "archives/legacy/rar5-damaged-volume/vols.part1.rar": {
+    "bytes": 102400,
+    "sha256": "ddaf78bff5027a1353f979f52ab106876fc995439d181c45fc889c35db3d1fa3"
+  },
+  "archives/legacy/rar5-damaged-volume/vols.part2.rar": {
+    "bytes": 102400,
+    "sha256": "1707276574209efedf89e1465f3cc0523393fdbb4c60ffff5b8e7e2509143475"
+  },
+  "archives/legacy/rar5-damaged-volume/vols.part3.rar": {
+    "bytes": 46323,
+    "sha256": "93823ff8c62b7f141ea81540d6e5c106c5018ed037f5cb47ec62aba0c90bc73e"
+  },
+  "archives/legacy/rar5-missing-volume/vols.part1.rar": {
+    "bytes": 102400,
+    "sha256": "ddaf78bff5027a1353f979f52ab106876fc995439d181c45fc889c35db3d1fa3"
+  },
+  "archives/legacy/rar5-missing-volume/vols.part3.rar": {
+    "bytes": 46323,
+    "sha256": "93823ff8c62b7f141ea81540d6e5c106c5018ed037f5cb47ec62aba0c90bc73e"
+  },
+  "archives/legacy/rar5-multipart/vols.part1.rar": {
+    "bytes": 102400,
+    "sha256": "ddaf78bff5027a1353f979f52ab106876fc995439d181c45fc889c35db3d1fa3"
+  },
+  "archives/legacy/rar5-multipart/vols.part2.rar": {
+    "bytes": 102400,
+    "sha256": "52728df218da3f7bb96f3c295ba9ef95095104bb37be9a513632a3869caa5768"
+  },
+  "archives/legacy/rar5-multipart/vols.part3.rar": {
+    "bytes": 46323,
+    "sha256": "93823ff8c62b7f141ea81540d6e5c106c5018ed037f5cb47ec62aba0c90bc73e"
+  },
+  "archives/tar/archive.tar": {
+    "bytes": 245760,
+    "sha256": "bf43ab92d1ea6889fe6bdd8b8fe8d0356ab714bb76271d8877b872e28368d60b"
+  },
+  "archives/tar/archive.tar.Z": {
+    "bytes": 9692,
+    "sha256": "36b5c9be4878b7ee394a7e82cd4188a8e4e24cf4f55250b4fdec890ea5a3aa52"
+  },
+  "archives/tar/archive.tar.bz2": {
+    "bytes": 4719,
+    "sha256": "47477c4150bdcbc0fb92b4d2d5a04649e07f2fd644f1e88362064fe7f03e3730"
+  },
+  "archives/tar/archive.tar.gz": {
+    "bytes": 2925,
+    "sha256": "dba4e4a53f669fda45f1216a6f0412815c6f0a6a932d30dcea7ca8e40889140f"
+  },
+  "archives/tar/archive.tar.lzma": {
+    "bytes": 1514,
+    "sha256": "5dac19dc49c9f944d120b9f95a0aea9c34a1e372fb264a909054aca137b51415"
+  },
+  "archives/tar/archive.tar.xz": {
+    "bytes": 1560,
+    "sha256": "7f48996639d203f065e1b29b0b58476d5400490dea24cbc43239ba665186a441"
+  },
+  "archives/tar/archive.tar.zst": {
+    "bytes": 1791,
+    "sha256": "a83a6466e6c579fe780e93d0dbb9f724e50320606415675ea82d5ece3ac4dac0"
+  },
+  "archives/zip/archive.love": {
+    "bytes": 346,
+    "sha256": "cbb27f2cd20c76b6f26e86fbba2df0291577759694c106ab408715b60f9de994"
+  },
+  "archives/zip/archive.zip": {
+    "bytes": 15997,
+    "sha256": "a29f57b4b6ed2fd6742800c956f2056c19702c54d102550fee53e8a23ad3b41a"
+  },
+  "compression/zstandard/README.txt.zst": {
+    "bytes": 74,
+    "sha256": "9eb8f0bb115ed32ee1625430b9132bbbeddc9874b0661be5d1aae7267f421d99"
+  },
+  "disks/apm-apple.img": {
+    "bytes": 69206016,
+    "sha256": "f1826373aad1c1f944646b1fc490e43285f8fa7e81a6c2224c580b8748b937c3"
+  },
+  "disks/apm-apple.img.gz": {
+    "bytes": 78281,
+    "sha256": "bae0dd06ec0353dc6ccf93a9b8a59c4865937f9400ff78bfe1753d58c108c3c1"
+  },
+  "disks/gpt-mixed.img": {
+    "bytes": 73400320,
+    "sha256": "c6d8607f4f1ff563fa4aea056827cf9c2fac81813dfb2df8b482adf78ec54996"
+  },
+  "disks/gpt-mixed.img.gz": {
+    "bytes": 203335,
+    "sha256": "0cdb092f766262998de48186a1aa59728c569ff24d24e0837bdb59f6aa942eb6"
+  },
+  "disks/mbr-windows.img": {
+    "bytes": 56623104,
+    "sha256": "b1b823cd2174e1c644d3326c68cefaa531d6228703ba574cfd850a512c5800cf"
+  },
+  "disks/mbr-windows.img.gz": {
+    "bytes": 179978,
+    "sha256": "d11dfd40c7ef53c1a69f35be73de208f790eafb2a311894a1ccb8edef276a833"
+  },
+  "filesystems/apple/hfs-populated.img": {
+    "bytes": 16777216,
+    "sha256": "98d3e704959550920728a45fcfa5fc3e92d6aa1cf85848a91078cac3d64792e8"
+  },
+  "filesystems/apple/hfs-populated.img.gz": {
+    "bytes": 20188,
+    "sha256": "dd17a607bbdb8a385ce67c5a922faab1811f8e11322eda3950b87ee59c12efcd"
+  },
+  "filesystems/apple/hfsplus-populated.img": {
+    "bytes": 33554432,
+    "sha256": "3740938b153ccdc93d05368c10a637a8cdb66d343f1c8356092360ae54c5baf7"
+  },
+  "filesystems/apple/hfsplus-populated.img.gz": {
+    "bytes": 37986,
+    "sha256": "2c44d31fcb8d53971b2ec1d9f8264016c4a89652ede0b7a91e3dbbdff1d4202f"
+  },
+  "filesystems/apple/hfsx-populated.img": {
+    "bytes": 33554432,
+    "sha256": "235cd403323eafcd2cdc7ad9c32a3bd8f7d6698ce4010481580bb9cee0cef509"
+  },
+  "filesystems/apple/hfsx-populated.img.gz": {
+    "bytes": 38072,
+    "sha256": "bc2d9158ac0ab5d92f6fed4a59acc06210ddd70dc56f268ebd7764793c61d55a"
+  },
+  "filesystems/bsd/ufs1.img": {
+    "bytes": 16777216,
+    "sha256": "078529fe3d9fd088263e3a1382bc5b3f9bdabb3cbe826455f7d02c36f99f2dd3"
+  },
+  "filesystems/bsd/ufs1.img.Z": {
+    "bytes": 29058,
+    "sha256": "a0e59ef43bc0699716c5720ec736ab0ccaf22094275636d8dd00979714bdb8d2"
+  },
+  "filesystems/bsd/ufs2.img": {
+    "bytes": 16777216,
+    "sha256": "7655a805e45ae4e7c1c9fd73ed06caf0785fb7e1a8604fc3a0f6d07956d14f64"
+  },
+  "filesystems/bsd/ufs2.img.gz": {
+    "bytes": 21015,
+    "sha256": "4b6041e17c705ff92ee98bd6b3adc875facc22614093b41e1a706f5e7726b0bb"
+  },
+  "filesystems/bsd/ufs2.img.zst": {
+    "bytes": 4184,
+    "sha256": "1c9087c8edffc4715cbd02ae13083cb12468307a8cbcc48fe1096bc28e55bfaf"
+  },
+  "filesystems/optical/rockridge.iso": {
+    "bytes": 598016,
+    "sha256": "98673fa177a165cb4450b448919cb78d0e266eb5af2c1e667a5ee9bae90c0d77"
+  },
+  "filesystems/optical/rockridge.iso.gz": {
+    "bytes": 4644,
+    "sha256": "180ec8b38a151df01b8c15192b12188a85df84b9f4e1a0bd23f0d71400b83c71"
+  },
+  "filesystems/windows/exfat.img": {
+    "bytes": 33554432,
+    "sha256": "d8ef360330957cdeceb8a8dab28518a30d45f728c51869fcc3434c97aef5130e"
+  },
+  "filesystems/windows/fat16.img.bz2": {
+    "bytes": 3332,
+    "sha256": "98453394482803343c1245a32eb6af2d93409c170d400bf01d018f25fa395b27"
+  },
+  "filesystems/windows/fat16.img.gz": {
+    "bytes": 20637,
+    "sha256": "3972bf4b23e8f3d71607386e0578131e0cb1b2175681a2967af8a1b574e851a8"
+  },
+  "filesystems/windows/fat16.img.xz": {
+    "bytes": 3364,
+    "sha256": "f8e953489b5dbf77c4ccb31be474b2e382c848f60474346a567a103d76f18a5d"
+  },
+  "filesystems/windows/ntfs-populated.img": {
+    "bytes": 33554432,
+    "sha256": "b2d843b019bdff6da378a2d2a1aebc136ba5aadb051ef4240d6e88dcf24f7298"
+  },
+  "filesystems/windows/ntfs-populated.img.gz": {
+    "bytes": 156818,
+    "sha256": "383a817b2e323223750b62dda39766446eaaab190ba468497bab433540edea9b"
+  },
+  "filesystems/windows/recovery/expected.json": {
+    "bytes": 4174,
+    "sha256": "a69e3255cd134d42f63922a9a116dd8f0efa46a548c1f58e35020d69a89566c6"
+  },
+  "filesystems/windows/recovery/fat12-deleted.img": {
+    "bytes": 1474560,
+    "sha256": "19a51ced92ee5e079c724a319ede95da95d40c988206ed2e5ff81360f698f003"
+  },
+  "filesystems/windows/recovery/fat16-deleted.img": {
+    "bytes": 16777216,
+    "sha256": "ac901115800d0422492f51e5639d872b205b31a71d3f09c9b1957ebada99163a"
+  },
+  "filesystems/windows/recovery/fat16-deleted.img.gz": {
+    "bytes": 17304,
+    "sha256": "0a25dd0e6d2b2fd32b22acaf55b71dfa9aa821bb0f7f748b759e0b96ad7156ad"
+  },
+  "filesystems/windows/recovery/fat32-deleted.img": {
+    "bytes": 67108864,
+    "sha256": "800ce6ae0e93caed1c98dd8e494bf537a27080b42fea128c84f932fac8290bf9"
+  },
+  "filesystems/windows/recovery/safety/README.md": {
+    "bytes": 2806,
+    "sha256": "d468a4c8b338775a26d1d80ea2d5da603a85c58a4bb96e932065d6de06f0f315"
+  },
+  "filesystems/windows/recovery/safety/apm-fat16-deleted.img": {
+    "bytes": 18874368,
+    "sha256": "d7bc0baba0384ceb72b804d98f65c0d1dcfcba40cf1923c14d091f1366a29414"
+  },
+  "filesystems/windows/recovery/safety/expected.json": {
+    "bytes": 18509,
+    "sha256": "f98eaa7953ee475a698efd85f80c32c1a74226217c4ca07481ada2bfec49d04b"
+  },
+  "filesystems/windows/recovery/safety/fat12-adversarial.img": {
+    "bytes": 1474560,
+    "sha256": "118a88be13cf4641efa72dd8091006b4cec6ed5e45fc0d24360bfd2e67cb7f36"
+  },
+  "filesystems/windows/recovery/safety/fat16-adversarial.img": {
+    "bytes": 16777216,
+    "sha256": "b38bf6003c0199b7a9dd4183aabfe4bd6c4d4994a3fa742bf1174ca5251b474a"
+  },
+  "filesystems/windows/recovery/safety/fat16-deleted.img.bz2": {
+    "bytes": 1401,
+    "sha256": "0c7779313cc561334d788cce614f592ae28a6ee41a1fe7e3f9a6612dc35888cd"
+  },
+  "filesystems/windows/recovery/safety/fat16-deleted.img.gz": {
+    "bytes": 17304,
+    "sha256": "0a25dd0e6d2b2fd32b22acaf55b71dfa9aa821bb0f7f748b759e0b96ad7156ad"
+  },
+  "filesystems/windows/recovery/safety/fat16-deleted.img.xz": {
+    "bytes": 3312,
+    "sha256": "43c413a3cfbd9347c56d3176c0a8b042ec67ce8ad2759785bff8ea925b3f7958"
+  },
+  "filesystems/windows/recovery/safety/fat16-dirty.img": {
+    "bytes": 16777216,
+    "sha256": "2508eb97ca4e85cb844e629dce3b9bcfa48155aae5670898906cda3fbb8b29c0"
+  },
+  "filesystems/windows/recovery/safety/fat16-invalid-boot-signature.img": {
+    "bytes": 16777216,
+    "sha256": "0eb2fc713b913c681218ab40b0f86fe8cb0c1c334011cfcb0f590690f1d8df5b"
+  },
+  "filesystems/windows/recovery/safety/fat16-invalid-cluster-size.img": {
+    "bytes": 16777216,
+    "sha256": "fdb89d0e2778c1ca83ba18051b1b8a8f13592e85799e423385739198e535980c"
+  },
+  "filesystems/windows/recovery/safety/fat16-invalid-geometry.img": {
+    "bytes": 16777216,
+    "sha256": "8d06cf406f7f29824b87a3e4459be7ed9391965651b50cfca92eb8062c3d69b3"
+  },
+  "filesystems/windows/recovery/safety/fat16-live-cycle.img": {
+    "bytes": 16777216,
+    "sha256": "df11c46779bce6c67535ff60793733bcbc3e5d739d5d8454690c42e0cca01226"
+  },
+  "filesystems/windows/recovery/safety/fat16-magic-partial.img": {
+    "bytes": 16777216,
+    "sha256": "e0388d01fb1babf508202dc2bdefd70b68f81c7d423d85588d1a4f68770ab8d0"
+  },
+  "filesystems/windows/recovery/safety/fat16-mirror-disagreement.img": {
+    "bytes": 16777216,
+    "sha256": "e2ab55a6d2c9596459ed1933ab104778b6aa4a0ee8303eb2e2529c0590e6e698"
+  },
+  "filesystems/windows/recovery/safety/fat16-partial-tail.img": {
+    "bytes": 16777216,
+    "sha256": "1cc6b3b6b98d246d513619a3ec4540eae05ee11b4ba1af093929ad8872048c51"
+  },
+  "filesystems/windows/recovery/safety/fat32-active-second-fat.img": {
+    "bytes": 67108864,
+    "sha256": "7999db0f4b2c61c4c8ed2d309028da5790abb1c723ee31e975d156b0b0b4a366"
+  },
+  "filesystems/windows/recovery/safety/fat32-adversarial.img": {
+    "bytes": 67108864,
+    "sha256": "f05b5ac4c66ae3e8fa6484c196e2cb3cedbeff8b06d60b501662f27b093d4d10"
+  },
+  "filesystems/windows/recovery/safety/fat32-invalid-active-fat.img": {
+    "bytes": 67108864,
+    "sha256": "f2b657b2665a1fa33076c17e9b3c3dfd119e31b10bcfd397465077b9822c44da"
+  },
+  "filesystems/windows/recovery/safety/fat32-stale-inactive-fat.img": {
+    "bytes": 67108864,
+    "sha256": "c15b2316d8a355ea7321ed12afaa216ac0279d102a289fd7ec159d1b1e6ef293"
+  },
+  "filesystems/windows/recovery/safety/gpt-bad-backup-crc.img": {
+    "bytes": 18874368,
+    "sha256": "4d4d99f99375983ed21a1a07acdf97ee3b52a929a77c81ce65ba4868fb63aef2"
+  },
+  "filesystems/windows/recovery/safety/gpt-bad-entry-crc.img": {
+    "bytes": 18874368,
+    "sha256": "344f03eee80703b249fdc95287db0e6da3d907e9b449c43d0022b085714e83bb"
+  },
+  "filesystems/windows/recovery/safety/gpt-bad-primary-crc.img": {
+    "bytes": 18874368,
+    "sha256": "55d1bf33430574a7b7f610bc77565ae8642a2defb786d03496f6ffa696658a1a"
+  },
+  "filesystems/windows/recovery/safety/gpt-fat16-deleted.img": {
+    "bytes": 18874368,
+    "sha256": "65436ec5d1d3f647496da1b46b5a3f43790561dab7ae21347ca3ec2915b5ffa9"
+  },
+  "filesystems/windows/recovery/safety/mbr-fat16-deleted.img": {
+    "bytes": 18874368,
+    "sha256": "b11c6b282187da7c7863b9c26f753d623f24e9bd7d66cba1acaf7f29bd38541e"
+  },
+  "filesystems/windows/recovery/safety/mbr-fat16-deleted.img.bz2": {
+    "bytes": 1425,
+    "sha256": "08fad4d66cecbe4027f9325ab472a66a593950273da7c5555ec1a9c2fc4ef42d"
+  },
+  "filesystems/windows/recovery/safety/mbr-fat16-deleted.img.gz": {
+    "bytes": 19352,
+    "sha256": "2027936f205dcbc97912c9b0a849910b6d528fa0f82a74639c63554c30200c1e"
+  },
+  "filesystems/windows/recovery/safety/mbr-fat16-deleted.img.xz": {
+    "bytes": 3640,
+    "sha256": "d99aa02808567e88318802e91764a319a350eb62876444f03c1e9e4cb502df5d"
+  },
+  "filesystems/windows/recovery/safety/mbr-outside-volume.img": {
+    "bytes": 18874368,
+    "sha256": "e1737010e4a3e157d9315214d73ce503a6c7400252df1b36624a8087978f9a03"
+  },
+  "filesystems/windows/recovery/safety/mbr-overlapping-volumes.img": {
+    "bytes": 18874368,
+    "sha256": "cd1beed70805398c8d0b2e5cef7b66b912df30652e3953dbb124d539ae5d607a"
+  }
+}

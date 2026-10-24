@@ -5,6 +5,7 @@ import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.apache.commons.compress.compressors.lzma.LZMACompressorInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
+import org.apache.commons.compress.compressors.z.ZCompressorInputStream
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -24,6 +25,8 @@ import java.util.TimeZone
  * - FAT12 / FAT16 / FAT32 + VFAT Long File Names (.fat, .vfat, .img, .ima, .flp)
  * - exFAT (.exfat, .img)
  * - ext2 / ext3 / ext4 with both direct/indirect blocks and ext4 extent trees (.ext2, .ext3, .ext4, .img)
+ * - Read-only BSD UFS1 / UFS2, little- and big-endian (.ufs, .ufs1, .ufs2, .img)
+ * - Read-only NTFS 3.0/3.1 resident, nonresident and sparse data (.ntfs, .img)
  * - MBR and GPT partitioned disk images (.img, .raw)
  * - Transparent decompression for .gz, .bz2, .bz, .xz, .lzma, .zst wrapped disc images
  */
@@ -37,7 +40,13 @@ class DiscImageReader(private val tempDir: File) {
         val modifiedAtMillis: Long?,
         internal val extractor: ((BlockDevice, OutputStream) -> Unit)? = null,
         val isSymbolicLink: Boolean = false,
-        val linkTarget: String? = null
+        val linkTarget: String? = null,
+        val permissionsMode: Int? = null,
+        val owner: String? = null,
+        val group: String? = null,
+        val readError: String? = null,
+        val recoveryNote: String? = null,
+        val partialExtractor: ((BlockDevice, OutputStream) -> com.infinifolder.model.RecoveryReport)? = null
     )
 
     fun readEntries(
@@ -49,6 +58,188 @@ class DiscImageReader(private val tempDir: File) {
         return withBlockDevice(archiveName, openStream, localFile, writable = false, device = device) { dev ->
             parseDiscImage(dev)
         }
+    }
+
+    fun supportsFatRecovery(archiveName: String, openStream: () -> InputStream, localFile: File? = null, device: BlockDevice? = null): Boolean =
+        withBlockDevice(archiveName, openStream, localFile, writable = false, device = device, freshSnapshot = true) { dev ->
+            isFatFs(dev, 0L) || detectPartitions(dev).any { p ->
+                p.offsetBytes >= 0 && p.sizeBytes > 0 && p.offsetBytes <= dev.size && p.sizeBytes <= dev.size - p.offsetBytes &&
+                    isFatFs(PartitionSliceBlockDevice(dev, p.offsetBytes, p.sizeBytes), 0L)
+            }
+        }
+
+    /** Browse only the requested image directory; partition/LVM roots list volumes. */
+    fun readDirectoryEntries(archiveName: String, directoryPath: String, openStream: () -> InputStream,
+        localFile: File? = null, device: BlockDevice? = null): List<DiscEntry> =
+        withBlockDevice(archiveName, openStream, localFile, writable = false, device = device) { dev ->
+            directoryEntries(dev, normalizePath(directoryPath))
+        }
+
+    private fun directoryEntries(dev: BlockDevice, requested: String): List<DiscEntry> {
+        fun join(prefix: String, path: String) = if (prefix.isEmpty()) path else if (path.isEmpty()) prefix else "$prefix/$path"
+        fun relativeTo(path: String, prefix: String): String? = when {
+            path == prefix -> ""
+            path.startsWith("$prefix/") -> path.removePrefix("$prefix/")
+            else -> null
+        }
+        fun filesystem(source: BlockDevice, relative: String, prefix: String,
+            resolve: (BlockDevice) -> BlockDevice, depth: Int): List<DiscEntry> {
+            RecoveryCancellation.check()
+            if (depth > 16) throw IOException("Image volume nesting limit exceeded")
+            if (LvmDecoder.isLvm(source)) {
+                val volumes = LvmDecoder.decode(source)
+                if (relative.isEmpty()) return volumes.map { DiscEntry(join(prefix, it.name), true, it.sizeBytes, null) }
+                val volume = volumes.firstOrNull { relativeTo(relative, it.name) != null }
+                    ?: throw IOException("Logical volume not found: $relative")
+                val childPath = relativeTo(relative, volume.name)!!
+                val childPrefix = join(prefix, volume.name)
+                return filesystem(volume.device, childPath, childPrefix, { root ->
+                    LvmDecoder.decode(resolve(root)).firstOrNull { it.name == volume.name && it.uuid == volume.uuid }
+                        ?.device ?: throw IOException("Logical volume changed; refresh the image")
+                }, depth + 1)
+            }
+            val entries = try {
+                if (isExtFs(source, 0L)) parseExtFs(source, 0L, "", directoryPath = relative)
+                else parseFilesystemAtOffset(source, 0L, "").filter {
+                    normalizePath(it.path).substringBeforeLast('/', "") == relative
+                }
+            } catch (_: UnrecognizedFilesystem) {
+                val rawName = prefix.substringAfterLast('/').ifEmpty { "volume" } + ".raw"
+                if (relative.isNotEmpty()) throw IOException("No browsable filesystem in this volume")
+                listOf(DiscEntry(rawName, false, source.size, null, extractor = { d, out ->
+                    copyRangeToStream(d, 0L, d.size, out)
+                }))
+            }
+            return entries.map { entry ->
+                val extract = entry.extractor
+                entry.copy(path = join(prefix, entry.path),
+                    linkTarget = entry.linkTarget?.let { if (it.startsWith('/') && prefix.isNotEmpty()) "/$prefix$it" else it },
+                    extractor = extract?.let { fn -> { root, out -> fn(resolve(root), out) } })
+            }
+        }
+
+        // Direct filesystems must be checked before partition-table heuristics.
+        val direct = LvmDecoder.isLvm(dev) || isExtFs(dev, 0L) || isFatFs(dev, 0L) ||
+            isExFat(dev, 0L) || isIso9660(dev, 0L) || NtfsFileSystem.isNtfs(dev) ||
+            HfsFileSystem.isHfs(dev) || UfsFileSystem.isUfs(dev)
+        if (direct) return filesystem(dev, requested, "", { it }, 0)
+        val partitions = detectPartitions(dev)
+        if (partitions.isEmpty()) throw IOException("Unsupported or unrecognized disc image format")
+        if (partitions.size > 1 && requested.isEmpty()) {
+            return partitions.map { DiscEntry(it.name, true, it.sizeBytes, null) }
+        }
+        val part = if (partitions.size == 1) partitions.single() else
+            partitions.firstOrNull { relativeTo(requested, it.name) != null }
+                ?: throw IOException("Partition not found: $requested")
+        val prefix = if (partitions.size > 1) part.name else ""
+        val relative = if (prefix.isEmpty()) requested else relativeTo(requested, prefix)!!
+        val slice = PartitionSliceBlockDevice(dev, part.offsetBytes, part.sizeBytes, dev.isReadOnly)
+        return filesystem(slice, relative, prefix, { root ->
+            PartitionSliceBlockDevice(root, part.offsetBytes, part.sizeBytes, root.isReadOnly)
+        }, 0)
+    }
+
+    private fun deletedFatEntries(dev: BlockDevice): List<DiscEntry> {
+        if (isFatFs(dev, 0L)) return FatDeletedFiles(FatFileSystem(dev)).entries()
+        val result = mutableListOf<DiscEntry>()
+        var fatVolumes = 0
+        FatRecoveryPartitions.validate(dev)
+        val partitions = detectPartitions(dev)
+        val ordered = partitions.sortedBy { it.offsetBytes }
+        if (ordered.zipWithNext().any { (a, b) -> a.sizeBytes > b.offsetBytes - a.offsetBytes })
+            throw IOException("Overlapping partitions; recovery scan refused")
+        for (p in partitions) {
+            if (p.offsetBytes < 0 || p.sizeBytes <= 0 || p.offsetBytes > dev.size || p.sizeBytes > dev.size - p.offsetBytes)
+                throw IOException("Invalid partition bounds; recovery scan refused")
+            val slice = PartitionSliceBlockDevice(dev, p.offsetBytes, p.sizeBytes)
+            if (!isFatFs(slice, 0L)) continue
+            fatVolumes++
+            result.add(DiscEntry(p.name, true, null, null))
+            for (entry in FatDeletedFiles(FatFileSystem(slice)).entries()) {
+                val extract = entry.extractor
+                fun checkLayout(source: BlockDevice) {
+                    FatRecoveryPartitions.validate(source)
+                    if (detectPartitions(source) != partitions) throw IOException("Partition layout changed during recovery; refresh and retry")
+                }
+                result.add(entry.copy(path = "${p.name}/at-${p.offsetBytes.toString(16)}-${entry.path}", extractor = extract?.let { fn ->
+                    { source, out ->
+                        checkLayout(source)
+                        fn(PartitionSliceBlockDevice(source, p.offsetBytes, p.sizeBytes), out)
+                        checkLayout(source)
+                    }
+                }, partialExtractor = entry.partialExtractor?.let { fn -> { source, out ->
+                    checkLayout(source)
+                    val report = fn(PartitionSliceBlockDevice(source, p.offsetBytes, p.sizeBytes), out)
+                    checkLayout(source)
+                    report.copy(partitionOffset = p.offsetBytes)
+                } }))
+            }
+        }
+        if (fatVolumes == 0) throw IOException("Deleted-file scanning requires a FAT12, FAT16 or FAT32 volume")
+        return result
+    }
+
+    fun readDeletedFatEntries(archiveName: String, openStream: () -> InputStream, localFile: File? = null, device: BlockDevice? = null): List<DiscEntry> =
+        withBlockDevice(archiveName, openStream, localFile, writable = false, device = device, freshSnapshot = true) { deletedFatEntries(it) }
+
+    fun openDeletedFatEntry(archiveName: String, path: String, openStream: () -> InputStream, localFile: File? = null, device: BlockDevice? = null): InputStream {
+        tempDir.mkdirs()
+        val staged = File.createTempFile("fat-recovery-", ".tmp", tempDir)
+        try {
+            withBlockDevice(archiveName, openStream, localFile, writable = false, device = device, freshSnapshot = true) { dev ->
+                RecoveryCancellation.check()
+                val entry = deletedFatEntries(dev).singleOrNull { it.path == path } ?: throw IOException("Deleted-file candidate no longer exists")
+                entry.readError?.let { throw IOException(it) }
+                val extract = entry.extractor ?: throw IOException("Cannot recover a directory")
+                ContainerSpace.require(tempDir, entry.sizeBytes ?: 0)
+                staged.outputStream().use { extract(dev, it) }
+            }
+            return object : java.io.FilterInputStream(staged.inputStream()) {
+                override fun close() { try { super.close() } finally { staged.delete() } }
+            }
+        } catch (e: Throwable) { staged.delete(); throw e }
+    }
+
+    fun openPartialDeletedFatEntry(archiveName: String, path: String, openStream: () -> InputStream,
+        localFile: File? = null, device: BlockDevice? = null): com.infinifolder.model.RecoveryExport {
+        tempDir.mkdirs()
+        val staged = File.createTempFile("fat-partial-", ".tmp", tempDir)
+        try {
+            var report = withBlockDevice(archiveName, openStream, localFile, writable = false, device = device, freshSnapshot = true) { dev ->
+                val entry = deletedFatEntries(dev).singleOrNull { it.path == path } ?: throw IOException("Deleted-file candidate changed or no longer exists")
+                val extract = entry.partialExtractor ?: throw IOException("Deleted metadata does not support partial recovery")
+                ContainerSpace.require(tempDir, entry.sizeBytes ?: 0)
+                staged.outputStream().buffered(128 * 1024).use { extract(dev, it) }
+            }
+            val copiedPrefix = report.ranges.firstOrNull {
+                it.disposition == com.infinifolder.model.RecoveryDisposition.ZERO_FILLED
+            }?.offset ?: staged.length()
+            val headerLength = minOf(copiedPrefix, staged.length(), 2048L).toInt()
+            val magic = if (headerLength > 0) staged.inputStream().use { input ->
+                val bytes = ByteArray(headerLength)
+                var read = 0
+                while (read < bytes.size) { val n = input.read(bytes, read, bytes.size - read); if (n < 0) break; read += n }
+                com.infinifolder.storage.FileMagicDetector.detectFromBytes(bytes.copyOf(read))
+            } else null
+            val expectedMime = com.infinifolder.mime.MimeRegistry.guess(path.substringAfterLast('/'), false)
+            val expectedContainer = com.infinifolder.mime.MimeRegistry.packageFormat(path.substringAfterLast('/'), expectedMime)
+                ?.let { com.infinifolder.mime.MimeRegistry.guess("container.${it.container}") }
+            val compatibleTypes = listOfNotNull(expectedMime, expectedContainer).map { com.infinifolder.mime.MimeRegistry.normalize(it) }
+            val mismatch = if (magic == null || com.infinifolder.storage.FileMagicDetector.isAmbiguousOrUnknown(path.substringAfterLast('/'), expectedMime)) null
+                else com.infinifolder.mime.MimeRegistry.normalize(magic.mimeType) !in compatibleTypes
+            if (mismatch == true) report = report.copy(ranges = report.ranges.map { range ->
+                if (range.grade == com.infinifolder.model.RecoveryGrade.POSSIBLY_GOOD)
+                    range.copy(grade = com.infinifolder.model.RecoveryGrade.POSSIBLY_BAD,
+                        reason = range.reason + "; detected signature differs from filename type (heuristic)") else range
+            })
+            report = report.copy(candidate = path, sourceImage = archiveName, magicMime = magic?.mimeType,
+                magicDescription = magic?.description, expectedMime = expectedMime, expectedContainerMime = expectedContainer, magicInspectedBytes = headerLength,
+                magicMismatch = mismatch)
+            val stream = object : java.io.FilterInputStream(staged.inputStream()) {
+                override fun close() { try { super.close() } finally { staged.delete() } }
+            }
+            return com.infinifolder.model.RecoveryExport(stream, report)
+        } catch (e: Throwable) { staged.delete(); throw e }
     }
 
     fun extractEntry(
@@ -70,7 +261,7 @@ class DiscImageReader(private val tempDir: File) {
                 targetFile.outputStream().use { FatFileSystem(dev).extractFile(cleanTarget, it) }
                 return@withBlockDevice
             }
-            val entries = parseDiscImage(dev)
+            val entries = directoryEntries(dev, cleanTarget.substringBeforeLast('/', ""))
             val match = entries.firstOrNull { normalizePath(it.path) == cleanTarget }
                 ?: entries.firstOrNull { normalizePath(it.path).equals(cleanTarget, ignoreCase = true) }
                 ?: throw NoSuchElementException("Entry not found in disc image: $entryPath")
@@ -103,6 +294,9 @@ class DiscImageReader(private val tempDir: File) {
                 isFatFs(target, 0L) -> FatFileSystem(target).fileSystemInfoWithSpace()
                 isExFat(target, 0L) -> com.infinifolder.storage.FileSystemInfo("exfat", null, "Image boot sector")
                 isExtFs(target, 0L) -> com.infinifolder.storage.FileSystemInfo("ext2/3/4", null, "Image superblock", caseSensitive = true)
+                NtfsFileSystem.isNtfs(target) -> NtfsFileSystem(target).info()
+                HfsFileSystem.isHfs(target) -> HfsFileSystem(target).info()
+                UfsFileSystem.isUfs(target) -> UfsFileSystem(target).info()
                 else -> null
             }
             identify(dev)?.let { return@withBlockDevice it }
@@ -119,7 +313,7 @@ class DiscImageReader(private val tempDir: File) {
     fun writableFailureReason(archiveName: String, localFile: File?, device: BlockDevice? = null,
         entryPath: String? = null, probeOnly: Boolean = false): String? = try {
         val lower = archiveName.lowercase(Locale.ROOT)
-        if (listOf(".gz", ".bz2", ".bz", ".xz", ".lzma", ".zst").any { lower.endsWith(it) } ||
+        if (listOf(".gz", ".bz2", ".bz", ".xz", ".lzma", ".zst", ".z").any { lower.endsWith(it) } ||
             (localFile != null && isCompressedFileMagic(localFile)))
             throw IOException("Compressed disk images are read-only; decompress the image before editing")
         withWritableFat(archiveName, localFile, device, entryPath.orEmpty(), probeOnly) { _, _ -> Unit }
@@ -136,7 +330,11 @@ class DiscImageReader(private val tempDir: File) {
         probeOnly: Boolean = false,
         block: (FatFileSystem, String) -> T
     ): T {
-        if (localFile != null) {
+        // ArchiveStorageProvider supplies this marker only for its private,
+        // unpublished batch snapshot. The original backing image is checked
+        // again at publication; spawning losetup for every staged entry is unnecessary.
+        val privateSnapshot = device is PrivateBatchBlockDevice && localFile != null && device.belongsTo(localFile)
+        if (localFile != null && !privateSnapshot) {
             val mountCheck = MountedPartitionDetector.checkMounted(localFile)
             if (mountCheck.isMounted) {
                 throw MountedPartitionException(localFile.name, mountCheck.reason)
@@ -152,6 +350,8 @@ class DiscImageReader(private val tempDir: File) {
                 val fatFs = FatFileSystem(dev, 0L, "")
                 return@withBlockDevice block(fatFs, entryPath)
             }
+            if (HfsFileSystem.isHfs(dev)) throw IOException("HFS/HFS+/HFSX filesystem views are read-only; image writing is not implemented")
+            if (NtfsFileSystem.isNtfs(dev)) throw IOException("NTFS filesystem views are read-only; NTFS image writing is not implemented")
             val partitions = detectPartitions(dev)
             if (partitions.isNotEmpty()) {
                 val cleanPath = normalizePath(entryPath)
@@ -180,6 +380,7 @@ class DiscImageReader(private val tempDir: File) {
                     }
                 }
             }
+            if (UfsFileSystem.isUfs(dev)) throw IOException("UFS filesystem views are read-only; UFS image writing is not implemented")
             throw IOException("No writable FAT filesystem found for path: $entryPath")
         }
         // Intermediate FAT flushes must never publish an incomplete remote transaction.
@@ -221,6 +422,7 @@ class DiscImageReader(private val tempDir: File) {
         localFile: File?,
         writable: Boolean = false,
         device: BlockDevice? = null,
+        freshSnapshot: Boolean = false,
         block: (BlockDevice) -> T
     ): T {
         val lowerName = archiveName.lowercase(Locale.ROOT)
@@ -229,7 +431,7 @@ class DiscImageReader(private val tempDir: File) {
             lowerName.endsWith(".bz") ||
             lowerName.endsWith(".xz") ||
             lowerName.endsWith(".lzma") ||
-            lowerName.endsWith(".zst")
+            lowerName.endsWith(".zst") || lowerName.endsWith(".z")
 
         if (device != null && !isCompressedByName) {
             val dev = VmDiskDecoder.open(device, isReadOnly = !writable, baseFile = localFile) ?: device
@@ -256,7 +458,7 @@ class DiscImageReader(private val tempDir: File) {
         }
 
         tempDir.mkdirs()
-        if (localFile != null && localFile.exists()) {
+        if (!freshSnapshot && localFile != null && localFile.exists()) {
             val cacheKey = sha256("${localFile.absolutePath}:${localFile.length()}:${localFile.lastModified()}")
             val cachedRaw = File(tempDir, "disc_cache_$cacheKey.raw")
             if (!cachedRaw.exists() || cachedRaw.length() == 0L) {
@@ -265,7 +467,7 @@ class DiscImageReader(private val tempDir: File) {
                     localFile.inputStream().use { rawIn ->
                         openDecompressedStream(rawIn, lowerName).use { decIn ->
                             tmpOut.outputStream().use { out ->
-                                decIn.copyTo(out)
+                                ContainerSpace.copy(decIn, out, tempDir, cancelled = { RecoveryCancellation.check(); false })
                             }
                         }
                     }
@@ -286,17 +488,19 @@ class DiscImageReader(private val tempDir: File) {
 
         val tempFile = File.createTempFile("inf_disc_", ".raw", tempDir)
         try {
-            openStream().use { rawIn ->
+            (if (localFile != null && localFile.exists()) localFile.inputStream() else openStream()).use { rawIn ->
                 openDecompressedStream(rawIn, lowerName).use { decIn ->
                     tempFile.outputStream().use { out ->
                         val buffer = ByteArray(65536)
                         var bytesCopied = 0L
                         var read = decIn.read(buffer)
                         while (read >= 0) {
+                            RecoveryCancellation.check()
                             bytesCopied += read
-                            if (bytesCopied > 512L * 1024L * 1024L) {
+                            if (localFile == null && bytesCopied > 512L * 1024L * 1024L) {
                                 throw IOException("Disk image '$archiveName' exceeds 512 MB streaming limit. Download the file locally to inspect its contents.")
                             }
+                            ContainerSpace.require(tempDir, read.toLong())
                             out.write(buffer, 0, read)
                             read = decIn.read(buffer)
                         }
@@ -321,6 +525,7 @@ class DiscImageReader(private val tempDir: File) {
         }
         // Gzip: 1F 8B
         if (u8(header, 0) == 0x1F && u8(header, 1) == 0x8B) return true
+        if (u8(header, 0) == 0x1F && u8(header, 1) == 0x9D) return true
         // BZip2: 'B' 'Z' 'h'
         if (header[0] == 'B'.code.toByte() && header[1] == 'Z'.code.toByte() && header[2] == 'h'.code.toByte()) return true
         // XZ: FD '7' 'z' 'X' 'Z' 00
@@ -340,6 +545,7 @@ class DiscImageReader(private val tempDir: File) {
         if (read >= 2 && u8(header, 0) == 0x1F && u8(header, 1) == 0x8B) {
             return GzipCompressorInputStream(bis, true)
         }
+        if (read >= 2 && u8(header, 0) == 0x1F && u8(header, 1) == 0x9D) return ZCompressorInputStream(bis)
         if (read >= 3 && header[0] == 'B'.code.toByte() && header[1] == 'Z'.code.toByte() && header[2] == 'h'.code.toByte()) {
             return BZip2CompressorInputStream(bis, true)
         }
@@ -356,6 +562,7 @@ class DiscImageReader(private val tempDir: File) {
             lowerName.endsWith(".xz") -> XZCompressorInputStream(bis, true)
             lowerName.endsWith(".lzma") -> LZMACompressorInputStream(bis)
             lowerName.endsWith(".zst") -> CompressorStreamFactory().createCompressorInputStream(bis)
+            lowerName.endsWith(".z") -> ZCompressorInputStream(bis)
             else -> bis
         }
     }
@@ -427,6 +634,9 @@ class DiscImageReader(private val tempDir: File) {
         if (isFatFs(dev, 0L)) {
             return parseFatFs(dev, 0L, "")
         }
+        if (NtfsFileSystem.isNtfs(dev)) return NtfsFileSystem(dev).entries("")
+        if (HfsFileSystem.isHfs(dev)) return HfsFileSystem(dev).entries("")
+        if (UfsFileSystem.isUfs(dev)) return UfsFileSystem(dev).entries("")
 
         // 4. Check GPT or MBR partition tables
         val partitions = detectPartitions(dev)
@@ -434,8 +644,9 @@ class DiscImageReader(private val tempDir: File) {
             if (partitions.size == 1) {
                 val part = partitions.first()
                 val slice = PartitionSliceBlockDevice(dev, part.offsetBytes, part.sizeBytes)
-                if (LvmDecoder.isLvm(slice, 0L) || part.typeName == "Linux LVM") {
-                    val lvs = try { LvmDecoder.decode(slice, 0L) } catch (_: Exception) { emptyList() }
+                val decodedLvm = decodePartitionLvm(slice, part)
+                if (decodedLvm != null) {
+                    val lvs = decodedLvm
                     if (lvs.isNotEmpty()) {
                         val combined = mutableListOf<DiscEntry>()
                         for (lv in lvs) {
@@ -528,8 +739,9 @@ class DiscImageReader(private val tempDir: File) {
                     val slice = PartitionSliceBlockDevice(dev, part.offsetBytes, part.sizeBytes)
 
                     // Check if partition is an LVM PV
-                    if (LvmDecoder.isLvm(slice, 0L) || part.typeName == "Linux LVM") {
-                        val lvs = try { LvmDecoder.decode(slice, 0L) } catch (_: Exception) { emptyList() }
+                    val decodedLvm = decodePartitionLvm(slice, part)
+                    if (decodedLvm != null) {
+                        val lvs = decodedLvm
                         if (lvs.isNotEmpty()) {
                             for (lv in lvs) {
                                 val lvPrefix = "$prefix/${lv.name}"
@@ -596,6 +808,7 @@ class DiscImageReader(private val tempDir: File) {
                         }
                     } else {
                         // Unrecognized, unformatted, or unsupported partition filesystem: expose raw partition slice
+                        com.infinifolder.storage.DiagnosticLog.record("disc.partition.raw-fallback", "name=${part.name} offset=${part.offsetBytes} bytes=${part.sizeBytes} reason=unrecognized-filesystem-or-no-decoded-lvm")
                         val rawName = "${part.name}.raw"
                         combined += DiscEntry(
                             path = "$prefix/$rawName",
@@ -630,8 +843,9 @@ class DiscImageReader(private val tempDir: File) {
         for (part in partitions) {
             val partNorm = normalizePath(part.name)
             val slice = PartitionSliceBlockDevice(dev, part.offsetBytes, part.sizeBytes, dev.isReadOnly)
-            if (LvmDecoder.isLvm(slice, 0L) || part.typeName == "Linux LVM") {
-                val lvs = try { LvmDecoder.decode(slice, 0L) } catch (_: Exception) { emptyList() }
+            val decodedLvm = decodePartitionLvm(slice, part)
+            if (decodedLvm != null) {
+                val lvs = decodedLvm
                 for (lv in lvs) {
                     val lvFull = "$partNorm/${normalizePath(lv.name)}"
                     if (clean == lvFull || clean == "$lvFull/${lv.name}.raw" || clean.startsWith("$lvFull/")) {
@@ -646,12 +860,32 @@ class DiscImageReader(private val tempDir: File) {
         return null
     }
 
+    private fun decodePartitionLvm(slice: BlockDevice, part: PartitionSlice): List<LvmDecoder.LogicalVolume>? {
+        val detected = LvmDecoder.isLvm(slice, 0L)
+        com.infinifolder.storage.DiagnosticLog.record(
+            "disc.partition.probe",
+            "name=${part.name} type=${part.typeName} offset=${part.offsetBytes} bytes=${part.sizeBytes} lvmSignature=$detected"
+        )
+        if (!detected && part.typeName != "Linux LVM") return null
+        return try {
+            LvmDecoder.decode(slice, 0L).also {
+                com.infinifolder.storage.DiagnosticLog.record("disc.partition.lvm-result", "name=${part.name} volumes=${it.size}")
+            }
+        } catch (e: Exception) {
+            com.infinifolder.storage.DiagnosticLog.record("disc.partition.lvm-failed", "name=${part.name} offset=${part.offsetBytes} rawFallbackPossible=true", e)
+            emptyList()
+        }
+    }
+
     private fun parseFilesystemAtOffset(dev: BlockDevice, offset: Long, prefix: String): List<DiscEntry> {
         return when {
             isIso9660(dev, offset) -> parseIso9660(dev, offset, prefix)
             isExtFs(dev, offset) -> parseExtFs(dev, offset, prefix)
             isExFat(dev, offset) -> parseExFat(dev, offset, prefix)
             isFatFs(dev, offset) -> parseFatFs(dev, offset, prefix)
+            NtfsFileSystem.isNtfs(dev, offset) -> NtfsFileSystem(dev, offset).entries(prefix)
+            HfsFileSystem.isHfs(dev, offset) -> HfsFileSystem(dev, offset).entries(prefix)
+            UfsFileSystem.isUfs(dev, offset) -> UfsFileSystem(dev, offset).entries(prefix)
             else -> throw UnrecognizedFilesystem(offset)
         }
     }
@@ -1319,7 +1553,7 @@ class DiscImageReader(private val tempDir: File) {
         val blockCount: Long
     )
 
-    private fun parseExtFs(dev: BlockDevice, baseOffset: Long, prefix: String): List<DiscEntry> {
+    private fun parseExtFs(dev: BlockDevice, baseOffset: Long, prefix: String, directoryPath: String? = null): List<DiscEntry> {
         val sb = readBytesAt(dev, baseOffset + 1024L, 1024)
         val inodesCount = u32le(sb, 0)
         val logBlockSize = u32le(sb, 24).toInt()
@@ -1491,9 +1725,22 @@ class DiscImageReader(private val tempDir: File) {
 
         val entries = mutableListOf<DiscEntry>()
         val visitedInodes = HashSet<Long>()
+        val scanStarted = android.os.SystemClock.uptimeMillis()
+        var lastScanReport = scanStarted
+        com.infinifolder.storage.DiagnosticLog.record("disc.ext.scan-begin", "deviceBytes=${dev.size} blockBytes=$blockSize inodeBytes=$inodeSize totalInodes=$inodesCount")
 
+        val targetDirectory = directoryPath?.let(::normalizePath)
+        var foundDirectory = targetDirectory == null
         fun walkExtDir(dirInodeNum: Long, currentPath: String) {
+            RecoveryCancellation.check()
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - lastScanReport >= 5000L) {
+                lastScanReport = now
+                com.infinifolder.storage.DiagnosticLog.record("disc.ext.scan-progress", "elapsedMs=${now - scanStarted} directories=${visitedInodes.size} entries=${entries.size}")
+            }
             if (dirInodeNum < 2L || dirInodeNum > inodesCount || !visitedInodes.add(dirInodeNum)) return
+            val listing = targetDirectory == null || normalizePath(currentPath) == targetDirectory
+            if (listing) foundDirectory = true
             val inodeBytes = readBytesAt(dev, getInodeOffset(dirInodeNum), inodeSize)
             val dirSize = u32le(inodeBytes, 4).coerceAtMost(16 * 1024 * 1024L)
             val baos = ByteArrayOutputStream(dirSize.toInt().coerceAtLeast(blockSize))
@@ -1509,6 +1756,13 @@ class DiscImageReader(private val tempDir: File) {
                 if (childInode in 1L..inodesCount && nameLen > 0 && pos + 8 + nameLen <= pos + recLen) {
                     val name = String(dirBytes, pos + 8, nameLen, StandardCharsets.UTF_8)
                     if (name != "." && name != "..") {
+                        val candidatePath = joinPath(currentPath, name)
+                        // Follow only the ancestors of the requested folder. Do not
+                        // fetch inodes for unrelated files or descend into children.
+                        if (!listing && targetDirectory != candidatePath && targetDirectory?.startsWith("$candidatePath/") != true) {
+                            pos += recLen
+                            continue
+                        }
                         val childInodeBytes = readBytesAt(dev, getInodeOffset(childInode), inodeSize)
                         val mode = u16le(childInodeBytes, 0)
                         val isDir = (mode and 0xF000) == 0x4000
@@ -1527,7 +1781,7 @@ class DiscImageReader(private val tempDir: File) {
                                 sizeBytes = null,
                                 modifiedAtMillis = modifiedAtMillis
                             )
-                            walkExtDir(childInode, childPath)
+                            if (targetDirectory == null || !listing) walkExtDir(childInode, childPath)
                         } else if (isLink) {
                             // Fast ext symlinks store their target in i_block, not disk block pointers.
                             if (childSize > 4096) throw IOException("Invalid ext symbolic-link size: $childSize")
@@ -1555,7 +1809,11 @@ class DiscImageReader(private val tempDir: File) {
         }
 
         walkExtDir(2L, prefix)
-        return entries
+        if (!foundDirectory) throw IOException("Directory not found in ext filesystem: $directoryPath")
+        com.infinifolder.storage.DiagnosticLog.record("disc.ext.scan-complete", "elapsedMs=${android.os.SystemClock.uptimeMillis() - scanStarted} directories=${visitedInodes.size} entries=${entries.size}")
+        return if (targetDirectory == null) entries else entries.filter {
+            normalizePath(it.path).substringBeforeLast('/', "") == targetDirectory
+        }
     }
 
     // =========================================================================

@@ -1,5 +1,9 @@
 # Roadmap
 
+## Current feature requests and reliability work
+
+See the [feature to-do list](feature-todo.md) for temporary pinned container targets, wildcard file selection, expanded sorting, and the active pane-swipe/tree-drop reliability work. The latest user test reports FTP working; the earlier FTP error is historical rather than an active reproduced blocker.
+
 ## Phase 1 — useful file manager (in progress)
 
 - [x] Native Android application skeleton; min API 26 / target API 35.

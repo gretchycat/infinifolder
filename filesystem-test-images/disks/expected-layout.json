@@ -1,0 +1,76 @@
+{
+  "mbr-windows.img": {
+    "table": "MBR",
+    "bytes": 56623104,
+    "partitions": [
+      {
+        "source": "filesystems/windows/fat16.img",
+        "first_lba": 2048,
+        "sectors": 40960,
+        "label": "FAT16",
+        "type": 6,
+        "sha256": "b2b2371442970a92a98f94607cd6907d02cdceb456e7048d6208016a864e22eb"
+      },
+      {
+        "source": "filesystems/windows/ntfs-populated.img",
+        "first_lba": 43008,
+        "sectors": 65536,
+        "label": "NTFS",
+        "type": 7,
+        "sha256": "b2d843b019bdff6da378a2d2a1aebc136ba5aadb051ef4240d6e88dcf24f7298"
+      }
+    ]
+  },
+  "gpt-mixed.img": {
+    "table": "GPT",
+    "bytes": 73400320,
+    "partitions": [
+      {
+        "source": "filesystems/linux/ext4.img",
+        "first_lba": 2048,
+        "sectors": 40960,
+        "label": "Linux ext4",
+        "type": "0fc63daf-8483-4772-8e79-3d69d8477de4",
+        "sha256": "ca12e8e0b2b0fbd24cefa33accd3acff4cee4b9f20b8a9dd9f4ffc9758665b49"
+      },
+      {
+        "source": "filesystems/bsd/ufs2.img",
+        "first_lba": 43008,
+        "sectors": 32768,
+        "label": "BSD UFS2",
+        "type": "516e7cb6-6ecf-11d6-8ff8-00022d09712b",
+        "sha256": "7655a805e45ae4e7c1c9fd73ed06caf0785fb7e1a8604fc3a0f6d07956d14f64"
+      },
+      {
+        "source": "filesystems/windows/ntfs-populated.img",
+        "first_lba": 75776,
+        "sectors": 65536,
+        "label": "Windows NTFS",
+        "type": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "sha256": "b2d843b019bdff6da378a2d2a1aebc136ba5aadb051ef4240d6e88dcf24f7298"
+      }
+    ]
+  },
+  "apm-apple.img": {
+    "table": "APM",
+    "bytes": 69206016,
+    "partitions": [
+      {
+        "source": "filesystems/apple/hfsplus-populated.img",
+        "first_lba": 2048,
+        "sectors": 65536,
+        "label": "HFS Plus",
+        "type": "Apple_HFS",
+        "sha256": "3740938b153ccdc93d05368c10a637a8cdb66d343f1c8356092360ae54c5baf7"
+      },
+      {
+        "source": "filesystems/apple/hfsx-populated.img",
+        "first_lba": 67584,
+        "sectors": 65536,
+        "label": "HFSX",
+        "type": "Apple_HFS",
+        "sha256": "235cd403323eafcd2cdc7ad9c32a3bd8f7d6698ce4010481580bb9cee0cef509"
+      }
+    ]
+  }
+}

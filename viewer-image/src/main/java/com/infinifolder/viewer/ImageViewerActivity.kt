@@ -204,6 +204,7 @@ class ImageViewerActivity : ViewerActivity() {
         }
         topBar.addView(openWithBtn)
 
+        DebugTools.attachToolbarButton(this, topBar)
         root.addView(topBar)
 
         // Bottom Navigation Bar

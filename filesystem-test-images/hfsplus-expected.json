@@ -1,0 +1,1902 @@
+{
+  "filesystems/apple/hfsplus-populated.img": {
+    "filesystem": "HFS+",
+    "root_uid": 1000,
+    "root_gid": 1000,
+    "root_mode": "040755",
+    "entries": {
+      "Case.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 18,
+        "sha256": "593ee391f410702169533cd6de7c92730026121118436d7ec9a0d2e73ad4838c",
+        "mode": "100644"
+      },
+      "README.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 66,
+        "sha256": "298494098b253b5dbbc621ffb346eee16a8fa990a93e425d720a0d8511ef999e",
+        "mode": "100644"
+      },
+      "binary.bin": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 8192,
+        "sha256": "dc404a613fedaeb54034514bc6505f56b933caa5250299ba7d094377a51caa46",
+        "mode": "100644"
+      },
+      "empty-directory": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "directory",
+        "mode": "040755"
+      },
+      "empty.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "mode": "100644"
+      },
+      "names": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "directory",
+        "mode": "040755"
+      },
+      "names/Long file name with spaces.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 23,
+        "sha256": "2615d662d43f5207f293b1a8986ab60d7ce469f2dfde41b4e4312ccb68cd6501",
+        "mode": "100644"
+      },
+      "names/café.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 35,
+        "sha256": "be1af0c40b03b65bda0db6a96d052db0998f26ebc892398c845758149dca6b92",
+        "mode": "100644"
+      },
+      "names/emoji-😀.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 32,
+        "sha256": "8b267b50fb06e218aec17c66dbbeda0cad75996ad781490deef93da15ae38da2",
+        "mode": "100644"
+      },
+      "names/日本語.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 19,
+        "sha256": "5a4a16386d0e8479702bcab726fbcb1f12d7ce70c8d83b307cfd0a8eaf055df8",
+        "mode": "100644"
+      },
+      "nested": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "directory",
+        "mode": "040755"
+      },
+      "nested-link": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "symlink",
+        "target": "nested",
+        "mode": "120777"
+      },
+      "nested/deeper": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "directory",
+        "mode": "040755"
+      },
+      "nested/deeper/message.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 21,
+        "sha256": "9f78288914933dfcade6a92fd3a3162c4728c7ddd035ed496e0bc4dab12b6972",
+        "mode": "100644"
+      },
+      "readme-link": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "symlink",
+        "target": "README.txt",
+        "mode": "120777"
+      },
+      "restricted": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "directory",
+        "mode": "040700"
+      },
+      "restricted/private.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 31,
+        "sha256": "307814aa2ae5d0a9ef0e8f2b14a0d476e01b6e5c8e52f54752355d02cb62cc24",
+        "mode": "100600"
+      },
+      "run.sh": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 29,
+        "sha256": "12466c3bcf57bf00c58913d7f19b0b4d30fac32936a48c502e896625ef666ebf",
+        "mode": "100755"
+      },
+      "small-files": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "directory",
+        "mode": "040755"
+      },
+      "small-files/file-000.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "f222350cd8cbf156fbf72a62add5267e7978760e5b980aec08df07b0e392e413",
+        "mode": "100644"
+      },
+      "small-files/file-001.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "d0868660bc93ea57b2c0ffa22c98acfa5413f89035bc7a3f2a9e9986dfe793ee",
+        "mode": "100644"
+      },
+      "small-files/file-002.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "c4e9faadfdc3c1c0dfe1dec280025414d11ef35e528d40dd46d060697c445553",
+        "mode": "100644"
+      },
+      "small-files/file-003.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "1b659eafe4fb41e5b065a1e9ef53e2ec64fec1591e91c1a804b799878c4fb57d",
+        "mode": "100644"
+      },
+      "small-files/file-004.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "5585fd2a59f3426d3fd784c510d073cc517133ac8bed70031fe8d5aa99d0e09b",
+        "mode": "100644"
+      },
+      "small-files/file-005.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "993ffc90cd4c1478f7dca46ceb93a2f5c9691c5ddcecd625fa505b01add68a6e",
+        "mode": "100644"
+      },
+      "small-files/file-006.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "8628cd4ad327590ddd4e480e3fe4c7e3c6fac2260927065ede17372f4322445f",
+        "mode": "100644"
+      },
+      "small-files/file-007.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "38b99696b3af2f2e5035de129746c32024ec9b13c3265fa8a998bdc48f350b12",
+        "mode": "100644"
+      },
+      "small-files/file-008.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "b315d4bc1d982dc2f4447b5bad380c6d9b89be8e2c3050250bf8b8ca7c7e2ab7",
+        "mode": "100644"
+      },
+      "small-files/file-009.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "4101b4f8361891a2326837972e7b811cb591599028b8cca746bd38220dbc55b7",
+        "mode": "100644"
+      },
+      "small-files/file-010.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "05f67377ad59b18f660ac909f5119be923dde4afe79f019881fa8d039d432473",
+        "mode": "100644"
+      },
+      "small-files/file-011.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "1765aa6c06c1c636af637d5d7a78fc34962cbeddf368a756c3c8ebb64bea50c3",
+        "mode": "100644"
+      },
+      "small-files/file-012.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "1c4c7da3d868c64e904cb94ef3067582c41abb33043f3b01fd4014f20acd2fcc",
+        "mode": "100644"
+      },
+      "small-files/file-013.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "397148797934e49a949864531c8dd420179307a4bb14997dd910e5e2026a8b21",
+        "mode": "100644"
+      },
+      "small-files/file-014.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "467dd9df2b4451e9f6875bbad3e1655c6dc6bd9efcb8d733d551f9a114f60ea8",
+        "mode": "100644"
+      },
+      "small-files/file-015.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "14f35c0b18acf0f170466f87d01875b71057fa1dc71b561b8bdcc64cf55707cb",
+        "mode": "100644"
+      },
+      "small-files/file-016.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "08bf5a5a5a69f46fdf48e153ce954046d91d6987d73ce4ee710f092678b9ab7f",
+        "mode": "100644"
+      },
+      "small-files/file-017.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "7edc56928e1d056b21086959621463356e78f46cc91dfa9498973712cf6d555d",
+        "mode": "100644"
+      },
+      "small-files/file-018.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "b1aedb81e995d630588b5884fc072992b8e854b5f67b9a7537013bd4316a6025",
+        "mode": "100644"
+      },
+      "small-files/file-019.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "5a259edec3ed76e2e97e34cb931ce7478ba9891bea0fccca7300189b0d518377",
+        "mode": "100644"
+      },
+      "small-files/file-020.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "0822dfa26ac65d51e8958b64e8651925a8af92d247e12087d3c0df4e689112a3",
+        "mode": "100644"
+      },
+      "small-files/file-021.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "a1abeec8f6689873694572729928de1f3b58312bcc003001f6e6abc7a1661852",
+        "mode": "100644"
+      },
+      "small-files/file-022.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "6e226d5b6d319163c8ec2b4e597e29d5b7443855ca68aa7ed5aa56518b4ba06f",
+        "mode": "100644"
+      },
+      "small-files/file-023.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "0cf24a16a7924c49330a894d27b021de728b07b55399a788bee15192f6a53803",
+        "mode": "100644"
+      },
+      "small-files/file-024.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "c6aa36f3c41c99da54b1c0c1f7bc7b818cf508144a9e657fc4e7828630f5806e",
+        "mode": "100644"
+      },
+      "small-files/file-025.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "2b9b6b12c3a9ea2ed75308abb55c495f8e169f26e1f23d6ff7a374056a29a724",
+        "mode": "100644"
+      },
+      "small-files/file-026.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "bffa9a8e7cbcb48a83250fa09de2fc7e4192856037774bc8e84705e71130c718",
+        "mode": "100644"
+      },
+      "small-files/file-027.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "ac17f6ec7e3726f181e1c3e6c300d6aa30cc74931f1450ee6fe6c6a235df2217",
+        "mode": "100644"
+      },
+      "small-files/file-028.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "a6ff4fbf36d96cf292e6ae2de1d4a1644db9b540daff801627f8a3f1b1cad9c3",
+        "mode": "100644"
+      },
+      "small-files/file-029.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "caa724f75a830189a9b7fc93b6154015990409c790f43cea10b2da62a4db6092",
+        "mode": "100644"
+      },
+      "small-files/file-030.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "b47435b27c5c990203a3a06a4b74ed7dfef3c021e287e24b35c5b6066d07c640",
+        "mode": "100644"
+      },
+      "small-files/file-031.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "debb283ba96be0b3bd7d48af90936cb6ab1e938cd89827df96c2b8efef1d6dd9",
+        "mode": "100644"
+      },
+      "small-files/file-032.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "734f9a48b901263bade8aaaee9924628ec38162eea0ecab7966a625a59ab8426",
+        "mode": "100644"
+      },
+      "small-files/file-033.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "cd491dd27f2f7fa5f96b411b9cd6d7651def21d5a699ee1d638d18f3d049ae7f",
+        "mode": "100644"
+      },
+      "small-files/file-034.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "b179e7be723eb1f51476ee10054bbf6e5d2603797e3225d0e4a8bc732bffe1ac",
+        "mode": "100644"
+      },
+      "small-files/file-035.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "fa94a76d0cd224d574c3b495c00208d31c644b1296d1a940ee57846a371b413a",
+        "mode": "100644"
+      },
+      "small-files/file-036.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "94aa9087f02d0491501249884b5dd9240632cb14fd84c87acaf13b8866a2f1b3",
+        "mode": "100644"
+      },
+      "small-files/file-037.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "9a55031de2a7d6cae8b14a2182b04e525c6f98ddee4e7b166d23c70fa491af54",
+        "mode": "100644"
+      },
+      "small-files/file-038.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "aa7ec96819b9eaf8996bad2e9e94747859c46be9ba71f1af21bbb448e6f2333c",
+        "mode": "100644"
+      },
+      "small-files/file-039.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "483c38dba1076f7cc5cc06fca337f6a45456fcaa4bbaf55821e398ba6f36aff9",
+        "mode": "100644"
+      },
+      "small-files/file-040.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "7a2c0d38c756df2ea916a9e7cb4dbd4bc80a776c1a589195088ae7ef4b4ed6f9",
+        "mode": "100644"
+      },
+      "small-files/file-041.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "f4c7aabbd90054a068678dd15c9e12eaf35531b8ab86f5391adea4a6a8bd8561",
+        "mode": "100644"
+      },
+      "small-files/file-042.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "86f083f6dbbabe36a6149e2f45feb00285a23de5f554a78cbe90fcc90ba7d0dc",
+        "mode": "100644"
+      },
+      "small-files/file-043.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e572db52b8d29044b5ea59f291addbeefd664c5090522bf2a5b8829c3666191e",
+        "mode": "100644"
+      },
+      "small-files/file-044.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "36488593eabf18bd354fb3b7692e72b1604efde11318feefddf8624a765d9b91",
+        "mode": "100644"
+      },
+      "small-files/file-045.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "a95e7c622347b685015503b1c6dc3a5857bd3a419e16c05bd2dd9de5b32c9fd9",
+        "mode": "100644"
+      },
+      "small-files/file-046.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "1f0f7ec7856ec23413634132e1bd580f2cb4266759920ac9fb99796e5e520d7e",
+        "mode": "100644"
+      },
+      "small-files/file-047.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e5a56d019802a733f053a7263097bdd99f581677323796766294e1fed9ce3069",
+        "mode": "100644"
+      },
+      "small-files/file-048.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e7eed2012938734cfb1569612dbe3c3014cf7976bb664f4765573a469350a3e9",
+        "mode": "100644"
+      },
+      "small-files/file-049.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "71286035769d16161f71c123a4f1597cb070410b1b71713425e9cbf1e559ecdb",
+        "mode": "100644"
+      },
+      "small-files/file-050.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "4841d5e533d91651570049b4c5188f18702642509a5eb8f75c7a62326bfc15e4",
+        "mode": "100644"
+      },
+      "small-files/file-051.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "70cd61b2235f0e04c4c1cb07930e8e8aa6d4c3be5dbf3ff62870cd32ddc09a17",
+        "mode": "100644"
+      },
+      "small-files/file-052.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "51a7693caceb3c9c9fd63c0ff4f63168648eee7e1742969d2a57d9ac6e308e43",
+        "mode": "100644"
+      },
+      "small-files/file-053.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "f2db70a61119d4c8f45acb947ac03908148fe8c30b07f4d6836c79af8c93845e",
+        "mode": "100644"
+      },
+      "small-files/file-054.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "550363f40652d007510f9af1f1dc1fd1bffade027191292769a3d1b6b332a96b",
+        "mode": "100644"
+      },
+      "small-files/file-055.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "dca7135ed05d1157db26a16f62ac637700bcd7c6a2f6a42b9ad8ec5d19e96940",
+        "mode": "100644"
+      },
+      "small-files/file-056.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e2cc1ad5651449893d74c257b1c13d00c5ac47eeb6afde3b854264d74f66abf3",
+        "mode": "100644"
+      },
+      "small-files/file-057.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "c4c79688ed86d7a8b80003422473990a743e321b65207d3516e8fe2ebea93d7e",
+        "mode": "100644"
+      },
+      "small-files/file-058.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "8ace524899c76af162ce3a1edffca54fddd3b83cbf25b60acbe9d9ed14ee6d28",
+        "mode": "100644"
+      },
+      "small-files/file-059.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "f6020be1a89ff5ed1c9272557eac0277ac9cbb9046b48b06e8ba36f716bc35a6",
+        "mode": "100644"
+      },
+      "small-files/file-060.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "ed19da84f2cc6b0c318a3081e21cdacf15e5a237011c85b3018da1822d973409",
+        "mode": "100644"
+      },
+      "small-files/file-061.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "afe3c30e8ad29d49e481c1917a3b4823189d8a6133b8f62cabc8e3e4f05a32e0",
+        "mode": "100644"
+      },
+      "small-files/file-062.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e1d5e3fc9748f2dbb1e9984e0e452e917a7d6307c62808e12213149123fd542d",
+        "mode": "100644"
+      },
+      "small-files/file-063.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "09377f40d9128717bcc31bf2f8d08f58927fca913052d6bee5dc4e300c4a7f12",
+        "mode": "100644"
+      },
+      "small-files/file-064.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "83903694c8ef308a56d5a11b8a2f18f852f5cd4cb7d07f552e42b2362cc49fc8",
+        "mode": "100644"
+      },
+      "small-files/file-065.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "89d1abfd49e066767a70fd69f1798384c14e17718671d97d3eab1cdd097af2c5",
+        "mode": "100644"
+      },
+      "small-files/file-066.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "a1e84d277c831ac3e2ae29641b38a4052ed9415e51f4e51ad3904bf4f1eff5c3",
+        "mode": "100644"
+      },
+      "small-files/file-067.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "61b491d0d60bca0b6f307d74c572a6abb007a815ff94b5de38a301203b984d5b",
+        "mode": "100644"
+      },
+      "small-files/file-068.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "5ea9936fae745c790c1785acc3dd6f723af584ec028cc27b1c10eb5f9b988ac2",
+        "mode": "100644"
+      },
+      "small-files/file-069.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "b22291caaa113a9850d4398e42ed57bf439cc42483b6e83ae2e59852f5f3f99e",
+        "mode": "100644"
+      },
+      "small-files/file-070.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "d1f6e5b27ebda8f9782daf5961d0e422975af45abc27bd990e29d8a80b73b6c1",
+        "mode": "100644"
+      },
+      "small-files/file-071.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "761625dac69b5b0f2be42e3688e5ea13ba7541add4e8f4473ea1fa681da5c93e",
+        "mode": "100644"
+      },
+      "small-files/file-072.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "7d57f23dbfd879af11282b2b0203be6ca095c56e0943da8f6df519ae14a6d057",
+        "mode": "100644"
+      },
+      "small-files/file-073.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "5e76d34fa91e8ce133ec745d21e055417981f96ebd2d59ee691ac7a23449e5a8",
+        "mode": "100644"
+      },
+      "small-files/file-074.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "90f336f0eb314e427c75bffb081513a075e1abdd10fb8bdbf06f6e798360234c",
+        "mode": "100644"
+      },
+      "small-files/file-075.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "96527fd1f4f28b26ebab219519c1b83cadab018d1dd81912f3fa8f9a947a0bc8",
+        "mode": "100644"
+      },
+      "small-files/file-076.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "8750d678a9cb3041a97dfdc97d2b95f6d82516b1f1e4b6e8e57c315d8e2ae929",
+        "mode": "100644"
+      },
+      "small-files/file-077.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "b3a7440d0f16069b011eb45d1f3becc381b9a7fbec93c1921db355d4689ceacd",
+        "mode": "100644"
+      },
+      "small-files/file-078.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "8a52cdbb46a971f0265621c7e74ed575cb8f33488b35e4d3b68a654a5ce1a1ec",
+        "mode": "100644"
+      },
+      "small-files/file-079.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "93802bde93ca346891b66fd91f7c93ca33d5e8542c85a272794e307bf74bbf73",
+        "mode": "100644"
+      },
+      "small-files/file-080.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "ca4ade1aa1f6793739f098fcb982d7828de9ab1ef59c82d8dd4a192b2206b40b",
+        "mode": "100644"
+      },
+      "small-files/file-081.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "2840dbf9482a7bbec802ca2f5e03b6c93b756dfe9c40177686cc9d2fb4bd5a6e",
+        "mode": "100644"
+      },
+      "small-files/file-082.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "0ce257602a1e97efd4fece5dea2db55710eed90882ddeb6983cabd55d01fa6ce",
+        "mode": "100644"
+      },
+      "small-files/file-083.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "c8551b92572d80c6936ed6cc344143e202bbc47556b0bbf8fe7fa6b8dcbee426",
+        "mode": "100644"
+      },
+      "small-files/file-084.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "c729eac40892abdd29e0c71349d48430c031c661d0863565078856b21fba7905",
+        "mode": "100644"
+      },
+      "small-files/file-085.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "8ee3147cbc76fda80366e17296172427745278744e040806abcc0c310b150535",
+        "mode": "100644"
+      },
+      "small-files/file-086.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "f11f92df265b402c05294adfe2c578750e56c79c168a20d1a7d7035af41d0005",
+        "mode": "100644"
+      },
+      "small-files/file-087.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "42eb267edb8eddbf654288c3c09ec52685807881c5a510c099730e6718e8178c",
+        "mode": "100644"
+      },
+      "small-files/file-088.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "0b7822daea9a481424e4bf57b5c6a8f0a682950d1ab46777329bf3af7f144c1c",
+        "mode": "100644"
+      },
+      "small-files/file-089.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "9b77b105bf113f82e6f79a569500aaf0334334a8af1f71a49201cb56e7d0ad2f",
+        "mode": "100644"
+      },
+      "small-files/file-090.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "beed9b385a17543ae9792019d36ae87d93280579d39be80aee1e5d0d84a2d4f5",
+        "mode": "100644"
+      },
+      "small-files/file-091.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "811da485a75f117d7bcd391aebfb06689459c6bcaab6613816441b28e390c30e",
+        "mode": "100644"
+      },
+      "small-files/file-092.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e2dc906076dfd80d8c5cec5e8cdad4b2bc545adf766576bb738017821c281b49",
+        "mode": "100644"
+      },
+      "small-files/file-093.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e65797c91c37c6c3d231227771895ba5dc2de7ea7c123cf71060736cb84f1182",
+        "mode": "100644"
+      },
+      "small-files/file-094.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "81bd47fa20a1da45d83e0ad3fcc8daf49ea7e49065c4afb94f02d7b8bdb05aff",
+        "mode": "100644"
+      },
+      "small-files/file-095.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e941a09518f7a686bc5541e7180dc79f2fe1f5c19e993ca44940f0134ac492a3",
+        "mode": "100644"
+      },
+      "small-files/file-096.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "ab71a3588cd73c5f69831a716e304b3bfd27f83f9e7c742f2c91c0138ac666ae",
+        "mode": "100644"
+      },
+      "small-files/file-097.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "f58b8986535c0c984b442eb011068db886f71e16e887bec817bd6e752e3fda31",
+        "mode": "100644"
+      },
+      "small-files/file-098.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "0cc79a377152b5584e8af38defe4f5e5e86fcc447a31f9d462b56f6e72a7d53a",
+        "mode": "100644"
+      },
+      "small-files/file-099.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "f2150f2322a0f793655ad3bab3a0312e4675123e2b8f19b58c0f3794f5d20eb9",
+        "mode": "100644"
+      }
+    }
+  },
+  "filesystems/apple/hfsx-populated.img": {
+    "filesystem": "HFSX",
+    "root_uid": 1000,
+    "root_gid": 1000,
+    "root_mode": "040755",
+    "entries": {
+      "Case.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 18,
+        "sha256": "593ee391f410702169533cd6de7c92730026121118436d7ec9a0d2e73ad4838c",
+        "mode": "100644"
+      },
+      "README.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 66,
+        "sha256": "298494098b253b5dbbc621ffb346eee16a8fa990a93e425d720a0d8511ef999e",
+        "mode": "100644"
+      },
+      "binary.bin": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 8192,
+        "sha256": "dc404a613fedaeb54034514bc6505f56b933caa5250299ba7d094377a51caa46",
+        "mode": "100644"
+      },
+      "case.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 36,
+        "sha256": "bb01af7666600c5f8d8a980c911917837c222f6ed4840fadeaf0a78a8c888593",
+        "mode": "100644"
+      },
+      "empty-directory": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "directory",
+        "mode": "040755"
+      },
+      "empty.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "mode": "100644"
+      },
+      "names": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "directory",
+        "mode": "040755"
+      },
+      "names/Long file name with spaces.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 23,
+        "sha256": "2615d662d43f5207f293b1a8986ab60d7ce469f2dfde41b4e4312ccb68cd6501",
+        "mode": "100644"
+      },
+      "names/café.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 35,
+        "sha256": "be1af0c40b03b65bda0db6a96d052db0998f26ebc892398c845758149dca6b92",
+        "mode": "100644"
+      },
+      "names/emoji-😀.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 32,
+        "sha256": "8b267b50fb06e218aec17c66dbbeda0cad75996ad781490deef93da15ae38da2",
+        "mode": "100644"
+      },
+      "names/日本語.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 19,
+        "sha256": "5a4a16386d0e8479702bcab726fbcb1f12d7ce70c8d83b307cfd0a8eaf055df8",
+        "mode": "100644"
+      },
+      "nested": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "directory",
+        "mode": "040755"
+      },
+      "nested-link": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "symlink",
+        "target": "nested",
+        "mode": "120777"
+      },
+      "nested/deeper": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "directory",
+        "mode": "040755"
+      },
+      "nested/deeper/message.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 21,
+        "sha256": "9f78288914933dfcade6a92fd3a3162c4728c7ddd035ed496e0bc4dab12b6972",
+        "mode": "100644"
+      },
+      "readme-link": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "symlink",
+        "target": "README.txt",
+        "mode": "120777"
+      },
+      "restricted": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "directory",
+        "mode": "040700"
+      },
+      "restricted/private.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 31,
+        "sha256": "307814aa2ae5d0a9ef0e8f2b14a0d476e01b6e5c8e52f54752355d02cb62cc24",
+        "mode": "100600"
+      },
+      "run.sh": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 29,
+        "sha256": "12466c3bcf57bf00c58913d7f19b0b4d30fac32936a48c502e896625ef666ebf",
+        "mode": "100755"
+      },
+      "small-files": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "directory",
+        "mode": "040755"
+      },
+      "small-files/file-000.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "f222350cd8cbf156fbf72a62add5267e7978760e5b980aec08df07b0e392e413",
+        "mode": "100644"
+      },
+      "small-files/file-001.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "d0868660bc93ea57b2c0ffa22c98acfa5413f89035bc7a3f2a9e9986dfe793ee",
+        "mode": "100644"
+      },
+      "small-files/file-002.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "c4e9faadfdc3c1c0dfe1dec280025414d11ef35e528d40dd46d060697c445553",
+        "mode": "100644"
+      },
+      "small-files/file-003.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "1b659eafe4fb41e5b065a1e9ef53e2ec64fec1591e91c1a804b799878c4fb57d",
+        "mode": "100644"
+      },
+      "small-files/file-004.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "5585fd2a59f3426d3fd784c510d073cc517133ac8bed70031fe8d5aa99d0e09b",
+        "mode": "100644"
+      },
+      "small-files/file-005.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "993ffc90cd4c1478f7dca46ceb93a2f5c9691c5ddcecd625fa505b01add68a6e",
+        "mode": "100644"
+      },
+      "small-files/file-006.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "8628cd4ad327590ddd4e480e3fe4c7e3c6fac2260927065ede17372f4322445f",
+        "mode": "100644"
+      },
+      "small-files/file-007.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "38b99696b3af2f2e5035de129746c32024ec9b13c3265fa8a998bdc48f350b12",
+        "mode": "100644"
+      },
+      "small-files/file-008.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "b315d4bc1d982dc2f4447b5bad380c6d9b89be8e2c3050250bf8b8ca7c7e2ab7",
+        "mode": "100644"
+      },
+      "small-files/file-009.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 13,
+        "sha256": "4101b4f8361891a2326837972e7b811cb591599028b8cca746bd38220dbc55b7",
+        "mode": "100644"
+      },
+      "small-files/file-010.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "05f67377ad59b18f660ac909f5119be923dde4afe79f019881fa8d039d432473",
+        "mode": "100644"
+      },
+      "small-files/file-011.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "1765aa6c06c1c636af637d5d7a78fc34962cbeddf368a756c3c8ebb64bea50c3",
+        "mode": "100644"
+      },
+      "small-files/file-012.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "1c4c7da3d868c64e904cb94ef3067582c41abb33043f3b01fd4014f20acd2fcc",
+        "mode": "100644"
+      },
+      "small-files/file-013.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "397148797934e49a949864531c8dd420179307a4bb14997dd910e5e2026a8b21",
+        "mode": "100644"
+      },
+      "small-files/file-014.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "467dd9df2b4451e9f6875bbad3e1655c6dc6bd9efcb8d733d551f9a114f60ea8",
+        "mode": "100644"
+      },
+      "small-files/file-015.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "14f35c0b18acf0f170466f87d01875b71057fa1dc71b561b8bdcc64cf55707cb",
+        "mode": "100644"
+      },
+      "small-files/file-016.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "08bf5a5a5a69f46fdf48e153ce954046d91d6987d73ce4ee710f092678b9ab7f",
+        "mode": "100644"
+      },
+      "small-files/file-017.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "7edc56928e1d056b21086959621463356e78f46cc91dfa9498973712cf6d555d",
+        "mode": "100644"
+      },
+      "small-files/file-018.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "b1aedb81e995d630588b5884fc072992b8e854b5f67b9a7537013bd4316a6025",
+        "mode": "100644"
+      },
+      "small-files/file-019.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "5a259edec3ed76e2e97e34cb931ce7478ba9891bea0fccca7300189b0d518377",
+        "mode": "100644"
+      },
+      "small-files/file-020.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "0822dfa26ac65d51e8958b64e8651925a8af92d247e12087d3c0df4e689112a3",
+        "mode": "100644"
+      },
+      "small-files/file-021.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "a1abeec8f6689873694572729928de1f3b58312bcc003001f6e6abc7a1661852",
+        "mode": "100644"
+      },
+      "small-files/file-022.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "6e226d5b6d319163c8ec2b4e597e29d5b7443855ca68aa7ed5aa56518b4ba06f",
+        "mode": "100644"
+      },
+      "small-files/file-023.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "0cf24a16a7924c49330a894d27b021de728b07b55399a788bee15192f6a53803",
+        "mode": "100644"
+      },
+      "small-files/file-024.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "c6aa36f3c41c99da54b1c0c1f7bc7b818cf508144a9e657fc4e7828630f5806e",
+        "mode": "100644"
+      },
+      "small-files/file-025.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "2b9b6b12c3a9ea2ed75308abb55c495f8e169f26e1f23d6ff7a374056a29a724",
+        "mode": "100644"
+      },
+      "small-files/file-026.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "bffa9a8e7cbcb48a83250fa09de2fc7e4192856037774bc8e84705e71130c718",
+        "mode": "100644"
+      },
+      "small-files/file-027.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "ac17f6ec7e3726f181e1c3e6c300d6aa30cc74931f1450ee6fe6c6a235df2217",
+        "mode": "100644"
+      },
+      "small-files/file-028.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "a6ff4fbf36d96cf292e6ae2de1d4a1644db9b540daff801627f8a3f1b1cad9c3",
+        "mode": "100644"
+      },
+      "small-files/file-029.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "caa724f75a830189a9b7fc93b6154015990409c790f43cea10b2da62a4db6092",
+        "mode": "100644"
+      },
+      "small-files/file-030.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "b47435b27c5c990203a3a06a4b74ed7dfef3c021e287e24b35c5b6066d07c640",
+        "mode": "100644"
+      },
+      "small-files/file-031.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "debb283ba96be0b3bd7d48af90936cb6ab1e938cd89827df96c2b8efef1d6dd9",
+        "mode": "100644"
+      },
+      "small-files/file-032.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "734f9a48b901263bade8aaaee9924628ec38162eea0ecab7966a625a59ab8426",
+        "mode": "100644"
+      },
+      "small-files/file-033.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "cd491dd27f2f7fa5f96b411b9cd6d7651def21d5a699ee1d638d18f3d049ae7f",
+        "mode": "100644"
+      },
+      "small-files/file-034.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "b179e7be723eb1f51476ee10054bbf6e5d2603797e3225d0e4a8bc732bffe1ac",
+        "mode": "100644"
+      },
+      "small-files/file-035.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "fa94a76d0cd224d574c3b495c00208d31c644b1296d1a940ee57846a371b413a",
+        "mode": "100644"
+      },
+      "small-files/file-036.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "94aa9087f02d0491501249884b5dd9240632cb14fd84c87acaf13b8866a2f1b3",
+        "mode": "100644"
+      },
+      "small-files/file-037.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "9a55031de2a7d6cae8b14a2182b04e525c6f98ddee4e7b166d23c70fa491af54",
+        "mode": "100644"
+      },
+      "small-files/file-038.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "aa7ec96819b9eaf8996bad2e9e94747859c46be9ba71f1af21bbb448e6f2333c",
+        "mode": "100644"
+      },
+      "small-files/file-039.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "483c38dba1076f7cc5cc06fca337f6a45456fcaa4bbaf55821e398ba6f36aff9",
+        "mode": "100644"
+      },
+      "small-files/file-040.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "7a2c0d38c756df2ea916a9e7cb4dbd4bc80a776c1a589195088ae7ef4b4ed6f9",
+        "mode": "100644"
+      },
+      "small-files/file-041.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "f4c7aabbd90054a068678dd15c9e12eaf35531b8ab86f5391adea4a6a8bd8561",
+        "mode": "100644"
+      },
+      "small-files/file-042.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "86f083f6dbbabe36a6149e2f45feb00285a23de5f554a78cbe90fcc90ba7d0dc",
+        "mode": "100644"
+      },
+      "small-files/file-043.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e572db52b8d29044b5ea59f291addbeefd664c5090522bf2a5b8829c3666191e",
+        "mode": "100644"
+      },
+      "small-files/file-044.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "36488593eabf18bd354fb3b7692e72b1604efde11318feefddf8624a765d9b91",
+        "mode": "100644"
+      },
+      "small-files/file-045.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "a95e7c622347b685015503b1c6dc3a5857bd3a419e16c05bd2dd9de5b32c9fd9",
+        "mode": "100644"
+      },
+      "small-files/file-046.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "1f0f7ec7856ec23413634132e1bd580f2cb4266759920ac9fb99796e5e520d7e",
+        "mode": "100644"
+      },
+      "small-files/file-047.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e5a56d019802a733f053a7263097bdd99f581677323796766294e1fed9ce3069",
+        "mode": "100644"
+      },
+      "small-files/file-048.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e7eed2012938734cfb1569612dbe3c3014cf7976bb664f4765573a469350a3e9",
+        "mode": "100644"
+      },
+      "small-files/file-049.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "71286035769d16161f71c123a4f1597cb070410b1b71713425e9cbf1e559ecdb",
+        "mode": "100644"
+      },
+      "small-files/file-050.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "4841d5e533d91651570049b4c5188f18702642509a5eb8f75c7a62326bfc15e4",
+        "mode": "100644"
+      },
+      "small-files/file-051.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "70cd61b2235f0e04c4c1cb07930e8e8aa6d4c3be5dbf3ff62870cd32ddc09a17",
+        "mode": "100644"
+      },
+      "small-files/file-052.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "51a7693caceb3c9c9fd63c0ff4f63168648eee7e1742969d2a57d9ac6e308e43",
+        "mode": "100644"
+      },
+      "small-files/file-053.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "f2db70a61119d4c8f45acb947ac03908148fe8c30b07f4d6836c79af8c93845e",
+        "mode": "100644"
+      },
+      "small-files/file-054.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "550363f40652d007510f9af1f1dc1fd1bffade027191292769a3d1b6b332a96b",
+        "mode": "100644"
+      },
+      "small-files/file-055.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "dca7135ed05d1157db26a16f62ac637700bcd7c6a2f6a42b9ad8ec5d19e96940",
+        "mode": "100644"
+      },
+      "small-files/file-056.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e2cc1ad5651449893d74c257b1c13d00c5ac47eeb6afde3b854264d74f66abf3",
+        "mode": "100644"
+      },
+      "small-files/file-057.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "c4c79688ed86d7a8b80003422473990a743e321b65207d3516e8fe2ebea93d7e",
+        "mode": "100644"
+      },
+      "small-files/file-058.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "8ace524899c76af162ce3a1edffca54fddd3b83cbf25b60acbe9d9ed14ee6d28",
+        "mode": "100644"
+      },
+      "small-files/file-059.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "f6020be1a89ff5ed1c9272557eac0277ac9cbb9046b48b06e8ba36f716bc35a6",
+        "mode": "100644"
+      },
+      "small-files/file-060.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "ed19da84f2cc6b0c318a3081e21cdacf15e5a237011c85b3018da1822d973409",
+        "mode": "100644"
+      },
+      "small-files/file-061.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "afe3c30e8ad29d49e481c1917a3b4823189d8a6133b8f62cabc8e3e4f05a32e0",
+        "mode": "100644"
+      },
+      "small-files/file-062.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e1d5e3fc9748f2dbb1e9984e0e452e917a7d6307c62808e12213149123fd542d",
+        "mode": "100644"
+      },
+      "small-files/file-063.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "09377f40d9128717bcc31bf2f8d08f58927fca913052d6bee5dc4e300c4a7f12",
+        "mode": "100644"
+      },
+      "small-files/file-064.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "83903694c8ef308a56d5a11b8a2f18f852f5cd4cb7d07f552e42b2362cc49fc8",
+        "mode": "100644"
+      },
+      "small-files/file-065.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "89d1abfd49e066767a70fd69f1798384c14e17718671d97d3eab1cdd097af2c5",
+        "mode": "100644"
+      },
+      "small-files/file-066.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "a1e84d277c831ac3e2ae29641b38a4052ed9415e51f4e51ad3904bf4f1eff5c3",
+        "mode": "100644"
+      },
+      "small-files/file-067.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "61b491d0d60bca0b6f307d74c572a6abb007a815ff94b5de38a301203b984d5b",
+        "mode": "100644"
+      },
+      "small-files/file-068.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "5ea9936fae745c790c1785acc3dd6f723af584ec028cc27b1c10eb5f9b988ac2",
+        "mode": "100644"
+      },
+      "small-files/file-069.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "b22291caaa113a9850d4398e42ed57bf439cc42483b6e83ae2e59852f5f3f99e",
+        "mode": "100644"
+      },
+      "small-files/file-070.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "d1f6e5b27ebda8f9782daf5961d0e422975af45abc27bd990e29d8a80b73b6c1",
+        "mode": "100644"
+      },
+      "small-files/file-071.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "761625dac69b5b0f2be42e3688e5ea13ba7541add4e8f4473ea1fa681da5c93e",
+        "mode": "100644"
+      },
+      "small-files/file-072.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "7d57f23dbfd879af11282b2b0203be6ca095c56e0943da8f6df519ae14a6d057",
+        "mode": "100644"
+      },
+      "small-files/file-073.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "5e76d34fa91e8ce133ec745d21e055417981f96ebd2d59ee691ac7a23449e5a8",
+        "mode": "100644"
+      },
+      "small-files/file-074.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "90f336f0eb314e427c75bffb081513a075e1abdd10fb8bdbf06f6e798360234c",
+        "mode": "100644"
+      },
+      "small-files/file-075.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "96527fd1f4f28b26ebab219519c1b83cadab018d1dd81912f3fa8f9a947a0bc8",
+        "mode": "100644"
+      },
+      "small-files/file-076.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "8750d678a9cb3041a97dfdc97d2b95f6d82516b1f1e4b6e8e57c315d8e2ae929",
+        "mode": "100644"
+      },
+      "small-files/file-077.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "b3a7440d0f16069b011eb45d1f3becc381b9a7fbec93c1921db355d4689ceacd",
+        "mode": "100644"
+      },
+      "small-files/file-078.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "8a52cdbb46a971f0265621c7e74ed575cb8f33488b35e4d3b68a654a5ce1a1ec",
+        "mode": "100644"
+      },
+      "small-files/file-079.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "93802bde93ca346891b66fd91f7c93ca33d5e8542c85a272794e307bf74bbf73",
+        "mode": "100644"
+      },
+      "small-files/file-080.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "ca4ade1aa1f6793739f098fcb982d7828de9ab1ef59c82d8dd4a192b2206b40b",
+        "mode": "100644"
+      },
+      "small-files/file-081.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "2840dbf9482a7bbec802ca2f5e03b6c93b756dfe9c40177686cc9d2fb4bd5a6e",
+        "mode": "100644"
+      },
+      "small-files/file-082.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "0ce257602a1e97efd4fece5dea2db55710eed90882ddeb6983cabd55d01fa6ce",
+        "mode": "100644"
+      },
+      "small-files/file-083.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "c8551b92572d80c6936ed6cc344143e202bbc47556b0bbf8fe7fa6b8dcbee426",
+        "mode": "100644"
+      },
+      "small-files/file-084.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "c729eac40892abdd29e0c71349d48430c031c661d0863565078856b21fba7905",
+        "mode": "100644"
+      },
+      "small-files/file-085.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "8ee3147cbc76fda80366e17296172427745278744e040806abcc0c310b150535",
+        "mode": "100644"
+      },
+      "small-files/file-086.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "f11f92df265b402c05294adfe2c578750e56c79c168a20d1a7d7035af41d0005",
+        "mode": "100644"
+      },
+      "small-files/file-087.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "42eb267edb8eddbf654288c3c09ec52685807881c5a510c099730e6718e8178c",
+        "mode": "100644"
+      },
+      "small-files/file-088.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "0b7822daea9a481424e4bf57b5c6a8f0a682950d1ab46777329bf3af7f144c1c",
+        "mode": "100644"
+      },
+      "small-files/file-089.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "9b77b105bf113f82e6f79a569500aaf0334334a8af1f71a49201cb56e7d0ad2f",
+        "mode": "100644"
+      },
+      "small-files/file-090.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "beed9b385a17543ae9792019d36ae87d93280579d39be80aee1e5d0d84a2d4f5",
+        "mode": "100644"
+      },
+      "small-files/file-091.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "811da485a75f117d7bcd391aebfb06689459c6bcaab6613816441b28e390c30e",
+        "mode": "100644"
+      },
+      "small-files/file-092.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e2dc906076dfd80d8c5cec5e8cdad4b2bc545adf766576bb738017821c281b49",
+        "mode": "100644"
+      },
+      "small-files/file-093.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e65797c91c37c6c3d231227771895ba5dc2de7ea7c123cf71060736cb84f1182",
+        "mode": "100644"
+      },
+      "small-files/file-094.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "81bd47fa20a1da45d83e0ad3fcc8daf49ea7e49065c4afb94f02d7b8bdb05aff",
+        "mode": "100644"
+      },
+      "small-files/file-095.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "e941a09518f7a686bc5541e7180dc79f2fe1f5c19e993ca44940f0134ac492a3",
+        "mode": "100644"
+      },
+      "small-files/file-096.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "ab71a3588cd73c5f69831a716e304b3bfd27f83f9e7c742f2c91c0138ac666ae",
+        "mode": "100644"
+      },
+      "small-files/file-097.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "f58b8986535c0c984b442eb011068db886f71e16e887bec817bd6e752e3fda31",
+        "mode": "100644"
+      },
+      "small-files/file-098.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "0cc79a377152b5584e8af38defe4f5e5e86fcc447a31f9d462b56f6e72a7d53a",
+        "mode": "100644"
+      },
+      "small-files/file-099.txt": {
+        "uid": 1000,
+        "gid": 1000,
+        "type": "file",
+        "bytes": 14,
+        "sha256": "f2150f2322a0f793655ad3bab3a0312e4675123e2b8f19b58c0f3794f5d20eb9",
+        "mode": "100644"
+      }
+    }
+  }
+}

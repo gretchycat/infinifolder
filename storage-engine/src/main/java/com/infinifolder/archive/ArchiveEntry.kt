@@ -10,13 +10,20 @@ data class ArchiveEntry(
     val modifiedAtMillis: Long?,
     val mimeType: String,
     val isSymbolicLink: Boolean = false,
-    val linkTarget: String? = null
+    val linkTarget: String? = null,
+    val permissionsMode: Int? = null,
+    val owner: String? = null,
+    val group: String? = null,
+    val readError: String? = null,
+    val recoveryNote: String? = null,
+    val partialRecoveryAvailable: Boolean = false
 )
 
 class ArchiveTree(
     val sourceUri: Uri?,
     val entriesByParent: Map<String, List<ArchiveEntry>>,
-    private val entriesByPath: Map<String, ArchiveEntry>
+    private val entriesByPath: Map<String, ArchiveEntry>,
+    val warnings: List<String> = emptyList()
 ) {
     fun list(parentPath: String): List<ArchiveEntry> {
         val cleanParent = parentPath.replace('\\', '/').trim().removePrefix("/").removeSuffix("/")

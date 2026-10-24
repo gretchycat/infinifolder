@@ -4,3 +4,7 @@ build/
 local.properties
 *.iml
 .idea/
+
+# Python fixture-generator caches
+__pycache__/
+*.py[cod]

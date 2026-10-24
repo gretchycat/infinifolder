@@ -13,6 +13,7 @@ import java.time.format.DateTimeFormatter
 class DiagnosticsActivity : ViewerActivity(), DebugDumpObserver {
     override fun onDebugDumpFinished() { refresh() }
     private lateinit var output: TextView
+    private var refreshGeneration = 0
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DiagnosticLog.init(this)
@@ -34,8 +35,12 @@ class DiagnosticsActivity : ViewerActivity(), DebugDumpObserver {
         refresh()
     }
     private fun refresh() {
-        output.text = "Debug dump: ${com.infinifolder.storage.DebugDumpDestination.get(this)?.documentId ?: "Choose a folder (for example your project's build directory)"}\n" +
+        val generation = ++refreshGeneration
+        Thread {
+        val text = "Debug dump: ${com.infinifolder.storage.DebugDumpDestination.get(this)?.documentId ?: "Choose a folder (for example your project's build directory)"}\n" +
             (DiagnosticLog.lastExportError?.let { "Last write failed: $it\n" } ?: "") + DiagnosticLog.snapshot(this).takeLast(64 * 1024)
+        runOnUiThread { if (!isFinishing && !isDestroyed && generation == refreshGeneration) output.text = text }
+        }.start()
     }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)

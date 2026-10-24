@@ -355,4 +355,23 @@ class ArchiveStorageTest {
             assertTrue(e.message!!.contains("echoesbbs-u.vdi"))
         }
     }
+    @Test fun exactZipCaseWinsAndAmbiguousFallbackIsRefused() {
+        val file = tempFolder.newFile("case-collision.zip")
+        ZipArchiveOutputStream(file).use { zip ->
+            for (name in listOf("Name.txt", "name.txt")) {
+                zip.putArchiveEntry(ZipArchiveEntry(name)); zip.write(name.toByteArray()); zip.closeArchiveEntry()
+            }
+        }
+        val reader = ArchiveReader(tempFolder.newFolder("case-reader"))
+        for (name in listOf("Name.txt", "name.txt")) {
+            assertEquals(name, reader.openEntryStream(file.name, name, { file.inputStream() }, file).use { String(it.readBytes()) })
+        }
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            reader.openEntryStream(file.name, "NAME.TXT", { file.inputStream() }, file).close()
+        }
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            reader.extractEntry(file.name, "NAME.TXT", tempFolder.newFile("ambiguous-output"), { file.inputStream() }, file)
+        }
+    }
+
 }

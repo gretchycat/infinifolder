@@ -96,7 +96,7 @@ object ZipContainerEditor {
     /** A batch adds exclusive entries and can remove original entries in the same verified rewrite. */
     fun appendBatch(original: File, target: File, additions: List<Addition>, cancelled: () -> Boolean,
         removals: Set<String> = emptySet()) {
-        fun checkCancelled() { if (cancelled()) throw InterruptedException("Container copy cancelled") }
+        fun checkCancelled() { if (cancelled()) throw InterruptedException("Container operation cancelled") }
         fun copy(input: java.io.InputStream, output: java.io.OutputStream) {
             val buffer = ByteArray(128 * 1024)
             while (true) { checkCancelled(); val n = input.read(buffer); if (n < 0) break; output.write(buffer, 0, n) }

@@ -5,16 +5,20 @@ import org.apache.commons.compress.archivers.ArchiveInputStream
 import org.apache.commons.compress.archivers.ArchiveStreamFactory
 import org.apache.commons.compress.archivers.ar.ArArchiveInputStream
 import org.apache.commons.compress.archivers.cpio.CpioArchiveInputStream
+import org.apache.commons.compress.archivers.cpio.CpioArchiveEntry
+import org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStream
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipFile
 import org.apache.commons.compress.compressors.CompressorStreamFactory
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.apache.commons.compress.compressors.lzma.LZMACompressorInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
+import org.apache.commons.compress.compressors.z.ZCompressorInputStream
 import com.infinifolder.storage.FileMagicDetector
 import java.io.BufferedInputStream
 import java.io.File
@@ -23,6 +27,22 @@ import java.io.InputStream
 class ArchiveReader(private val tempDir: File) {
 
     private val discImageReader = DiscImageReader(tempDir)
+    private val nativeReader = NativeArchiveReader(tempDir)
+
+    private fun nativeVolumes(name: String, input: () -> InputStream, local: File?, device: BlockDevice?, supplied: ArchiveVolumeSet?): ArchiveVolumeSet {
+        if (supplied != null) return supplied
+        return ArchiveVolumeSet(listOf(name), "") {
+            when {
+                device != null -> object : BlockDevice by device { override fun close() {} }
+                local != null -> FileBlockDevice(java.io.RandomAccessFile(local, "r"), true, ownsFile = true)
+                else -> {
+                    val staged = materializeTempArchive(input)
+                    val backing = FileBlockDevice(java.io.RandomAccessFile(staged, "r"), true, ownsFile = true)
+                    object : BlockDevice by backing { override fun close() { try { backing.close() } finally { staged.delete() } } }
+                }
+            }
+        }
+    }
 
     private fun resolveFormat(
         archiveName: String,
@@ -42,6 +62,9 @@ class ArchiveReader(private val tempDir: File) {
             "application/x-iso9660-image", "application/x-raw-disk-image",
             "application/x-virtualbox-vdi", "application/x-qemu-disk",
             "application/x-vmdk", "application/x-vhd", "application/x-vhdx" -> rawExt to true
+            "application/vnd.rar", "application/x-rar-compressed" -> "rar" to false
+            "application/x-arj" -> "arj" to false
+            "application/vnd.ms-cab-compressed", "application/x-cabinet" -> "cab" to false
             "application/x-7z-compressed" -> "7z" to false
             "application/zip" -> "zip" to false
             "application/x-tar" -> (if (rawExt in setOf("gz", "bz2", "bz", "xz", "lzma", "zst")) "tar.$rawExt" else "tar") to false
@@ -61,7 +84,8 @@ class ArchiveReader(private val tempDir: File) {
         writableFailureReason(archiveName, localFile, device, entryPath) == null
 
     fun writableFailureReason(archiveName: String, localFile: File?, device: BlockDevice? = null, entryPath: String? = null, probeOnly: Boolean = false): String? =
-        discImageReader.writableFailureReason(archiveName, localFile, device, entryPath, probeOnly)
+        if (NativeArchiveReader.isSupported(archiveName)) "RAR/ARJ/CAB archive views are read-only"
+        else discImageReader.writableFailureReason(archiveName, localFile, device, entryPath, probeOnly)
 
     fun checkMounted(archiveName: String, localFile: File?): MountCheckResult =
         MountedPartitionDetector.checkMounted(localFile)
@@ -99,9 +123,7 @@ class ArchiveReader(private val tempDir: File) {
         if (ext == "zip" || ext == "jar" || ext == "apk" || ext == "aar" || ext == "cbz") {
             try {
                 ZipFile.builder().setSeekableByteChannel(device.asSeekableByteChannel()).get().use { zf ->
-                    val entry = zf.getEntry(cleanTarget)
-                        ?: zf.getEntry("/$cleanTarget")
-                        ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name) == cleanTarget }
+                    val entry = zipEntry(zf, cleanTarget)
                     if (entry != null && entry.method == org.apache.commons.compress.archivers.zip.ZipArchiveEntry.STORED && entry.size >= 0) {
                         val localOffset = entry.localHeaderOffset
                         val lfh = device.readBytes(localOffset, 30)
@@ -126,20 +148,62 @@ class ArchiveReader(private val tempDir: File) {
         val sizeBytes: Long?,
         val modifiedAtMillis: Long?,
         val isSymbolicLink: Boolean = false,
-        val linkTarget: String? = null
+        val linkTarget: String? = null,
+        val permissionsMode: Int? = null,
+        val owner: String? = null,
+        val group: String? = null,
+        val readError: String? = null,
+        val recoveryNote: String? = null,
+        val partialRecoveryAvailable: Boolean = false
     )
+
+    /** Prefer exact ZIP names; case-insensitive fallback must identify a single member. */
+    private fun zipEntry(zip: ZipFile, target: String): ZipArchiveEntry? {
+        val exact = zip.getEntries(target).asSequence().take(2).toList()
+        if (exact.size > 1) throw java.io.IOException("Ambiguous duplicate ZIP entry: $target")
+        exact.singleOrNull()?.let { return it }
+        val normalized = zip.entries.asSequence().filter { normalizePath(it.name) == target }.take(2).toList()
+        if (normalized.size > 1) throw java.io.IOException("Ambiguous normalized ZIP entry: $target")
+        normalized.singleOrNull()?.let { return it }
+        val folded = zip.entries.asSequence().filter { normalizePath(it.name).equals(target, ignoreCase = true) }.take(2).toList()
+        if (folded.size > 1) throw java.io.IOException("Ambiguous ZIP entry case: $target")
+        return folded.singleOrNull()
+    }
 
     private fun normalizePath(rawName: String): String =
         rawName.replace('\\', '/').trim().removePrefix("/").removePrefix("./").trim('/')
+
+    fun supportsFatRecovery(name: String, input: () -> InputStream, file: File? = null, device: BlockDevice? = null) =
+        discImageReader.supportsFatRecovery(name, input, file, device)
+
+    fun buildDeletedFatTree(source: Uri, name: String, input: () -> InputStream, file: File? = null, device: BlockDevice? = null): ArchiveTree {
+        val entries = discImageReader.readDeletedFatEntries(name, input, file, device)
+        return buildTreeFromRawEntries(source, entries.map {
+            RawEntry(it.path, it.isDirectory, it.sizeBytes, it.modifiedAtMillis, readError = it.readError, recoveryNote = it.recoveryNote, partialRecoveryAvailable = it.partialExtractor != null)
+        }, listOf("Deleted files — read-only, unverified recovery candidates. Names/content may be incomplete or overwritten. Multi-cluster files assume contiguous allocation. Deleted directory trees are not scanned. Undelete copies to a separate location."))
+    }
+    fun openDeletedFatEntry(name: String, path: String, input: () -> InputStream, file: File? = null, device: BlockDevice? = null) =
+        discImageReader.openDeletedFatEntry(name, path, input, file, device)
+
+    fun openPartialDeletedFatEntry(name: String, path: String, input: () -> InputStream, file: File? = null, device: BlockDevice? = null) =
+        discImageReader.openPartialDeletedFatEntry(name, path, input, file, device)
 
     fun buildTree(
         sourceUri: Uri?,
         archiveName: String,
         openStream: () -> InputStream,
         localFile: File? = null,
-        device: BlockDevice? = null
+        device: BlockDevice? = null,
+        volumes: ArchiveVolumeSet? = null,
+        directoryPath: String? = null
     ): ArchiveTree {
-        val rawEntries = readEntries(archiveName, openStream, localFile, device)
+        if (NativeArchiveReader.isSupported(archiveName) || resolveFormat(archiveName, openStream, localFile).first in setOf("rar", "arj", "cab")) {
+            val catalog = nativeReader.catalog(nativeVolumes(archiveName, openStream, localFile, device, volumes))
+            return buildTreeFromRawEntries(sourceUri, catalog.entries.map {
+                RawEntry(it.path, it.directory, it.size, it.modified, it.link != null, it.link, it.mode, readError = it.error)
+            }, catalog.warnings)
+        }
+        val rawEntries = readEntries(archiveName, openStream, localFile, device, directoryPath)
         return buildTreeFromRawEntries(sourceUri, rawEntries)
     }
 
@@ -147,23 +211,40 @@ class ArchiveReader(private val tempDir: File) {
         archiveName: String,
         openStream: () -> InputStream,
         localFile: File?,
-        device: BlockDevice? = null
+        device: BlockDevice? = null,
+        directoryPath: String? = null
     ): List<RawEntry> {
         val effectiveDev = device ?: localFile?.let { if (it.exists()) FileBlockDevice(java.io.RandomAccessFile(it, "r"), true) else null }
         val (ext, isDisc) = resolveFormat(archiveName, openStream, localFile)
         if (isDisc) {
-            return discImageReader.readEntries(archiveName, openStream, localFile, effectiveDev).map {
+            val discEntries = if (directoryPath == null) discImageReader.readEntries(archiveName, openStream, localFile, effectiveDev)
+                else discImageReader.readDirectoryEntries(archiveName, directoryPath, openStream, localFile, effectiveDev)
+            return discEntries.map {
                 RawEntry(
                     name = it.path,
                     isDirectory = it.isDirectory,
                     sizeBytes = it.sizeBytes,
                     modifiedAtMillis = it.modifiedAtMillis,
                     isSymbolicLink = it.isSymbolicLink,
-                    linkTarget = it.linkTarget
+                    linkTarget = it.linkTarget,
+                    permissionsMode = it.permissionsMode, owner = it.owner, group = it.group
                 )
             }
         }
 
+        if (ext == "zst") {
+            var size = 0L
+            ZstdCompressorInputStream(BufferedInputStream(openStream())).use { input ->
+                val buffer = ByteArray(65536)
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    if (Thread.currentThread().isInterrupted) throw java.io.InterruptedIOException("Zstandard reading cancelled")
+                    size = Math.addExact(size, n.toLong())
+                }
+            }
+            return listOf(RawEntry(zstdPayloadName(archiveName), false, size, null))
+        }
         if (ext == "7z" || ext == "cb7") {
             if (effectiveDev != null) {
                 return read7zEntries(effectiveDev)
@@ -190,15 +271,34 @@ class ArchiveReader(private val tempDir: File) {
                 val list = mutableListOf<RawEntry>()
                 var entry = ais.nextEntry
                 while (entry != null) {
-                    val isSymlink = if (entry is TarArchiveEntry) entry.isSymbolicLink else false
-                    val linkTarget = if (entry is TarArchiveEntry && isSymlink) entry.linkName else null
+                    val isSymlink = when (entry) {
+                        is TarArchiveEntry -> entry.isSymbolicLink
+                        is CpioArchiveEntry -> entry.isSymbolicLink
+                        else -> false
+                    }
+                    val linkTarget = when {
+                        entry is TarArchiveEntry && isSymlink -> entry.linkName
+                        entry is CpioArchiveEntry && isSymlink -> {
+                            if (entry.size !in 1..65536) throw java.io.IOException("Invalid CPIO symbolic-link length")
+                            val bytes = ais.readBytes()
+                            if (bytes.size.toLong() != entry.size) throw java.io.IOException("Truncated CPIO symbolic link")
+                            Charsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                                .decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+                        }
+                        else -> null
+                    }
                     list += RawEntry(
                         name = entry.name,
                         isDirectory = entry.isDirectory || entry.name.endsWith('/') || entry.name.endsWith('\\'),
                         sizeBytes = if (entry.isDirectory) null else entry.size.takeIf { it >= 0 },
                         modifiedAtMillis = entry.lastModifiedDate?.time,
                         isSymbolicLink = isSymlink,
-                        linkTarget = linkTarget
+                        linkTarget = linkTarget,
+                        permissionsMode = (entry as? TarArchiveEntry)?.mode ?: (entry as? CpioArchiveEntry)?.mode?.toInt() ?: (entry as? ZipArchiveEntry)?.let {
+                            if (it.platform == ZipArchiveEntry.PLATFORM_UNIX) it.unixMode else null
+                        },
+                        owner = (entry as? TarArchiveEntry)?.let { it.userName.takeIf(String::isNotBlank) ?: it.longUserId.toString() } ?: (entry as? CpioArchiveEntry)?.uid?.toString(),
+                        group = (entry as? TarArchiveEntry)?.let { it.groupName.takeIf(String::isNotBlank) ?: it.longGroupId.toString() } ?: (entry as? CpioArchiveEntry)?.gid?.toString()
                     )
                     entry = ais.nextEntry
                 }
@@ -206,7 +306,8 @@ class ArchiveReader(private val tempDir: File) {
                     // Check if it is actually a disc image with a generic name/extension
                     try {
                         return discImageReader.readEntries(archiveName, openStream, localFile).map {
-                            RawEntry(it.path, it.isDirectory, it.sizeBytes, it.modifiedAtMillis, it.isSymbolicLink, it.linkTarget)
+                            RawEntry(it.path, it.isDirectory, it.sizeBytes, it.modifiedAtMillis, it.isSymbolicLink, it.linkTarget,
+                                it.permissionsMode, it.owner, it.group)
                         }
                     } catch (_: Exception) {}
                 }
@@ -221,7 +322,8 @@ class ArchiveReader(private val tempDir: File) {
                         sizeBytes = it.sizeBytes,
                         modifiedAtMillis = it.modifiedAtMillis,
                     isSymbolicLink = it.isSymbolicLink,
-                    linkTarget = it.linkTarget
+                    linkTarget = it.linkTarget,
+                    permissionsMode = it.permissionsMode, owner = it.owner, group = it.group
                     )
                 }
             } catch (_: Exception) {
@@ -276,7 +378,8 @@ class ArchiveReader(private val tempDir: File) {
                     sizeBytes = if (entry.isDirectory) null else entry.size.takeIf { it >= 0 },
                     modifiedAtMillis = entry.lastModifiedDate?.time,
                     isSymbolicLink = entry.isUnixSymlink,
-                    linkTarget = if (entry.isUnixSymlink && entry.size <= 1024 * 1024) zf.getUnixSymlink(entry) else null
+                    linkTarget = if (entry.isUnixSymlink && entry.size <= 1024 * 1024) zf.getUnixSymlink(entry) else null,
+                    permissionsMode = if (entry.platform == ZipArchiveEntry.PLATFORM_UNIX) entry.unixMode else null
                 )
             }
             list
@@ -295,7 +398,8 @@ class ArchiveReader(private val tempDir: File) {
                     sizeBytes = if (entry.isDirectory) null else entry.size.takeIf { it >= 0 },
                     modifiedAtMillis = entry.lastModifiedDate?.time,
                     isSymbolicLink = entry.isUnixSymlink,
-                    linkTarget = if (entry.isUnixSymlink && entry.size <= 1024 * 1024) zf.getUnixSymlink(entry) else null
+                    linkTarget = if (entry.isUnixSymlink && entry.size <= 1024 * 1024) zf.getUnixSymlink(entry) else null,
+                    permissionsMode = if (entry.platform == ZipArchiveEntry.PLATFORM_UNIX) entry.unixMode else null
                 )
             }
             list
@@ -308,8 +412,18 @@ class ArchiveReader(private val tempDir: File) {
         targetFile: File,
         openStream: () -> InputStream,
         localFile: File? = null,
-        device: BlockDevice? = null
+        device: BlockDevice? = null,
+        volumes: ArchiveVolumeSet? = null
     ): File {
+        if (NativeArchiveReader.isSupported(archiveName) || resolveFormat(archiveName, openStream, localFile).first in setOf("rar", "arj", "cab")) {
+            val stream = nativeReader.openEntry(nativeVolumes(archiveName, openStream, localFile, device, volumes), normalizePath(entryPath))
+            return stream.use { input -> targetFile.outputStream().use { input.copyTo(it) }; targetFile }
+        }
+        if (resolveFormat(archiveName, openStream, localFile).first == "zst") {
+            if (normalizePath(entryPath) != zstdPayloadName(archiveName)) throw java.io.IOException("Compressed file entry not found")
+            val stream = ZstdCompressorInputStream(BufferedInputStream(openStream()))
+            return stream.use { input -> targetFile.outputStream().use { input.copyTo(it) }; targetFile }
+        }
         val cleanTarget = normalizePath(entryPath)
         targetFile.parentFile?.mkdirs()
         val effectiveDev = device ?: localFile?.let { if (it.exists()) FileBlockDevice(java.io.RandomAccessFile(it, "r"), true) else null }
@@ -368,10 +482,7 @@ class ArchiveReader(private val tempDir: File) {
         if (ext == "zip" || ext == "jar" || ext == "apk" || ext == "aar" || ext == "cbz") {
             if (effectiveDev != null) {
                 ZipFile.builder().setSeekableByteChannel(effectiveDev.asSeekableByteChannel()).get().use { zf ->
-                    val entry = zf.getEntry(cleanTarget)
-                        ?: zf.getEntry("/$cleanTarget")
-                        ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name) == cleanTarget }
-                        ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name).equals(cleanTarget, ignoreCase = true) }
+                    val entry = zipEntry(zf, cleanTarget)
                         ?: throw NoSuchElementException("Entry not found in zip archive: $entryPath")
                     zf.getInputStream(entry).use { inStream ->
                         targetFile.outputStream().use { inStream.copyTo(it) }
@@ -381,10 +492,7 @@ class ArchiveReader(private val tempDir: File) {
             }
             if (localFile != null) {
                 ZipFile.builder().setFile(localFile).get().use { zf ->
-                    val entry = zf.getEntry(cleanTarget)
-                        ?: zf.getEntry("/$cleanTarget")
-                        ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name) == cleanTarget }
-                        ?: zf.entries.asSequence().firstOrNull { normalizePath(it.name).equals(cleanTarget, ignoreCase = true) }
+                    val entry = zipEntry(zf, cleanTarget)
                         ?: throw NoSuchElementException("Entry not found in zip archive: $entryPath")
                     zf.getInputStream(entry).use { inStream ->
                         targetFile.outputStream().use { inStream.copyTo(it) }
@@ -428,8 +536,18 @@ class ArchiveReader(private val tempDir: File) {
         entryPath: String,
         openStream: () -> InputStream,
         localFile: File? = null,
-        device: BlockDevice? = null
+        device: BlockDevice? = null,
+        volumes: ArchiveVolumeSet? = null
     ): InputStream {
+        if (NativeArchiveReader.isSupported(archiveName) || resolveFormat(archiveName, openStream, localFile).first in setOf("rar", "arj", "cab")) {
+            val stream = nativeReader.openEntry(nativeVolumes(archiveName, openStream, localFile, device, volumes), normalizePath(entryPath))
+            return stream
+        }
+        if (resolveFormat(archiveName, openStream, localFile).first == "zst") {
+            if (normalizePath(entryPath) != zstdPayloadName(archiveName)) throw java.io.IOException("Compressed file entry not found")
+            val stream = ZstdCompressorInputStream(BufferedInputStream(openStream()))
+            return stream
+        }
         val cleanTarget = normalizePath(entryPath)
         val effectiveDev = device ?: localFile?.let { if (it.exists()) FileBlockDevice(java.io.RandomAccessFile(it, "r"), true) else null }
         val (ext, isDisc) = resolveFormat(archiveName, openStream, localFile)
@@ -494,8 +612,7 @@ class ArchiveReader(private val tempDir: File) {
             }
             if (zip != null) {
                 try {
-                    val entry = zip.getEntry(cleanTarget) ?: zip.getEntry("/$cleanTarget")
-                        ?: zip.entries.asSequence().firstOrNull { normalizePath(it.name) == cleanTarget }
+                    val entry = zipEntry(zip, cleanTarget)
                         ?: throw NoSuchElementException("Entry not found in ZIP: $entryPath")
                     return object : java.io.FilterInputStream(zip.getInputStream(entry)) {
                         override fun close() { try { super.close() } finally { zip.close() } }
@@ -530,15 +647,19 @@ class ArchiveReader(private val tempDir: File) {
         }
     }
 
+    private fun zstdPayloadName(name: String): String = name.substringBeforeLast('.').substringAfterLast('/').takeIf { it.isNotBlank() } ?: "decompressed-file"
+
     private fun openArchiveInputStream(raw: InputStream, ext: String): ArchiveInputStream<*> {
         val bis = BufferedInputStream(raw)
         return when {
-            ext == "tar.gz" || ext == "tgz" || ext == "tar.z" ->
+            ext == "tar.gz" || ext == "tgz" ->
                 TarArchiveInputStream(GzipCompressorInputStream(bis))
+            ext == "tar.z" || ext == "taz" -> TarArchiveInputStream(ZCompressorInputStream(bis))
             ext == "tar.bz2" || ext == "tbz" || ext == "tbz2" || ext == "tar.bz" ->
                 TarArchiveInputStream(BZip2CompressorInputStream(bis))
             ext == "tar.xz" || ext == "txz" ->
                 TarArchiveInputStream(XZCompressorInputStream(bis))
+            ext == "tar.zst" || ext == "tzst" -> TarArchiveInputStream(ZstdCompressorInputStream(bis))
             ext == "tar.lzma" || ext == "tlz" ->
                 TarArchiveInputStream(LZMACompressorInputStream(bis))
             ext == "tar" || ext == "cbt" ->
@@ -546,7 +667,7 @@ class ArchiveReader(private val tempDir: File) {
             ext == "zip" || ext == "jar" || ext == "apk" || ext == "aar" || ext == "cbz" ->
                 ZipArchiveInputStream(bis)
             ext == "cpio" ->
-                CpioArchiveInputStream(bis)
+                CpioArchiveInputStream(bis, "UTF-8")
             ext == "ar" || ext == "deb" ->
                 ArArchiveInputStream(bis)
             else -> {
@@ -558,7 +679,7 @@ class ArchiveReader(private val tempDir: File) {
                 }
                 val bufferedDecompressed = BufferedInputStream(decompressed)
                 try {
-                    ArchiveStreamFactory().createArchiveInputStream(bufferedDecompressed)
+                    ArchiveStreamFactory("UTF-8").createArchiveInputStream(bufferedDecompressed)
                 } catch (_: Exception) {
                     // Fall back to TarArchiveInputStream or ZipArchiveInputStream
                     TarArchiveInputStream(bufferedDecompressed)
@@ -578,7 +699,7 @@ class ArchiveReader(private val tempDir: File) {
         return temp
     }
 
-    private fun buildTreeFromRawEntries(sourceUri: Uri?, rawEntries: List<RawEntry>): ArchiveTree {
+    private fun buildTreeFromRawEntries(sourceUri: Uri?, rawEntries: List<RawEntry>, warnings: List<String> = emptyList()): ArchiveTree {
         val intermediateDirs = mutableMapOf<String, ArchiveEntry>()
         val directChildren = mutableMapOf<String, MutableMap<String, ArchiveEntry>>()
         val allEntriesByPath = mutableMapOf<String, ArchiveEntry>()
@@ -623,7 +744,8 @@ class ArchiveReader(private val tempDir: File) {
                 modifiedAtMillis = entry.modifiedAtMillis,
                 mimeType = ArchiveMimeTypes.guessMimeType(leafName, isDir),
                 isSymbolicLink = entry.isSymbolicLink,
-                linkTarget = entry.linkTarget
+                linkTarget = entry.linkTarget,
+                permissionsMode = entry.permissionsMode, owner = entry.owner, group = entry.group, readError = entry.readError, recoveryNote = entry.recoveryNote, partialRecoveryAvailable = entry.partialRecoveryAvailable
             )
 
             if (isDir) {
@@ -634,6 +756,6 @@ class ArchiveReader(private val tempDir: File) {
         }
 
         val entriesByParent = directChildren.mapValues { (_, map) -> map.values.toList() }
-        return ArchiveTree(sourceUri, entriesByParent, allEntriesByPath)
+        return ArchiveTree(sourceUri, entriesByParent, allEntriesByPath, warnings)
     }
 }

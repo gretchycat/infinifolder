@@ -10,7 +10,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
 
-/** One isolated container snapshot per transfer. The public provider graph never sees staging URIs. */
+/** One isolated snapshot per container mutation batch. Public refs never expose staging URIs. */
 internal class ContainerWriteBatch private constructor(
     override val provider: StorageProvider,
     private val storage: StorageProvider,
@@ -19,7 +19,9 @@ internal class ContainerWriteBatch private constructor(
     private val snapshot: File,
     private val revision: ContentRevision,
     private val recoveryRoot: File,
-    private val zip: ZipBatchView?,
+    private val overlay: ArchiveBatchView?,
+    private val sourceName: String,
+    private val imageCompression: ContainerCompression?,
     private val dirty: () -> Boolean,
     private val cancelled: () -> Boolean,
     private val sourceFile: File?,
@@ -30,15 +32,36 @@ internal class ContainerWriteBatch private constructor(
 
     override fun commit() {
         check(!closed && !committed) { "Container batch is no longer active" }
-        if (cancelled()) throw InterruptedException("Container copy cancelled")
+        if (cancelled()) throw InterruptedException("Container operation cancelled")
         if (!dirty()) { committed = true; return }
-        val updated = if (zip != null) {
-            File(work, "updated.zip").also {
-                DiagnosticLog.record("container.batch.rebuild", "batch=${work.name} format=zip additions=${zip.additions().size} removals=${zip.removals().size}")
-                ZipContainerEditor.appendBatch(snapshot, it, zip.additions(), cancelled, zip.removals())
+        val updated = if (overlay != null) {
+            File(work, "updated-container").also {
+                DiagnosticLog.record("container.batch.rebuild", "batch=${work.name} format=${ArchiveFormats.containerExtension(sourceName)} additions=${overlay.additions().size} removals=${overlay.removals().size}")
+                ContainerSpace.require(work, snapshot.length(), revision.size)
+                if (ContainerCompression.isTar(sourceName))
+                    TarContainerEditor.rebuild(snapshot, it, sourceName, overlay.additions(), overlay.removals(), cancelled, revision.size)
+                else ZipContainerEditor.appendBatch(snapshot, it, overlay.additions(), cancelled, overlay.removals())
+            }
+        } else if (imageCompression != null) {
+            File(work, "updated-compressed-image").also { compressed ->
+                ContainerSpace.require(work, snapshot.length() + snapshot.length() / 50 + 1024 * 1024, revision.size)
+                DiagnosticLog.record("container.batch.recompress", "batch=${work.name} format=$imageCompression rawBytes=${snapshot.length()}")
+                imageCompression.output(ContainerSpace.guarded(compressed.outputStream().buffered(), work, revision.size, cancelled), snapshot.length()).use { output ->
+                    snapshot.inputStream().use { ContainerSpace.copy(it, output, work, revision.size, cancelled) }
+                }
+                val expected = snapshot.inputStream().use(ContentRevision::read)
+                val actual = imageCompression.input(compressed.inputStream().buffered()).use { input ->
+                    ContentRevision.read(object : java.io.FilterInputStream(input) {
+                        override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                            if (cancelled()) throw InterruptedException("Container operation cancelled")
+                            return super.read(bytes, offset, length)
+                        }
+                    })
+                }
+                if (actual != expected) throw IOException("Recompressed image failed verification; original retained")
             }
         } else snapshot
-        if (cancelled()) throw InterruptedException("Container copy cancelled")
+        if (cancelled()) throw InterruptedException("Container operation cancelled")
         sourceFile?.let {
             val mounted = MountedPartitionDetector.checkMounted(it)
             if (mounted.isMounted) throw MountedPartitionException(it.name, mounted.reason)
@@ -82,8 +105,9 @@ internal class ContainerWriteBatch private constructor(
                         snapshot.outputStream().use { output ->
                             val buffer = ByteArray(128 * 1024)
                             while (true) {
-                                if (cancelled()) throw InterruptedException("Container copy cancelled")
+                                if (cancelled()) throw InterruptedException("Container operation cancelled")
                                 val n = input.read(buffer); if (n < 0) break
+                                ContainerSpace.require(work, n.toLong())
                                 output.write(buffer, 0, n)
                             }
                             output.fd.sync()
@@ -93,20 +117,37 @@ internal class ContainerWriteBatch private constructor(
                     is ProviderResult.Unsupported -> throw IOException("Cannot snapshot this container")
                 }
                 val revision = snapshot.inputStream().use(ContentRevision::read)
+                val imageCompression = if (ContainerCompression.isCompressedImage(sourceName)) ContainerCompression.forName(sourceName) else null
+                val working = if (imageCompression != null) {
+                    // Retain the compressed original snapshot for revision/recovery accounting.
+                    File(sourceDirectory, sourceName.substringBeforeLast('.')).also { raw ->
+                        imageCompression.input(snapshot.inputStream().buffered()).use { input ->
+                            raw.outputStream().use { output -> ContainerSpace.copy(input, output, work, revision.size, cancelled) }
+                        }
+                        ContainerSpace.require(work, raw.length() + raw.length() / 50 + 1024 * 1024, revision.size)
+                    }
+                } else snapshot
                 val scratch = ArchiveStorageProvider(context, local, File(work, "reader_cache")).apply { sourceProvider = storage }
-                if (ArchiveFormats.containerExtension(sourceName) != "zip") {
-                    scratch.trustPrivateBatchSource(Uri.fromFile(snapshot))
+                val streamArchive = ArchiveFormats.containerExtension(sourceName) == "zip" || ContainerCompression.isTar(sourceName)
+                if (!streamArchive) {
+                    scratch.trustPrivateBatchSource(Uri.fromFile(working))
                 }
                 var imageDirty = false
-                val mapped = MappedContainerView(storage, scratch, source, Uri.fromFile(snapshot)) { imageDirty = true }
-                val zip = if (ArchiveFormats.containerExtension(sourceName) == "zip") ZipBatchView(mapped, source, work) else null
-                val view: StorageProvider = zip ?: mapped
+                val mapped = MappedContainerView(storage, scratch, source, Uri.fromFile(working)) { imageDirty = true }
+                val overlay = if (streamArchive) ArchiveBatchView(mapped, source, work) else null
+                val view: StorageProvider = overlay ?: mapped
                 // The snapshot may differ from the preflight view; recheck names/capacity inside it.
                 val target = view.stat(destination)
                 if (target !is ProviderResult.Success || !target.value.metadata.isDirectory || target.value.metadata.isSymbolicLink)
                     throw IOException("Container destination is no longer an ordinary directory")
-                return ContainerWriteBatch(view, storage, backing, work, snapshot, revision,
-                    File(context.filesDir, "save_recovery"), zip, { zip?.hasChanges() ?: imageDirty }, cancelled,
+                // Probe the actual private raw image, not merely the public compressed source.
+                if (imageCompression != null) {
+                    val failure = ArchiveReader(File(work, "probe")).writableFailureReason(working.name, working,
+                        entryPath = ArchiveUri.getEntryPath(Uri.parse(destination.documentId)), probeOnly = true)
+                    if (failure != null) throw IOException(failure)
+                }
+                return ContainerWriteBatch(view, storage, backing, work, working, revision,
+                    File(context.filesDir, "save_recovery"), overlay, sourceName, imageCompression, { overlay?.hasChanges() ?: imageDirty }, cancelled,
                     if (local?.owns(source) == true) local.fileFor(source) else if (source.scheme == "file") File(source.path ?: "") else null,
                     published)
             } catch (e: Exception) { work.deleteRecursively(); throw e }
@@ -123,7 +164,7 @@ private class MappedContainerView(
     private val changed: () -> Unit
 ) : StorageProvider by fallback {
     private fun owns(ref: ResourceRef): Boolean = ref.providerId == "archive" && runCatching {
-        ArchiveUri.getSourceUri(Uri.parse(ref.documentId)) == source
+        !ArchiveUri.isDeletedView(Uri.parse(ref.documentId)) && ArchiveUri.getSourceUri(Uri.parse(ref.documentId)) == source
     }.getOrDefault(false)
     private fun mapped(ref: ResourceRef) = ResourceRef("archive", ArchiveUri.build(working,
         ArchiveUri.getEntryPath(Uri.parse(ref.documentId))).toString())
@@ -163,13 +204,13 @@ private class MappedContainerView(
     override fun close() {} // The batch owns its workspace, not the application provider graph.
 }
 
-/** ZIP additions and removals remain staged until the single final rebuild. */
-private class ZipBatchView(private val base: StorageProvider, private val source: Uri, private val work: File) : StorageProvider by base {
+/** Sequential archive additions and removals stay staged until one verified rebuild. */
+private class ArchiveBatchView(private val base: StorageProvider, private val source: Uri, private val work: File) : StorageProvider by base {
     private data class Pending(val path: String, val directory: Boolean, val mime: String, val content: File? = null)
     private val pending = linkedMapOf<String, Pending>()
     private val removed = linkedSetOf<String>()
     private fun owns(ref: ResourceRef) = ref.providerId == "archive" && runCatching {
-        ArchiveUri.getSourceUri(Uri.parse(ref.documentId)) == source
+        !ArchiveUri.isDeletedView(Uri.parse(ref.documentId)) && ArchiveUri.getSourceUri(Uri.parse(ref.documentId)) == source
     }.getOrDefault(false)
     private fun path(ref: ResourceRef) = ArchiveUri.getEntryPath(Uri.parse(ref.documentId))
     private fun isRemoved(path: String): Boolean = removed.any { path == it || path.startsWith("$it/") }
@@ -180,12 +221,12 @@ private class ZipBatchView(private val base: StorageProvider, private val source
             if (value.directory) null else value.content?.length() ?: 0L, null, value.directory, canWrite = true), uri)
     }
     private fun <T> attempt(block: () -> T): ProviderResult<T> = try { ProviderResult.Success(block()) }
-        catch (e: Exception) { ProviderResult.Failure(e.message ?: "ZIP batch operation failed", e) }
+        catch (e: Exception) { ProviderResult.Failure(e.message ?: "Archive batch operation failed", e) }
     fun additions() = pending.values.filterNot { isRemoved(it.path) }.map { ZipContainerEditor.Addition(it.path, it.directory, it.content) }
     fun removals() = removed.toSet()
     fun hasChanges() = additions().isNotEmpty() || removed.isNotEmpty()
     override fun stat(ref: ResourceRef): ProviderResult<ResourceEntry> = if (owns(ref) && isRemoved(path(ref)))
-        ProviderResult.Failure("ZIP entry was removed in this batch")
+        ProviderResult.Failure("Archive entry was removed in this batch")
     else if (owns(ref) && pending.containsKey(path(ref)))
         ProviderResult.Success(entry(pending.getValue(path(ref)))) else base.stat(ref)
     override fun list(parent: ResourceRef): ProviderResult<List<ResourceEntry>> {
@@ -195,9 +236,9 @@ private class ZipBatchView(private val base: StorageProvider, private val source
             val parentEntry = when (val result = stat(parent)) {
                 is ProviderResult.Success -> result.value
                 is ProviderResult.Failure -> throw IOException(result.message, result.cause)
-                is ProviderResult.Unsupported -> throw IOException("Cannot inspect ZIP parent")
+                is ProviderResult.Unsupported -> throw IOException("Cannot inspect Archive parent")
             }
-            if (!parentEntry.metadata.isDirectory || parentEntry.metadata.isSymbolicLink) throw IOException("ZIP parent is not an ordinary directory")
+            if (!parentEntry.metadata.isDirectory || parentEntry.metadata.isSymbolicLink) throw IOException("Archive parent is not an ordinary directory")
             val old = if (pending.containsKey(parentPath)) emptyList() else StorageSafety.complete(base.list(parent)).filterNot { isRemoved(path(it.ref)) }
             old + pending.values.filter { it.path.substringBeforeLast('/', "") == parentPath && !isRemoved(it.path) }.map(::entry)
         }
@@ -213,10 +254,10 @@ private class ZipBatchView(private val base: StorageProvider, private val source
     override fun createDirectory(parent: ResourceRef, name: String) = if (owns(parent)) create(parent, name, true, "vnd.android.document/directory") else base.createDirectory(parent, name)
     override fun openRead(ref: ResourceRef): ProviderResult<InputStream> {
         if (!owns(ref) || !pending.containsKey(path(ref))) return if (owns(ref) && isRemoved(path(ref)))
-            ProviderResult.Failure("ZIP entry was removed in this batch") else base.openRead(ref)
+            ProviderResult.Failure("Archive entry was removed in this batch") else base.openRead(ref)
         return attempt {
             val value = pending.getValue(path(ref))
-            if (value.directory) throw IOException("Cannot read a ZIP directory as a file")
+            if (value.directory) throw IOException("Cannot read an archive directory as a file")
             value.content?.inputStream() ?: byteArrayOf().inputStream()
         }
     }
@@ -224,8 +265,8 @@ private class ZipBatchView(private val base: StorageProvider, private val source
         if (!owns(ref)) return base.openWrite(ref)
         return attempt {
             val key = path(ref)
-            val value = pending[key] ?: throw IOException("Batch writes may only modify newly created ZIP entries")
-            if (value.directory) throw IOException("Cannot write a ZIP directory")
+            val value = pending[key] ?: throw IOException("Batch writes may only modify newly created archive entries")
+            if (value.directory) throw IOException("Cannot write an archive directory")
             val file = File.createTempFile("entry-", ".data", work)
             val output = file.outputStream()
             object : OutputStream(), PendingWrite {
@@ -252,13 +293,13 @@ private class ZipBatchView(private val base: StorageProvider, private val source
         if (!owns(ref)) return base.delete(ref)
         return attempt {
             val key = path(ref)
-            if (key.isEmpty()) throw IOException("Cannot delete the ZIP root")
+            if (key.isEmpty()) throw IOException("Cannot delete the archive root")
             val pendingValue = pending[key]
             if (pendingValue == null) {
                 when (val found = base.stat(ref)) {
                     is ProviderResult.Success -> Unit
                     is ProviderResult.Failure -> throw IOException(found.message, found.cause)
-                    is ProviderResult.Unsupported -> throw IOException("Cannot verify ZIP entry before deleting it")
+                    is ProviderResult.Unsupported -> throw IOException("Cannot verify archive entry before deleting it")
                 }
                 removed += key
             }

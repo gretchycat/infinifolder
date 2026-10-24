@@ -1,0 +1,469 @@
+{
+  "fat12-adversarial.img": {
+    "fat": 12,
+    "cases": {
+      "GOOD.TXT": {
+        "slot": 9728,
+        "start_cluster": 40,
+        "size": 38,
+        "outcome": "unverified-intact",
+        "original_sha256": "4769013c12b2b9ac590b026ac33c731c22b9ac8ffa196892adf0a1068d726fe2",
+        "assumed_contiguous_sha256": "4769013c12b2b9ac590b026ac33c731c22b9ac8ffa196892adf0a1068d726fe2",
+        "detail": ""
+      },
+      "ALLOC.BIN": {
+        "slot": 9760,
+        "start_cluster": 50,
+        "size": 1024,
+        "outcome": "blocked",
+        "original_sha256": "159f1bd8f11e091980019d1e88b8a7235a851e76a033efc94edfeb5fe08fa20a",
+        "assumed_contiguous_sha256": "159f1bd8f11e091980019d1e88b8a7235a851e76a033efc94edfeb5fe08fa20a",
+        "detail": "First cluster reused by a live file"
+      },
+      "FATCOPY.BIN": {
+        "slot": 9824,
+        "start_cluster": 60,
+        "size": 512,
+        "outcome": "blocked",
+        "original_sha256": "be9da2c7a85e4a76371cbc8d08ac8ca0fdca981dc8b05ed25c8a72d53cec128e",
+        "assumed_contiguous_sha256": "be9da2c7a85e4a76371cbc8d08ac8ca0fdca981dc8b05ed25c8a72d53cec128e",
+        "detail": "Only the second FAT marks this cluster allocated"
+      },
+      "FRAGLIVE.BIN": {
+        "slot": 9856,
+        "start_cluster": 80,
+        "size": 1024,
+        "outcome": "blocked",
+        "original_sha256": "06aed7f43b72ab019f06f2cbf0a94237ad29cc36d2c91e27a9d3e734c90b665b",
+        "assumed_contiguous_sha256": "890782be6edfc5cc87d5504dfbe5c30ab0d9a70bdace39aac18050c2a9d43e67",
+        "detail": "Original chain 80 -> 82; intervening cluster 81 belongs to a live file"
+      },
+      "FRAGFREE.BIN": {
+        "slot": 9920,
+        "start_cluster": 90,
+        "size": 1024,
+        "outcome": "unverified-wrong-bytes",
+        "original_sha256": "06aed7f43b72ab019f06f2cbf0a94237ad29cc36d2c91e27a9d3e734c90b665b",
+        "assumed_contiguous_sha256": "6de80773b5d22043d1f1fc2d5512f74bdb821382279be4940fdbe30b178d0044",
+        "detail": "Original chain 90 -> 92 was freed; gap 91 is also free. Fragmentation is undetectable from surviving metadata."
+      },
+      "PARTIAL.BIN": {
+        "slot": 9952,
+        "start_cluster": 100,
+        "size": 512,
+        "outcome": "unverified-wrong-bytes",
+        "original_sha256": "556a5e2b2c6a4e50bd510a5e108f13382b0f538382be8fd19b042358725847bf",
+        "assumed_contiguous_sha256": "3a0b603347bc24935e3a9829e38ede1fa151b0bf098a4d4e641cf0cbcbedc968",
+        "detail": "Payload partially overwritten while FAT remains free"
+      },
+      "OVERWR.BIN": {
+        "slot": 9984,
+        "start_cluster": 110,
+        "size": 512,
+        "outcome": "unverified-wrong-bytes",
+        "original_sha256": "556a5e2b2c6a4e50bd510a5e108f13382b0f538382be8fd19b042358725847bf",
+        "assumed_contiguous_sha256": "6d1658a92a0c35551c1e935c4c616b3d1876f2129300aa0e042e62608889cc4b",
+        "detail": "Payload fully overwritten while FAT remains free"
+      },
+      "OUTSIDE.BIN": {
+        "outcome": "blocked",
+        "detail": "First cluster outside volume"
+      },
+      "EMPTY.TXT": {
+        "outcome": "unverified-intact",
+        "size": 0,
+        "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assumed_contiguous_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "GONE/CHILD.TXT": {
+        "outcome": "absent",
+        "detail": "Deleted directory trees are deliberately excluded",
+        "slot": 10080
+      },
+      "REUSED.TXT": {
+        "outcome": "absent",
+        "slot": 10112,
+        "detail": "An old deleted record was replaced with a live file"
+      },
+      "KANJI.TXT": {
+        "outcome": "absent",
+        "detail": "Live first-byte 0x05 escape must not be treated as deleted"
+      }
+    },
+    "sha256": "118a88be13cf4641efa72dd8091006b4cec6ed5e45fc0d24360bfd2e67cb7f36",
+    "bytes": 1474560
+  },
+  "fat16-adversarial.img": {
+    "fat": 16,
+    "cases": {
+      "GOOD.TXT": {
+        "slot": 130560,
+        "start_cluster": 40,
+        "size": 38,
+        "outcome": "unverified-intact",
+        "original_sha256": "4769013c12b2b9ac590b026ac33c731c22b9ac8ffa196892adf0a1068d726fe2",
+        "assumed_contiguous_sha256": "4769013c12b2b9ac590b026ac33c731c22b9ac8ffa196892adf0a1068d726fe2",
+        "detail": ""
+      },
+      "ALLOC.BIN": {
+        "slot": 130592,
+        "start_cluster": 50,
+        "size": 1024,
+        "outcome": "blocked",
+        "original_sha256": "159f1bd8f11e091980019d1e88b8a7235a851e76a033efc94edfeb5fe08fa20a",
+        "assumed_contiguous_sha256": "159f1bd8f11e091980019d1e88b8a7235a851e76a033efc94edfeb5fe08fa20a",
+        "detail": "First cluster reused by a live file"
+      },
+      "FATCOPY.BIN": {
+        "slot": 130656,
+        "start_cluster": 60,
+        "size": 512,
+        "outcome": "blocked",
+        "original_sha256": "be9da2c7a85e4a76371cbc8d08ac8ca0fdca981dc8b05ed25c8a72d53cec128e",
+        "assumed_contiguous_sha256": "be9da2c7a85e4a76371cbc8d08ac8ca0fdca981dc8b05ed25c8a72d53cec128e",
+        "detail": "Only the second FAT marks this cluster allocated"
+      },
+      "FRAGLIVE.BIN": {
+        "slot": 130688,
+        "start_cluster": 80,
+        "size": 1024,
+        "outcome": "blocked",
+        "original_sha256": "06aed7f43b72ab019f06f2cbf0a94237ad29cc36d2c91e27a9d3e734c90b665b",
+        "assumed_contiguous_sha256": "890782be6edfc5cc87d5504dfbe5c30ab0d9a70bdace39aac18050c2a9d43e67",
+        "detail": "Original chain 80 -> 82; intervening cluster 81 belongs to a live file"
+      },
+      "FRAGFREE.BIN": {
+        "slot": 130752,
+        "start_cluster": 90,
+        "size": 1024,
+        "outcome": "unverified-wrong-bytes",
+        "original_sha256": "06aed7f43b72ab019f06f2cbf0a94237ad29cc36d2c91e27a9d3e734c90b665b",
+        "assumed_contiguous_sha256": "6de80773b5d22043d1f1fc2d5512f74bdb821382279be4940fdbe30b178d0044",
+        "detail": "Original chain 90 -> 92 was freed; gap 91 is also free. Fragmentation is undetectable from surviving metadata."
+      },
+      "PARTIAL.BIN": {
+        "slot": 130784,
+        "start_cluster": 100,
+        "size": 512,
+        "outcome": "unverified-wrong-bytes",
+        "original_sha256": "556a5e2b2c6a4e50bd510a5e108f13382b0f538382be8fd19b042358725847bf",
+        "assumed_contiguous_sha256": "3a0b603347bc24935e3a9829e38ede1fa151b0bf098a4d4e641cf0cbcbedc968",
+        "detail": "Payload partially overwritten while FAT remains free"
+      },
+      "OVERWR.BIN": {
+        "slot": 130816,
+        "start_cluster": 110,
+        "size": 512,
+        "outcome": "unverified-wrong-bytes",
+        "original_sha256": "556a5e2b2c6a4e50bd510a5e108f13382b0f538382be8fd19b042358725847bf",
+        "assumed_contiguous_sha256": "6d1658a92a0c35551c1e935c4c616b3d1876f2129300aa0e042e62608889cc4b",
+        "detail": "Payload fully overwritten while FAT remains free"
+      },
+      "OUTSIDE.BIN": {
+        "outcome": "blocked",
+        "detail": "First cluster outside volume"
+      },
+      "EMPTY.TXT": {
+        "outcome": "unverified-intact",
+        "size": 0,
+        "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assumed_contiguous_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "GONE/CHILD.TXT": {
+        "outcome": "absent",
+        "detail": "Deleted directory trees are deliberately excluded",
+        "slot": 130912
+      },
+      "REUSED.TXT": {
+        "outcome": "absent",
+        "slot": 130944,
+        "detail": "An old deleted record was replaced with a live file"
+      },
+      "KANJI.TXT": {
+        "outcome": "absent",
+        "detail": "Live first-byte 0x05 escape must not be treated as deleted"
+      }
+    },
+    "sha256": "b38bf6003c0199b7a9dd4183aabfe4bd6c4d4994a3fa742bf1174ca5251b474a",
+    "bytes": 16777216
+  },
+  "fat16-dirty.img": {
+    "outcome": "scan-refused",
+    "reason": "dirty",
+    "sha256": "2508eb97ca4e85cb844e629dce3b9bcfa48155aae5670898906cda3fbb8b29c0",
+    "bytes": 16777216
+  },
+  "fat16-live-cycle.img": {
+    "outcome": "scan-refused",
+    "reason": "live-cycle",
+    "sha256": "df11c46779bce6c67535ff60793733bcbc3e5d739d5d8454690c42e0cca01226",
+    "bytes": 16777216
+  },
+  "fat16-mirror-disagreement.img": {
+    "outcome": "scan-refused",
+    "reason": "mirror-disagreement",
+    "sha256": "e2ab55a6d2c9596459ed1933ab104778b6aa4a0ee8303eb2e2529c0590e6e698",
+    "bytes": 16777216
+  },
+  "fat16-invalid-geometry.img": {
+    "outcome": "scan-refused",
+    "reason": "invalid-geometry",
+    "sha256": "8d06cf406f7f29824b87a3e4459be7ed9391965651b50cfca92eb8062c3d69b3",
+    "bytes": 16777216
+  },
+  "fat16-invalid-cluster-size.img": {
+    "outcome": "scan-refused",
+    "reason": "invalid-cluster-size",
+    "sha256": "fdb89d0e2778c1ca83ba18051b1b8a8f13592e85799e423385739198e535980c",
+    "bytes": 16777216
+  },
+  "fat16-invalid-boot-signature.img": {
+    "outcome": "scan-refused",
+    "reason": "invalid-boot-signature",
+    "sha256": "0eb2fc713b913c681218ab40b0f86fe8cb0c1c334011cfcb0f590690f1d8df5b",
+    "bytes": 16777216
+  },
+  "fat32-adversarial.img": {
+    "fat": 32,
+    "cases": {
+      "GOOD.TXT": {
+        "slot": 1049600,
+        "start_cluster": 40,
+        "size": 38,
+        "outcome": "unverified-intact",
+        "original_sha256": "4769013c12b2b9ac590b026ac33c731c22b9ac8ffa196892adf0a1068d726fe2",
+        "assumed_contiguous_sha256": "4769013c12b2b9ac590b026ac33c731c22b9ac8ffa196892adf0a1068d726fe2",
+        "detail": ""
+      },
+      "ALLOC.BIN": {
+        "slot": 1049632,
+        "start_cluster": 50,
+        "size": 1024,
+        "outcome": "blocked",
+        "original_sha256": "159f1bd8f11e091980019d1e88b8a7235a851e76a033efc94edfeb5fe08fa20a",
+        "assumed_contiguous_sha256": "159f1bd8f11e091980019d1e88b8a7235a851e76a033efc94edfeb5fe08fa20a",
+        "detail": "First cluster reused by a live file"
+      },
+      "FATCOPY.BIN": {
+        "slot": 1049696,
+        "start_cluster": 60,
+        "size": 512,
+        "outcome": "blocked",
+        "original_sha256": "be9da2c7a85e4a76371cbc8d08ac8ca0fdca981dc8b05ed25c8a72d53cec128e",
+        "assumed_contiguous_sha256": "be9da2c7a85e4a76371cbc8d08ac8ca0fdca981dc8b05ed25c8a72d53cec128e",
+        "detail": "Only the second FAT marks this cluster allocated"
+      },
+      "FRAGLIVE.BIN": {
+        "slot": 1049728,
+        "start_cluster": 80,
+        "size": 1024,
+        "outcome": "blocked",
+        "original_sha256": "06aed7f43b72ab019f06f2cbf0a94237ad29cc36d2c91e27a9d3e734c90b665b",
+        "assumed_contiguous_sha256": "890782be6edfc5cc87d5504dfbe5c30ab0d9a70bdace39aac18050c2a9d43e67",
+        "detail": "Original chain 80 -> 82; intervening cluster 81 belongs to a live file"
+      },
+      "FRAGFREE.BIN": {
+        "slot": 1049792,
+        "start_cluster": 90,
+        "size": 1024,
+        "outcome": "unverified-wrong-bytes",
+        "original_sha256": "06aed7f43b72ab019f06f2cbf0a94237ad29cc36d2c91e27a9d3e734c90b665b",
+        "assumed_contiguous_sha256": "6de80773b5d22043d1f1fc2d5512f74bdb821382279be4940fdbe30b178d0044",
+        "detail": "Original chain 90 -> 92 was freed; gap 91 is also free. Fragmentation is undetectable from surviving metadata."
+      },
+      "PARTIAL.BIN": {
+        "slot": 1049824,
+        "start_cluster": 100,
+        "size": 512,
+        "outcome": "unverified-wrong-bytes",
+        "original_sha256": "556a5e2b2c6a4e50bd510a5e108f13382b0f538382be8fd19b042358725847bf",
+        "assumed_contiguous_sha256": "3a0b603347bc24935e3a9829e38ede1fa151b0bf098a4d4e641cf0cbcbedc968",
+        "detail": "Payload partially overwritten while FAT remains free"
+      },
+      "OVERWR.BIN": {
+        "slot": 1049856,
+        "start_cluster": 110,
+        "size": 512,
+        "outcome": "unverified-wrong-bytes",
+        "original_sha256": "556a5e2b2c6a4e50bd510a5e108f13382b0f538382be8fd19b042358725847bf",
+        "assumed_contiguous_sha256": "6d1658a92a0c35551c1e935c4c616b3d1876f2129300aa0e042e62608889cc4b",
+        "detail": "Payload fully overwritten while FAT remains free"
+      },
+      "OUTSIDE.BIN": {
+        "outcome": "blocked",
+        "detail": "First cluster outside volume"
+      },
+      "EMPTY.TXT": {
+        "outcome": "unverified-intact",
+        "size": 0,
+        "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assumed_contiguous_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "GONE/CHILD.TXT": {
+        "outcome": "absent",
+        "detail": "Deleted directory trees are deliberately excluded",
+        "slot": 1049952
+      },
+      "REUSED.TXT": {
+        "outcome": "absent",
+        "slot": 1049984,
+        "detail": "An old deleted record was replaced with a live file"
+      },
+      "KANJI.TXT": {
+        "outcome": "absent",
+        "detail": "Live first-byte 0x05 escape must not be treated as deleted"
+      }
+    },
+    "sha256": "f05b5ac4c66ae3e8fa6484c196e2cb3cedbeff8b06d60b501662f27b093d4d10",
+    "bytes": 67108864
+  },
+  "fat32-active-second-fat.img": {
+    "fat": 32,
+    "outcome": "baseline-five-candidates",
+    "detail": "FAT1 is active; inactive FAT0 is stale and empty",
+    "sha256": "7999db0f4b2c61c4c8ed2d309028da5790abb1c723ee31e975d156b0b0b4a366",
+    "bytes": 67108864
+  },
+  "fat32-invalid-active-fat.img": {
+    "outcome": "scan-refused",
+    "reason": "Active index is past the two FAT copies",
+    "sha256": "f2b657b2665a1fa33076c17e9b3c3dfd119e31b10bcfd397465077b9822c44da",
+    "bytes": 67108864
+  },
+  "mbr-fat16-deleted.img": {
+    "outcome": "baseline-five-candidates",
+    "table": "MBR",
+    "bytes": 18874368,
+    "partitions": [
+      {
+        "source": "filesystems/windows/recovery/fat16-deleted.img",
+        "first_lba": 2048,
+        "sectors": 32768,
+        "label": "Recovery FAT16",
+        "type": 6,
+        "sha256": "ac901115800d0422492f51e5639d872b205b31a71d3f09c9b1957ebada99163a"
+      }
+    ],
+    "sha256": "b11c6b282187da7c7863b9c26f753d623f24e9bd7d66cba1acaf7f29bd38541e"
+  },
+  "gpt-fat16-deleted.img": {
+    "outcome": "baseline-five-candidates",
+    "table": "GPT",
+    "bytes": 18874368,
+    "partitions": [
+      {
+        "source": "filesystems/windows/recovery/fat16-deleted.img",
+        "first_lba": 2048,
+        "sectors": 32768,
+        "label": "Recovery FAT16",
+        "type": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "sha256": "ac901115800d0422492f51e5639d872b205b31a71d3f09c9b1957ebada99163a"
+      }
+    ],
+    "sha256": "65436ec5d1d3f647496da1b46b5a3f43790561dab7ae21347ca3ec2915b5ffa9"
+  },
+  "apm-fat16-deleted.img": {
+    "outcome": "baseline-five-candidates",
+    "table": "APM",
+    "bytes": 18874368,
+    "partitions": [
+      {
+        "source": "filesystems/windows/recovery/fat16-deleted.img",
+        "first_lba": 2048,
+        "sectors": 32768,
+        "label": "Recovery FAT16",
+        "type": "DOS_FAT_16",
+        "sha256": "ac901115800d0422492f51e5639d872b205b31a71d3f09c9b1957ebada99163a"
+      }
+    ],
+    "sha256": "d7bc0baba0384ceb72b804d98f65c0d1dcfcba40cf1923c14d091f1366a29414"
+  },
+  "mbr-outside-volume.img": {
+    "outcome": "scan-refused",
+    "reason": "Partition extends beyond the disk",
+    "sha256": "e1737010e4a3e157d9315214d73ce503a6c7400252df1b36624a8087978f9a03",
+    "bytes": 18874368
+  },
+  "mbr-overlapping-volumes.img": {
+    "outcome": "scan-refused",
+    "reason": "Two FAT partitions overlap",
+    "sha256": "cd1beed70805398c8d0b2e5cef7b66b912df30652e3953dbb124d539ae5d607a",
+    "bytes": 18874368
+  },
+  "fat16-deleted.img.gz": {
+    "outcome": "baseline-five-candidates",
+    "uncompressed": "../fat16-deleted.img",
+    "sha256": "0a25dd0e6d2b2fd32b22acaf55b71dfa9aa821bb0f7f748b759e0b96ad7156ad",
+    "bytes": 17304
+  },
+  "mbr-fat16-deleted.img.gz": {
+    "outcome": "baseline-five-candidates",
+    "uncompressed": "mbr-fat16-deleted.img",
+    "sha256": "2027936f205dcbc97912c9b0a849910b6d528fa0f82a74639c63554c30200c1e",
+    "bytes": 19352
+  },
+  "fat16-deleted.img.bz2": {
+    "outcome": "baseline-five-candidates",
+    "uncompressed": "../fat16-deleted.img",
+    "sha256": "0c7779313cc561334d788cce614f592ae28a6ee41a1fe7e3f9a6612dc35888cd",
+    "bytes": 1401
+  },
+  "mbr-fat16-deleted.img.bz2": {
+    "outcome": "baseline-five-candidates",
+    "uncompressed": "mbr-fat16-deleted.img",
+    "sha256": "08fad4d66cecbe4027f9325ab472a66a593950273da7c5555ec1a9c2fc4ef42d",
+    "bytes": 1425
+  },
+  "fat16-deleted.img.xz": {
+    "outcome": "baseline-five-candidates",
+    "uncompressed": "../fat16-deleted.img",
+    "sha256": "43c413a3cfbd9347c56d3176c0a8b042ec67ce8ad2759785bff8ea925b3f7958",
+    "bytes": 3312
+  },
+  "mbr-fat16-deleted.img.xz": {
+    "outcome": "baseline-five-candidates",
+    "uncompressed": "mbr-fat16-deleted.img",
+    "sha256": "d99aa02808567e88318802e91764a319a350eb62876444f03c1e9e4cb502df5d",
+    "bytes": 3640
+  },
+  "fat32-stale-inactive-fat.img": {
+    "fat": 32,
+    "outcome": "baseline-five-candidates",
+    "detail": "FAT1 active; FAT0 contains stale allocation for a deleted file",
+    "sha256": "c15b2316d8a355ea7321ed12afaa216ac0279d102a289fd7ec159d1b1e6ef293",
+    "bytes": 67108864
+  },
+  "gpt-bad-primary-crc.img": {
+    "outcome": "scan-refused",
+    "reason": "GPT checksum damage",
+    "modified_byte": 528,
+    "sha256": "55d1bf33430574a7b7f610bc77565ae8642a2defb786d03496f6ffa696658a1a",
+    "bytes": 18874368
+  },
+  "gpt-bad-entry-crc.img": {
+    "outcome": "scan-refused",
+    "reason": "GPT checksum damage",
+    "modified_byte": 1040,
+    "sha256": "344f03eee80703b249fdc95287db0e6da3d907e9b449c43d0022b085714e83bb",
+    "bytes": 18874368
+  },
+  "gpt-bad-backup-crc.img": {
+    "outcome": "scan-refused",
+    "reason": "GPT checksum damage",
+    "modified_byte": -496,
+    "sha256": "4d4d99f99375983ed21a1a07acdf97ee3b52a929a77c81ce65ba4868fb63aef2",
+    "bytes": 18874368
+  },
+  "fat16-magic-partial.img": {
+    "outcome": "explicit-partial-only",
+    "detail": "Two allocated second clusters must be zero-filled. MATCH.PNG has a PNG signature; MISMATCH.PNG has a PDF signature. Neither header verifies the payload.",
+    "sha256": "e0388d01fb1babf508202dc2bdefd70b68f81c7d423d85588d1a4f68770ab8d0",
+    "bytes": 16777216
+  },
+  "fat16-partial-tail.img": {
+    "outcome": "explicit-partial-only",
+    "detail": "First cluster inside volume; second outside. Keep first and zero-fill second.",
+    "sha256": "1cc6b3b6b98d246d513619a3ec4540eae05ee11b4ba1af093929ad8872048c51",
+    "bytes": 16777216
+  }
+}

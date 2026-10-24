@@ -1,0 +1,136 @@
+--- a/hfs/catalog.c
++++ b/hfs/catalog.c
+@@ -1,3 +1,4 @@
++#include <iconv.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <time.h>
+@@ -300,16 +301,19 @@
+   return (BTKey*)record;
+ }
+ 
++/* Fixture-host UTF-8 conversion; callers supply already decomposed HFS names. */
+ void ASCIIToUnicode(const char* ascii, HFSUniStr255* unistr) {
+-  int count;
+-  
+-  count = 0;
+-  while(ascii[count] != '\0') {
+-    unistr->unicode[count] = ascii[count];
+-    count++;
+-  }
+-  
+-  unistr->length = count;
++    unsigned char bytes[510];
++    char *input = (char *)ascii, *output = (char *)bytes;
++    size_t inleft = strlen(ascii), outleft = sizeof(bytes);
++    iconv_t converter = iconv_open("UTF-16LE", "UTF-8");
++    if (converter == (iconv_t)-1) hfs_panic("Cannot open UTF-8 converter");
++    size_t result = iconv(converter, &input, &inleft, &output, &outleft);
++    iconv_close(converter);
++    if (result == (size_t)-1 || inleft) hfs_panic("Invalid or oversized UTF-8 fixture name");
++    unistr->length = (sizeof(bytes) - outleft) / 2;
++    for (size_t i = 0; i < unistr->length; ++i)
++        unistr->unicode[i] = bytes[i * 2] | ((uint16_t)bytes[i * 2 + 1] << 8);
+ }
+ 
+ HFSPlusCatalogRecord* getRecordByCNID(HFSCatalogNodeID CNID, Volume* volume) {
+@@ -1112,7 +1116,7 @@
+ int chmodFile(const char* pathName, int mode, Volume* volume) {
+   HFSPlusCatalogRecord* record;
+    
+-  record = getRecordFromPath(pathName, volume, NULL, NULL);
++  record = getRecordFromPath3(pathName, volume, NULL, NULL, TRUE, FALSE, kHFSRootFolderID);
+   
+   if(record == NULL) {
+     return FALSE;
+@@ -1136,7 +1140,7 @@
+ int chownFile(const char* pathName, uint32_t owner, uint32_t group, Volume* volume) {
+   HFSPlusCatalogRecord* record;
+    
+-  record = getRecordFromPath(pathName, volume, NULL, NULL);
++  record = getRecordFromPath3(pathName, volume, NULL, NULL, TRUE, FALSE, kHFSRootFolderID);
+   
+   if(record == NULL) {
+     return FALSE;
+--- a/hfs/utility.c
++++ b/hfs/utility.c
+@@ -1,3 +1,4 @@
++#include <iconv.h>
+ #include <stdlib.h>
+ #include <stdio.h>
+ #include <hfs/hfsplus.h>
+@@ -7,24 +8,29 @@
+   exit(1);
+ }
+ 
+-void printUnicode(HFSUniStr255* str) {
+-  int i;
+-  
+-  for(i = 0; i < str->length; i++) {
+-    printf("%c", (char)(str->unicode[i] & 0xff));
+-  }
++/* Fixture-host UTF-16 conversion. No truncating high bytes of catalog names. */
++char* unicodeToAscii(HFSUniStr255* str) {
++    if (str->length > 255) hfs_panic("Oversized Unicode fixture name");
++    unsigned char bytes[510];
++    for (size_t i = 0; i < str->length; ++i) {
++        bytes[i * 2] = str->unicode[i] & 255;
++        bytes[i * 2 + 1] = str->unicode[i] >> 8;
++    }
++    size_t inleft = str->length * 2, capacity = str->length * 3 + 1;
++    char *result = malloc(capacity), *input = (char *)bytes, *output = result;
++    if (!result) hfs_panic("Cannot allocate Unicode fixture name");
++    size_t outleft = capacity - 1;
++    iconv_t converter = iconv_open("UTF-8", "UTF-16LE");
++    if (converter == (iconv_t)-1) hfs_panic("Cannot open UTF-16 converter");
++    size_t status = iconv(converter, &input, &inleft, &output, &outleft);
++    iconv_close(converter);
++    if (status == (size_t)-1 || inleft) hfs_panic("Invalid UTF-16 fixture name");
++    *output = 0;
++    return result;
+ }
+ 
+-char* unicodeToAscii(HFSUniStr255* str) {
+-  int i;
+-  char* toReturn;
+-  
+-  toReturn = (char*) malloc(sizeof(char) * (str->length + 1));
+-  
+-  for(i = 0; i < str->length; i++) {
+-    toReturn[i] = (char)(str->unicode[i] & 0xff);
+-  }
+-  toReturn[i] = '\0';
+-  
+-  return toReturn;
++void printUnicode(HFSUniStr255* str) {
++    char *text = unicodeToAscii(str);
++    fputs(text, stdout);
++    free(text);
+ }
+--- a/hfs/CMakeLists.txt
++++ b/hfs/CMakeLists.txt
+@@ -9,7 +9,7 @@
+ 
+ link_directories (${PROJECT_BINARY_DIR}/common)
+ add_library(hfs btree.c catalog.c extents.c xattr.c fastunicodecompare.c flatfile.c hfslib.c rawfile.c utility.c volume.c hfscompress.c)
+-target_link_libraries(hfs common z)
++target_link_libraries(hfs common z iconv)
+ 
+ add_executable(hfsplus hfs.c)
+ target_link_libraries (hfsplus hfs)
+--- a/hfs/hfs.c
++++ b/hfs/hfs.c
+@@ -313,6 +313,13 @@
+ 			cmd_rmall(volume, argc - 2, argv + 2);
+ 		} else if(strcmp(argv[2], "addall") == 0) {
+ 			cmd_addall(volume, argc - 2, argv + 2);
++        } else if(strcmp(argv[2], "untar") == 0 && argc == 4) {
++            FILE *input = fopen(argv[3], "rb");
++            if (!input) hfs_panic("Cannot open fixture TAR");
++            AbstractFile *archive = createAbstractFileFromFile(input);
++            if (!archive) hfs_panic("Cannot open fixture TAR stream");
++            hfs_untar(volume, archive);
++            archive->close(archive);
+ 		} else if(strcmp(argv[2], "grow") == 0) {
+ 			cmd_grow(volume, argc - 2, argv + 2);
+ 		} else if(strcmp(argv[2], "getattr") == 0) {

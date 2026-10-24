@@ -42,6 +42,13 @@ object MimeRegistry {
         "7z" to "application/x-7z-compressed", "cb7" to "application/x-7z-compressed", "cpio" to "application/x-cpio", "ar" to "application/x-archive", "deb" to "application/vnd.debian.binary-package",
         "iso" to "application/x-iso9660-image", "cdr" to "application/x-iso9660-image", "img" to "application/x-raw-disk-image", "raw" to "application/x-raw-disk-image", "bin" to "application/x-raw-disk-image",
         "vdi" to "application/x-virtualbox-vdi", "qcow2" to "application/x-qemu-disk", "vmdk" to "application/x-vmdk", "vhd" to "application/x-vhd", "vhdx" to "application/x-vhdx",
+        "ufs" to "application/x-raw-disk-image", "ufs1" to "application/x-raw-disk-image", "ufs2" to "application/x-raw-disk-image", "ffs" to "application/x-raw-disk-image",
+        "zst" to "application/zstd", "tzst" to "application/zstd",
+        "cab" to "application/vnd.ms-cab-compressed",
+        "rar" to "application/vnd.rar", "cbr" to "application/vnd.rar", "arj" to "application/x-arj",
+        "ntfs" to "application/x-raw-disk-image",
+        "hfs" to "application/x-raw-disk-image", "hfsplus" to "application/x-raw-disk-image", "hfsx" to "application/x-raw-disk-image",
+        "taz" to "application/x-compress", "z" to "application/x-compress",
         "lnk" to "application/x-ms-shortcut", "iflink" to "application/vnd.infinifolder.shortcut+json"
     )
     fun normalize(mime: String?): String {
@@ -56,6 +63,10 @@ object MimeRegistry {
     fun guess(name: String, directory: Boolean = false): String {
         if (directory) return "vnd.android.document/directory"
         val extension = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        if (extension.length == 3 && extension.drop(1).all(Char::isDigit)) {
+            if (extension[0] == 'r') return "application/vnd.rar"
+            if (extension[0] == 'a') return "application/x-arj"
+        }
         return packages[extension]?.mime ?: extensions[extension] ?: runCatching {
             android.webkit.MimeTypeMap.getSingleton()?.getMimeTypeFromExtension(extension)
         }.getOrNull()?.let(::normalize) ?: "application/octet-stream"
@@ -85,7 +96,7 @@ object MimeRegistry {
             mime.startsWith("audio/") -> "♫"
             mime.startsWith("video/") -> "▶"
             mime.startsWith("text/") -> "▤"
-            packageFormat("", mime) != null || mime in setOf("application/zip", "application/x-tar", "application/gzip", "application/x-xz", "application/x-bzip2", "application/x-7z-compressed", "application/x-archive", "application/x-cpio") -> "📦"
+            packageFormat("", mime) != null || mime in setOf("application/vnd.ms-cab-compressed", "application/x-cabinet", "application/zstd", "application/vnd.rar", "application/x-rar-compressed", "application/x-arj", "application/zip", "application/x-tar", "application/gzip", "application/x-xz", "application/x-bzip2", "application/x-7z-compressed", "application/x-archive", "application/x-cpio") -> "📦"
             else -> "▧"
         }
     }
@@ -102,7 +113,7 @@ object MimeRegistry {
             mime.contains("spreadsheet") -> candidates.add("x-office-spreadsheet")
             mime.contains("presentation") -> candidates.add("x-office-presentation")
             mime.contains("disk") || mime.contains("iso9660") || mime.contains("vmdk") -> candidates.addAll(listOf("media-optical", "drive-harddisk"))
-            mime in setOf("application/zip", "application/x-tar", "application/gzip", "application/x-xz", "application/x-bzip2", "application/x-7z-compressed") -> candidates.add("package-x-generic")
+            mime in setOf("application/vnd.ms-cab-compressed", "application/x-cabinet", "application/zstd", "application/vnd.rar", "application/x-rar-compressed", "application/x-arj", "application/zip", "application/x-tar", "application/gzip", "application/x-xz", "application/x-bzip2", "application/x-7z-compressed") -> candidates.add("package-x-generic")
         }
         if (packageFormat("", mime) != null) candidates.add("package-x-generic")
         val category = mime.substringBefore('/')

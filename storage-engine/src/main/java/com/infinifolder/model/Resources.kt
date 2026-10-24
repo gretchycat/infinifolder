@@ -22,7 +22,10 @@ data class ResourceMetadata(
     val isSymbolicLink: Boolean = false,
     val linkTarget: String? = null,
     val isBrokenLink: Boolean = false,
-    val operationHints: Map<ResourceCapability, Support> = emptyMap()
+    val operationHints: Map<ResourceCapability, Support> = emptyMap(),
+    val readError: String? = null,
+    val recoveryNote: String? = null,
+    val partialRecoveryAvailable: Boolean = false
 )
 
 data class ResourceEntry(val ref: ResourceRef, val metadata: ResourceMetadata, val uri: Uri)

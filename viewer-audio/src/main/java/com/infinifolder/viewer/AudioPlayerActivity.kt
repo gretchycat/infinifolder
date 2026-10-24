@@ -228,6 +228,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         }
         topBar.addView(openExtBtn, LinearLayout.LayoutParams(dp(42), dp(42)))
 
+        DebugTools.attachToolbarButton(this, topBar)
         rootLayout.addView(topBar)
 
         val scrollContent = ScrollView(this).apply {

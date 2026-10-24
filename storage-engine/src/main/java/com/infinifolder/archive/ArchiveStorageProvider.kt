@@ -28,7 +28,7 @@ class ArchiveStorageProvider(
     override fun refForUri(uri: Uri): ResourceRef? = if (ArchiveUri.isArchiveUri(uri)) ResourceRef(id, uri.toString()) else null
 
     override fun deviceIdentity(ref: ResourceRef): String? = runCatching {
-        "container:${ArchiveUri.getSourceUri(Uri.parse(ref.documentId))}"
+        "${if (ArchiveUri.isDeletedView(Uri.parse(ref.documentId))) "deleted:" else ""}container:${ArchiveUri.getSourceUri(Uri.parse(ref.documentId))}"
     }.getOrNull()
 
     override fun beginWriteBatch(destination: ResourceRef, isCancelled: () -> Boolean): ProviderResult<com.infinifolder.storage.StorageWriteBatch> = try {
@@ -46,27 +46,39 @@ class ArchiveStorageProvider(
         return sourceProvider?.refForUri(source) ?: localProvider?.refForUri(source)
     }
 
+    override fun recoverySource(ref: ResourceRef): ResourceRef? {
+        var uri = Uri.parse(ref.documentId)
+        repeat(16) {
+            if (!ArchiveUri.isArchiveUri(uri)) return null
+            val source = ArchiveUri.getSourceUri(uri)
+            if (ArchiveUri.isDeletedView(uri)) return sourceProvider?.refForUri(source)
+                ?: localProvider?.refForUri(source) ?: throw IOException("Recovery source identity is unavailable")
+            uri = source
+        }
+        throw IOException("Recovery container nesting limit exceeded")
+    }
+
     override fun fileSystemInfo(ref: ResourceRef): ProviderResult<com.infinifolder.storage.FileSystemInfo> = try {
         val uri = Uri.parse(ref.documentId)
         val source = ArchiveUri.getSourceUri(uri)
         val (openStream, localFile, dev) = resolveSource(source)
         val info = try { reader.fileSystemInfo(getSourceName(source), ArchiveUri.getEntryPath(uri), openStream, localFile, dev) }
             finally { dev?.close() }
-        if (info == null) ProviderResult.Unsupported(ResourceCapability.FILESYSTEM_INFO) else ProviderResult.Success(info)
+        if (info == null) ProviderResult.Unsupported(ResourceCapability.FILESYSTEM_INFO) else ProviderResult.Success(if (ArchiveUri.isDeletedView(uri)) info.copy(readOnly = true) else info)
     } catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot identify mounted filesystem", e) }
 
     override fun parent(ref: ResourceRef): ProviderResult<ResourceRef?> = try {
         val uri = Uri.parse(ref.documentId)
         val path = ArchiveUri.getEntryPath(uri)
         ProviderResult.Success(if (path.isEmpty()) null else ResourceRef(id,
-            ArchiveUri.build(ArchiveUri.getSourceUri(uri), path.substringBeforeLast('/', "")).toString()))
+            ArchiveUri.build(ArchiveUri.getSourceUri(uri), path.substringBeforeLast('/', ""), deleted = ArchiveUri.isDeletedView(uri)).toString()))
     } catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot resolve archive parent", e) }
 
     override fun resolveLink(ref: ResourceRef): ProviderResult<ResourceRef> = try {
         val uri = Uri.parse(ref.documentId)
         val source = ArchiveUri.getSourceUri(uri)
         val path = ArchiveUri.getEntryPath(uri)
-        val entry = getArchiveTree(source).getEntry(path) ?: throw IOException("Archive link not found")
+        val entry = getArchiveTree(source, directoryPath = path.substringBeforeLast('/', "")).getEntry(path) ?: throw IOException("Archive link not found")
         val target = entry.linkTarget ?: throw IOException("Archive link target is unavailable")
         val components = mutableListOf<String>()
         val relative = if (target.startsWith('/')) target else path.substringBeforeLast('/', "") + "/" + target
@@ -85,10 +97,13 @@ class ArchiveStorageProvider(
             ProviderResult.Success(ResourceEntry(ref, ResourceMetadata(getSourceName(source),
                 "vnd.android.document/directory", null, null, true, canWrite = isWritable(uri)), uri))
         } else {
-            val entry = getArchiveTree(source).getEntry(path) ?: throw IOException("Archive entry not found")
+            val entry = getArchiveTree(source, ArchiveUri.isDeletedView(uri), path.substringBeforeLast('/', "")).getEntry(path) ?: throw IOException("Archive entry not found")
             ProviderResult.Success(ResourceEntry(ref, ResourceMetadata(entry.name, entry.mimeType,
-                entry.sizeBytes, entry.modifiedAtMillis, entry.isDirectory, canWrite = isWritable(uri),
-                isSymbolicLink = entry.isSymbolicLink, linkTarget = entry.linkTarget), uri))
+                entry.sizeBytes, entry.modifiedAtMillis, entry.isDirectory, canRead = entry.readError == null, canWrite = isWritable(uri),
+                isSymbolicLink = entry.isSymbolicLink, linkTarget = entry.linkTarget,
+                permissionsMode = entry.permissionsMode,
+                permissionsFormatted = entry.permissionsMode?.let { com.infinifolder.storage.PermissionHelper.formatPosix(it, entry.isDirectory) },
+                owner = entry.owner, group = entry.group, readError = entry.readError, recoveryNote = entry.recoveryNote, partialRecoveryAvailable = entry.partialRecoveryAvailable), uri))
         }
     } catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot query archive entry", e) }
 
@@ -125,7 +140,7 @@ class ArchiveStorageProvider(
             val source = ArchiveUri.getSourceUri(uri)
             val path = ArchiveUri.getEntryPath(uri)
             parentDevice = resolveSource(source).third
-            val slice = parentDevice?.let { reader.getEntryBlockDevice(getSourceName(source), path, it) }
+            val slice = if (ArchiveUri.isDeletedView(uri)) null else parentDevice?.let { reader.getEntryBlockDevice(getSourceName(source), path, it) }
             if (slice != null) {
                 val owner = parentDevice!!
                 parentDevice = null
@@ -156,6 +171,7 @@ class ArchiveStorageProvider(
 
     val reader = ArchiveReader(File(customCacheDir ?: context.cacheDir, "archive_temp"))
     private val treeCache = LruCache<String, ArchiveTree>(64)
+    private val treeLoads = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<ArchiveTree>>()
 
     private fun sha256(str: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -202,18 +218,22 @@ class ArchiveStorageProvider(
             throw IOException("Nested containers are read-only until changes can be committed to every enclosing container")
         }
         val dev = deviceResolver?.invoke(sourceUri, writable)
-        val flushOnRequest = !trustedBatchSources.contains(sourceUri.toString())
+        val privateSnapshot = trustedBatchSources.contains(sourceUri.toString())
+        fun openFileDevice(file: File): BlockDevice? = dev ?: if (!file.exists()) null
+            else if (privateSnapshot) PrivateBatchBlockDevice(file, writable)
+            else FileBlockDevice(java.io.RandomAccessFile(file, if (writable) "rw" else "r"),
+                isReadOnly = !writable, ownsFile = true)
         val lp = localProvider
         if (lp != null && lp.owns(sourceUri)) {
             val file = runCatching { lp.fileFor(sourceUri) }.getOrNull()
             if (file != null) {
-                val fileDev = dev ?: if (file.exists()) FileBlockDevice(java.io.RandomAccessFile(file, if (writable) "rw" else "r"), isReadOnly = !writable, ownsFile = true, flushOnRequest = flushOnRequest) else null
+                val fileDev = openFileDevice(file)
                 return Triple({ file.inputStream() }, file, fileDev)
             }
         }
         if (sourceUri.scheme == "file") {
             val file = File(sourceUri.path ?: "")
-            val fileDev = dev ?: if (file.exists()) FileBlockDevice(java.io.RandomAccessFile(file, if (writable) "rw" else "r"), isReadOnly = !writable, ownsFile = true, flushOnRequest = flushOnRequest) else null
+            val fileDev = openFileDevice(file)
             return Triple({ file.inputStream() }, file, fileDev)
         }
         if (dev != null) {
@@ -303,27 +323,133 @@ class ArchiveStorageProvider(
         return Pair(null, null)
     }
 
-    fun getArchiveTree(sourceUri: Uri): ArchiveTree {
+    private fun archiveVolumes(source: Uri): ArchiveVolumeSet? {
+        val name = getSourceName(source)
+        if (!NativeArchiveReader.isSupported(name)) return null
+        val storage = sourceProvider ?: localProvider
+        val ref = storage?.refForUri(source)
+        val parent = ref?.let { (storage.parent(it) as? ProviderResult.Success)?.value }
+        val siblings = if (parent != null && storage != null) com.infinifolder.storage.StorageSafety.complete(storage.list(parent)) else emptyList()
+        val family = NativeArchiveReader.family(name)
+        // CAB header links can name any sibling, including names without .cab.
+        // Offer identities; the native callback opens only explicitly requested names.
+        val matching = siblings.filter { !it.metadata.isDirectory &&
+            (family.second == "cab" || NativeArchiveReader.family(it.metadata.name) == family) }
+        val sources = matching.associate { it.metadata.name to it.uri }.toMutableMap()
+        sources.putIfAbsent(name, source)
+        val stable = matching.isNotEmpty() && matching.all { (it.metadata.modifiedAtMillis ?: 0) > 0 }
+        val revision = (if (stable) "" else java.util.UUID.randomUUID().toString()) + matching.sortedBy { it.metadata.name }.joinToString(";") {
+            "${it.metadata.name}:${it.metadata.sizeBytes}:${it.metadata.modifiedAtMillis}"
+        }
+        return ArchiveVolumeSet(sources.keys.toList(), revision, primaryName = if (family.second == "cab") name else null) { member ->
+            sources[member]?.let { uri ->
+                val (input, file, device) = resolveSource(uri)
+                if (device != null) device
+                else if (file != null) FileBlockDevice(java.io.RandomAccessFile(file, "r"), true, ownsFile = true)
+                else {
+                    val directory = File(getCacheRoot(), "archive_volumes").apply { mkdirs() }
+                    val expected = getSourceMetadata(uri).first
+                    ContainerSpace.require(directory, expected ?: 0)
+                    val staged = File.createTempFile("volume-", ".tmp", directory)
+                    try {
+                        input().use { stream -> staged.outputStream().use { out ->
+                            val buffer = ByteArray(128 * 1024)
+                            var count = 0L
+                            while (true) {
+                                val n = stream.read(buffer)
+                                if (n < 0) break
+                                if (Thread.currentThread().isInterrupted) throw java.io.InterruptedIOException("Volume staging cancelled")
+                                ContainerSpace.require(directory, n.toLong())
+                                out.write(buffer, 0, n); count += n
+                            }
+                            if (expected != null && count != expected) throw IOException("Incomplete archive volume: $member")
+                        } }
+                        val backing = FileBlockDevice(java.io.RandomAccessFile(staged, "r"), true, ownsFile = true)
+                        object : BlockDevice by backing {
+                            override fun close() { try { backing.close() } finally { staged.delete() } }
+                        }
+                    } catch (e: Throwable) { staged.delete(); throw e }
+                }
+            }
+        }
+    }
+
+    fun supportsFatRecovery(sourceUri: Uri): Boolean {
+        val (input, file, dev) = resolveSource(sourceUri)
+        return try { reader.supportsFatRecovery(getSourceName(sourceUri), input, file, dev) }
+            finally { dev?.close() }
+    }
+
+    fun getArchiveTree(sourceUri: Uri, deleted: Boolean = false, directoryPath: String = ""): ArchiveTree {
         val (size, modified) = getSourceMetadata(sourceUri)
-        val cacheKey = "${sourceUri}:${size ?: 0}:${modified ?: 0}"
+        val volumes = archiveVolumes(sourceUri)
+        val sourceName = getSourceName(sourceUri)
+        // Content detection also recognizes extensionless/ambiguous images. These
+        // need directory-scoped requests/cache keys, or the reader recurses through
+        // every volume before showing the root. Ordinary archives ignore the path.
+        val directoryScoped = ArchiveFormats.isDiscImage(sourceName) ||
+            com.infinifolder.storage.FileMagicDetector.isAmbiguousOrUnknown(sourceName, "application/x-known")
+        val imageDirectory = if (!deleted && directoryScoped)
+            directoryPath.replace('\\', '/').trim('/').takeIf { it.split('/').none { part -> part == "." || part == ".." } }
+                ?: throw IOException("Invalid image directory path") else null
+        val cacheKey = "${deleted}:${sourceUri}:${size ?: 0}:${modified ?: 0}:${volumes?.revision ?: ""}:${imageDirectory ?: "<catalog>"}"
         synchronized(treeCache) {
             val cached = treeCache.get(cacheKey)
-            if (cached != null && modified != null && modified > 0) return cached
+            if (!deleted && cached != null && modified != null && modified > 0) return cached
         }
 
+        val loading = java.util.concurrent.CompletableFuture<ArchiveTree>()
+        val existing = treeLoads.putIfAbsent(cacheKey, loading)
+        if (existing != null) {
+            com.infinifolder.storage.DiagnosticLog.record("archive.tree.wait", "source=${getSourceName(sourceUri)} sharedScan=true")
+            try {
+                while (true) {
+                    RecoveryCancellation.check()
+                    try { return existing.get(250, java.util.concurrent.TimeUnit.MILLISECONDS) }
+                    catch (_: java.util.concurrent.TimeoutException) { /* Check cancellation again. */ }
+                }
+            } catch (e: java.util.concurrent.ExecutionException) {
+                throw e.cause ?: e
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw java.io.InterruptedIOException("Archive scan wait interrupted").also { it.initCause(e) }
+            }
+        }
+        val started = android.os.SystemClock.uptimeMillis()
+        try {
+        // A preceding scan may have completed between the initial cache check
+        // and registering this load. Recheck before reopening a remote image.
+        synchronized(treeCache) {
+            val cached = treeCache.get(cacheKey)
+            if (!deleted && cached != null && modified != null && modified > 0) {
+                loading.complete(cached)
+                return cached
+            }
+        }
         val (openStream, localFile, dev) = resolveSource(sourceUri)
         val archiveName = getSourceName(sourceUri)
+        com.infinifolder.storage.DiagnosticLog.record("archive.tree.begin", "source=$archiveName seekable=${dev != null} deleted=$deleted directory=$imageDirectory key=${sha256(cacheKey).take(12)} size=$size modified=$modified")
         if (dev == null && localFile == null && ArchiveFormats.isDiscImage(archiveName) && size != null && size > MAX_REMOTE_DISC_IMAGE_SIZE) {
             val formatted = android.text.format.Formatter.formatShortFileSize(context, size)
             throw IOException("Disk image '$archiveName' ($formatted) is too large to stream over network. Download the file locally to inspect its contents.")
         }
-        val tree = try { reader.buildTree(sourceUri, archiveName, openStream, localFile, dev) }
+        val tree = try { if (deleted) reader.buildDeletedFatTree(sourceUri, archiveName, openStream, localFile, dev)
+            else reader.buildTree(sourceUri, archiveName, openStream, localFile, dev, volumes, directoryPath = imageDirectory) }
             finally { dev?.close() }
 
         synchronized(treeCache) {
             treeCache.put(cacheKey, tree)
         }
+        loading.complete(tree)
+        com.infinifolder.storage.DiagnosticLog.record("archive.tree.complete", "source=$archiveName elapsedMs=${android.os.SystemClock.uptimeMillis() - started}")
         return tree
+        } catch (e: Throwable) {
+            loading.completeExceptionally(e)
+            com.infinifolder.storage.DiagnosticLog.record("archive.tree.failed", "source=${getSourceName(sourceUri)} elapsedMs=${android.os.SystemClock.uptimeMillis() - started}", e)
+            throw e
+        } finally {
+            treeLoads.remove(cacheKey, loading)
+        }
     }
 
     /**
@@ -380,7 +506,7 @@ class ArchiveStorageProvider(
             else -> getSourceName(sourceUri)
         }
 
-        val tree = try { getArchiveTree(sourceUri) } catch (_: Exception) { null }
+        val tree = try { getArchiveTree(sourceUri, ArchiveUri.isDeletedView(archiveUri), entryPath.substringBeforeLast('/', "")) } catch (_: Exception) { null }
         val matchedEntry = tree?.getEntry(entryPath)
         val canonicalEntryPath = matchedEntry?.path ?: entryPath
         val cleanEntry = canonicalEntryPath.replace('\\', '/').trim().removePrefix("/").removeSuffix("/")
@@ -391,7 +517,6 @@ class ArchiveStorageProvider(
         require(ArchiveUri.isArchiveUri(archiveUri)) { "Expected archive URI: $archiveUri" }
         val sourceUri = ArchiveUri.getSourceUri(archiveUri)
         val entryPath = ArchiveUri.getEntryPath(archiveUri)
-        val (openStream, localFile, dev) = resolveSource(sourceUri)
         val archiveName = getSourceName(sourceUri)
 
         val virtualPath = virtualPathOverride ?: resolveVirtualPath(archiveUri)
@@ -405,11 +530,19 @@ class ArchiveStorageProvider(
         val targetFile = File(cacheBase, sanitizedRelativePath)
         require(targetFile.canonicalFile.toPath().startsWith(cacheBase.canonicalFile.toPath())) { "Archive path escapes cache" }
 
-        val tree = getArchiveTree(sourceUri)
+        val tree = getArchiveTree(sourceUri, ArchiveUri.isDeletedView(archiveUri), entryPath.substringBeforeLast('/', ""))
         val entry = tree.getEntry(entryPath)
         targetFile.parentFile?.mkdirs()
         val canonicalPath = entry?.path ?: entryPath
-        val extracted = try { reader.extractEntry(archiveName, canonicalPath, targetFile, openStream, localFile, dev) }
+        val (openStream, localFile, dev) = resolveSource(sourceUri)
+        val extracted = try {
+            if (ArchiveUri.isDeletedView(archiveUri)) {
+                reader.openDeletedFatEntry(archiveName, canonicalPath, openStream, localFile, dev).use { input ->
+                    targetFile.outputStream().use { input.copyTo(it) }
+                }
+                targetFile
+            } else reader.extractEntry(archiveName, canonicalPath, targetFile, openStream, localFile, dev, archiveVolumes(sourceUri))
+        }
             catch (e: Exception) { targetFile.delete(); throw e }
             finally { dev?.close() }
         if (entry?.modifiedAtMillis != null && entry.modifiedAtMillis > 0L) {
@@ -421,11 +554,18 @@ class ArchiveStorageProvider(
     fun openStream(archiveUri: Uri): InputStream {
         val sourceUri = ArchiveUri.getSourceUri(archiveUri)
         val entryPath = ArchiveUri.getEntryPath(archiveUri)
-        val (openStream, localFile, dev) = resolveSource(sourceUri)
         val archiveName = getSourceName(sourceUri)
-        val tree = try { getArchiveTree(sourceUri) } catch (_: Exception) { null }
-        val canonicalPath = tree?.getEntry(entryPath)?.path ?: entryPath
-        val stream = try { reader.openEntryStream(archiveName, canonicalPath, openStream, localFile, dev) }
+        // Batch refs already identify the requested entry. FAT's path reader
+        // resolves names and aliases itself; rebuilding every directory here
+        // makes verifying N small writes repeatedly scan the growing image.
+        val canonicalPath = if (trustedBatchSources.contains(sourceUri.toString())) entryPath
+            else (try { getArchiveTree(sourceUri, ArchiveUri.isDeletedView(archiveUri), entryPath.substringBeforeLast('/', "")) } catch (_: Exception) { null })?.getEntry(entryPath)?.path ?: entryPath
+        // Resolve after canonicalization so refreshing a live image's directory
+        // cannot leave the actual extraction bound to its older cached device.
+        val (openStream, localFile, dev) = resolveSource(sourceUri)
+        val stream = try { if (ArchiveUri.isDeletedView(archiveUri))
+            reader.openDeletedFatEntry(archiveName, canonicalPath, openStream, localFile, dev)
+            else reader.openEntryStream(archiveName, canonicalPath, openStream, localFile, dev, archiveVolumes(sourceUri)) }
             catch (e: Exception) { dev?.close(); throw e }
         return object : java.io.FilterInputStream(stream) {
             override fun close() { try { super.close() } finally { dev?.close() } }
@@ -436,12 +576,12 @@ class ArchiveStorageProvider(
         val uri = Uri.parse(parent.documentId)
         val sourceUri = ArchiveUri.getSourceUri(uri)
         val parentPath = ArchiveUri.getEntryPath(uri)
-        val tree = getArchiveTree(sourceUri)
+        val tree = getArchiveTree(sourceUri, ArchiveUri.isDeletedView(uri), parentPath)
         val entries = tree.list(parentPath)
 
         val archiveWritable = try { isWritable(Uri.parse(parent.documentId)) } catch (_: Throwable) { false }
         val resourceEntries = entries.map { entry ->
-            val entryUri = ArchiveUri.build(sourceUri, entry.path)
+            val entryUri = ArchiveUri.build(sourceUri, entry.path, deleted = ArchiveUri.isDeletedView(uri))
             ResourceEntry(
                 ref = ResourceRef(id, entryUri.toString()),
                 metadata = ResourceMetadata(
@@ -450,18 +590,35 @@ class ArchiveStorageProvider(
                     sizeBytes = entry.sizeBytes,
                     modifiedAtMillis = entry.modifiedAtMillis,
                     isDirectory = entry.isDirectory,
-                    canRead = true,
+                    canRead = entry.readError == null,
                     canWrite = archiveWritable,
+                    permissionsMode = entry.permissionsMode,
+                    permissionsFormatted = entry.permissionsMode?.let { com.infinifolder.storage.PermissionHelper.formatPosix(it, entry.isDirectory) },
+                    owner = entry.owner, group = entry.group,
                     isSymbolicLink = entry.isSymbolicLink,
-                    linkTarget = entry.linkTarget
+                    linkTarget = entry.linkTarget,
+                    readError = entry.readError,
+                    recoveryNote = entry.recoveryNote,
+                    partialRecoveryAvailable = entry.partialRecoveryAvailable
                 ),
                 uri = entryUri
             )
         }
-        ProviderResult.Success(resourceEntries)
+        val warnings = tree.warnings + entries.filter { it.readError != null }.map { "${it.name}: ${it.readError}" }
+        ProviderResult.Success(resourceEntries, notice = warnings.distinct().take(20).joinToString("\n").takeIf { it.isNotEmpty() })
     } catch (e: Throwable) {
         ProviderResult.Failure(e.message ?: "Failed to list archive contents", e)
     }
+
+    override fun openPartialRecovery(ref: ResourceRef): ProviderResult<RecoveryExport> = try {
+        val uri = Uri.parse(ref.documentId)
+        if (!ArchiveUri.isDeletedView(uri)) throw IOException("Partial recovery requires a deleted-file candidate")
+        val source = ArchiveUri.getSourceUri(uri)
+        val (input, file, dev) = resolveSource(source)
+        val result = try { reader.openPartialDeletedFatEntry(getSourceName(source), ArchiveUri.getEntryPath(uri), input, file, dev) }
+            finally { dev?.close() }
+        ProviderResult.Success(result)
+    } catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot recover partial file", e) }
 
     override fun openRead(ref: ResourceRef): ProviderResult<InputStream> = try {
         val uri = Uri.parse(ref.documentId)
@@ -495,13 +652,25 @@ class ArchiveStorageProvider(
         }
         val file = localProvider.fileFor(sourceUri)
         require(file.isFile && file.canWrite()) { "Batch snapshot is not writable" }
+        val batchRoot = File(context.cacheDir, "container_batches").canonicalFile.toPath()
+        val sourceDirectory = customCacheDir?.parentFile?.resolve("source")?.canonicalFile
+        require(file.canonicalFile.parentFile == sourceDirectory && file.canonicalFile.toPath().startsWith(batchRoot)) {
+            "Only a snapshot inside this private batch workspace can be trusted"
+        }
         trustedBatchSources += sourceUri.toString()
+        com.infinifolder.storage.DiagnosticLog.record("container.batch.private-image",
+            "source=${file.name} mountChecks=publication verification=direct-path sync=publication")
     }
 
     /** Presentation hint only: mutations always probe their actual writable handle again. */
     fun cachedWritable(archiveUri: Uri): Boolean = writableHints[archiveUri.toString()] ?: false
 
     fun isWritable(archiveUri: Uri): Boolean {
+        if (ArchiveUri.isDeletedView(archiveUri)) {
+            writableFailures[archiveUri.toString()] = "Deleted-file recovery views are read-only"
+            writableHints[archiveUri.toString()] = false
+            return false
+        }
         val sourceUri = runCatching { ArchiveUri.getSourceUri(archiveUri) }.getOrNull()
         val trustedSnapshot = sourceUri != null && trustedBatchSources.contains(sourceUri.toString())
         val failure = if (trustedSnapshot) {
@@ -523,6 +692,22 @@ class ArchiveStorageProvider(
 
     private fun isZipSource(source: Uri): Boolean = ArchiveFormats.containerExtension(getSourceName(source)) == "zip"
 
+    private fun needsRebuild(source: Uri): Boolean = getSourceName(source).let {
+        ContainerCompression.isTar(it) || ContainerCompression.isCompressedImage(it)
+    }
+
+    /** Single UI mutations use the same private commit path as bulk copy/delete. */
+    private fun <T> rebuiltMutation(destination: ResourceRef, action: (StorageProvider) -> ProviderResult<T>): ProviderResult<T> {
+        val opened = beginWriteBatch(destination) { false }
+        if (opened !is ProviderResult.Success) return when (opened) {
+            is ProviderResult.Failure -> opened
+            else -> ProviderResult.Failure("Cannot prepare container changes")
+        }
+        return opened.value.use { batch ->
+            action(batch.provider).also { if (it is ProviderResult.Success) batch.commit() }
+        }
+    }
+
     private fun rewriteZip(source: Uri, path: String, directory: Boolean = false, content: File? = null,
         createNew: Boolean = false, delete: Boolean = false) {
         if (ArchiveUri.isArchiveUri(source)) throw IOException("Nested containers are read-only until outer-layer commits exist")
@@ -535,9 +720,16 @@ class ArchiveStorageProvider(
         try {
             val opened = storage.openRead(ref)
             if (opened !is ProviderResult.Success) throw IOException((opened as? ProviderResult.Failure)?.message ?: "Cannot read ZIP", (opened as? ProviderResult.Failure)?.cause)
-            opened.value.use { input -> original.outputStream().use { output -> input.copyTo(output); output.fd.sync() } }
+            opened.value.use { input -> original.outputStream().use { output ->
+                ContainerSpace.copy(input, output, work)
+                output.fd.sync()
+            } }
             val revision = original.inputStream().use(com.infinifolder.storage.ContentRevision::read)
-            ZipContainerEditor.rewrite(original, updated, path, directory, content, createNew, delete)
+            if (ContainerCompression.isTar(getSourceName(source))) {
+                val additions = if (delete) emptyList() else listOf(ZipContainerEditor.Addition(path, directory, content))
+                TarContainerEditor.rebuild(original, updated, getSourceName(source), additions,
+                    if (delete || !createNew) setOf(path) else emptySet(), { false }, original.length())
+            } else ZipContainerEditor.rewrite(original, updated, path, directory, content, createNew, delete)
             when (val saved = com.infinifolder.storage.ContentReplacement.replaceFromFile(storage, ref, updated,
                 File(context.filesDir, "save_recovery"), revision)) {
                 is ProviderResult.Success -> Unit
@@ -565,15 +757,26 @@ class ArchiveStorageProvider(
         val sourceUri = ArchiveUri.getSourceUri(archiveUri)
         val entryPath = ArchiveUri.getEntryPath(archiveUri)
         if (ArchiveUri.isArchiveUri(sourceUri)) return "Nested container destinations are read-only"
-        if (isZipSource(sourceUri)) {
+        val name = getSourceName(sourceUri)
+        if (ArchiveFormats.containerExtension(name) in setOf("tar.z", "taz"))
+            return "Unix-compress TAR archives support browsing and extraction; writing .Z compression is not implemented"
+        val tar = ContainerCompression.isTar(name)
+        val compressedImage = ContainerCompression.isCompressedImage(name)
+        if (isZipSource(sourceUri) || tar || compressedImage) {
             if (getSourceName(sourceUri).endsWith(".apk", ignoreCase = true)) return "APK packages are read-only"
             val storage = sourceProvider ?: return "No backing storage provider is available"
             val ref = storage.refForUri(sourceUri) ?: return "No provider owns the backing archive"
-            return when (val result = storage.stat(ref)) {
-                is ProviderResult.Success -> if (result.value.metadata.canWrite) null else "The backing ZIP file is read-only"
+            val failure = when (val result = storage.stat(ref)) {
+                is ProviderResult.Success -> if (result.value.metadata.canWrite) null else "The backing container file is read-only"
                 is ProviderResult.Failure -> result.message
-                is ProviderResult.Unsupported -> "The backing provider cannot inspect ZIP write access"
+                is ProviderResult.Unsupported -> "The backing provider cannot inspect container write access"
             }
+            if (failure != null || !compressedImage) return failure
+            val (input, file, device) = resolveSource(sourceUri)
+            val info = try { reader.fileSystemInfo(name, entryPath, input, file, device) }
+                finally { device?.close() }
+            return if (info?.type?.uppercase(java.util.Locale.ROOT) in setOf("FAT12", "FAT16", "FAT32")) null
+                else "Only FAT12/FAT16/FAT32 filesystems support edits inside compressed images"
         }
         // A provider advertising staged/native seek writes can be checked using read access.
         // Unknown providers still have to supply an actual writable handle. Mutations always
@@ -595,6 +798,38 @@ class ArchiveStorageProvider(
 
     override fun openWrite(ref: ResourceRef): ProviderResult<java.io.OutputStream> = try {
         val uri = Uri.parse(ref.documentId)
+        if (ArchiveUri.isDeletedView(uri)) throw IOException("Deleted-file recovery views are read-only")
+        val source = ArchiveUri.getSourceUri(uri)
+        if (ContainerCompression.isCompressedImage(getSourceName(source))) {
+            val parent = ResourceRef(id, ArchiveUri.build(source, ArchiveUri.getEntryPath(uri).substringBeforeLast('/', "")).toString())
+            val batch = when (val opened = beginWriteBatch(parent) { false }) {
+                is ProviderResult.Success -> opened.value
+                is ProviderResult.Failure -> throw IOException(opened.message, opened.cause)
+                else -> throw IOException("Cannot prepare compressed image changes")
+            }
+            try {
+                val output = when (val opened = batch.provider.openWrite(ref)) {
+                    is ProviderResult.Success -> opened.value
+                    is ProviderResult.Failure -> throw IOException(opened.message, opened.cause)
+                    else -> throw IOException("Cannot open image entry for editing")
+                }
+                ProviderResult.Success(object : java.io.OutputStream(), com.infinifolder.storage.PendingWrite {
+                    private var aborted = false
+                    private var closed = false
+                    override fun abort() { aborted = true; (output as? com.infinifolder.storage.PendingWrite)?.abort() }
+                    override fun write(value: Int) { try { output.write(value) } catch (e: Exception) { abort(); throw e } }
+                    override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                        try { output.write(bytes, offset, length) } catch (e: Exception) { abort(); throw e }
+                    }
+                    override fun flush() { try { output.flush() } catch (e: Exception) { abort(); throw e } }
+                    override fun close() {
+                        if (closed) return
+                        closed = true
+                        try { output.close(); if (!aborted) batch.commit() } finally { batch.close() }
+                    }
+                })
+            } catch (e: Exception) { batch.close(); throw e }
+        } else {
         val mountCheck = checkMounted(uri)
         if (mountCheck?.isMounted == true) {
             val sourceUri = ArchiveUri.getSourceUri(uri)
@@ -615,18 +850,21 @@ class ArchiveStorageProvider(
                 private var closed = false
                 private var aborted = false
                 override fun abort() { aborted = true }
-                override fun write(value: Int) { try { output.write(value) } catch (e: Exception) { aborted = true; throw e } }
+                override fun write(value: Int) { try { ContainerSpace.require(stageDir, 1); output.write(value) } catch (e: Exception) { aborted = true; throw e } }
                 override fun write(bytes: ByteArray, offset: Int, length: Int) {
-                    try { output.write(bytes, offset, length) } catch (e: Exception) { aborted = true; throw e }
+                    try { ContainerSpace.require(stageDir, length.toLong()); output.write(bytes, offset, length) } catch (e: Exception) { aborted = true; throw e }
                 }
                 override fun flush() { try { output.flush() } catch (e: Exception) { aborted = true; throw e } }
                 override fun close() {
                     if (closed) return
                     closed = true
                     try {
-                        output.use { if (!aborted) it.fd.sync() }
+                        // This payload is immediately copied into an unpublished
+                        // snapshot. Its durability boundary is the batch's final
+                        // image sync, not one storage sync for every small file.
+                        output.use { if (!aborted && !trustedBatchSources.contains(sourceUri.toString())) it.fd.sync() }
                         if (!aborted) {
-                            if (isZipSource(sourceUri)) rewriteZip(sourceUri, entryPath, content = content)
+                            if (isZipSource(sourceUri) || ContainerCompression.isTar(getSourceName(sourceUri))) rewriteZip(sourceUri, entryPath, content = content)
                             else synchronized(this@ArchiveStorageProvider) {
                                 val (_, localFile, dev) = resolveSource(sourceUri, writable = true)
                                 try { reader.writeEntryFromFile(getSourceName(sourceUri), localFile, entryPath, content, dev) }
@@ -638,12 +876,15 @@ class ArchiveStorageProvider(
             }
             ProviderResult.Success(pending)
         }
+        }
     } catch (e: Exception) {
         ProviderResult.Failure(e.message ?: "Failed to write archive entry", e)
     }
 
     override fun createDirectory(parent: ResourceRef, name: String): ProviderResult<ResourceEntry> { return try {
+        if (ArchiveUri.isDeletedView(Uri.parse(parent.documentId))) throw IOException("Deleted-file recovery views are read-only")
         val source = ArchiveUri.getSourceUri(Uri.parse(parent.documentId))
+        if (needsRebuild(source)) return rebuiltMutation(parent) { it.createDirectory(parent, name) }
         if (isZipSource(source)) {
             if (!isWritable(Uri.parse(parent.documentId))) return ProviderResult.Unsupported(ResourceCapability.CREATE)
             return ProviderResult.Success(zipCreated(parent, name, true, "vnd.android.document/directory"))
@@ -691,7 +932,9 @@ class ArchiveStorageProvider(
     }
 
     override fun createFile(parent: ResourceRef, name: String, mimeType: String): ProviderResult<ResourceEntry> { return try {
+        if (ArchiveUri.isDeletedView(Uri.parse(parent.documentId))) throw IOException("Deleted-file recovery views are read-only")
         val source = ArchiveUri.getSourceUri(Uri.parse(parent.documentId))
+        if (needsRebuild(source)) return rebuiltMutation(parent) { it.createFile(parent, name, mimeType) }
         if (isZipSource(source)) {
             if (!isWritable(Uri.parse(parent.documentId))) return ProviderResult.Unsupported(ResourceCapability.CREATE)
             return ProviderResult.Success(zipCreated(parent, name, false, mimeType))
@@ -744,7 +987,14 @@ class ArchiveStorageProvider(
 
     override fun delete(ref: ResourceRef): ProviderResult<Unit> { return try {
         val uri = Uri.parse(ref.documentId)
+        if (ArchiveUri.isDeletedView(uri)) throw IOException("Deleted-file recovery views are read-only")
         val source = ArchiveUri.getSourceUri(uri)
+        if (needsRebuild(source)) {
+            val path = ArchiveUri.getEntryPath(uri)
+            if (path.isEmpty()) throw IOException("Cannot delete a container root")
+            val parent = ResourceRef(id, ArchiveUri.build(source, path.substringBeforeLast('/', "")).toString())
+            return rebuiltMutation(parent) { it.delete(ref) }
+        }
         if (isZipSource(source)) {
             if (!isWritable(uri)) return ProviderResult.Unsupported(ResourceCapability.DELETE)
             val path = ArchiveUri.getEntryPath(uri)

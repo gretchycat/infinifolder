@@ -11,6 +11,11 @@ object SeekableSourceResolver {
 
     fun resolve(provider: StorageProvider, sourceUri: Uri, writable: Boolean = false): BlockDevice? {
         val ref = provider.refForUri(sourceUri) ?: throw IOException("No provider owns $sourceUri")
+        if (!writable) return ReadDeviceScope.open(provider, ref) { open(provider, ref, writable = false) }
+        return open(provider, ref, writable)
+    }
+
+    private fun open(provider: StorageProvider, ref: com.infinifolder.model.ResourceRef, writable: Boolean): BlockDevice? {
         return when (val result = provider.openSeekable(ref, writable)) {
             is ProviderResult.Success -> result.value
             is ProviderResult.Unsupported -> {

@@ -3,6 +3,7 @@ package com.infinifolder.viewer
 import android.app.Activity
 import android.app.Application
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Bundle
@@ -11,8 +12,8 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.PixelCopy
 import android.view.View
-import android.widget.Button
-import android.widget.FrameLayout
+import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.Toast
 import com.infinifolder.model.ProviderResult
 import com.infinifolder.storage.*
@@ -32,13 +33,14 @@ interface DebugDumpObserver {
 /** User-triggered app-window captures. No system screen-capture permission or background screenshots. */
 object DebugTools : Application.ActivityLifecycleCallbacks {
     private val installed = AtomicBoolean(false)
-    private val buttons = Collections.synchronizedMap(WeakHashMap<Activity, Button>())
+    private val buttons = Collections.synchronizedMap(WeakHashMap<Activity, View>())
     private val busy = AtomicBoolean(false)
     var dumpGeneration: Long = 0
         private set
     fun install(application: Application) {
         if (installed.compareAndSet(false, true)) {
             DiagnosticLog.init(application)
+            UiResponsivenessMonitor.install()
             val previous = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, error ->
                 DiagnosticLog.record("uncaught", "application failure", error)
@@ -48,18 +50,27 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
         }
     }
     override fun onActivityResumed(activity: Activity) {
-        if (DebugDumpDestination.get(activity) == null || buttons.containsKey(activity)) return
-        val root = activity.window.decorView as? FrameLayout ?: return
-        val button = Button(activity).apply {
-            text = "Offload debug information"
-            textSize = 11f
-            alpha = 0.85f
-            contentDescription = text
+        UiResponsivenessMonitor.resumed(activity)
+    }
+
+    /** Explicit toolbar attachment keeps the control out of document and file content. */
+    fun attachToolbarButton(activity: Activity, toolbar: LinearLayout) {
+        if (activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        val density = activity.resources.displayMetrics.density
+        val button = ImageButton(activity).apply {
+            setImageResource(com.infinifolder.viewer.common.R.drawable.ic_debug_bug)
+            imageTintList = android.content.res.ColorStateList.valueOf(
+                com.infinifolder.theme.ThemeManager.activeTheme.textPrimary)
+            contentDescription = "Offload debug information"
+            tooltipText = contentDescription
+            val backgroundAttr = android.util.TypedValue()
+            activity.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, backgroundAttr, true)
+            setBackgroundResource(backgroundAttr.resourceId)
+            val padding = (8 * density).toInt()
+            setPadding(padding, padding, padding, padding)
             setOnClickListener { offload(activity) }
         }
-        root.addView(button, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
-            topMargin = (40 * activity.resources.displayMetrics.density).toInt()
-        })
+        toolbar.addView(button, LinearLayout.LayoutParams((36 * density).toInt(), (44 * density).toInt()))
         buttons[activity] = button
     }
     fun offload(activity: Activity) {
@@ -140,19 +151,34 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
             }
         }
     }
-    override fun onActivityDestroyed(activity: Activity) { buttons.remove(activity) }
+    override fun onActivityDestroyed(activity: Activity) { buttons.remove(activity); UiResponsivenessMonitor.paused(activity) }
     override fun onActivityCreated(activity: Activity, state: Bundle?) {}
     override fun onActivityStarted(activity: Activity) {}
-    override fun onActivityPaused(activity: Activity) {}
+    override fun onActivityPaused(activity: Activity) { UiResponsivenessMonitor.paused(activity) }
     override fun onActivityStopped(activity: Activity) {}
     override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) {}
 }
 
 /** Shared viewer lifecycle, independently hosted from the browser application. */
 open class ViewerActivity : Activity() {
+    private var backNavigation: java.io.Closeable? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        backNavigation = ActivityBackNavigation.register(this) { onBackPressed() }
         DebugTools.install(application)
         com.infinifolder.theme.ThemeManager.init(applicationContext)
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        // Pop this viewer; the browser (or independent host) remains underneath.
+        // Editor overrides still handle unsaved changes before reaching here.
+        finish()
+    }
+
+    override fun onDestroy() {
+        backNavigation?.close()
+        backNavigation = null
+        super.onDestroy()
     }
 }

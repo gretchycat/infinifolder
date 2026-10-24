@@ -17,6 +17,10 @@ object ContentReplacement {
         expectedRevision: ContentRevision? = null): ProviderResult<Unit> = try {
         val info = (provider.fileSystemInfo(ref) as? ProviderResult.Success)?.value
         info?.requireFileFits("updated container", file.length())
+        info?.availableBytes?.let { available ->
+            if (file.length() > available) throw IOException("Not enough destination space to safely publish the updated container: " +
+                "need ${file.length()} bytes, have $available. Original retained.")
+        }
         val expected = file.inputStream().use(ContentRevision::read)
         replaceWith(provider, ref, recoveryRoot, expectedRevision, expected,
             { provider.replaceContentFromFile(ref, file) }, { output -> file.inputStream().use { it.copyTo(output) } })
@@ -41,8 +45,20 @@ object ContentReplacement {
         SaveRecovery.activeSessions.add(session.name)
         return try {
             if (!session.mkdirs()) throw IOException("Cannot create recovery copy")
+            val originalSize = (provider.stat(ref) as? ProviderResult.Success)?.value?.metadata?.sizeBytes
+            if (originalSize != null && originalSize > session.usableSpace)
+                throw IOException("Not enough space to preserve the original container for recovery. Original retained.")
             openRead(provider, ref).use { input ->
-                original.outputStream().use { output -> input.copyTo(output); output.fd.sync() }
+                original.outputStream().use { output ->
+                    val buffer = ByteArray(128 * 1024)
+                    while (true) {
+                        val n = input.read(buffer); if (n < 0) break
+                        if (session.usableSpace < n.toLong() + 1024 * 1024)
+                            throw IOException("Not enough space for the original container recovery copy. Original retained.")
+                        output.write(buffer, 0, n)
+                    }
+                    output.fd.sync()
+                }
             }
             val preserved = original.inputStream().use(ContentRevision::read)
             SaveRecovery.record(session, ref, "prepared", preserved)

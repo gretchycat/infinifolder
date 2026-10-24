@@ -195,6 +195,7 @@ class EpubViewerActivity : ViewerActivity() {
         }
         toolbar.addView(zoomInBtn, LinearLayout.LayoutParams(-2, dp(34)))
 
+        DebugTools.attachToolbarButton(this, toolbar)
         mainColumn.addView(toolbar, LinearLayout.LayoutParams(-1, -2))
 
         // Progress bar

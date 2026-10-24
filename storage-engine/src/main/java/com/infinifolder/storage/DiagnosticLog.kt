@@ -12,7 +12,15 @@ import java.util.concurrent.TimeUnit
 /** Bounded app-private diagnostics with an optional user-granted document destination. */
 object DiagnosticLog {
     private val lock = Any()
+    private val fileLock = Any()
+    private val pending = java.util.ArrayDeque<String>()
+    private var pendingChars = 0
+    private var dropped = 0L
+    private var drainQueued = false
+    private val logWriter = Executors.newSingleThreadExecutor { task -> Thread(task, "InfiniFolderLogWriter").apply { isDaemon = true } }
     private val muted = ThreadLocal.withInitial { false }
+    private val gestureTrace = java.util.ArrayDeque<String>()
+    private var gestureTraceChars = 0
     private val worker: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
     private val publishLock = Any()
     private var pendingPublish: ScheduledFuture<*>? = null
@@ -29,10 +37,13 @@ object DiagnosticLog {
         }
         record("session", "started sdk=${android.os.Build.VERSION.SDK_INT} device=${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
     }
+    private val credentialPattern = Regex("(?i)([a-z][a-z0-9+.-]*://)[^/\\s@]+@")
+    private val secretPattern = Regex("(?i)(password|passwd|passphrase|token|secret|authorization)([\\s:=]+)([^\\s&,;]+)")
+    private val bearerPattern = Regex("(?i)Bearer\\s+[^\\s]+")
     fun sanitize(message: String): String = message
-        .replace(Regex("(?i)([a-z][a-z0-9+.-]*://)[^/\\s@]+@"), "$1<redacted>@")
-        .replace(Regex("(?i)(password|passwd|passphrase|token|secret|authorization)([\\s:=]+)([^\\s&,;]+)"), "$1$2<redacted>")
-        .replace(Regex("(?i)Bearer\\s+[^\\s]+"), "Bearer <redacted>")
+        .replace(credentialPattern, "$1<redacted>@")
+        .replace(secretPattern, "$1$2<redacted>")
+        .replace(bearerPattern, "Bearer <redacted>")
     fun record(event: String, detail: String = "", error: Throwable? = null) {
         val context = app ?: return
         if (muted.get() == true) return
@@ -44,15 +55,70 @@ object DiagnosticLog {
                     error.stackTrace.take(12).forEach { append("\n    at "); append(it) } }
                 append('\n')
             }
+            val safeDescription = sanitize(description).take(64 * 1024)
             synchronized(lock) {
-                val log = file(context)
-                if (log.length() > 1024 * 1024) log.writeText(log.readText().takeLast(512 * 1024))
-                log.appendText(sanitize(description))
+                // Preserve recent touch decisions even when storage diagnostics
+                // rotate the main log. This ring adds no extra disk write per event.
+                if (event.startsWith("browser.touch.") || event == "browser.pane.swipe" ||
+                    event.startsWith("browser.back.") || event.startsWith("navigation.back.") || event.startsWith("ui.")) {
+                    gestureTrace.addLast(safeDescription)
+                    gestureTraceChars += safeDescription.length
+                    while (gestureTrace.size > 1024 || gestureTraceChars > 256 * 1024) {
+                        gestureTraceChars -= gestureTrace.removeFirst().length
+                    }
+                }
+                pending.addLast(safeDescription)
+                pendingChars += safeDescription.length
+                while (pendingChars > 2 * 1024 * 1024 && pending.size > 1) {
+                    pendingChars -= pending.removeFirst().length
+                    dropped++
+                }
+                if (!drainQueued) {
+                    drainQueued = true
+                    logWriter.execute { drainPending(context) }
+                }
             }
-            publishAsync()
+            // Only the fatal-crash path waits for persistence; touch/UI callers
+            // enqueue memory records and never wait for filesystem writes.
+            if (event == "uncaught") runCatching {
+                logWriter.submit { drainPending(context) }.get(1500, TimeUnit.MILLISECONDS)
+            }
         }
     }
-    fun snapshot(context: Context): String = synchronized(lock) { runCatching { file(context).readText() }.getOrDefault("") }
+    private fun drainPending(context: Context) {
+        val batch = synchronized(lock) {
+            drainQueued = false
+            buildString {
+                if (dropped > 0) { append("diagnostics.queue dropped=$dropped records\n"); dropped = 0 }
+                while (pending.isNotEmpty()) append(pending.removeFirst())
+                pendingChars = 0
+            }
+        }
+        if (batch.isEmpty()) return
+        runCatching {
+            synchronized(fileLock) {
+                val log = file(context)
+                if (log.length() > 1024 * 1024) log.writeText(log.readText().takeLast(512 * 1024))
+                log.appendText(batch)
+            }
+        }
+        publishAsync()
+    }
+    fun snapshot(context: Context): String {
+        val disk = runCatching { logWriter.submit<String> {
+            drainPending(context)
+            synchronized(fileLock) { file(context).readText() }
+        }.get() }.getOrDefault("")
+        return synchronized(lock) {
+        buildString {
+            append(disk)
+            if (gestureTrace.isNotEmpty()) {
+                append("\n--- Retained gesture trace (current process; may duplicate main log events) ---\n")
+                gestureTrace.forEach { append(it) }
+            }
+        }
+        }
+    }
     fun destination(context: Context): Uri? = context.getSharedPreferences("diagnostics", Context.MODE_PRIVATE)
         .getString("output_uri", null)?.let(Uri::parse)
     fun setDestination(context: Context, uri: Uri) {

@@ -12,7 +12,7 @@ interface StorageProvider : java.io.Closeable {
         is ProviderResult.Failure -> result
         is ProviderResult.Unsupported -> result
     }
-    /** Optional isolated destination batch; unsupported backends use normal per-entry operations. */
+    /** Optional isolated mutation batch rooted at a container folder; supports transfers and deletion. */
     fun beginWriteBatch(destination: ResourceRef, isCancelled: () -> Boolean = { false }): ProviderResult<StorageWriteBatch> =
         ProviderResult.Unsupported(ResourceCapability.BATCH_WRITE)
     /** Physical filesystem and its confirmed limits, when this backend can identify them. */
@@ -25,6 +25,8 @@ interface StorageProvider : java.io.Closeable {
     fun refForUri(uri: Uri): ResourceRef? = null
     /** Container dependency, used to reject copying a backing file into its own mounted contents. */
     fun backingResource(ref: ResourceRef): ResourceRef? = null
+    /** Image whose deleted bytes back this resource, including containers opened inside recovered files. */
+    fun recoverySource(ref: ResourceRef): ResourceRef? = null
     /** Stable transfer identity. Unknown identities must be treated as different devices. */
     fun deviceIdentity(ref: ResourceRef): String? = null
     fun stat(ref: ResourceRef): ProviderResult<ResourceEntry> = ProviderResult.Unsupported(ResourceCapability.STAT)
@@ -39,6 +41,8 @@ interface StorageProvider : java.io.Closeable {
     fun replaceContentFromFile(ref: ResourceRef, file: java.io.File): ProviderResult<Unit> = ProviderResult.Unsupported(ResourceCapability.WRITE)
 
     fun list(parent: ResourceRef): ProviderResult<List<ResourceEntry>>
+    /** Explicit partial recovery, including a byte-range report; ordinary reads never fill holes silently. */
+    fun openPartialRecovery(ref: ResourceRef): ProviderResult<RecoveryExport> = ProviderResult.Unsupported(ResourceCapability.READ)
     fun openRead(ref: ResourceRef): ProviderResult<java.io.InputStream>
     fun openWrite(ref: ResourceRef): ProviderResult<java.io.OutputStream>
     fun createDirectory(parent: ResourceRef, name: String): ProviderResult<ResourceEntry>

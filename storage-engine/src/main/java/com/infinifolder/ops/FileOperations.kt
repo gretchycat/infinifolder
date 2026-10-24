@@ -3,6 +3,8 @@ package com.infinifolder.ops
 import android.net.Uri
 import com.infinifolder.apps.AppCategories
 import com.infinifolder.apps.AppsUri
+import com.infinifolder.model.RecoveryReport
+import com.infinifolder.model.RecoveryDisposition
 import com.infinifolder.model.ProviderResult
 import com.infinifolder.model.ResourceEntry
 import com.infinifolder.model.ResourceRef
@@ -21,6 +23,10 @@ data class FolderStats(
 )
 
 object FileOperations {
+    private class SourceReadException(message: String, cause: Throwable? = null) : IOException(message, cause)
+    private fun sourceChange(error: Throwable): com.infinifolder.storage.SourceChangedException? =
+        generateSequence(error) { it.cause }.take(16)
+            .filterIsInstance<com.infinifolder.storage.SourceChangedException>().firstOrNull()
 
     fun calculateFolderStats(
         entries: List<ResourceEntry>,
@@ -102,19 +108,43 @@ object FileOperations {
         resourceRef: (Uri) -> ResourceRef,
         update: (OperationUpdate) -> Unit,
         isCancelled: () -> Boolean,
-        createLinks: Boolean = false
+        createLinks: Boolean = false,
+        onWarning: (String) -> Unit = {},
+        partialRecovery: Boolean = false
+    ): List<ResourceRef> = com.infinifolder.archive.RecoveryCancellation.withCancellation(isCancelled) {
+        // Reuse backing image range caches for ordinary copies only. Recovery
+        // needs fresh safety reads, and mutation paths must not reuse snapshots.
+        val reuseReads = !move && !createLinks && !partialRecovery &&
+            !com.infinifolder.archive.ArchiveUri.isArchiveUri(destinationFolderUri) &&
+            entries.none { it.metadata.recoveryNote != null || provider.recoverySource(it.ref) != null }
+        com.infinifolder.archive.ReadDeviceScope.withScope(reuseReads, onWarning) {
+        batchTransferInternal(entries, destinationFolderUri, move, provider, resourceRef, update,
+            { isCancelled() || Thread.currentThread().isInterrupted }, createLinks, onWarning, partialRecovery)
+        }
+    }
+
+    private fun batchTransferInternal(
+        entries: List<ResourceEntry>, destinationFolderUri: Uri, move: Boolean, provider: StorageProvider,
+        resourceRef: (Uri) -> ResourceRef, update: (OperationUpdate) -> Unit, isCancelled: () -> Boolean,
+        createLinks: Boolean, onWarning: (String) -> Unit, partialRecovery: Boolean
     ): List<ResourceRef> {
         var activeProvider = provider
+        if (partialRecovery && (move || createLinks)) throw IOException("Partial recovery only creates copies with reports")
         if (move && createLinks) throw IOException("Creating shortcuts never removes source entries")
         val destRef = resourceRef(destinationFolderUri)
         var totalBytes: Long? = null
         var transferredBytes = 0L
         var itemsDone = 0
         val totalItems = entries.size
+        var activeFileName: String? = null
+        var activeFileBytes: Long? = null
+        var activeFileTotalBytes: Long? = null
         fun phase(message: String, item: String? = null) {
             update(OperationUpdate(bytes = transferredBytes, totalBytes = totalBytes,
                 itemsProcessed = itemsDone, totalItems = totalItems, currentItem = item,
-                message = message, indeterminate = true))
+                message = message, indeterminate = true,
+                currentItemBytes = activeFileBytes.takeIf { item == activeFileName },
+                currentItemTotalBytes = activeFileTotalBytes.takeIf { item == activeFileName }))
         }
         fun <T> timed(label: String, item: String? = null, work: () -> T): T {
             phase(label, item)
@@ -144,8 +174,30 @@ object FileOperations {
         val shortcutPayloads = mutableMapOf<ResourceRef, ByteArray>()
         val sourceChildren = mutableMapOf<ResourceRef, List<ResourceEntry>>()
         val scanning = mutableSetOf<ResourceRef>()
-        fun scan(entry: ResourceEntry): ResourceEntry {
+        val incompleteRoots = mutableSetOf<ResourceRef>()
+        var currentSourceRoot: ResourceRef? = null
+        fun skipped(entry: ResourceEntry, reason: String) {
+            currentSourceRoot?.let { incompleteRoots.add(it) }
+            val message = "Skipped '${entry.metadata.name}': $reason"
+            com.infinifolder.storage.DiagnosticLog.record("transfer.source-skipped", "$message source=${entry.ref.documentId}")
+            onWarning(message)
+        }
+        fun scan(entry: ResourceEntry): ResourceEntry? {
             if (isCancelled()) throw InterruptedException("Transfer cancelled")
+            val recoverySource = activeProvider.recoverySource(entry.ref)
+                ?: entry.metadata.recoveryNote?.let { activeProvider.backingResource(entry.ref)
+                    ?: throw IOException("Cannot establish the recovery source identity") }
+            if (recoverySource != null) {
+                if (move) throw IOException("Deleted-file candidates can only be recovered by copying")
+                val visited = mutableSetOf<ResourceRef>()
+                var sourceBacking: ResourceRef? = recoverySource
+                while (sourceBacking != null) {
+                    if (!visited.add(sourceBacking) || visited.size > 16) throw IOException("Invalid recovery source dependency chain")
+                    if (sourceBacking == destRef || sourceBacking in destinationContainers)
+                        throw IOException("Recover to a different location outside the source image and its enclosing containers")
+                    sourceBacking = activeProvider.backingResource(sourceBacking)
+                }
+            }
             if (createLinks) {
                 val resolved = if (entry.metadata.isSymbolicLink)
                     (com.infinifolder.storage.LinkResolver.resolve(activeProvider, entry) as? ProviderResult.Success)?.value else null
@@ -161,12 +213,21 @@ object FileOperations {
                     "sourceProvider=${entry.ref.providerId} name=${entry.metadata.name} originalRetained=true")
                 return entry.copy(metadata = entry.metadata.copy(isDirectory = false, isSymbolicLink = false))
             }
+            if (!entry.metadata.canRead && !(partialRecovery && entry.metadata.partialRecoveryAvailable)) {
+                skipped(entry, entry.metadata.readError ?: "source cannot be read")
+                return null
+            }
             if (entry.metadata.isSymbolicLink) {
                 if (move) throw IOException("Moving folders containing symbolic links requires native link preservation; originals retained. Use Copy or Link to instead.")
-                val resolved = when (val result = com.infinifolder.storage.LinkResolver.resolve(activeProvider, entry)) {
+                val resolved = try { when (val result = com.infinifolder.storage.LinkResolver.resolve(activeProvider, entry)) {
                     is ProviderResult.Success -> result.value.entry ?: throw IOException("The symbolic-link target is not a copyable storage resource")
                     is ProviderResult.Failure -> throw IOException("Cannot copy symbolic-link target '${entry.metadata.name}': ${result.message}", result.cause)
                     is ProviderResult.Unsupported -> throw IOException("Cannot resolve symbolic-link target '${entry.metadata.name}'")
+                } } catch (e: Exception) {
+                    sourceChange(e)?.let { throw it }
+                    if (e is InterruptedException || isCancelled()) throw e
+                    skipped(entry, e.message ?: "Cannot read symbolic-link target")
+                    return null
                 }
                 // Keep the selected link's name, but use the actual target identity for reads,
                 // ancestry/cycle checks, space accounting and copy verification.
@@ -176,13 +237,28 @@ object FileOperations {
             if (entry.ref in destinationContainers) throw IOException("Cannot copy a container into its own mounted contents; original retained")
             if (entry.metadata.isDirectory) {
                 if (!scanning.add(entry.ref)) throw IOException("Cyclic folder or symbolic-link reference")
-                val children = StorageSafety.complete(activeProvider.list(entry.ref)).map(::scan)
+                val listed = try {
+                    val result = activeProvider.list(entry.ref)
+                    // Recovery enumeration is complete or throws; notices describe uncertainty and blocked files.
+                    if (recoverySource != null && result is ProviderResult.Success && !result.isLoading) {
+                        result.notice?.takeIf { it.isNotBlank() }?.let { onWarning("Recovery listing '${entry.metadata.name}': $it") }
+                        result.value
+                    } else StorageSafety.complete(result)
+                }
+                    catch (e: Exception) {
+                        scanning.remove(entry.ref)
+                        sourceChange(e)?.let { throw it }
+                        if (e is InterruptedException || isCancelled()) throw e
+                        skipped(entry, "cannot read directory: ${e.message}")
+                        return null
+                    }
+                val children = listed.mapNotNull(::scan)
                 sourceChildren[entry.ref] = children
                 scanning.remove(entry.ref)
             }
             return entry
         }
-        val transferEntries = timed("Checking source folders") { entries.map(::scan) }
+        val transferEntries = timed("Checking source folders") { entries.mapNotNull { currentSourceRoot = it.ref; scan(it) } }
         if (move) {
             fun containsSource(ref: ResourceRef, target: ResourceRef, visited: MutableSet<ResourceRef>): Boolean {
                 if (ref == target) return true
@@ -204,6 +280,11 @@ object FileOperations {
                 "maxFileSizeBytes=${fileSystem?.maxFileSizeBytes} availableBytes=${fileSystem?.availableBytes} " +
                 "readOnly=${fileSystem?.readOnly} evidence=${fileSystem?.evidence}")
         fun requestedDestinationName(entry: ResourceEntry): String = when {
+            partialRecovery && entry.metadata.partialRecoveryAvailable -> {
+                val name = entry.metadata.name
+                val dot = name.lastIndexOf('.').takeIf { it > 0 } ?: name.length
+                name.substring(0, dot) + ".partial" + name.substring(dot)
+            }
             shortcutPayloads.containsKey(entry.ref) -> entry.metadata.name + ShortcutInfo.SHORTCUT_EXTENSION
             entry.ref.providerId == "apps" && !entry.metadata.name.endsWith(".apk", ignoreCase = true) -> entry.metadata.name + ".apk"
             else -> entry.metadata.name
@@ -341,7 +422,9 @@ object FileOperations {
                         currentItem = currentItem,
                         bytesPerSecond = currentRate,
                         message = "${if (move) "Moving" else "Copying"} $currentItem",
-                        indeterminate = false
+                        indeterminate = false,
+                        currentItemBytes = activeFileBytes.takeIf { currentItem == activeFileName },
+                        currentItemTotalBytes = activeFileTotalBytes.takeIf { currentItem == activeFileName }
                     )
                 )
             }
@@ -355,6 +438,9 @@ object FileOperations {
                 val shortcutPayload = shortcutPayloads[source.ref]
                 val targetName = availableName(destParentRef, requestedName)
                 fileSystem?.requireName(targetName)
+                activeFileName = targetName
+                activeFileBytes = 0L
+                activeFileTotalBytes = transferSize(source)
                 reportProgress(targetName, 0L)
 
                 val createResult = timed("Creating destination: $targetName", targetName) {
@@ -367,19 +453,42 @@ object FileOperations {
                 val createdEntry = createResult.value
                 destinationNames.getValue(destParentRef).add(createdEntry.metadata.name.lowercase(java.util.Locale.ROOT))
 
-                val readResult = timed("Opening source: $targetName", targetName) {
-                    if (shortcutPayload != null) ProviderResult.Success<InputStream>(shortcutPayload.inputStream())
-                    else activeProvider.openRead(source.ref)
-                }
+                var recoveryReport: RecoveryReport? = null
+                var companionRef: ResourceRef? = null
+                val readResult = try { timed("Opening source: $targetName", targetName) {
+                    if (partialRecovery && source.metadata.partialRecoveryAvailable) {
+                        when (val recovered = activeProvider.openPartialRecovery(source.ref)) {
+                            is ProviderResult.Success -> { recoveryReport = recovered.value.report; ProviderResult.Success(recovered.value.input) }
+                            is ProviderResult.Failure -> recovered
+                            is ProviderResult.Unsupported -> recovered
+                        }
+                    } else if (shortcutPayload != null) ProviderResult.Success<InputStream>(shortcutPayload.inputStream())
+                    else try { activeProvider.openRead(source.ref) }
+                    catch (e: Exception) {
+                        if (e is InterruptedException || isCancelled()) throw e
+                        ProviderResult.Failure(e.message ?: "Cannot open source", e)
+                    }
+                } } catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot prepare recovery source", e) }
                 if (readResult !is ProviderResult.Success) {
-                    try { activeProvider.delete(createdEntry.ref) } catch (_: Exception) {}
-                    throw IllegalStateException((readResult as? ProviderResult.Failure)?.message ?: "Failed to open $targetName")
+                    val originalError = (readResult as? ProviderResult.Failure)?.cause
+                    val cleaned = try { activeProvider.delete(createdEntry.ref) } catch (e: Exception) {
+                        throw IOException("Source open failed and partial destination cleanup failed: ${e.message}", originalError ?: e)
+                    }
+                    val detail = (readResult as? ProviderResult.Failure)?.message ?: "Failed to open $targetName"
+                    if (cleaned !is ProviderResult.Success) throw IOException("$detail; partial destination cleanup failed", originalError)
+                    if (isCancelled()) throw InterruptedException("Transfer cancelled")
+                    throw SourceReadException(detail, (readResult as? ProviderResult.Failure)?.cause)
                 }
 
-                val writeResult = timed("Opening destination: $targetName", targetName) { activeProvider.openWrite(createdEntry.ref) }
+                val writeResult = try { timed("Opening destination: $targetName", targetName) { activeProvider.openWrite(createdEntry.ref) } }
+                    catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot open destination", e) }
                 if (writeResult !is ProviderResult.Success) {
-                    readResult.value.close()
-                    try { activeProvider.delete(createdEntry.ref) } catch (_: Exception) {}
+                    val closeError = try { readResult.value.close(); null } catch (e: Exception) { e }
+                    val cleaned = try { activeProvider.delete(createdEntry.ref) }
+                        catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cleanup failed", e) }
+                    if (cleaned !is ProviderResult.Success) throw IOException("Destination open failed; partial destination cleanup failed. Source retained.")
+                    if (isCancelled()) throw InterruptedException("Transfer cancelled")
+                    if (closeError != null) throw IOException("Source close failed; partial destination removed", closeError)
                     throw IllegalStateException((writeResult as? ProviderResult.Failure)?.message ?: "Failed to open destination for $targetName")
                 }
 
@@ -429,6 +538,7 @@ object FileOperations {
                                 stage = "reading source"
                                 hash.update(buffer, 0, r)
                                 copiedBytes += r
+                                activeFileBytes = copiedBytes
                                 transferredBytes += r
                                 bytesSinceLast += r
                                 val now = System.currentTimeMillis()
@@ -452,18 +562,56 @@ object FileOperations {
                     }
                     stage = "verifying copy"
                     if (transferSize(source) != null && copiedBytes != transferSize(source)) {
-                        throw IOException("Source size changed or read was incomplete; original retained")
+                        throw SourceReadException("Source size changed or read was incomplete; original retained")
                     }
                     val expected = hash.digest()
                     if (!timed("Verifying copy: $targetName", targetName) { digest(createdEntry.ref) }.contentEquals(expected))
                         throw IOException("Copy verification failed; original retained")
+                    recoveryReport?.let { report ->
+                        if (isCancelled()) throw InterruptedException("Recovery cancelled")
+                        if (report.declaredSize != copiedBytes || report.sha256 != expected.joinToString("") { "%02x".format(it) })
+                            throw IOException("Recovery report does not match the staged output")
+                        val reportName = availableName(destParentRef, createdEntry.metadata.name + ".recovery.json")
+                        val bytes = report.toJson(createdEntry.metadata.name).toByteArray(Charsets.UTF_8)
+                        fileSystem?.requireFileFits(reportName, bytes.size.toLong())
+                        phase("Saving recovery report: $reportName", reportName)
+                        val created = activeProvider.createFile(destParentRef, reportName, "application/json")
+                        if (created !is ProviderResult.Success) throw IOException((created as? ProviderResult.Failure)?.message ?: "Cannot create recovery report")
+                        companionRef = created.value.ref
+                        val opened = activeProvider.openWrite(created.value.ref)
+                        if (opened !is ProviderResult.Success) throw IOException((opened as? ProviderResult.Failure)?.message ?: "Cannot write recovery report")
+                        opened.value.use { output ->
+                            try {
+                                if (isCancelled()) throw InterruptedException("Recovery cancelled")
+                                output.write(bytes); output.flush()
+                            } catch (e: Exception) { (output as? com.infinifolder.storage.PendingWrite)?.abort(); throw e }
+                        }
+                        if (!digest(created.value.ref).contentEquals(MessageDigest.getInstance("SHA-256").digest(bytes)))
+                            throw IOException("Recovery report verification failed")
+                        com.infinifolder.storage.DiagnosticLog.record("recovery.partial-export",
+                            "name=${createdEntry.metadata.name} bytes=$copiedBytes report=${created.value.metadata.name} " +
+                                "zeroFilled=${report.ranges.filter { it.disposition == RecoveryDisposition.ZERO_FILLED }.sumOf { it.length }} " +
+                                "mime=${report.magicMime} mimeMismatch=${report.magicMismatch}")
+                        onWarning("Partial recovery '${createdEntry.metadata.name}': " +
+                            "${report.ranges.filter { it.disposition == RecoveryDisposition.ZERO_FILLED }.sumOf { it.length }} bytes zero-filled. " +
+                            "Byte-range report: ${created.value.metadata.name}. Original contents remain unverified.")
+                    }
                     sourceDigests[source.ref] = expected
+                    if (recoveryReport == null && (activeProvider.recoverySource(source.ref) != null || source.metadata.recoveryNote != null)) {
+                        val warning = "Recovery data is unverified for '${source.metadata.name}'. " +
+                            (source.metadata.recoveryNote ?: "Original deleted contents may be fragmented or overwritten.")
+                        com.infinifolder.storage.DiagnosticLog.record("recovery.copy-unverified", warning)
+                        onWarning(warning)
+                    }
                 } catch (e: Exception) {
+                    val companionCleanup = companionRef?.let { ref -> try { activeProvider.delete(ref) }
+                        catch (cleanup: Exception) { ProviderResult.Failure(cleanup.message ?: "Recovery report cleanup failed", cleanup) } }
                     val cleaned = try { activeProvider.delete(createdEntry.ref) } catch (cleanup: Exception) {
                         ProviderResult.Failure(cleanup.message ?: "Cleanup failed", cleanup)
                     }
-                    val cleanupNote = if (cleaned is ProviderResult.Success) "Partial destination removed" else
-                        "Partial destination may remain: ${(cleaned as? ProviderResult.Failure)?.message ?: "cleanup unsupported"}"
+                    val cleanupNote = (if (cleaned is ProviderResult.Success) "Partial destination removed" else
+                        "Partial destination may remain: ${(cleaned as? ProviderResult.Failure)?.message ?: "cleanup unsupported"}") +
+                        (if (companionCleanup != null && companionCleanup !is ProviderResult.Success) " Recovery report cleanup failed; report may remain." else "")
                     val largeUnknown = fileSystem?.type == null &&
                         maxOf(transferSize(source) ?: 0L, sourceBytesRead) > com.infinifolder.storage.FileSystemInfo.FAT_MAX_FILE_SIZE
                     val destinationFailure = failedIoStage?.startsWith("destination.") == true
@@ -473,7 +621,9 @@ object FileOperations {
                         "${source.ref.providerId} → ${createdEntry.ref.providerId}. $cleanupNote. Source retained.$sizeHint"
                     com.infinifolder.storage.DiagnosticLog.record("transfer.failed",
                         "$detail sourceBytesRead=$sourceBytesRead destination=${createdEntry.ref.documentId}", e)
-                    if (e is InterruptedException) throw e
+                    if (e is InterruptedException || isCancelled()) throw e
+                    if (cleaned is ProviderResult.Success && (companionCleanup == null || companionCleanup is ProviderResult.Success) && (e is SourceReadException || failedIoStage?.startsWith("source.") == true))
+                        throw SourceReadException("$detail ${e.message}", e)
                     throw IOException("$detail ${e.message}", e)
                 } finally {
                     com.infinifolder.storage.DiagnosticLog.record("transfer.io",
@@ -583,6 +733,18 @@ object FileOperations {
                 return createdDir
             }
 
+            fun copyReadableFile(source: ResourceEntry, parent: ResourceRef): ResourceEntry? = try {
+                copyFileWithProgress(source, parent)
+            } catch (e: SourceReadException) {
+                sourceChange(e)?.let {
+                    com.infinifolder.storage.DiagnosticLog.record("transfer.source-changed", "stopped=true completedFilesRetained=true", it)
+                    throw it
+                }
+                if (isCancelled()) throw InterruptedException("Transfer cancelled")
+                skipped(source, e.message ?: "source read failed")
+                null
+            }
+
             fun copyTreeRecursively(
                 sourceDir: ResourceEntry,
                 destParentRef: ResourceRef
@@ -600,12 +762,15 @@ object FileOperations {
                             if (child.metadata.isDirectory && !child.metadata.isSymbolicLink) {
                                 copyTreeRecursively(child, createdDir.ref)
                             } else {
-                                copyFileWithProgress(child, createdDir.ref)
+                                copyReadableFile(child, createdDir.ref)
                             }
                         }
                     }
                 } catch (e: Exception) {
                     // CLEANUP: delete partial directory on cancellation or failure
+                    // A revision change stops the batch, keeping earlier verified
+                    // files rather than deleting the destination subtree.
+                    sourceChange(e)?.let { throw it }
                     try { activeProvider.delete(createdDir.ref) } catch (_: Exception) {}
                     throw e
                 }
@@ -615,14 +780,19 @@ object FileOperations {
             val destinations = mutableListOf<ResourceRef>()
             for (entry in transferEntries) {
                 if (isCancelled()) throw InterruptedException("Transfer cancelled")
+                currentSourceRoot = entry.ref
                 reportProgress(entry.metadata.name, 0L)
                 val copied = if (entry.metadata.isDirectory && !entry.metadata.isSymbolicLink) {
                     copyTreeRecursively(entry, destRef)
                 } else {
-                    copyFileWithProgress(entry, destRef)
+                    copyReadableFile(entry, destRef)
                 }
+                if (copied == null) { itemsDone++; continue }
                 destinations += copied.ref
-                if (move) {
+                if (move && entry.ref in incompleteRoots) {
+                    onWarning("Source '${entry.metadata.name}' retained because unreadable contents were skipped.")
+                }
+                if (move && entry.ref !in incompleteRoots) {
                     timed("Rechecking source: ${entry.metadata.name}", entry.metadata.name) { verifySource(entry) }
                     if (isCancelled()) throw InterruptedException("Transfer cancelled")
                     val removed = timed("Removing verified original: ${entry.metadata.name}", entry.metadata.name) { activeProvider.delete(entry.ref) }
@@ -646,43 +816,104 @@ object FileOperations {
         update: (OperationUpdate) -> Unit,
         isCancelled: () -> Boolean
     ) {
-        // Resolve every selected tree before deleting anything. A listing failure
-        // must not leave a directory half deleted merely because it was unreadable.
-        val ordered = mutableListOf<ResourceEntry>()
-        val visited = mutableSetOf<String>()
-        fun collect(entry: ResourceEntry) {
-            if (isCancelled()) throw InterruptedException("Delete cancelled")
-            val key = "${entry.ref.providerId}:${entry.ref.documentId}"
-            if (!visited.add(key)) return
-            if (entry.metadata.isDirectory && !entry.metadata.isSymbolicLink) {
-                for (child in StorageSafety.complete(provider.list(entry.ref))) collect(child)
-            }
-            ordered += entry
+        if (entries.isEmpty()) return
+        val batches = linkedMapOf<ResourceRef, com.infinifolder.storage.StorageWriteBatch?>()
+        data class Scope(val storage: StorageProvider, val staged: Boolean)
+        fun checkCancelled() { if (isCancelled()) throw InterruptedException("Delete cancelled") }
+        fun phase(message: String, done: Int = 0, total: Int = entries.size) {
+            update(OperationUpdate(itemsProcessed = done, totalItems = total, message = message, indeterminate = true))
         }
-        entries.forEach(::collect)
+        fun scope(entry: ResourceEntry): Scope {
+            val backing = provider.backingResource(entry.ref) ?: return Scope(provider, false)
+            if (!batches.containsKey(backing)) {
+                checkCancelled()
+                val parent = when (val result = provider.parent(entry.ref)) {
+                    is ProviderResult.Success -> result.value ?: throw IOException("Cannot delete a container root")
+                    is ProviderResult.Failure -> throw IOException(result.message, result.cause)
+                    is ProviderResult.Unsupported -> {
+                        // An optional batch hook must not remove normal delete
+                        // support from a backend without parent lookup.
+                        batches[backing] = null
+                        return Scope(provider, false)
+                    }
+                }
+                phase("Preparing container changes…")
+                batches[backing] = when (val result = provider.beginWriteBatch(parent, isCancelled)) {
+                    is ProviderResult.Success -> result.value
+                    is ProviderResult.Unsupported -> null
+                    is ProviderResult.Failure -> throw IOException(result.message, result.cause)
+                }
+            }
+            val batch = batches[backing]
+            return Scope(batch?.provider ?: provider, batch != null)
+        }
+        try {
+            // Snapshot each selected container once, then resolve every selected
+            // tree before deleting anything. Failed/partial listings abort all
+            // unpublished sessions; links are never traversed.
+            val scopes = entries.map { it to scope(it) }
+            phase("Checking folders before deletion…")
+            val ordered = mutableListOf<Pair<ResourceEntry, Scope>>()
+            val visited = mutableSetOf<ResourceRef>()
+            fun collect(entry: ResourceEntry, scope: Scope) {
+                checkCancelled()
+                if (!visited.add(entry.ref)) return
+                if (entry.metadata.isDirectory && !entry.metadata.isSymbolicLink) {
+                    StorageSafety.complete(scope.storage.list(entry.ref)).forEach { collect(it, scope) }
+                }
+                ordered += entry to scope
+            }
+            scopes.forEach { (entry, scope) -> collect(entry, scope) }
 
-        val total = ordered.size
-        val startTime = System.currentTimeMillis()
-        for ((idx, entry) in ordered.withIndex()) {
-            if (isCancelled()) throw InterruptedException("Delete cancelled")
-            val now = System.currentTimeMillis()
-            val speed = if (now > startTime) ((idx + 1) * 1000L) / (now - startTime).coerceAtLeast(1) else 0L
-            update(
-                OperationUpdate(
-                    itemsProcessed = idx + 1,
-                    totalItems = total,
-                    currentItem = entry.metadata.name,
-                    bytesPerSecond = 0L,
-                    message = "Deleted ${idx + 1} of $total (${speed} items/s)"
-                )
-            )
-            val result = provider.delete(entry.ref)
-            if (result !is ProviderResult.Success) {
-                throw IllegalStateException(
-                    "Failed to delete ${entry.metadata.name}: " +
-                        ((result as? ProviderResult.Failure)?.message ?: "Delete unsupported") +
-                        ". Some earlier items may already have been deleted."
-                )
+            val total = ordered.size
+            com.infinifolder.storage.DiagnosticLog.record("delete.plan",
+                "items=$total containers=${batches.values.count { it != null }}")
+            val startTime = System.nanoTime()
+            var directDeletes = 0
+            for ((idx, item) in ordered.withIndex()) {
+                checkCancelled()
+                val (entry, scope) = item
+                val started = System.nanoTime()
+                val result = scope.storage.delete(entry.ref)
+                com.infinifolder.storage.DiagnosticLog.record("delete.entry",
+                    "name=${entry.metadata.name} provider=${entry.ref.providerId} staged=${scope.staged} " +
+                        "elapsedMs=${(System.nanoTime() - started) / 1_000_000} success=${result is ProviderResult.Success}")
+                if (result !is ProviderResult.Success) {
+                    val note = if (scope.staged) {
+                        "Unpublished changes to this container will be discarded." +
+                            if (directDeletes > 0) " Earlier items in other locations have already been deleted." else ""
+                    } else "Some earlier items may already have been deleted."
+                    throw IOException("Failed to delete ${entry.metadata.name}: " +
+                        ((result as? ProviderResult.Failure)?.message ?: "Delete unsupported") + ". $note")
+                }
+                if (!scope.staged) directDeletes++
+                val elapsedMs = ((System.nanoTime() - startTime) / 1_000_000).coerceAtLeast(1)
+                val speed = ((idx + 1) * 1000L) / elapsedMs
+                update(OperationUpdate(itemsProcessed = idx + 1, totalItems = total, currentItem = entry.metadata.name,
+                    message = "Removing ${idx + 1} of $total ($speed items/s)", indeterminate = false))
+            }
+            checkCancelled()
+            var committedContainers = 0
+            batches.values.filterNotNull().forEach { batch ->
+                try {
+                    checkCancelled()
+                    phase("Saving container changes…", total, total)
+                    batch.commit()
+                }
+                catch (e: Exception) {
+                    if (committedContainers > 0 || directDeletes > 0) throw IOException(
+                        "${e.message ?: "Cannot save container changes"}. Earlier deletions in other locations are already committed.", e)
+                    throw e
+                }
+                committedContainers++
+            }
+            update(OperationUpdate(itemsProcessed = total, totalItems = total,
+                message = "Deleted $total item${if (total == 1) "" else "s"}", indeterminate = false))
+        } finally {
+            batches.values.filterNotNull().asReversed().forEach { batch ->
+                runCatching { batch.close() }.onFailure {
+                    com.infinifolder.storage.DiagnosticLog.record("delete.batch.cleanup-failed", error = it)
+                }
             }
         }
     }

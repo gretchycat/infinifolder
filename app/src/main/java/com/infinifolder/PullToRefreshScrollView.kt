@@ -35,6 +35,18 @@ class PullToRefreshScrollView(context: Context) : ScrollView(context) {
     private var initialY = 0f
     private var isPulling = false
     private var currentPullDistance = 0f
+    private var interceptionLogged = false
+
+    private fun traceInterception(event: MotionEvent, reason: String) {
+        if (interceptionLogged) return
+        interceptionLogged = true
+        com.infinifolder.storage.DiagnosticLog.record(
+            "browser.touch.files-intercept",
+            "gesture=${event.downTime} action=${MotionEvent.actionToString(event.action)} " +
+                "elapsedMs=${event.eventTime - event.downTime} reason=$reason " +
+                "scrollY=$scrollY pulling=$isPulling refreshing=$isRefreshing pointers=${event.pointerCount}"
+        )
+    }
     private val refreshThreshold = (64 * resources.displayMetrics.density)
 
     private val refreshHeader = LinearLayout(context).apply {
@@ -85,6 +97,7 @@ class PullToRefreshScrollView(context: Context) : ScrollView(context) {
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) interceptionLogged = false
         scaleDetector?.onTouchEvent(ev)
         if (scaleDetector?.isInProgress == true) {
             if (isPulling) {
@@ -101,6 +114,7 @@ class PullToRefreshScrollView(context: Context) : ScrollView(context) {
 
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         if (scaleDetector?.isInProgress == true || ev.pointerCount >= 2) {
+            traceInterception(ev, "scale-or-multitouch")
             if (isPulling) {
                 isPulling = false
                 resetPull(smooth = false)
@@ -117,12 +131,13 @@ class PullToRefreshScrollView(context: Context) : ScrollView(context) {
                 if (scrollY <= 0 && dy > touchSlop && !isRefreshing) {
                     isPulling = true
                     initialY = ev.y
+                    traceInterception(ev, "pull-to-refresh")
                     return true
                 }
             }
         }
         return try {
-            super.onInterceptTouchEvent(ev)
+            super.onInterceptTouchEvent(ev).also { if (it) traceInterception(ev, "scroll-view") }
         } catch (_: IllegalArgumentException) {
             false
         }

@@ -138,6 +138,7 @@ class CsvViewerActivity : ViewerActivity() {
         }
         toolbar.addView(openExtBtn, LinearLayout.LayoutParams(dp(44), dp(44)))
 
+        DebugTools.attachToolbarButton(this, toolbar)
         mainColumn.addView(toolbar)
 
         // Filter / Search bar + Stats

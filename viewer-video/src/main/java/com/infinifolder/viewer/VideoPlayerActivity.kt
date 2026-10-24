@@ -316,6 +316,7 @@ class VideoPlayerActivity : ViewerActivity() {
         }
         topBar.addView(openExtBtn, LinearLayout.LayoutParams(dp(40), dp(40)))
 
+        DebugTools.attachToolbarButton(this, topBar)
         controlsOverlay.addView(topBar)
 
         // Middle spacer

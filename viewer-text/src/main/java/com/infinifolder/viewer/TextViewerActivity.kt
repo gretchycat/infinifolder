@@ -218,6 +218,7 @@ class TextViewerActivity : ViewerActivity() {
         }
         topBar.addView(openWithBtn)
 
+        DebugTools.attachToolbarButton(this, topBar)
         root.addView(topBar)
 
         // Search Bar (expandable)

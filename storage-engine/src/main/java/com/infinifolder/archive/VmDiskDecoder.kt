@@ -35,9 +35,15 @@ object VmDiskDecoder {
 
         // 2. VDI (Magic: 0xBEDA107F at offset 0x40 = 64)
         if (fileLength >= 400 && u32le(header, 0x40) == 0xBEDA107FL) {
+            com.infinifolder.storage.DiagnosticLog.record(
+                "disc.vdi.detected", "fileBytes=$fileLength readOnly=$isReadOnly version=${u32le(header, 0x44)} imageType=${u32le(header, 0x4c)}"
+            )
             return try {
                 VdiBlockDevice(dev, header, isReadOnly)
-            } catch (_: Exception) { null }
+            } catch (e: Exception) {
+                com.infinifolder.storage.DiagnosticLog.record("disc.vdi.open-failed", "falling back to source device", e)
+                null
+            }
         }
 
         // 3. VMDK Sparse (Magic: "KDMV" = 0x564D444B at 0)
@@ -160,6 +166,11 @@ class VdiBlockDevice(
         offData = VmDiskDecoder.u32le(header, 0x158)
         totalBlocks = VmDiskDecoder.u32le(header, 0x180).toInt()
         allocatedBlocks = VmDiskDecoder.u32le(header, 0x184).toInt()
+        com.infinifolder.storage.DiagnosticLog.record(
+            "disc.vdi.geometry",
+            "diskBytes=$size blockBytes=$blockSize mapOffset=$offBlocks dataOffset=$offData " +
+                "totalBlocks=$totalBlocks allocatedBlocks=$allocatedBlocks extraBlockBytes=${VmDiskDecoder.u32le(header, 0x17c)}"
+        )
 
         if (blockSize <= 0 || totalBlocks <= 0) {
             throw IOException("Corrupt VDI header: blockSize=$blockSize, totalBlocks=$totalBlocks")
@@ -173,6 +184,9 @@ class VdiBlockDevice(
         blockMap = IntArray(totalBlocks) { i ->
             VmDiskDecoder.u32le(mapBytes, i * 4).toInt()
         }
+        com.infinifolder.storage.DiagnosticLog.record(
+            "disc.vdi.map", "entries=${blockMap.size} firstEntries=${blockMap.take(8).joinToString(",")}"
+        )
     }
 
     override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {

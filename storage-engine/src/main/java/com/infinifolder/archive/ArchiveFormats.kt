@@ -8,6 +8,8 @@ object ArchiveFormats {
         "img", "raw", "ima", "flp",
         "fat", "vfat", "exfat",
         "ext2", "ext3", "ext4",
+        "ufs", "ufs1", "ufs2", "ffs",
+        "ntfs", "hfs", "hfsplus", "hfsx",
         "vdi", "qcow2", "vmdk", "vhd", "vhdx",
         "esp", "efi",
         "mbr", "gpt", "apm", "dd", "dsk", "dump", "bin"
@@ -29,8 +31,8 @@ object ArchiveFormats {
 
     private val SIMPLE_EXTENSIONS = setOf(
         "zip", "jar", "war", "ear", "apk", "xapk", "apkm", "aab", "aar", "love", "ipa", "cbz",
-        "tar", "tgz", "tbz", "tbz2", "txz", "tzst", "tlz", "cbt",
-        "7z", "cb7",
+        "tar", "tgz", "tbz", "tbz2", "txz", "tzst", "tlz", "taz", "cbt",
+        "7z", "cb7", "rar", "cbr", "arj", "cab", "zst",
         "cpio",
         "ar", "deb"
     ) + DISC_BASE_EXTENSIONS
@@ -51,6 +53,8 @@ object ArchiveFormats {
 
     private val ARCHIVE_MIME_TYPES = setOf(
         "application/zip",
+        "application/vnd.rar", "application/x-rar-compressed", "application/x-arj",
+        "application/vnd.ms-cab-compressed", "application/x-cabinet",
         "application/x-zip-compressed",
         "application/java-archive",
         "application/vnd.android.package-archive",
@@ -62,6 +66,7 @@ object ArchiveFormats {
         "application/x-bzip",
         "application/x-bzip2",
         "application/x-xz",
+        "application/x-compress", "application/zstd",
         "application/x-7z-compressed",
         "application/x-cpio",
         "application/x-archive",
@@ -70,6 +75,7 @@ object ArchiveFormats {
 
     fun isArchive(name: String, mimeType: String = ""): Boolean {
         if (com.infinifolder.mime.MimeRegistry.normalize(mimeType) == "vnd.android.document/directory") return false
+        if (NativeArchiveReader.isSupported(name)) return true
         if (com.infinifolder.mime.MimeRegistry.packageFormat(name, mimeType) != null) return true
         val lowerName = name.lowercase(Locale.ROOT)
         if (COMPOUND_EXTENSIONS.any { lowerName.endsWith(it) }) return true

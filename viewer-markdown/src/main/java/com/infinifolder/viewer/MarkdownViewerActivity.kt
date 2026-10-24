@@ -157,6 +157,7 @@ class MarkdownViewerActivity : ViewerActivity() {
         }
         topBar.addView(openWithBtn)
 
+        DebugTools.attachToolbarButton(this, topBar)
         root.addView(topBar)
 
         // Edit Action Bar

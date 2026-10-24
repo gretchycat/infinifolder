@@ -47,11 +47,11 @@ class SftpClientPool : Closeable {
     }
 
     /** Range readers own their channel; closing a partial GET cannot poison metadata operations. */
-    fun openReadChannel(config: SftpConfig, credentials: SftpCredentials): ChannelSftp {
+    fun openReadChannel(config: SftpConfig, credentials: SftpCredentials, bulkRequests: Int = 128): ChannelSftp {
         val client = getOrCreateClient(config, credentials)
         val channel = client.session.openChannel("sftp") as ChannelSftp
         try {
-            channel.setBulkRequests(128)
+            channel.setBulkRequests(bulkRequests)
             channel.connect(config.timeoutSeconds * 1000)
             return channel
         } catch (e: Exception) {

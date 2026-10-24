@@ -12,6 +12,7 @@ import java.io.FileNotFoundException
 import java.io.IOException
 
 class SafProvider(private val resolver: ContentResolver) : StorageProvider {
+    private val observedParents = android.util.LruCache<String, ResourceRef>(8192)
     override val id = "saf"
     override val features = BackendFeatures(creation = CreationGuarantee.SERVER_UNIQUE_NAME)
 
@@ -33,7 +34,9 @@ class SafProvider(private val resolver: ContentResolver) : StorageProvider {
 
     override fun parent(ref: ResourceRef): ProviderResult<ResourceRef?> = try {
         val uri = Uri.parse(ref.documentId)
-        if (!DocumentsContract.isTreeUri(uri)) ProviderResult.Unsupported(ResourceCapability.PARENT) else {
+        val observed = synchronized(observedParents) { observedParents.get(ref.documentId) }
+        if (observed != null) ProviderResult.Success(observed)
+        else if (!DocumentsContract.isTreeUri(uri)) ProviderResult.Unsupported(ResourceCapability.PARENT) else {
             val idValue = documentId(uri)
             if (idValue == DocumentsContract.getTreeDocumentId(uri)) ProviderResult.Success(null) else {
                 val path = DocumentsContract.findDocumentPath(resolver, uri)?.path
@@ -99,6 +102,7 @@ class SafProvider(private val resolver: ContentResolver) : StorageProvider {
                 val mime = com.infinifolder.mime.MimeRegistry.effective(name, cursor.getString(mimeCol))
                 val folder = mime == DocumentsContract.Document.MIME_TYPE_DIR
                 val uri = DocumentsContract.buildDocumentUriUsingTree(parentUri, documentId)
+                synchronized(observedParents) { observedParents.put(uri.toString(), parent) }
                 val flags = if (flagsCol >= 0 && !cursor.isNull(flagsCol)) cursor.getInt(flagsCol) else 0
                 val canWrite = if (folder) {
                     (flags and DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE) != 0 ||

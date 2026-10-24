@@ -15,7 +15,10 @@ data class OperationUpdate(
     val currentItem: String? = null,
     val bytesPerSecond: Long = 0L,
     val message: String? = null,
-    val indeterminate: Boolean? = null
+    val indeterminate: Boolean? = null,
+    val currentItemBytes: Long? = null,
+    val currentItemTotalBytes: Long? = null,
+    val warningCount: Int = 0
 )
 
 data class OperationSnapshot(
@@ -30,8 +33,26 @@ data class OperationSnapshot(
     val bytesPerSecond: Long = 0L,
     val startTimeMillis: Long = System.currentTimeMillis(),
     val message: String? = null,
-    val indeterminate: Boolean = false
+    val indeterminate: Boolean = false,
+    val currentItemBytes: Long? = null,
+    val currentItemTotalBytes: Long? = null,
+    val warningCount: Int = 0
 ) {
+    /** Overall totals stay visible during per-file preparation/verification phases. */
+    val overallProgressPercent: Int
+        get() = when {
+            state == OperationState.COMPLETE -> 100
+            totalBytes != null && totalBytes > 0 -> (bytes.toDouble() / totalBytes * 100).toInt().coerceIn(0, 99)
+            totalItems > 0 -> (itemsProcessed.toDouble() / totalItems * 100).toInt().coerceIn(0, 99)
+            else -> -1
+        }
+    val currentItemProgressPercent: Int
+        get() {
+            val done = currentItemBytes ?: return -1
+            val total = currentItemTotalBytes ?: return -1
+            return if (total > 0) (done.toDouble() / total * 100).toInt().coerceIn(0, 100)
+                else if (total == 0L) 100 else -1
+        }
     val progressPercent: Int
         get() = when {
             indeterminate -> -1
@@ -108,7 +129,10 @@ class OperationCoordinator(private val concurrency: Int = 1) {
                             currentItem = u.currentItem ?: it.currentItem,
                             bytesPerSecond = u.bytesPerSecond,
                             message = u.message ?: it.message,
-                            indeterminate = u.indeterminate ?: it.indeterminate
+                            indeterminate = u.indeterminate ?: it.indeterminate,
+                            currentItemBytes = u.currentItemBytes,
+                            currentItemTotalBytes = u.currentItemTotalBytes,
+                            warningCount = maxOf(it.warningCount, u.warningCount)
                         )
                     }
                 }, { token.get() })
@@ -187,11 +211,14 @@ class OperationCoordinator(private val concurrency: Int = 1) {
         }
     }
 
-    @Synchronized private fun update(id: String, transform: (OperationSnapshot) -> OperationSnapshot) {
-        records[id]?.let {
-            records[id] = transform(it)
-            notifyListeners()
+    private fun update(id: String, transform: (OperationSnapshot) -> OperationSnapshot) {
+        synchronized(this) {
+            val record = records[id] ?: return
+            records[id] = transform(record)
         }
+        // Notification/listener work can perform Binder calls. Never hold the
+        // coordinator lock while UI callers are waiting to read snapshots.
+        notifyListeners()
     }
 }
 

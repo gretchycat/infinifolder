@@ -45,6 +45,8 @@ class OperationService : Service() {
     }
 
     private lateinit var notificationManager: NotificationManager
+    private var lastNotificationAt = 0L
+    private var lastNotificationOperation: String? = null
     private val listener: (List<OperationSnapshot>) -> Unit = { snapshots ->
         val active = snapshots.firstOrNull {
             (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) &&
@@ -59,7 +61,12 @@ class OperationService : Service() {
             }
             stopSelf()
         } else {
-            updateNotification(active)
+            val now = android.os.SystemClock.uptimeMillis()
+            if (lastNotificationOperation != active.id || now - lastNotificationAt >= 250L) {
+                lastNotificationAt = now
+                lastNotificationOperation = active.id
+                updateNotification(active)
+            }
         }
     }
 

@@ -82,8 +82,8 @@ class FileOperationsTest {
             if (directory) "vnd.android.document/directory" else "text/plain", size, 0L, directory,
             isSymbolicLink = link), TestUri("mock://$path"))
 
-    private fun move(storage: MockStorage, source: ResourceEntry) = FileOperations.batchTransfer(
-        listOf(source), TestUri("mock://dest"), true, storage, { ResourceRef("mock", "dest") }, {}, { false })
+    private fun move(storage: MockStorage, source: ResourceEntry, warnings: MutableList<String> = mutableListOf()) = FileOperations.batchTransfer(
+        listOf(source), TestUri("mock://dest"), true, storage, { ResourceRef("mock", "dest") }, {}, { false }, onWarning = warnings::add)
 
     @Test fun incompleteListingsNeverDeleteOrCreateAnything() {
         val source = entry("root/folder", directory = true)
@@ -95,7 +95,9 @@ class FileOperationsTest {
         for (result in results) {
             val storage = MockStorage()
             storage.listingResults[source.ref.documentId] = result
-            assertThrows(java.io.IOException::class.java) { move(storage, source) }
+            val warnings = mutableListOf<String>()
+            move(storage, source, warnings)
+            assertTrue(warnings.any { it.contains("Skipped") })
             assertTrue(storage.deletedRefs.isEmpty())
             assertTrue(storage.createdFiles.isEmpty())
         }
@@ -124,7 +126,10 @@ class FileOperationsTest {
     @Test fun shortReadRetainsOriginal() {
         val source = entry("root/file.txt", size = 100)
         val storage = MockStorage(mutableMapOf("root/file.txt" to "short".toByteArray()))
-        assertThrows(java.io.IOException::class.java) { move(storage, source) }
+        val warnings = mutableListOf<String>()
+        move(storage, source, warnings)
+        assertTrue(warnings.any { it.contains("Skipped") })
+        assertFalse(storage.files.containsKey("dest/file.txt"))
         assertTrue(storage.files.containsKey("root/file.txt"))
         assertFalse(storage.files.containsKey("dest/file.txt"))
     }

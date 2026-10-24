@@ -1,0 +1,61 @@
+{
+  "format": "infinifolder-recovery-report",
+  "version": 1,
+  "output_file": "deleted-1fe20-c55587c05aa2e23940c08ef5b09f6018__LLOC.partial.BIN",
+  "candidate": "deleted-1fe20-c55587c05aa2e23940c08ef5b09f6018__LLOC.BIN",
+  "declared_size_bytes": 1024,
+  "filesystem": "FAT16",
+  "source_image": "fat16-adversarial.img",
+  "partition_offset_bytes": 0,
+  "output_sha256": "637feae51d97c9e59ec9991652d0d9fddb20e0c3843bcfa8c0492322b4163ae9",
+  "offset_unit": "bytes",
+  "range_convention": "offset inclusive, end_exclusive exclusive",
+  "zero_fill_byte": 0,
+  "io_retry_unit_bytes": 512,
+  "original_contents_verified": false,
+  "allocation_assumption": "First cluster comes from the deleted record; later clusters assume contiguous allocation. Original fragmentation is unknown.",
+  "note": "Unverified deleted-file candidate in \/. Assumes 2 contiguous free clusters. Original fragmentation and overwritten contents cannot be determined. A leading underscore replaces a lost short-name character. Long-name associations, when present, are tentative.",
+  "grade_definitions": {
+    "good": "Would require independent original-content evidence; this FAT-only recovery cannot assign it.",
+    "possibly_good": "Readable, stable bytes in the first recorded cluster; original contents are not verified.",
+    "possibly_bad": "Later bytes assume contiguous allocation, or original bytes may have been replaced by a current allocation. See disposition and reason.",
+    "overwritten": "Would require independent evidence of original-byte replacement. Allocation alone does not prove overwrite; this recovery does not assign it.",
+    "unavailable": "Unreadable or outside the validated volume; original contents unknown."
+  },
+  "byte_counts_by_grade": {
+    "good": 0,
+    "possibly_good": 0,
+    "possibly_bad": 1024,
+    "overwritten": 0,
+    "unavailable": 0
+  },
+  "copied_bytes": 512,
+  "zero_filled_bytes": 512,
+  "file_type_hint": {
+    "inspected_copied_prefix_bytes": 0,
+    "detected_mime": null,
+    "description": null,
+    "filename_mime": "application\/x-raw-disk-image",
+    "filename_container_mime": null,
+    "mime_mismatch": null,
+    "interpretation": "Shared magic\/type detection is a header heuristic, not a content check. A match cannot verify the payload; no confidence grade is upgraded."
+  },
+  "ranges": [
+    {
+      "offset": 0,
+      "length": 512,
+      "end_exclusive": 512,
+      "grade": "possibly_bad",
+      "disposition": "zero_filled",
+      "reason": "allocated_or_reused_cluster; original contents are not recoverable from this allocation evidence"
+    },
+    {
+      "offset": 512,
+      "length": 512,
+      "end_exclusive": 1024,
+      "grade": "possibly_bad",
+      "disposition": "copied_unverified",
+      "reason": "free_cluster; contiguous_position_assumed"
+    }
+  ]
+}

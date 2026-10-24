@@ -1,0 +1,52 @@
+--- a/newfs_hfs.tproj/makehfs.c
++++ b/newfs_hfs.tproj/makehfs.c
+@@ -38,7 +38,9 @@
+ #endif
+ #include <sys/errno.h>
+ #include <sys/stat.h>
++#if !LINUX
+ #include <sys/sysctl.h>
++#endif
+ #if !LINUX
+ #include <sys/vmmeter.h>
+ #endif
+@@ -55,6 +57,12 @@
+ #if !LINUX
+ #include <wipefs.h>
+ #endif
++
++static void *fixture_valloc(size_t length) {
++    void *p = NULL;
++    if (posix_memalign(&p, (size_t)sysconf(_SC_PAGESIZE), length) != 0) return NULL;
++    return p;
++}
+ 
+ /*
+  * CommonCrypto is meant to be a more stable API than OpenSSL.
+@@ -276,7 +284,7 @@
+ 	if ( (temp & 0x01FF) != 0 )
+ 		temp = (temp + kBytesPerSector) & 0xFFFFFE00;
+ 	
+-	nodeBuffer = valloc((size_t)temp);
++	nodeBuffer = fixture_valloc((size_t)temp);
+ 	if (nodeBuffer == NULL)
+ 		err(1, NULL);
+ 
+@@ -1317,7 +1325,7 @@
+ 	tempbufSizeInPhysSectors = MIN ( tempbufSizeInPhysSectors, (4 * 1024 * 1024) / physSectorSize );
+ 	tempbufSize = tempbufSizeInPhysSectors * physSectorSize;
+ 
+-	if ((tempbuf = valloc(tempbufSize)) == NULL) {
++	if ((tempbuf = fixture_valloc(tempbufSize)) == NULL) {
+ 		/* try allocation of smallest allowed size: one
+ 		   physical sector.
+ 		   NOTE: the previous valloc tempbufSize might have
+@@ -1326,7 +1334,7 @@
+ 		*/
+ 		tempbufSizeInPhysSectors = 1;
+ 		tempbufSize = physSectorSize;
+-		if ((tempbuf = valloc(tempbufSize)) == NULL) {
++		if ((tempbuf = fixture_valloc(tempbufSize)) == NULL) {
+ 			status = 1;
+ 			goto exit;
+ 		}

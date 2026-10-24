@@ -1,0 +1,117 @@
+{
+  "fat12-deleted.img": {
+    "fat": 12,
+    "size": 1474560,
+    "sha256": "19a51ced92ee5e079c724a319ede95da95d40c988206ed2e5ff81360f698f003",
+    "deleted": {
+      "DELETE.TXT": {
+        "size": 50,
+        "sha256": "27be751d146785a4e0e4acad769a0ea5cc4a94f18297f2daa2b608cbdf49a8ef",
+        "allocation_before_delete": "::/DELETE.TXT <4>"
+      },
+      "Deleted long filename.txt": {
+        "size": 30,
+        "sha256": "b8de645adde9973dc088baeedeca760bb5e7982cac472d4c1b2edb6fdf95a20e",
+        "allocation_before_delete": "::/Deleted long filename.txt <5>"
+      },
+      "EMPTY.TXT": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "allocation_before_delete": "::/EMPTY.TXT Root directory or empty file"
+      },
+      "CONTIG.BIN": {
+        "size": 9472,
+        "sha256": "480d8641d6c1055a8755af19a919c09c6b3f4f57ee7615d67da1f902e8e4c782",
+        "allocation_before_delete": "::/CONTIG.BIN <6-24>"
+      },
+      "LIVE/NESTED.TXT": {
+        "size": 51,
+        "sha256": "b1fca57fa589368637f32d0adf1348970d9cd50fc8a908578b58104bce941723",
+        "allocation_before_delete": "::/LIVE/NESTED.TXT <25>"
+      }
+    },
+    "live": [
+      "README.TXT",
+      "LIVE"
+    ],
+    "recipe": "All payloads copied before deletion; no subsequent allocations."
+  },
+  "fat16-deleted.img": {
+    "fat": 16,
+    "size": 16777216,
+    "sha256": "ac901115800d0422492f51e5639d872b205b31a71d3f09c9b1957ebada99163a",
+    "deleted": {
+      "DELETE.TXT": {
+        "size": 50,
+        "sha256": "27be751d146785a4e0e4acad769a0ea5cc4a94f18297f2daa2b608cbdf49a8ef",
+        "allocation_before_delete": "::/DELETE.TXT <4>"
+      },
+      "Deleted long filename.txt": {
+        "size": 30,
+        "sha256": "b8de645adde9973dc088baeedeca760bb5e7982cac472d4c1b2edb6fdf95a20e",
+        "allocation_before_delete": "::/Deleted long filename.txt <5>"
+      },
+      "EMPTY.TXT": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "allocation_before_delete": "::/EMPTY.TXT Root directory or empty file"
+      },
+      "CONTIG.BIN": {
+        "size": 9472,
+        "sha256": "480d8641d6c1055a8755af19a919c09c6b3f4f57ee7615d67da1f902e8e4c782",
+        "allocation_before_delete": "::/CONTIG.BIN <6-24>"
+      },
+      "LIVE/NESTED.TXT": {
+        "size": 51,
+        "sha256": "b1fca57fa589368637f32d0adf1348970d9cd50fc8a908578b58104bce941723",
+        "allocation_before_delete": "::/LIVE/NESTED.TXT <25>"
+      }
+    },
+    "live": [
+      "README.TXT",
+      "LIVE"
+    ],
+    "recipe": "All payloads copied before deletion; no subsequent allocations."
+  },
+  "fat32-deleted.img": {
+    "fat": 32,
+    "size": 67108864,
+    "sha256": "800ce6ae0e93caed1c98dd8e494bf537a27080b42fea128c84f932fac8290bf9",
+    "deleted": {
+      "DELETE.TXT": {
+        "size": 50,
+        "sha256": "27be751d146785a4e0e4acad769a0ea5cc4a94f18297f2daa2b608cbdf49a8ef",
+        "allocation_before_delete": "::/DELETE.TXT <5>"
+      },
+      "Deleted long filename.txt": {
+        "size": 30,
+        "sha256": "b8de645adde9973dc088baeedeca760bb5e7982cac472d4c1b2edb6fdf95a20e",
+        "allocation_before_delete": "::/Deleted long filename.txt <6>"
+      },
+      "EMPTY.TXT": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "allocation_before_delete": "::/EMPTY.TXT Root directory or empty file"
+      },
+      "CONTIG.BIN": {
+        "size": 9472,
+        "sha256": "480d8641d6c1055a8755af19a919c09c6b3f4f57ee7615d67da1f902e8e4c782",
+        "allocation_before_delete": "::/CONTIG.BIN <7-25>"
+      },
+      "LIVE/NESTED.TXT": {
+        "size": 51,
+        "sha256": "b1fca57fa589368637f32d0adf1348970d9cd50fc8a908578b58104bce941723",
+        "allocation_before_delete": "::/LIVE/NESTED.TXT <26>"
+      }
+    },
+    "live": [
+      "README.TXT",
+      "LIVE"
+    ],
+    "recipe": "All payloads copied before deletion; no subsequent allocations."
+  },
+  "fat16-deleted.img.gz": {
+    "sha256": "0a25dd0e6d2b2fd32b22acaf55b71dfa9aa821bb0f7f748b759e0b96ad7156ad",
+    "uncompressed": "fat16-deleted.img"
+  }
+}
