@@ -1,10 +1,10 @@
 # Feature to-do list
 
-Updated: 2026-10-23. These items describe requested work; unchecked items are not completed features.
+Updated: 2026-10-24. [Current confirmations and priorities](project-status.md) distinguish implementation from handset acceptance. Unchecked items below are remaining work, unless explicitly described as historical evidence.
 
 ## Current reliability priorities
 
-- [ ] Make swiping between the tree and file pane reliable in both directions, including gestures starting on icons, labels, tree rows, and empty space. Preserve vertical scrolling and the hold-then-drag gesture.
+- [x] Recent pane swiping is user-confirmed working. Retain icon/label/empty-space and vertical-scroll/hold-drag regressions across orientations.
 - [x] Tree drops are user-confirmed working; the 02:47 UTC dump records accepted tree drops, successful verification and source removal for a same-device move. Broader backend and selected-set coverage remains useful regression work.
 - [x] Tree drag autoscroll is user-confirmed working. The 02:52 UTC dump records repeated up/down scrolling followed by a successful drop into ZIP and destination tree refresh. Additional selected-set/orientation checks remain regression coverage.
 - [ ] Confirm the destination tree refreshes after copying while preserving expanded branches and useful scroll position.
@@ -33,20 +33,13 @@ Implemented 2026-10-23; handset acceptance is pending. Pins are kept in Activity
 - [x] Use the same 700 ms drag-hover navigation for container cards, breadcrumbs, and pinned targets; preserve the full selected drag payload. Breadcrumb hover uses the breadcrumb navigation action, preserving its history semantics.
 - [ ] Validate pin/unpin, half-size themed icons, horizontal clipping, multi-file drops and hover navigation on the handset in both orientations, including SAF/network/archive targets and read-only failures.
 
-## Select files using wildcards
+## Selection and sorting
 
-- [ ] Add a selection action that accepts filename patterns, including `*` for any sequence and `?` for one character.
-- [ ] Support selecting multiple matching files using a pattern, alongside manual selection.
-- [ ] Make the selection scope clear, initially using the currently displayed folder. Specify case matching and whether multiple patterns are supported before implementation.
-- [ ] Show the resulting selected count and retain the existing actions for selected sets, including drag and drop.
-
-## Sorting controls
-
-- [ ] Expose sorting by name with alphabetical (A–Z) and reverse alphabetical (Z–A) directions.
-- [ ] Add sorting by file type using the shared MIME/type system, with consistent ordering within each type.
-- [ ] Add a most-commonly-used order. Define the usage measure (such as file opens or folder visits) and store usage consistently against resource identities before implementation.
-- [ ] Make the active sort key and direction clear and apply the order consistently in grid and list views.
-- [ ] Preserve file selection and useful scroll position when changing order.
+- [x] Current-folder wildcard `*`/`?` and bounded regex selection, with matching options and selected-set actions.
+- [x] Name, MIME type, size and modification-time sorting with both directions; folders remain grouped first.
+- [x] Two-finger rectangle selection in ordinary and selection modes, plus Exit selection mode menus; user-confirmed.
+- [ ] Complete pattern/error, sort/selection/scroll and menu acceptance checks.
+- [ ] Add most-used sorting after defining usage statistics and stable resource identity.
 
 See [implementation status and open issues](implementation-status-open-issues.md) for completed work, storage compatibility gaps, and deferred performance work.
 
@@ -138,7 +131,7 @@ Format reference: [Microsoft FAT specification](https://www.scs.stanford.edu/~zy
 ### Mutable image source handling
 
 - [x] Identify live VM writes as the source-change warning cause; user confirmed the VM is running. Retain source revision protection.
-- [ ] Accept the user-requested tolerant live-copy/backup policy: timestamp/size changes invalidate source caches and reopen fresh reads, with one best-effort consistency warning. Actual unreadable files remain reported. Use stable-image copies for controlled performance/byte comparisons.
+- [x] Implement the user-requested tolerant live-copy/backup policy: timestamp/size changes invalidate source caches and reopen fresh reads, with one best-effort consistency warning. Actual unreadable files remain reported. Use stable-image copies for controlled performance/byte comparisons.
 - [ ] Capture a missed pane swipe with the new retained gesture trace; previous transfer-warning floods rotated out the needed events.
 
 ### Operation progress and navigation acceptance
@@ -151,3 +144,78 @@ Format reference: [Microsoft FAT specification](https://www.scs.stanford.edu/~zy
 - [x] Remove synchronous diagnostic file writes from touch/UI callers; coalesce transfer UI updates, release the coordinator lock before normal progress listeners, throttle notification updates and refresh terminal dialogs once.
 - [ ] Accept responsiveness changes and inspect retained main-thread I/O/stall/render evidence during Back/swipe failures. See [investigation](ui-responsiveness.md).
 - [ ] Use measured traces to prioritize remaining theme-icon disk reads, large grid/tree view construction and any remaining coordinator callback lock waits.
+
+## Navigation/menu/usage implementation follow-up (2026-10-24)
+
+Implemented nested File/Edit/View/Select/Settings menus, wildcard/regex selection, name/MIME/size/date sorting with direction, New document/archive templates, and the disk usage treemap. Removed the Virtual root swipe exclusion; changed viewer Back routing and moved the red-default activity light to the far right. These implementations require device acceptance; see [behavior, limits and checks](navigation-menus-disk-usage.md). Most-used sorting remains future work. Notifications, automatic successful-dialog dismissal and debug-toolbar placement are user-confirmed.
+
+## BitTorrent virtual filesystem (proposed)
+
+- [ ] Add a separate read-only storage provider for `.torrent` files and `magnet:` links through a shared torrent-engine adapter; do not put torrent-specific reads in viewers.
+- [ ] Fetch magnet metadata before listing, with explicit loading, unavailable-peer and cancellation states. Metadata discovery must not automatically download every payload file.
+- [ ] Expose torrent contents as normal folders/files supporting navigation, pins, selected-set copying, drag-out and existing viewers. Give each torrent a stable identity based on its info hash, independent of tracker URL ordering.
+- [ ] Implement on-demand piece requests, verified piece caching and seekable file reads. Random access may wait for missing pieces; report buffering/progress/timeouts instead of pretending every range is immediately available.
+- [ ] Allow archives and disk images inside torrents to mount through the existing seekable provider path, requesting only needed ranges where their formats allow it.
+- [ ] Distinguish not-yet-downloaded, waiting for peers, verified cached and failed/corrupt data. Torrent piece-hash checks remain mandatory regardless of optional post-copy verification.
+- [ ] Define cache quota/eviction, cache storage choice, resume/background execution, network/battery preferences and explicit upload/seeding controls. Do not treat cache eviction or unmounting as deleting remote swarm content.
+- [ ] Validate hostile metadata paths, overlapping piece/file boundaries, missing peers, cancellation, v1/v2/hybrid torrents and local fixture swarms. A torrent is not a writable copy/move destination.
+
+Feasibility reference: [libtorrent torrent handle API](https://www.libtorrent.org/reference-Torrent_Handle.html) supports metadata state, file priorities, piece deadlines and piece reads. Android engine/binding selection and packaging remain to be evaluated. This is a proposed feature, not implemented support.
+
+## Downloads organization by rules (requested; deferred)
+
+- [ ] Add optional organization of the Downloads directory using user-defined rules.
+- [ ] Define matching conditions such as filename wildcard/regex, MIME/file type, source and age, with configurable destination folders and rule order.
+- [ ] Provide preview/dry-run, conflict handling and an operation report before enabling automatic moves.
+- [ ] Reuse the shared provider/transfer system, preserving source files on incomplete or failed transfers and avoiding rules that repeatedly move the same file.
+- [ ] Define manual versus automatic triggering, background execution, exclusions and grant handling before implementation.
+
+Requested as a future feature only; do not implement as part of current container-link/navigation work.
+
+## Read-only overlay, home-screen shortcuts and widget (requested; deferred)
+
+- [ ] Add an explicitly enabled **Display over other apps** window resembling the file-display view, with the required Android overlay-permission flow and a normal-activity fallback.
+- [ ] Keep the overlay display/read-only and launch-only: browsing/opening items is allowed; deletion, modification and conversion between modes are unavailable there.
+- [ ] Long press anywhere in the overlay offers **Launch editor**, opening the full application/editor for modification rather than editing inside the overlay.
+- [ ] Provide a long-press action to add an arbitrary item to the Android home screen: files, folders, container links and other URI targets, using supported launcher shortcut APIs and preserving access requirements.
+- [ ] Later provide the floating-window-style display as a home-screen widget, adapting its read-only navigation and launch actions to Android widget capabilities.
+- [ ] Reuse the same URI/resource identities and MIME opening rules across normal browsing, overlay, shortcuts and widget; do not duplicate storage engines or bypass provider permissions.
+
+This is requested future work only; do not implement it as part of current container-link/disk-usage changes.
+
+## Handset confirmations and interaction follow-up (2026-10-24)
+
+- [x] SMB/Samba direct opening confirmed.
+- [x] Virtual root container links confirmed working.
+- [x] Rectangle selection confirmed functional; changed to two-finger dragging so one-finger scrolling remains available. Two-finger behavior is now user-confirmed.
+- [x] Pane swiping reported working on the latest build. Retain broader gesture checks as regression coverage.
+- [x] Disk usage current-folder view broadly accepted. Parent navigation now resolves above the original scan starting folder; updated behavior awaits confirmation.
+- [x] Removed the tree panel's separate hardcoded green tint in favor of the common theme background and secondary text colors.
+
+## Two-finger selection acceptance
+
+The user confirms the two-finger selection gesture working. It is now available directly in normal file browsing as well as selection mode, in grid/list views and for selectable Virtual root link entries. Drawing a rectangle enters selection mode automatically and preserves existing selected items. One-finger scrolling remains unchanged. The duplicate Virtual root breadcrumb and missing links on the Internal storage startup tree are both user-confirmed resolved.
+
+## Shared disk cache (implemented; device acceptance pending)
+
+- [x] Shared 200 MB default disk-data budget, separate configurable individual-file limit, persistent LRU eviction and active leases.
+- [x] Evict unused entries before offering Copy to folder / Raise cache limits; apply active theme and light/dark mode to capacity/settings dialogs.
+- [x] Integrate viewer/media/archive/compressed-image/icon cache allocations; preserve transactional work and recovery data outside eviction.
+- [ ] Device acceptance of eviction, active-file protection, copy/raise choices, restart behavior and themed dialogs. See [policy and scope](disk-cache-policy.md).
+
+## External write-back and cache expiry (implemented; device acceptance pending)
+
+- [x] External working-copy handoff with before/after-staging and completion source fingerprints; source-conflict choices for a new name/location or explicit overwrite.
+- [x] Durable unfinished external-edit review, explicit completion, writer-handle checks and verified publication without retaining version history.
+- [x] Six-hour idle cache expiry with a separate setting; active files and unfinished edits are exempt.
+- [ ] Accept real-editor handoff/return, conflict choices and recovery on device. See [write-back behavior and limits](external-edit-writeback.md).
+
+## Latest status and next acceptance pass
+
+- [x] Loading light: green pulses on reads, steady dim green while waiting, idle after completion; latest handset confirmation received.
+- [x] Duplicate Virtual root and missing startup tree links confirmed fixed; exit-selection action confirmed.
+- [ ] Confirm latest unrelated Internal storage breadcrumb removal before a remote connection.
+- [ ] Confirm image-viewer Back and disk usage Parent above the initial scan root.
+- [ ] Complete shared-cache and external-editor acceptance described above; these remain the next safety-focused checks.
+
+Historical build/test totals describe their original revisions. No tests or build were run for this documentation synchronization. Architecture work and deferred requests are summarized in [project status](project-status.md).

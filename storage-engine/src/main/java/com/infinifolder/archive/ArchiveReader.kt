@@ -24,9 +24,9 @@ import java.io.BufferedInputStream
 import java.io.File
 import java.io.InputStream
 
-class ArchiveReader(private val tempDir: File) {
+class ArchiveReader(private val tempDir: File, private val diskCache: com.infinifolder.storage.DiskCache? = null) {
 
-    private val discImageReader = DiscImageReader(tempDir)
+    private val discImageReader = DiscImageReader(tempDir, diskCache)
     private val nativeReader = NativeArchiveReader(tempDir)
 
     private fun nativeVolumes(name: String, input: () -> InputStream, local: File?, device: BlockDevice?, supplied: ArchiveVolumeSet?): ArchiveVolumeSet {
@@ -689,6 +689,11 @@ class ArchiveReader(private val tempDir: File) {
     }
 
     private fun materializeTempArchive(openStream: () -> InputStream): File {
+        if (diskCache != null) {
+            val lease = diskCache.stage("archive.tmp", input = openStream)
+            // Existing readers delete this transient source at close; the manager drops deleted entries.
+            return lease.file
+        }
         tempDir.mkdirs()
         val temp = File.createTempFile("inf_archive_", ".tmp", tempDir)
         openStream().use { input ->

@@ -1,5 +1,7 @@
 # Container mutation batches
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 Updated: 2026-10-23. Device copy and bulk-delete acceptance for the exercised FAT16 routes is recorded below.
 
 ## Behavior

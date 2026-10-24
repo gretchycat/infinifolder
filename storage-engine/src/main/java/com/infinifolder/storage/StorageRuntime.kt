@@ -17,6 +17,7 @@ class StorageRuntime private constructor(context: Context) {
     val local = LocalStorageProvider(app)
     val archives = ArchiveStorageProvider(app, local)
     val apps = AppsStorageProvider(app)
+    val containerLinks = ContainerLinksProvider(app)
     private val sftpFactory = SftpProviderFactory(app) { id -> connections.list().firstOrNull { it.id == id } }
     private val ftpFactory = FtpProviderFactory(app) { id -> connections.list().firstOrNull { it.id == id } }
     private val smbFactory = SmbProviderFactory(app) { id -> connections.list().firstOrNull { it.id == id } }
@@ -26,9 +27,35 @@ class StorageRuntime private constructor(context: Context) {
     val registry = StorageProviderRegistry().apply {
         register(SafProviderFactory()); register(sftpFactory); register(ftpFactory); register(smbFactory)
     }
-    val provider = RoutingStorageProvider(local, archives, apps, sftp, ftp, smb, SafProvider(app.contentResolver))
+    val provider = RoutingStorageProvider(local, archives, apps, sftp, ftp, smb, containerLinks, SafProvider(app.contentResolver),
+        uriResolver = { uri -> if (ContainerUris.networkType(uri) == null) uri else ContainerUris.resolve(uri, connections.list()) })
     init {
         DiagnosticLog.init(app)
+        containerLinks.validateTarget = validate@ { shortcut ->
+            val uri = android.net.Uri.parse(shortcut.targetUri)
+            // Saving an alias must not connect to a server; opening it validates remote access.
+            if (ContainerUris.networkType(uri) != null ||
+                com.infinifolder.archive.ArchiveUri.isArchiveUri(uri) ||
+                com.infinifolder.archive.ArchiveFormats.isArchive(uri.lastPathSegment.orEmpty()) ||
+                uri.scheme == "magnet" || uri.lastPathSegment.orEmpty().endsWith(".torrent", true)) return@validate
+            val ref = provider.refForUri(uri) ?: return@validate
+            val entry = (provider.stat(ref) as? ProviderResult.Success)?.value ?: return@validate // Offline links remain saveable.
+            if (!entry.metadata.isDirectory) {
+                if (com.infinifolder.archive.ArchiveFormats.isArchive(entry.metadata.name, entry.metadata.mimeType)) return@validate
+                val opened = provider.openSeekable(ref)
+                val image = if (opened is ProviderResult.Success) opened.value.use { device ->
+                    val header = ByteArray(minOf(device.size, 69632L).coerceAtLeast(0L).toInt())
+                    var read = 0
+                    while (read < header.size) {
+                        val n = device.readAt(read.toLong(), header, read, header.size - read)
+                        if (n <= 0) break
+                        read += n
+                    }
+                    FileMagicDetector.detectFromBytes(header.copyOf(read))?.isArchiveOrDiscImage == true
+                } else false
+                if (!image) throw IOException("Virtual root accepts links to containers, not regular files")
+            }
+        }
         archives.sourceProvider = provider
         archives.deviceResolver = { uri, writable -> SeekableSourceResolver.resolve(provider, uri, writable) }
         archives.streamResolver = { uri ->

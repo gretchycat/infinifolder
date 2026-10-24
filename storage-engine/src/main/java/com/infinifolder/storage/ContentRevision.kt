@@ -7,7 +7,7 @@ import java.security.MessageDigest
 data class ContentRevision(val size: Long, val sha256: String) {
     companion object {
         fun of(bytes: ByteArray): ContentRevision = bytes.inputStream().use(::read)
-        fun read(input: InputStream): ContentRevision {
+        fun read(input: InputStream): ContentRevision = StorageActivity.track(StorageActivity.Kind.VERIFICATION) {
             val digest = MessageDigest.getInstance("SHA-256")
             val buffer = ByteArray(64 * 1024)
             var size = 0L
@@ -17,7 +17,7 @@ data class ContentRevision(val size: Long, val sha256: String) {
                 digest.update(buffer, 0, n)
                 size += n
             }
-            return ContentRevision(size, digest.digest().joinToString("") { "%02x".format(it) })
+            ContentRevision(size, digest.digest().joinToString("") { "%02x".format(it) })
         }
     }
 }

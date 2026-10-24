@@ -1,5 +1,7 @@
 # Device dump follow-up
 
+Historical evidence: pending statements and test totals are revision-specific. The [current status](project-status.md) and [task list](feature-todo.md) supersede older acceptance labels. Reviewed 2026-10-24.
+
 Date: 2026-10-22. Evidence: the three `infinifolder-debug-20261022-2049*` / `205025-471` dump sets in the project root. The subsequent `205224-724` log adds no failure events after the previous dump.
 
 ## Confirmed export behavior

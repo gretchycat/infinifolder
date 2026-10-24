@@ -1,5 +1,7 @@
 # Decision 0002: optional direct access to primary shared storage
 
+Historical architectural decision. See [current architecture](../architecture.md) and [project status](../project-status.md) for subsequent implementation and limitations.
+
 Date: 2026-10-19
 
 Android 11+ prevents ACTION_OPEN_DOCUMENT_TREE from granting the primary storage root or Downloads. A fabricated list of standard directory names is neither complete nor accurate. The requested conventional root browser therefore needs direct filesystem access where Android permits it.

@@ -1,5 +1,7 @@
 # Complete disk image fixtures
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 Added 2026-10-23. The user confirms the delivered full-disk functionality working on the phone.
 
 Fixtures live in `filesystem-test-images/disks/`:

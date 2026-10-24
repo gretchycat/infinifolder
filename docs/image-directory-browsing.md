@@ -1,5 +1,7 @@
 # Directory-based image browsing
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 ## Motivation
 
 The 03:27 UTC device dump shows successful SFTP reads and LVM decoding, but the UI waits over 107 seconds while the ext catalog scans more than 113,000 entries. Full-volume enumeration before displaying a folder is inappropriate for a large remote system disk.

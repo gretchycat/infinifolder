@@ -1,5 +1,7 @@
 # RAR, ARJ, integrity and unreadable-source handling
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 Implemented 2026-10-23. The user confirms the delivered archive, copying, Zstandard/CPIO and full-disk functionality working on the phone. This is general acceptance; exhaustive corruption, format-version, provider and metadata coverage is not implied.
 
 ## Shared archive adapter
@@ -44,7 +46,7 @@ General phone acceptance is confirmed. Remaining specific coverage:
 - [ ] Check every provider route, missing first/last volumes, case-ambiguous sibling names and parts added/replaced during copying.
 - [ ] Confirm destination failures and failed cleanup cannot turn into source-skip warnings or source deletion.
 - [ ] Extend multipart integration to ZIP/7z and add detailed metadata-preservation coverage.
-- [x] Enable CAB through the same adapter, with linked-volume selection and fixtures. Handset acceptance remains pending.
+- [x] Enable CAB through the same adapter, with linked-volume selection and fixtures. General CAB handset support is user-confirmed; variant-specific checks remain.
 - [ ] Upgrade the native engine.
 
 No automated native archive implementation tests were run in this batch. Full-disk integration checks are documented separately in [partitioned disk fixtures](partitioned-disk-fixtures.md).

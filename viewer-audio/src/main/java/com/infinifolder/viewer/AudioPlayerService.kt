@@ -79,6 +79,8 @@ class AudioPlayerService : Service() {
         }
     }
 
+    @Volatile var cacheFailure: Pair<Throwable, Uri>? = null
+
     private val playerLock = Any()
     private val progressLock = Any()
     private var mediaPlayer: MediaPlayer? = null
@@ -445,7 +447,11 @@ class AudioPlayerService : Service() {
         }
         Thread {
             if (loadCounter.get() != thisLoadId) return@Thread
-            val source = try { MediaSourceAdapter.stage(this, track.uri) } catch (e: Exception) { null }
+            cacheFailure = null
+            val source = try { MediaSourceAdapter.stage(this, track.uri) } catch (e: Exception) {
+                if (com.infinifolder.storage.DiskCache.capacityError(e) != null) cacheFailure = e to track.uri
+                null
+            }
             if (loadCounter.get() != thisLoadId) { source?.close(); return@Thread }
             cleanupStagedFile()
             stagedSource = source

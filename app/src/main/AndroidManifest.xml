@@ -47,5 +47,6 @@
             android:name=".ops.OperationService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <meta-data android:name="com.infinifolder.CACHE_COPY_HANDLER" android:value="com.infinifolder.MainActivity" />
     </application>
 </manifest>

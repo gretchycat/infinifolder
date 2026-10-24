@@ -170,28 +170,29 @@ class SftpClientPool : Closeable {
 
     fun openStream(config: SftpConfig, credentials: SftpCredentials, remotePath: String): InputStream {
         val channel = openReadChannel(config, credentials)
-        val sftpStream = try { channel.get(remotePath) } catch (e: Exception) {
-            channel.disconnect()
+        val guard = SftpIoGuard(config.timeoutSeconds) { channel.disconnect() }
+        val sftpStream = try { guard.call("open read") { channel.get(remotePath, guard.monitor) } } catch (e: Exception) {
+            guard.close(); channel.disconnect()
             throw e
         }
         val buffered = java.io.BufferedInputStream(sftpStream, 128 * 1024)
         return object : InputStream() {
             private var closed = false
 
-            override fun read(): Int = buffered.read()
+            override fun read(): Int = guard.call("read") { buffered.read() }
 
-            override fun read(b: ByteArray): Int = buffered.read(b, 0, b.size)
+            override fun read(b: ByteArray): Int = guard.call("read") { buffered.read(b, 0, b.size) }
 
-            override fun read(b: ByteArray, off: Int, len: Int): Int = buffered.read(b, off, len)
+            override fun read(b: ByteArray, off: Int, len: Int): Int = guard.call("read") { buffered.read(b, off, len) }
 
-            override fun skip(n: Long): Long = buffered.skip(n)
+            override fun skip(n: Long): Long = guard.call("skip") { buffered.skip(n) }
 
             override fun available(): Int = buffered.available()
 
             override fun close() {
                 if (!closed) {
                     closed = true
-                    try { buffered.close() } finally { channel.disconnect() }
+                    try { guard.call("close read") { buffered.close() } } finally { guard.close(); channel.disconnect() }
                 }
             }
         }
@@ -199,8 +200,9 @@ class SftpClientPool : Closeable {
 
     fun openWriteStream(config: SftpConfig, credentials: SftpCredentials, remotePath: String): OutputStream {
         val channel = openReadChannel(config, credentials)
-        val sftpOut = try { channel.put(remotePath, ChannelSftp.OVERWRITE) } catch (e: Exception) {
-            channel.disconnect()
+        val guard = SftpIoGuard(config.timeoutSeconds) { channel.disconnect() }
+        val sftpOut = try { guard.call("open write") { channel.put(remotePath, guard.monitor, ChannelSftp.OVERWRITE) } } catch (e: Exception) {
+            guard.close(); channel.disconnect()
             throw e
         }
         val buffered = java.io.BufferedOutputStream(sftpOut, 128 * 1024)
@@ -208,26 +210,26 @@ class SftpClientPool : Closeable {
             private var closed = false
 
             override fun write(b: Int) {
-                buffered.write(b)
+                guard.call("write") { buffered.write(b) }
             }
 
             override fun write(b: ByteArray) {
-                buffered.write(b, 0, b.size)
+                guard.call("write") { buffered.write(b, 0, b.size) }
             }
 
             override fun write(b: ByteArray, off: Int, len: Int) {
-                buffered.write(b, off, len)
+                guard.call("write") { buffered.write(b, off, len) }
             }
 
             override fun flush() {
-                buffered.flush()
+                guard.call("flush write") { buffered.flush() }
             }
 
             override fun close() {
                 if (!closed) {
                     closed = true
                     // close flushes buffered bytes and waits for SFTP completion; failures must escape.
-                    try { buffered.close() } finally { channel.disconnect() }
+                    try { guard.call("close write") { buffered.close() } } finally { guard.close(); channel.disconnect() }
                 }
             }
         }

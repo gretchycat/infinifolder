@@ -1,5 +1,7 @@
 # NTFS image support
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 Implemented 2026-10-23. The user confirms NTFS working on the handset. This general confirmation does not establish all of the specific checks below.
 
 ## Scope
@@ -34,4 +36,4 @@ Use copies of `filesystem-test-images/filesystems/windows/ntfs-populated.img` an
 - [ ] Exercise NTFS 3.0, supported sector sizes, index subtrees, network/partition/virtual-disk routes, invalid fixups, stale references and incomplete reads.
 - [ ] Check explicit errors for compressed/encrypted data, named streams, dirty volumes and attribute extension records.
 
-Build log: `build/ntfs-support-build.log`. No automated implementation tests were added or run. NTFS support remains a limited read-only implementation until the above coverage is accepted; RAR/ARJ/CAB and fuller NTFS coverage remain future work. A separate limited HFS/HFS+/HFSX reader has now been added; see [scope and checks](hfs-support.md).
+Build log: `build/ntfs-support-build.log`. No automated implementation tests were added or run. NTFS support remains a limited read-only implementation until the above coverage is accepted; RAR/ARJ/CAB readers have since been implemented and generally confirmed; fuller NTFS coverage remains future work. A separate limited HFS/HFS+/HFSX reader has now been added; see [scope and checks](hfs-support.md).

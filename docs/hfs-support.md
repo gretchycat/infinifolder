@@ -1,5 +1,7 @@
 # HFS image support
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 Implemented 2026-10-23. The user confirms classic HFS working and, after the header-offset fix, confirms HFS+ and HFSX working on the handset. This general confirmation does not establish every compressed-image, copied-byte, metadata or edge-case check below.
 
 ## Scope

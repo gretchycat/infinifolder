@@ -30,7 +30,7 @@ All routed copy/move uses `StorageTransfers`/`FileOperations`: preflight complet
 
 Editors load through `MediaSourceAdapter` and retain original byte revisions. Incomplete text previews cannot overwrite originals. `ContentReplacement` rejects stale source fingerprints, uses atomic local replacement when available, or preserves a synced checksummed recovery original before streamed writes. Failed writes attempt verified rollback. `SaveRecovery` records interrupted sessions and exposes explicit export/restore/discard operations; it never automatically overwrites a source during startup.
 
-The current sampled image editor exports a new PNG. External handlers receive read-only snapshots; external edit write-back is future work. Owned staged files have explicit cleanup tokens, so releasing a viewer cannot delete a borrowed original.
+The current sampled image editor exports a new PNG. External browser opens use a durable writable working-copy session with before/after-staging and completion source fingerprints. Explicit finish/conflict choices publish through the same guarded replacement path; unfinished edits survive restart outside disposable cache. See [external editing](external-edit-writeback.md). Owned staged files have explicit cleanup tokens, so releasing a viewer cannot delete a borrowed original.
 
 ## MIME, icons, and links
 
@@ -52,4 +52,20 @@ The destination picker queries provider CREATE capabilities asynchronously, incl
 
 ### Isolated destination batches
 
-`StorageProvider.beginWriteBatch` optionally supplies a `StorageWriteBatch`: a private destination provider, explicit commit and discard-on-close. `RoutingStorageProvider` dispatches the hook; `FileOperations` retains common preflight, collision handling, link policy and verification. Writable top-level ZIP/FAT mounts implement isolated copy/link sessions. ZIP entries remain an overlay until one rebuild; images share one local snapshot. Publication uses the existing content-replacement/recovery contract. See [container batching](container-batching.md).
+`StorageProvider.beginWriteBatch` optionally supplies a `StorageWriteBatch`: a private destination provider, explicit commit and discard-on-close. `RoutingStorageProvider` dispatches the hook; `FileOperations` retains common preflight, collision handling, link policy and verification. Writable supported top-level archive/FAT mounts implement isolated sessions; TAR and compressed wrappers rebuild/recompress before publication. ZIP entries remain an overlay until one rebuild; images share one local snapshot. Publication uses the existing content-replacement/recovery contract. See [container batching](container-batching.md).
+
+## Browser state and derived views
+
+Virtual root combines system-managed sources and mutable container-link records; ordinary file payloads are rejected there. Credentials remain in their existing secure stores. Tree source discovery has its own generation, independent of folder loads. Link jumps reset unrelated local history. See [container links](container-links.md).
+
+Shared menus, MIME sorting, pattern selection, pins and two-finger selection use provider identities. Disk usage scans recursive directory sizes but displays only immediate children, never automatically mounting archive/image files. See [navigation and usage](navigation-menus-disk-usage.md).
+
+## Cache, external sessions and activity
+
+DiskCache accounts reusable disk data across viewers and mounts: 200 MiB default, separate file limit, LRU before capacity choices and six-hour idle expiry. Active leases are protected. Transaction/recovery/unfinished editor data is outside eviction. Some nested file exports still pin data for the process lifetime. See [policy](disk-cache-policy.md).
+
+External edit sessions stage and recheck source bytes, then retain a durable working copy. Explicit completion checks source and edited bytes, uses guarded replacement and verifies output. Backends without conditional writes cannot eliminate the final concurrent-write race.
+
+StorageActivity supplies loading/write/verification counters and read pulses. The toolbar uses green reads, steady dim-green waiting, red writes and amber verification. Debug dumping is exposed on the toolbar only in debug builds. Operations survive Activity changes through the foreground service/coordinator; process-death durable queues remain unimplemented.
+
+Current confirmations, acceptance gaps and remaining architecture work are maintained in [project status](project-status.md).

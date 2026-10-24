@@ -490,9 +490,11 @@ class VideoPlayerActivity : ViewerActivity() {
 
         Thread {
             cleanupStagedFile()
+            var loadError: Exception? = null
             val file = try {
                 MediaSourceAdapter.stage(this, uri).also { stagedSource = it }.file
             } catch (e: Exception) {
+                loadError = e
                 null
             }
             stagedFile = file
@@ -502,7 +504,9 @@ class VideoPlayerActivity : ViewerActivity() {
                     videoView.setVideoPath(file.absolutePath)
                 } else {
                     loadingIndicator.visibility = View.GONE
-                    Toast.makeText(this, "Failed to load video source", Toast.LENGTH_SHORT).show()
+                    val error = loadError
+                    if (error == null || !CacheFailureUi.offerCopy(this, error, uri))
+                        Toast.makeText(this, "Failed to load video source", Toast.LENGTH_SHORT).show()
                 }
             }
         }.start()

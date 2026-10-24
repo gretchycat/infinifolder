@@ -36,7 +36,8 @@ data class OperationSnapshot(
     val indeterminate: Boolean = false,
     val currentItemBytes: Long? = null,
     val currentItemTotalBytes: Long? = null,
-    val warningCount: Int = 0
+    val warningCount: Int = 0,
+    val lastUpdateMillis: Long = System.currentTimeMillis()
 ) {
     /** Overall totals stay visible during per-file preparation/verification phases. */
     val overallProgressPercent: Int
@@ -136,7 +137,8 @@ class OperationCoordinator(private val concurrency: Int = 1) {
                         )
                     }
                 }, { token.get() })
-                update(id) { it.copy(state = if (token.get()) OperationState.CANCELLED else OperationState.COMPLETE, indeterminate = false) }
+                update(id) { it.copy(state = if (token.get()) OperationState.CANCELLED else OperationState.COMPLETE, indeterminate = false,
+                    message = if (token.get()) "Cancelled" else if (it.warningCount > 0) "Completed with ${it.warningCount} warnings" else "Completed") }
             } catch (e: Exception) {
                 com.infinifolder.storage.DiagnosticLog.record("operation.failed", label, e)
                 update(id) {
@@ -214,7 +216,9 @@ class OperationCoordinator(private val concurrency: Int = 1) {
     private fun update(id: String, transform: (OperationSnapshot) -> OperationSnapshot) {
         synchronized(this) {
             val record = records[id] ?: return
-            records[id] = transform(record)
+            val next = transform(record).copy(lastUpdateMillis = System.currentTimeMillis())
+            records[id] = next
+            if (record.state != next.state) com.infinifolder.storage.DiagnosticLog.record("operation.state", "id=$id label=${next.label} state=${next.state} bytes=${next.bytes} warnings=${next.warningCount}")
         }
         // Notification/listener work can perform Binder calls. Never hold the
         // coordinator lock while UI callers are waiting to read snapshots.

@@ -1,5 +1,7 @@
 # UFS and legacy archive support
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 Updated 2026-10-23. The user confirms that the UFS fixtures and compressed UFS work on the phone.
 
 ## Implemented

@@ -14,7 +14,7 @@ object ContentReplacement {
             { provider.replaceContent(ref, data) }, { it.write(data) })
 
     fun replaceFromFile(provider: StorageProvider, ref: ResourceRef, file: File, recoveryRoot: File,
-        expectedRevision: ContentRevision? = null): ProviderResult<Unit> = try {
+        expectedRevision: ContentRevision? = null, preCommitCheck: (() -> Unit)? = null): ProviderResult<Unit> = try {
         val info = (provider.fileSystemInfo(ref) as? ProviderResult.Success)?.value
         info?.requireFileFits("updated container", file.length())
         info?.availableBytes?.let { available ->
@@ -23,12 +23,13 @@ object ContentReplacement {
         }
         val expected = file.inputStream().use(ContentRevision::read)
         replaceWith(provider, ref, recoveryRoot, expectedRevision, expected,
-            { provider.replaceContentFromFile(ref, file) }, { output -> file.inputStream().use { it.copyTo(output) } })
+            { provider.replaceContentFromFile(ref, file) }, { output -> file.inputStream().use { it.copyTo(output) } }, preCommitCheck)
     } catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot prepare replacement", e) }
 
     @Synchronized private fun replaceWith(provider: StorageProvider, ref: ResourceRef, recoveryRoot: File,
         expectedRevision: ContentRevision?, expectedContent: ContentRevision,
-        nativeReplace: () -> ProviderResult<Unit>, write: (java.io.OutputStream) -> Unit): ProviderResult<Unit> {
+        nativeReplace: () -> ProviderResult<Unit>, write: (java.io.OutputStream) -> Unit,
+        preCommitCheck: (() -> Unit)? = null): ProviderResult<Unit> {
         if (expectedRevision != null) {
             val current = try { openRead(provider, ref).use(ContentRevision::read) }
                 catch (e: Exception) { return ProviderResult.Failure("Cannot verify original: ${e.message}", e) }
@@ -37,6 +38,8 @@ object ContentReplacement {
                 return ProviderResult.Failure(RevisionConflictException().message!!, RevisionConflictException())
             }
         }
+        try { preCommitCheck?.invoke() }
+        catch (error: Exception) { return ProviderResult.Failure(error.message ?: "Source changed before save", error) }
         val native = nativeReplace()
         if (native !is ProviderResult.Unsupported) return native
         val session = File(recoveryRoot, UUID.randomUUID().toString())
@@ -65,6 +68,7 @@ object ContentReplacement {
             if ((expectedRevision != null && preserved != expectedRevision) || openRead(provider, ref).use(ContentRevision::read) != preserved) {
                 throw RevisionConflictException()
             }
+            preCommitCheck?.invoke()
             SaveRecovery.record(session, ref, "writing", preserved)
             writeStarted = true
             openWrite(provider, ref).use { output -> write(output); output.flush() }

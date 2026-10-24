@@ -1,5 +1,7 @@
 # Independent viewer applications
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 Each viewer is an Android library that depends on `:viewer-common` and `:storage-engine`, without depending on the browser or its Activity. Its manifest registers its viewer Activity/service. A separate application can include the library and launch it through `ViewerLaunch` with a resource entry.
 
 The supplied `:viewer-host` provides a launcher document picker, Android VIEW/EDIT entry point for content URIs, recovery, and debug dump controls.

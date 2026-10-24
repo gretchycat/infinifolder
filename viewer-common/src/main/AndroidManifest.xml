@@ -1,3 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application><activity android:name="com.infinifolder.viewer.DiagnosticsActivity" android:exported="false" /><activity android:name="com.infinifolder.viewer.SaveRecoveryActivity" android:exported="false" /></application>
+    <application android:enableOnBackInvokedCallback="true">
+        <provider android:name="com.infinifolder.viewer.ExternalEditProvider" android:authorities="${applicationId}.external-edit" android:exported="false" android:grantUriPermissions="true" />
+        <activity android:name="com.infinifolder.viewer.ExternalEditActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" /><activity android:name="com.infinifolder.viewer.CacheCopyActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" /><activity android:name="com.infinifolder.viewer.DiagnosticsActivity" android:exported="false" /><activity android:name="com.infinifolder.viewer.SaveRecoveryActivity" android:exported="false" /></application>
 </manifest>

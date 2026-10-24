@@ -1,5 +1,7 @@
 # Code consistency audit and future task list
 
+Historical evidence: pending statements and test totals are revision-specific. The [current status](project-status.md) and [task list](feature-todo.md) supersede older acceptance labels. Reviewed 2026-10-24.
+
 Date: 2026-10-22. Source revision: `2c4de44`.
 
 This records the original static audit of revision `2c4de44`. Findings and evidence line numbers describe that original source; later implementation status is tracked below and in the progress document. Source links have been updated after module extraction. Device, server, and external application behavior still requires acceptance validation.
@@ -9,7 +11,7 @@ This records the original static audit of revision `2c4de44`. Findings and evide
 The findings below record the original source audit. Implementation has now started; see [storage safety and architecture progress](storage-safety-progress.md) for the changes, validation, and remaining limitations. Checked tasks indicate implemented changes, not completed device/server acceptance testing.
 
 
-Current implementation includes application-owned storage lifetime, resource capability/parent/link hooks, independent viewer/editor modules and a selectable standalone host, source revision checks and explicit recovery, a shared MIME/icon/package registry, common link resolution, and folder-based log/screenshot dumps. The regression suite passed **223 tests**; a PDF-only host compiled without the browser. Checked items denote implemented foundations; the acceptance checklist remains open until device/backend validation. Historical paragraphs below intentionally retain the originally observed defects. A03's cross-provider guarantees still need live SAF/FTP validation; A10/A11 (all mount mutations/cache cases), A12 (external write-back), A21 (full action-service extraction), and A22–A24 (ownership, staging, inner filesystem semantics) still have remaining work. See the progress document for current limitations.
+Current implementation includes application-owned storage lifetime, resource capability/parent/link hooks, independent viewer/editor modules and a selectable standalone host, source revision checks and explicit recovery, a shared MIME/icon/package registry, common link resolution, and folder-based log/screenshot dumps. The regression suite passed **223 tests**; a PDF-only host compiled without the browser. Checked items denote implemented foundations; the acceptance checklist remains open until device/backend validation. Historical paragraphs below intentionally retain the originally observed defects. A03's cross-provider guarantees still need live SAF/FTP validation; A10/A11 (all mount mutations/cache cases), A12 (external write-back implementation complete; real-editor acceptance pending), A21 (full action-service extraction), and A22–A24 (ownership, staging, inner filesystem semantics) still have remaining work. See the progress document for current limitations.
 
 ## Intended behavior
 

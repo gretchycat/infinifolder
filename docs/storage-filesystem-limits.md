@@ -1,5 +1,7 @@
 # Filesystem limits and destination preflight
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 Updated: 2026-10-22.
 
 ## User-visible behavior

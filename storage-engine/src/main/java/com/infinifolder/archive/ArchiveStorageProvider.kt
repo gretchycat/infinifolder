@@ -127,6 +127,10 @@ class ArchiveStorageProvider(
         is ProviderResult.Unsupported -> result
     }
 
+    fun invalidateReadCaches() {
+        synchronized(treeCache) { treeCache.evictAll() }
+    }
+
     private val seekDepth = ThreadLocal.withInitial { 0 }
 
     override fun openSeekable(ref: ResourceRef, writable: Boolean): ProviderResult<BlockDevice> {
@@ -169,7 +173,9 @@ class ArchiveStorageProvider(
     var metadataResolver: ((Uri) -> Pair<Long?, Long?>?)? = null
     var deviceResolver: ((Uri, Boolean) -> BlockDevice?)? = null
 
-    val reader = ArchiveReader(File(customCacheDir ?: context.cacheDir, "archive_temp"))
+    private val diskCache by lazy { com.infinifolder.storage.DiskCache.get(context) }
+    // Custom paths are isolated transaction scratch/test providers, not reusable shared read caches.
+    val reader = ArchiveReader(File(customCacheDir ?: context.cacheDir, "archive_temp"), if (customCacheDir == null) diskCache else null)
     private val treeCache = LruCache<String, ArchiveTree>(64)
     private val treeLoads = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<ArchiveTree>>()
 
@@ -347,28 +353,13 @@ class ArchiveStorageProvider(
                 if (device != null) device
                 else if (file != null) FileBlockDevice(java.io.RandomAccessFile(file, "r"), true, ownsFile = true)
                 else {
-                    val directory = File(getCacheRoot(), "archive_volumes").apply { mkdirs() }
-                    val expected = getSourceMetadata(uri).first
-                    ContainerSpace.require(directory, expected ?: 0)
-                    val staged = File.createTempFile("volume-", ".tmp", directory)
+                    val lease = diskCache.stage(member, getSourceMetadata(uri).first, input = input)
                     try {
-                        input().use { stream -> staged.outputStream().use { out ->
-                            val buffer = ByteArray(128 * 1024)
-                            var count = 0L
-                            while (true) {
-                                val n = stream.read(buffer)
-                                if (n < 0) break
-                                if (Thread.currentThread().isInterrupted) throw java.io.InterruptedIOException("Volume staging cancelled")
-                                ContainerSpace.require(directory, n.toLong())
-                                out.write(buffer, 0, n); count += n
-                            }
-                            if (expected != null && count != expected) throw IOException("Incomplete archive volume: $member")
-                        } }
-                        val backing = FileBlockDevice(java.io.RandomAccessFile(staged, "r"), true, ownsFile = true)
+                        val backing = FileBlockDevice(java.io.RandomAccessFile(lease.file, "r"), true, ownsFile = true)
                         object : BlockDevice by backing {
-                            override fun close() { try { backing.close() } finally { staged.delete() } }
+                            override fun close() { try { backing.close() } finally { lease.close() } }
                         }
-                    } catch (e: Throwable) { staged.delete(); throw e }
+                    } catch (error: Throwable) { lease.close(); throw error }
                 }
             }
         }
@@ -429,10 +420,7 @@ class ArchiveStorageProvider(
         val (openStream, localFile, dev) = resolveSource(sourceUri)
         val archiveName = getSourceName(sourceUri)
         com.infinifolder.storage.DiagnosticLog.record("archive.tree.begin", "source=$archiveName seekable=${dev != null} deleted=$deleted directory=$imageDirectory key=${sha256(cacheKey).take(12)} size=$size modified=$modified")
-        if (dev == null && localFile == null && ArchiveFormats.isDiscImage(archiveName) && size != null && size > MAX_REMOTE_DISC_IMAGE_SIZE) {
-            val formatted = android.text.format.Formatter.formatShortFileSize(context, size)
-            throw IOException("Disk image '$archiveName' ($formatted) is too large to stream over network. Download the file locally to inspect its contents.")
-        }
+
         val tree = try { if (deleted) reader.buildDeletedFatTree(sourceUri, archiveName, openStream, localFile, dev)
             else reader.buildTree(sourceUri, archiveName, openStream, localFile, dev, volumes, directoryPath = imageDirectory) }
             finally { dev?.close() }
@@ -526,30 +514,17 @@ class ArchiveStorageProvider(
                 segment.replace(':', '_').replace('\u0000', '_')
             }
 
-        val cacheBase = File(getCacheRoot(), sha256(sourceUri.toString()) + "/" + java.util.UUID.randomUUID()).apply { mkdirs() }
-        val targetFile = File(cacheBase, sanitizedRelativePath)
-        require(targetFile.canonicalFile.toPath().startsWith(cacheBase.canonicalFile.toPath())) { "Archive path escapes cache" }
-
         val tree = getArchiveTree(sourceUri, ArchiveUri.isDeletedView(archiveUri), entryPath.substringBeforeLast('/', ""))
         val entry = tree.getEntry(entryPath)
-        targetFile.parentFile?.mkdirs()
-        val canonicalPath = entry?.path ?: entryPath
-        val (openStream, localFile, dev) = resolveSource(sourceUri)
-        val extracted = try {
-            if (ArchiveUri.isDeletedView(archiveUri)) {
-                reader.openDeletedFatEntry(archiveName, canonicalPath, openStream, localFile, dev).use { input ->
-                    targetFile.outputStream().use { input.copyTo(it) }
-                }
-                targetFile
-            } else reader.extractEntry(archiveName, canonicalPath, targetFile, openStream, localFile, dev, archiveVolumes(sourceUri))
+        // File-returning callers may hand this to another app or retain it as a nested mount.
+        // Keep its lease for the process lifetime rather than guessing when that consumer finishes.
+        val lease = diskCache.stage(entry?.name ?: sanitizedRelativePath.substringAfterLast('/'), entry?.sizeBytes) {
+            openStream(archiveUri)
         }
-            catch (e: Exception) { targetFile.delete(); throw e }
-            finally { dev?.close() }
-        if (entry?.modifiedAtMillis != null && entry.modifiedAtMillis > 0L) {
-            extracted.setLastModified(entry.modifiedAtMillis)
-        }
-        return extracted
+        retainedCacheLeases.add(lease)
+        return lease.file
     }
+    private val retainedCacheLeases = java.util.concurrent.ConcurrentLinkedQueue<java.io.Closeable>()
 
     fun openStream(archiveUri: Uri): InputStream {
         val sourceUri = ArchiveUri.getSourceUri(archiveUri)
@@ -1033,6 +1008,5 @@ class ArchiveStorageProvider(
         ProviderResult.Unsupported(ResourceCapability.MOVE)
 
     companion object {
-        const val MAX_REMOTE_DISC_IMAGE_SIZE = 512L * 1024L * 1024L // 512 MB
     }
 }

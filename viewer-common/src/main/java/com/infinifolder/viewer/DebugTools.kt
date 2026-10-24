@@ -164,9 +164,28 @@ open class ViewerActivity : Activity() {
     private var backNavigation: java.io.Closeable? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        backNavigation = ActivityBackNavigation.register(this) { onBackPressed() }
         DebugTools.install(application)
         com.infinifolder.theme.ThemeManager.init(applicationContext)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        backNavigation?.close()
+        backNavigation = ActivityBackNavigation.register(this) { onBackPressed() }
+    }
+
+    override fun onPause() {
+        backNavigation?.close()
+        backNavigation = null
+        super.onPause()
+    }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+            if (event.action == android.view.KeyEvent.ACTION_UP && !event.isCanceled) onBackPressed()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     @Suppress("DEPRECATION")

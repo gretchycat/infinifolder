@@ -30,7 +30,7 @@ import java.util.TimeZone
  * - MBR and GPT partitioned disk images (.img, .raw)
  * - Transparent decompression for .gz, .bz2, .bz, .xz, .lzma, .zst wrapped disc images
  */
-class DiscImageReader(private val tempDir: File) {
+class DiscImageReader(private val tempDir: File, private val diskCache: com.infinifolder.storage.DiskCache? = null) {
     private class UnrecognizedFilesystem(offset: Long) : IOException("Unrecognized filesystem at offset $offset")
 
     data class DiscEntry(
@@ -455,6 +455,21 @@ class DiscImageReader(private val tempDir: File) {
 
         if (writable) {
             throw IOException("Cannot write to compressed or stream-only disc image")
+        }
+
+        if (diskCache != null) {
+            val key = if (!freshSnapshot && localFile != null && localFile.isFile)
+                "decompressed:${localFile.canonicalPath}:${localFile.length()}:${localFile.lastModified()}" else null
+            val lease = diskCache.stage("decompressed-image.raw", key = key) {
+                openDecompressedStream(if (localFile != null && localFile.exists()) localFile.inputStream() else openStream(), lowerName)
+            }
+            return lease.use {
+                RandomAccessFile(lease.file, "r").use { raf ->
+                    val dev = VmDiskDecoder.open(raf, isReadOnly = true, baseFile = lease.file)
+                        ?: FileBlockDevice(raf, isReadOnly = true)
+                    dev.use(block)
+                }
+            }
         }
 
         tempDir.mkdirs()

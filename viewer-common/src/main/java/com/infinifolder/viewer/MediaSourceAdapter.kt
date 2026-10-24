@@ -85,51 +85,20 @@ object MediaSourceAdapter {
      * (e.g. MediaPlayer, VideoView) require a local file descriptor or path.
      * Local files on the filesystem are returned directly without duplicate copies.
      */
-    class StagedSource(val file: File, private val owned: Boolean) : java.io.Closeable {
-        override fun close() { if (owned) file.delete() }
+    class StagedSource(val file: File, private val lease: java.io.Closeable? = null) : java.io.Closeable {
+        override fun close() { lease?.close() }
     }
 
     fun stage(context: Context, uri: Uri, fileName: String? = null): StagedSource {
+        val cache = com.infinifolder.storage.DiskCache.get(context)
         val local = resolveLocalFile(context, uri)
-        return if (local != null && local.isFile && local.canRead()) StagedSource(local, false)
-            else StagedSource(stageToTempFile(context, uri, fileName), true)
-    }
-
-    private fun stageToTempFile(
-        context: Context,
-        uri: Uri,
-        fileName: String? = null,
-        maxBytes: Long = 500L * 1024L * 1024L,
-        onProgress: ((Long, Long) -> Unit)? = null
-    ): File {
-        val name = fileName ?: uri.lastPathSegment?.substringAfterLast('/') ?: "media_staged"
-        val cleanName = name.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
-        val cacheDir = File(context.cacheDir, "media_staging").apply {
-            mkdirs()
-            setReadable(true, false)
-            setExecutable(true, false)
-        }
-        val temp = File.createTempFile("media_", "_$cleanName", cacheDir)
-        temp.deleteOnExit()
-
-        try {
-            openStream(context, uri).use { input ->
-                temp.outputStream().use { output ->
-                    val buf = ByteArray(64 * 1024)
-                    var total = 0L
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        if (total + n > maxBytes) throw IOException("File exceeds maximum staging limit of ${maxBytes / (1024 * 1024)} MB")
-                        output.write(buf, 0, n)
-                        total += n
-                        onProgress?.invoke(total, -1L)
-                    }
-                }
-            }
-        } catch (e: Exception) { temp.delete(); throw e }
-        temp.setReadable(true, false)
-        return temp
+        if (local != null && local.isFile && local.canRead()) return StagedSource(local, cache.pin(local))
+        val provider = com.infinifolder.storage.StorageRuntime.get(context).provider
+        val metadata = provider.refForUri(uri)?.let { (provider.stat(it) as? ProviderResult.Success)?.value?.metadata }
+        val key = metadata?.takeIf { it.sizeBytes != null && (it.modifiedAtMillis ?: 0) > 0 }
+            ?.let { "viewer:$uri:${it.sizeBytes}:${it.modifiedAtMillis}" }
+        val lease = cache.stage(fileName ?: metadata?.name ?: "media", metadata?.sizeBytes, key) { openStream(context, uri) }
+        return StagedSource(lease.file, lease)
     }
 
     fun isWritable(context: Context, uri: Uri): Boolean {

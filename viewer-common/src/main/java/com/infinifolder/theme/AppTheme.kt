@@ -30,6 +30,9 @@ data class ThemeColors(
     val buttonText: Int,
     val isDark: Boolean = true,
     val fontMonospace: Boolean = false,
+    val activityLight: Int = 0xFFE53935.toInt(),
+    val loadingActivityLight: Int = 0xFF4CAF50.toInt(),
+    val verificationActivityLight: Int = 0xFFFFB300.toInt(),
     val cornerRadiusDp: Int = 8,
     val spectrumColors: IntArray = intArrayOf(
         0xFFFF0000.toInt(), 0xFFFF7700.toInt(), 0xFFFFFF00.toInt(), 0xFF00FF00.toInt(), 0xFF00FFFF.toInt(), 0xFF0000FF.toInt()

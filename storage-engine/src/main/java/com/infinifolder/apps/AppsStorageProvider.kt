@@ -71,10 +71,6 @@ class AppsStorageProvider(
         }
     )
 
-    private val iconDiskCacheDir: File? by lazy {
-        context?.cacheDir?.let { File(it, "app_icons").apply { mkdirs() } }
-    }
-
     private val labelCacheFile: File? by lazy {
         context?.cacheDir?.let { File(it, "app_labels_v1.json") }
     }
@@ -248,17 +244,14 @@ class AppsStorageProvider(
         val memKey = "$packageName:$targetSize"
         iconMemoryCache[memKey]?.let { return it }
 
-        val safePkg = packageName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-        val diskFile = iconDiskCacheDir?.let { File(it, "${safePkg}_${targetSize}.png") }
-        if (diskFile != null && diskFile.exists() && diskFile.length() > 0L) {
-            try {
-                val decoded = BitmapFactory.decodeFile(diskFile.absolutePath)
-                if (decoded != null) {
-                    iconMemoryCache[memKey] = decoded
-                    return decoded
-                }
-            } catch (_: Throwable) {}
-        }
+        val cache = context?.let { com.infinifolder.storage.DiskCache.get(it) }
+        val diskKey = "app-icon:$packageName:$targetSize"
+        try {
+            cache?.acquire(diskKey)?.use { lease ->
+                val decoded = BitmapFactory.decodeFile(lease.file.absolutePath)
+                if (decoded != null) { iconMemoryCache[memKey] = decoded; return decoded }
+            }
+        } catch (_: Exception) {}
 
         val pm = packageManager ?: return null
         return try {
@@ -268,14 +261,13 @@ class AppsStorageProvider(
             drawable.setBounds(0, 0, canvas.width, canvas.height)
             drawable.draw(canvas)
             iconMemoryCache[memKey] = bitmap
-            if (diskFile != null) {
+            if (cache != null) {
                 try {
-                    val tmpFile = File(diskFile.parentFile, "${diskFile.name}.tmp")
-                    FileOutputStream(tmpFile).use { out ->
-                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    cache.allocate("app-icon.png").use { lease ->
+                        lease.output().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                        lease.complete(diskKey)
                     }
-                    tmpFile.renameTo(diskFile)
-                } catch (_: Throwable) {}
+                } catch (_: Exception) {} // An optional thumbnail must not consume space needed by active documents.
             }
             bitmap
         } catch (_: Throwable) {

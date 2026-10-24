@@ -1,5 +1,7 @@
 # TAR and compressed image mutation
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 Implemented 2026-10-23; handset acceptance is pending.
 
 ## Supported write paths

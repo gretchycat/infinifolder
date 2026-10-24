@@ -1,5 +1,7 @@
 # Back navigation
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 Implemented 2026-10-23; handset acceptance pending.
 
 - All built-in viewers share `ViewerActivity`. System Back on Android 13+ now reaches the same `onBackPressed` action as toolbar/legacy Back through a registered `OnBackInvokedCallback`. The base action finishes the viewer, exposing the unchanged browser directory beneath it. The viewer modules remain independent of the browser.

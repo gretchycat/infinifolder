@@ -1,5 +1,7 @@
 # UI responsiveness investigation
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 The user suspects intermittent swipes/Back failures may be UI stalls or I/O waits. Previous dumps lack main-thread stall/violation evidence, so the precise cause of each failed gesture is not established. Code review identified several concrete contributors.
 
 ## Changes

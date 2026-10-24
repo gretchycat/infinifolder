@@ -40,11 +40,25 @@ class SmbStorageProvider(
                 null, null, true, operationHints = mapOf(ResourceCapability.DELETE to Support.UNSUPPORTED,
                     ResourceCapability.RENAME to Support.UNSUPPORTED, ResourceCapability.MOVE to Support.UNSUPPORTED)), uri))
         }
-        val parentPath = path.trimEnd('/').substringBeforeLast('/', "").ifEmpty { "/" }
-        val parent = SmbUri.build(SmbUri.getConnectionId(uri), parentPath)
-        val entry = com.infinifolder.storage.StorageSafety.complete(list(ResourceRef(id, parent.toString())))
-            .firstOrNull { it.ref == ref } ?: throw IOException("Resource not found: $path")
-        ProviderResult.Success(entry)
+        // A known share must be accessible without permission to enumerate the server.
+        // Query the target itself rather than listing its parent (which also scans large folders).
+        val (config, creds) = resolveConfigAndCredentials(SmbUri.getConnectionId(uri))
+        val file = clientPool.getSmbFile(config, creds, path)
+        if (!file.exists()) throw IOException("Resource not found: $path")
+        val isDirectory = file.isDirectory
+        val isShare = path.trim('/').split('/').size == 1
+        ProviderResult.Success(ResourceEntry(ref, ResourceMetadata(
+            name = path.trimEnd('/').substringAfterLast('/'),
+            mimeType = if (isDirectory) "vnd.android.document/directory" else guessMimeType(file.name),
+            sizeBytes = if (isDirectory) null else file.length(),
+            modifiedAtMillis = runCatching { file.lastModified() }.getOrNull(),
+            isDirectory = isDirectory,
+            canRead = runCatching { file.canRead() }.getOrDefault(true),
+            canWrite = runCatching { file.canWrite() }.getOrDefault(true),
+            operationHints = if (isShare) mapOf(ResourceCapability.DELETE to Support.UNSUPPORTED,
+                ResourceCapability.RENAME to Support.UNSUPPORTED, ResourceCapability.MOVE to Support.UNSUPPORTED)
+                else emptyMap()
+        ), uri))
     } catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot query remote resource", e) }
     }
 

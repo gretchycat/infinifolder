@@ -57,6 +57,7 @@ object OperationFeedback {
                 snapshots.filter { !it.id.startsWith("playback_") && it.isTerminal() && announced.add(it.id) }
             }
             for (op in finished) {
+                DiagnosticLog.record("operation.completion.dispatch", "id=${op.id} state=${op.state} foreground=$foreground label=${op.label}")
                 if (foreground) {
                     main.post { listeners.toList().forEach { it(op) } }
                 } else if (op.state != OperationState.CANCELLED) {
@@ -82,6 +83,11 @@ object OperationFeedback {
                     NotificationManager.IMPORTANCE_DEFAULT).apply {
                     description = "Results of file operations completed while InfiniFolder is in the background"
                 })
+            }
+            if (!manager.areNotificationsEnabled() || (Build.VERSION.SDK_INT >= 26 &&
+                    manager.getNotificationChannel(CHANNEL)?.importance == NotificationManager.IMPORTANCE_NONE)) {
+                DiagnosticLog.record("operation.completion.notification.skipped", "Notifications disabled: ${op.label}")
+                return
             }
             val failed = op.state == OperationState.FAILED
             val result = when {

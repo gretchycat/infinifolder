@@ -1,5 +1,7 @@
 # Copying into mounted images and ZIP containers
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 Updated: 2026-10-22.
 
 ## Using a container destination

@@ -54,6 +54,7 @@ class EpubViewerActivity : ViewerActivity() {
     private var stagedSource: MediaSourceAdapter.StagedSource? = null
     private var stagedFile: File? = null
     private var extractDir: File? = null
+    private var resourceLease: com.infinifolder.storage.DiskCache.Lease? = null
 
     private var bookTitle: String = "EPUB Reader"
     private var bookAuthor: String = ""
@@ -330,12 +331,14 @@ class EpubViewerActivity : ViewerActivity() {
                 }
                 stagedFile = file
 
-                val outDir = File(cacheDir, "epub_${System.currentTimeMillis()}")
-                outDir.mkdirs()
+                val resources = com.infinifolder.storage.DiskCache.get(this).allocate("epub-resources")
+                resourceLease = resources
+                val outDir = resources.file.apply { mkdirs() }
                 extractDir = outDir
 
-                extractZip(file, outDir)
+                extractZip(file, outDir, resources)
                 parseEpubPackage(outDir)
+                resources.complete()
 
                 mainHandler.post {
                     progressBar.visibility = View.GONE
@@ -349,16 +352,18 @@ class EpubViewerActivity : ViewerActivity() {
             } catch (e: Exception) {
                 mainHandler.post {
                     progressBar.visibility = View.GONE
-                    Toast.makeText(this, "Failed to load EPUB: ${e.message}", Toast.LENGTH_LONG).show()
+                    resourceLease?.close(); resourceLease = null
+                    stagedSource?.close(); stagedSource = null
+                    if (!CacheFailureUi.offerCopy(this, e, targetUri)) Toast.makeText(this, "Failed to load EPUB: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }.start()
     }
 
-    private fun extractZip(zipFile: File, destDir: File) {
-        val zip = ZipFile(zipFile)
+    private fun extractZip(zipFile: File, destDir: File, lease: com.infinifolder.storage.DiskCache.Lease) {
+        ZipFile(zipFile).use { zip ->
         val entries = zip.entries()
-        val destCanonicalPath = destDir.canonicalPath
+        val destCanonicalPath = destDir.canonicalPath + File.separator
         while (entries.hasMoreElements()) {
             val entry: ZipEntry = entries.nextElement()
             val file = File(destDir, entry.name)
@@ -371,13 +376,13 @@ class EpubViewerActivity : ViewerActivity() {
             } else {
                 file.parentFile?.mkdirs()
                 zip.getInputStream(entry).use { input ->
-                    FileOutputStream(file).use { output ->
+                    lease.output(file).use { output ->
                         input.copyTo(output)
                     }
                 }
             }
         }
-        zip.close()
+        }
     }
 
     private fun parseEpubPackage(extractedDir: File) {
@@ -719,7 +724,8 @@ class EpubViewerActivity : ViewerActivity() {
             webView.destroy()
         } catch (_: Exception) {}
         try {
-            extractDir?.deleteRecursively()
+            resourceLease?.close()
+            resourceLease = null
         } catch (_: Exception) {}
         stagedSource?.close()
         stagedSource = null

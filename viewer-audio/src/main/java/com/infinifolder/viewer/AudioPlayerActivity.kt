@@ -81,7 +81,13 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     override fun onResume() {
         super.onResume()
-        AudioPlayerService.currentService?.let { updateUIFromService(it) }
+        AudioPlayerService.currentService?.let {
+            updateUIFromService(it)
+            it.cacheFailure?.let { failure ->
+                it.cacheFailure = null
+                CacheFailureUi.offerCopy(this, failure.first, failure.second)
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -818,6 +824,11 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     override fun onError(message: String) {
         runOnUiThread {
+            val service = AudioPlayerService.currentService
+            service?.cacheFailure?.let { failure ->
+                service.cacheFailure = null
+                if (CacheFailureUi.offerCopy(this, failure.first, failure.second)) return@runOnUiThread
+            }
             Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         }
     }

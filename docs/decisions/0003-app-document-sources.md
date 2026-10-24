@@ -1,5 +1,7 @@
 # Decision 0003: Application public represents app-exported SAF sources
 
+Historical architectural decision. See [current architecture](../architecture.md) and [project status](../project-status.md) for subsequent implementation and limitations.
+
 Date: 2026-10-19
 
 The Termux Monet test case clarified that Application public should expose the storage each app makes available through Android's document picker. Mapping app names to Android/media directories was an incorrect interpretation of this requirement. Termux's document provider exposes its home directory under its own authority and opaque IDs.

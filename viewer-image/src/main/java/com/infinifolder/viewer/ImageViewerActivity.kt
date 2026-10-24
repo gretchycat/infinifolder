@@ -36,6 +36,8 @@ class ImageViewerActivity : ViewerActivity() {
     private var currentName: String = ""
     private var currentMime: String = ""
 
+    private var imageLoadGeneration = 0
+    private var imageLoadThread: Thread? = null
     private var originalBitmap: Bitmap? = null
     private var isBarsVisible = true
     private var isEditMode = false
@@ -605,7 +607,9 @@ class ImageViewerActivity : ViewerActivity() {
 
     private fun loadImage(uri: Uri) {
         subtitleView.text = "Loading…"
-        Thread {
+        val generation = ++imageLoadGeneration
+        imageLoadThread?.interrupt()
+        imageLoadThread = Thread {
             val bmp = try {
                 val decoder = ThumbnailDecoder(contentResolver) { u ->
                     MediaSourceAdapter.openStream(this, u)
@@ -629,6 +633,10 @@ class ImageViewerActivity : ViewerActivity() {
             }
 
             runOnUiThread {
+                if (isFinishing || isDestroyed || generation != imageLoadGeneration) {
+                    bmp?.recycle()
+                    return@runOnUiThread
+                }
                 if (bmp != null) {
                     originalBitmap = bmp
                     zoomImageView.setImageBitmap(bmp)
@@ -640,7 +648,7 @@ class ImageViewerActivity : ViewerActivity() {
                     Toast.makeText(this, "Cannot decode this image format.", Toast.LENGTH_SHORT).show()
                 }
             }
-        }.start()
+        }.apply { start() }
     }
 
     private fun calculateInSampleSize(options: BitmapFactory.Options, reqW: Int, reqH: Int): Int {
@@ -805,8 +813,11 @@ class ImageViewerActivity : ViewerActivity() {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
+        imageLoadGeneration++
+        imageLoadThread?.interrupt()
+        imageLoadThread = null
         stopSlideshow()
+        super.onDestroy()
     }
 
     private fun openExternally() {
@@ -830,6 +841,8 @@ class ImageViewerActivity : ViewerActivity() {
     }
 
     override fun onBackPressed() {
+        com.infinifolder.storage.DiagnosticLog.record("viewer.image.back", "editing=$isEditMode unsaved=$hasUnsavedEdits finishing=$isFinishing")
+        stopSlideshow()
         if (isEditMode && hasUnsavedEdits) {
             AlertDialog.Builder(this)
                 .setTitle("Discard edits?")
@@ -839,7 +852,7 @@ class ImageViewerActivity : ViewerActivity() {
                 .show()
             return
         }
-        super.onBackPressed()
+        finish()
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()

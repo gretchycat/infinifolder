@@ -1,5 +1,7 @@
 # FAT deleted-file recovery
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 General undelete confirmed working by the user. After the safety follow-up, the user checked all files in the `safety/` directory and reports that every case was handled gracefully. This records handset acceptance of the delivered safety fixtures; additional provider, gesture and explicit hash checks are listed below.
 
 ## What the feature does

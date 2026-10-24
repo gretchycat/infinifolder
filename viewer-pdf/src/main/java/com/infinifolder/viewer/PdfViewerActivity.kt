@@ -245,7 +245,7 @@ class PdfViewerActivity : ViewerActivity() {
             } catch (e: Exception) {
                 mainHandler.post {
                     progressBar.visibility = View.GONE
-                    Toast.makeText(this, "Failed to open PDF: ${e.message}", Toast.LENGTH_LONG).show()
+                    if (!CacheFailureUi.offerCopy(this, e, targetUri)) Toast.makeText(this, "Failed to open PDF: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }.start()

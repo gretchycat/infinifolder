@@ -1,5 +1,7 @@
 # Storage safety and architecture progress
 
+Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+
 Updated: 2026-10-22. Tracks implementation following the [original consistency audit](code-consistency-audit.md). Implementation status is distinct from device/server acceptance.
 
 ## Debug dumps without ADB
@@ -86,3 +88,7 @@ A subsequent retry on the same installed build succeeded: the 21:47 dump records
 ## Container destinations
 
 The destination picker now uses CREATE capabilities and exposes archive/image folders, including containers directly in Internal shared storage. Added disk-backed ZIP rewrite/publication and streamed FAT entry writes so copy targets cover ordinary ZIPs and writable FAT image filesystems. Moves within the same ZIP or writable FAT image are staged with their destination changes and published together; moves across containers remain blocked. Multipart virtual roots, nested mounts, unsupported image/archive writers, and unsafe ZIP inputs remain restricted. See [supported targets, usage, safety limits, and device checks](container-targets.md).
+
+## External write-back lifecycle
+
+A shared durable external-edit session/provider now supplies writable working-copy URIs, independent before/after/return source checks, explicit completion and source-conflict copy/rename/overwrite choices. This supersedes the earlier read-only external staging limitation. Interrupted edits remain available without automatic replay; see [behavior and remaining device checks](external-edit-writeback.md). Shared disposable caches separately expire after six idle hours by default; working edits/recovery never expire.

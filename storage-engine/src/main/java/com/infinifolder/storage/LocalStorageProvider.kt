@@ -115,12 +115,14 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
     override fun replaceContent(ref: ResourceRef, data: ByteArray): ProviderResult<Unit> = access {
         val target = file(ref)
         checkAccess(target)
+        requireMutable(target)
         AtomicFileReplacement.replace(target, data)
     }
 
     override fun replaceContentFromFile(ref: ResourceRef, file: File): ProviderResult<Unit> = access {
         val target = this.file(ref)
         checkAccess(target)
+        requireMutable(target)
         AtomicFileReplacement.replaceFromFile(target, file)
     }
 
@@ -128,7 +130,14 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
         val target = file(ref)
         checkAccess(target)
         if (!target.isFile) throw IOException("Not a regular file: ${target.name}")
-        com.infinifolder.archive.FileBlockDevice(java.io.RandomAccessFile(target, if (writable) "rw" else "r"), !writable, ownsFile = true)
+        val lease = DiskCache.get(context).pin(target)
+        try {
+            if (writable && lease != null) throw IOException("Cached snapshots are read-only; copy to storage before editing")
+            val device = com.infinifolder.archive.FileBlockDevice(java.io.RandomAccessFile(target, if (writable) "rw" else "r"), !writable, ownsFile = true)
+            object : com.infinifolder.archive.BlockDevice by device {
+                override fun close() { try { device.close() } finally { lease?.close() } }
+            }
+        } catch (error: Throwable) { lease?.close(); throw error }
     }
 
     fun hasAccess(): Boolean = if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager()
@@ -190,6 +199,7 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
     }
     fun entry(file: File): ResourceEntry {
         val uri = uriFor(file)
+        val cachedSnapshot = DiskCache.get(context).isManaged(file)
         val isSymlink = try { Files.isSymbolicLink(file.toPath()) } catch (_: Throwable) { false }
         val targetPath = if (isSymlink) {
             try { Files.readSymbolicLink(file.toPath()).toString() } catch (_: Throwable) { null }
@@ -233,7 +243,7 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
             modifiedAtMillis = if (isBroken) file.lastModified() else targetFile.lastModified(),
             isDirectory = isDir,
             canRead = perm.canRead,
-            canWrite = perm.canWrite,
+            canWrite = perm.canWrite && !cachedSnapshot,
             canExecute = perm.canExecute,
             permissionsMode = perm.mode,
             permissionsFormatted = perm.formatted,
@@ -243,8 +253,8 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
             linkTarget = targetPath,
             isBrokenLink = isBroken,
             operationHints = mapOf(
-                ResourceCapability.RENAME to if (file != store.root && file.parentFile?.canWrite() == true) Support.SUPPORTED else Support.UNSUPPORTED,
-                ResourceCapability.DELETE to if (file != store.root && file.parentFile?.canWrite() == true) Support.SUPPORTED else Support.UNSUPPORTED)
+                ResourceCapability.RENAME to if (!cachedSnapshot && file != store.root && file.parentFile?.canWrite() == true) Support.SUPPORTED else Support.UNSUPPORTED,
+                ResourceCapability.DELETE to if (!cachedSnapshot && file != store.root && file.parentFile?.canWrite() == true) Support.SUPPORTED else Support.UNSUPPORTED)
         ), uri)
     }
     private fun file(ref: ResourceRef): File {
@@ -274,6 +284,10 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
         }
     }
 
+    private fun requireMutable(file: File) {
+        if (DiskCache.get(context).isManaged(file)) throw IOException("Cached snapshots are read-only. Copy to storage before editing.")
+    }
+
     private fun <T> access(action: () -> T): ProviderResult<T> = try {
         ProviderResult.Success(action())
     } catch (e: Exception) { ProviderResult.Failure(e.message ?: "Local storage operation failed", e) }
@@ -287,16 +301,23 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
     override fun openRead(ref: ResourceRef) = access {
         val f = file(ref)
         checkAccess(f)
-        f.inputStream()
+        val lease = DiskCache.get(context).pin(f)
+        try {
+            object : java.io.FilterInputStream(f.inputStream()) {
+                override fun close() { try { super.close() } finally { lease?.close() } }
+            }
+        } catch (error: Throwable) { lease?.close(); throw error }
     }
     override fun openWrite(ref: ResourceRef) = access {
         val f = file(ref)
         checkAccess(f)
+        requireMutable(f)
         f.outputStream()
     }
     override fun createDirectory(parent: ResourceRef, name: String) = access {
         val parentDir = file(parent)
         checkAccess(parentDir)
+        requireMutable(parentDir)
         StorageSafety.validateName(name)
         StorageFileSystems.forFile(parentDir).requireName(name)
         val created = File(parentDir, name)
@@ -306,6 +327,7 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
     override fun createFile(parent: ResourceRef, name: String, mimeType: String) = access {
         val parentDir = file(parent)
         checkAccess(parentDir)
+        requireMutable(parentDir)
         StorageSafety.validateName(name)
         StorageFileSystems.forFile(parentDir).requireName(name)
         val created = File(parentDir, name)
@@ -315,6 +337,7 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
     override fun rename(ref: ResourceRef, name: String) = access {
         val src = file(ref)
         checkAccess(src)
+        requireMutable(src)
         StorageSafety.validateName(name)
         StorageFileSystems.forFile(src).requireName(name)
         val dest = File(src.parentFile, name)
@@ -324,6 +347,7 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
     override fun delete(ref: ResourceRef) = access {
         val target = file(ref)
         checkAccess(target)
+        requireMutable(target)
         require(target.absoluteFile.toPath().normalize() != store.root.absoluteFile.toPath().normalize()) { "Cannot delete the storage root" }
         LocalFileStore(File("/")).delete(target)
     }

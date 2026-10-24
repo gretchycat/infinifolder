@@ -1,5 +1,7 @@
 # Decision 0001: native SAF first
 
+Historical architectural decision. See [current architecture](../architecture.md) and [project status](../project-status.md) for subsequent implementation and limitations.
+
 Date: 2026-10-19
 
 ## Context

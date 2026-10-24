@@ -23,6 +23,7 @@ data class FolderStats(
 )
 
 object FileOperations {
+    private class VerificationSkipped : Exception()
     private class SourceReadException(message: String, cause: Throwable? = null) : IOException(message, cause)
     private fun sourceChange(error: Throwable): com.infinifolder.storage.SourceChangedException? =
         generateSequence(error) { it.cause }.take(16)
@@ -110,8 +111,13 @@ object FileOperations {
         isCancelled: () -> Boolean,
         createLinks: Boolean = false,
         onWarning: (String) -> Unit = {},
-        partialRecovery: Boolean = false
+        partialRecovery: Boolean = false,
+        verifyCopies: Boolean = true,
+        copyVerificationEnabled: (() -> Boolean)? = null
     ): List<ResourceRef> = com.infinifolder.archive.RecoveryCancellation.withCancellation(isCancelled) {
+        if (com.infinifolder.storage.ContainerLinksProvider.owns(destinationFolderUri) && !createLinks &&
+            entries.any { it.metadata.isDirectory || !ShortcutInfo.isShortcut(it.metadata.name, it.metadata.mimeType) })
+            throw IOException("Virtual root accepts container links only. Use Link to for folders and archives; regular files belong inside storage containers.")
         // Reuse backing image range caches for ordinary copies only. Recovery
         // needs fresh safety reads, and mutation paths must not reuse snapshots.
         val reuseReads = !move && !createLinks && !partialRecovery &&
@@ -119,16 +125,17 @@ object FileOperations {
             entries.none { it.metadata.recoveryNote != null || provider.recoverySource(it.ref) != null }
         com.infinifolder.archive.ReadDeviceScope.withScope(reuseReads, onWarning) {
         batchTransferInternal(entries, destinationFolderUri, move, provider, resourceRef, update,
-            { isCancelled() || Thread.currentThread().isInterrupted }, createLinks, onWarning, partialRecovery)
+            { isCancelled() || Thread.currentThread().isInterrupted }, createLinks, onWarning, partialRecovery, verifyCopies, copyVerificationEnabled)
         }
     }
 
     private fun batchTransferInternal(
         entries: List<ResourceEntry>, destinationFolderUri: Uri, move: Boolean, provider: StorageProvider,
         resourceRef: (Uri) -> ResourceRef, update: (OperationUpdate) -> Unit, isCancelled: () -> Boolean,
-        createLinks: Boolean, onWarning: (String) -> Unit, partialRecovery: Boolean
+        createLinks: Boolean, onWarning: (String) -> Unit, partialRecovery: Boolean, verifyCopies: Boolean, copyVerificationEnabled: (() -> Boolean)?
     ): List<ResourceRef> {
         var activeProvider = provider
+        fun verificationWanted() = copyVerificationEnabled?.invoke() ?: verifyCopies
         if (partialRecovery && (move || createLinks)) throw IOException("Partial recovery only creates copies with reports")
         if (move && createLinks) throw IOException("Creating shortcuts never removes source entries")
         val destRef = resourceRef(destinationFolderUri)
@@ -140,6 +147,7 @@ object FileOperations {
         var activeFileBytes: Long? = null
         var activeFileTotalBytes: Long? = null
         fun phase(message: String, item: String? = null) {
+            com.infinifolder.storage.DiagnosticLog.record("transfer.phase", "stage=$message item=$item bytes=$transferredBytes")
             update(OperationUpdate(bytes = transferredBytes, totalBytes = totalBytes,
                 itemsProcessed = itemsDone, totalItems = totalItems, currentItem = item,
                 message = message, indeterminate = true,
@@ -372,17 +380,41 @@ object FileOperations {
             }
 
             val sourceDigests = mutableMapOf<ResourceRef, ByteArray>()
-            fun digest(ref: ResourceRef): ByteArray {
+            fun digest(ref: ResourceRef, name: String? = null, expectedBytes: Long? = null, allowSkip: Boolean = false): ByteArray =
+                com.infinifolder.storage.StorageActivity.track(com.infinifolder.storage.StorageActivity.Kind.VERIFICATION) {
                 val opened = activeProvider.openRead(ref)
-                if (opened !is ProviderResult.Success) throw IOException((opened as? ProviderResult.Failure)?.message ?: "Cannot verify file")
-                return opened.value.use { input ->
+                if (opened !is ProviderResult.Success) throw IOException((opened as? ProviderResult.Failure)?.message ?: "Cannot verify file", (opened as? ProviderResult.Failure)?.cause)
+                opened.value.use { input ->
                     val hash = MessageDigest.getInstance("SHA-256")
                     val buffer = ByteArray(128 * 1024)
+                    var checked = 0L
+                    var lastReport = 0L
+                    var lastLog = System.nanoTime()
+                    fun report() {
+                        val percent = expectedBytes?.takeIf { it > 0 }?.let { (checked.toDouble() / it * 100).toInt().coerceIn(0, 100) }
+                        update(OperationUpdate(bytes = transferredBytes, totalBytes = totalBytes,
+                            itemsProcessed = itemsDone, totalItems = totalItems, currentItem = name,
+                            message = "Verifying: $name" + (percent?.let { " ($it%)" } ?: ""),
+                            indeterminate = false, currentItemBytes = checked, currentItemTotalBytes = expectedBytes))
+                    }
+                    if (name != null) report()
                     while (true) {
                         if (isCancelled()) throw InterruptedException("Transfer cancelled")
+                        if (allowSkip && !verificationWanted()) throw VerificationSkipped()
                         val n = input.read(buffer)
                         if (n < 0) break
                         hash.update(buffer, 0, n)
+                        checked += n
+                        val now = System.nanoTime()
+                        if (name != null && now - lastReport >= 300_000_000L) { report(); lastReport = now }
+                        if (name != null && now - lastLog >= 5_000_000_000L) {
+                            com.infinifolder.storage.DiagnosticLog.record("transfer.verification.progress", "item=$name checkedBytes=$checked expectedBytes=$expectedBytes")
+                            lastLog = now
+                        }
+                    }
+                    if (name != null) {
+                        report()
+                        com.infinifolder.storage.DiagnosticLog.record("transfer.verification.complete", "item=$name checkedBytes=$checked expectedBytes=$expectedBytes")
                     }
                     hash.digest()
                 }
@@ -397,7 +429,7 @@ object FileOperations {
                     if (signature(before) != signature(after)) throw IOException("Source folder changed; original retained")
                     before.forEach(::verifySource)
                 } else if (entry.ref.providerId != "apps") {
-                    if (!digest(entry.ref).contentEquals(sourceDigests.getValue(entry.ref))) {
+                    if (!digest(entry.ref, "source ${entry.metadata.name}", transferSize(entry)).contentEquals(sourceDigests.getValue(entry.ref))) {
                         throw IOException("Source changed during transfer; original retained")
                     }
                 }
@@ -496,6 +528,8 @@ object FileOperations {
                 val hash = MessageDigest.getInstance("SHA-256")
                 var copiedBytes = 0L
                 var sourceBytesRead = 0L
+                var sourceReadComplete = false
+                var lastTransferLog = System.nanoTime()
                 com.infinifolder.storage.DiagnosticLog.record("transfer.start",
                     "name=${source.metadata.name} sourceProvider=${source.ref.providerId} destinationProvider=${createdEntry.ref.providerId} " +
                         "destination=${createdEntry.ref.documentId} expectedBytes=${transferSize(source)}")
@@ -509,7 +543,11 @@ object FileOperations {
                     finally { ioTimings[label] = (ioTimings[label] ?: 0L) + System.nanoTime() - started }
                 }
                 val inputStream = object : java.io.FilterInputStream(readResult.value) {
-                    override fun close() = timeIo("source.close") { super.close() }
+                    override fun close() {
+                        stage = "closing source"
+                        phase("Finishing source: $targetName", targetName)
+                        timeIo("source.close") { super.close() }
+                    }
                 }
                 val outputStream = object : OutputStream() {
                     override fun write(value: Int) = timeIo("destination.write") { writeResult.value.write(value) }
@@ -538,6 +576,11 @@ object FileOperations {
                                 stage = "reading source"
                                 hash.update(buffer, 0, r)
                                 copiedBytes += r
+                                val logNow = System.nanoTime()
+                                if (logNow - lastTransferLog >= 5_000_000_000L) {
+                                    com.infinifolder.storage.DiagnosticLog.record("transfer.progress", "item=$targetName writtenBytes=$copiedBytes expectedBytes=${transferSize(source)} stage=$stage")
+                                    lastTransferLog = logNow
+                                }
                                 activeFileBytes = copiedBytes
                                 transferredBytes += r
                                 bytesSinceLast += r
@@ -549,6 +592,8 @@ object FileOperations {
                                     reportProgress(targetName, speed)
                                 }
                             }
+                            sourceReadComplete = transferSize(source)?.let { it == copiedBytes } ?: true
+                            com.infinifolder.storage.DiagnosticLog.record("transfer.data-written", "item=$targetName bytes=$copiedBytes expectedBytes=${transferSize(source)}")
                             stage = "flushing destination"
                             phase("Flushing destination: $targetName", targetName)
                             output.flush()
@@ -565,8 +610,16 @@ object FileOperations {
                         throw SourceReadException("Source size changed or read was incomplete; original retained")
                     }
                     val expected = hash.digest()
-                    if (!timed("Verifying copy: $targetName", targetName) { digest(createdEntry.ref) }.contentEquals(expected))
-                        throw IOException("Copy verification failed; original retained")
+                    val requiredVerification = move || recoveryReport != null ||
+                        source.metadata.recoveryNote != null || activeProvider.recoverySource(source.ref) != null
+                    val actual = if (requiredVerification || verificationWanted()) {
+                        timed("Verifying copy: $targetName", targetName) {
+                            try { digest(createdEntry.ref, targetName, copiedBytes, allowSkip = !requiredVerification) }
+                            catch (_: VerificationSkipped) { null }
+                        }
+                    } else null
+                    if (actual == null) com.infinifolder.storage.DiagnosticLog.record("transfer.verification.skipped", "item=$targetName bytes=$copiedBytes policy=copy-setting")
+                    else if (!actual.contentEquals(expected)) throw IOException("Copy verification failed; original retained")
                     recoveryReport?.let { report ->
                         if (isCancelled()) throw InterruptedException("Recovery cancelled")
                         if (report.declaredSize != copiedBytes || report.sha256 != expected.joinToString("") { "%02x".format(it) })
@@ -606,10 +659,14 @@ object FileOperations {
                 } catch (e: Exception) {
                     val companionCleanup = companionRef?.let { ref -> try { activeProvider.delete(ref) }
                         catch (cleanup: Exception) { ProviderResult.Failure(cleanup.message ?: "Recovery report cleanup failed", cleanup) } }
-                    val cleaned = try { activeProvider.delete(createdEntry.ref) } catch (cleanup: Exception) {
-                        ProviderResult.Failure(cleanup.message ?: "Cleanup failed", cleanup)
-                    }
-                    val cleanupNote = (if (cleaned is ProviderResult.Success) "Partial destination removed" else
+                    val timeout = generateSequence<Throwable>(e) { it.cause }.take(16).any { it is java.net.SocketTimeoutException }
+                    val preserveCompletedWrite = (sourceReadComplete || transferSize(source)?.let { it == copiedBytes } == true) && timeout && !isCancelled() &&
+                        (stage == "flushing destination" || stage == "closing destination" || stage == "closing source" || stage == "verifying copy")
+                    val cleaned = if (preserveCompletedWrite) ProviderResult.Failure("Completed write retained for inspection; finalization or verification did not succeed")
+                        else try { activeProvider.delete(createdEntry.ref) } catch (cleanup: Exception) {
+                            ProviderResult.Failure(cleanup.message ?: "Cleanup failed", cleanup)
+                        }
+                    val cleanupNote = (if (preserveCompletedWrite) "Destination retained for inspection after timeout; completion is unconfirmed" else if (cleaned is ProviderResult.Success) "Partial destination removed" else
                         "Partial destination may remain: ${(cleaned as? ProviderResult.Failure)?.message ?: "cleanup unsupported"}") +
                         (if (companionCleanup != null && companionCleanup !is ProviderResult.Success) " Recovery report cleanup failed; report may remain." else "")
                     val largeUnknown = fileSystem?.type == null &&
