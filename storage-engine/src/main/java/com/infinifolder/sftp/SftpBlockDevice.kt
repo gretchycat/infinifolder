@@ -8,7 +8,7 @@ import java.io.IOException
 /**
  * Random-access BlockDevice backed by an SFTP remote file using JSch.
  * Reads are performed at specific offsets using ChannelSftp.get(..., skip).
- * Writes are disabled until the adapter has a verified non-truncating offset-write implementation.
+ * Writable instances send offset writes directly to the remote file using SFTP WRITE requests.
  */
 class SftpBlockDevice(
     private val clientPool: SftpClientPool,
@@ -19,7 +19,7 @@ class SftpBlockDevice(
     initialSize: Long? = null
 ) : BlockDevice {
 
-    init { require(isReadOnly) { "SFTP random writes are not supported by this adapter" } }
+    init { require(initialSize == null || initialSize >= 0L) }
 
     private var channel: ChannelSftp? = null
     private var closed = false
@@ -42,6 +42,7 @@ class SftpBlockDevice(
                 DeviceCapability.READ,
                 DeviceCapability.WRITE,
                 DeviceCapability.FLUSH,
+                DeviceCapability.TRUNCATE,
                 DeviceCapability.SEEK
             )
         }
@@ -93,11 +94,41 @@ class SftpBlockDevice(
         }
     }
 
-    override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) {
-        throw IOException("SFTP random writes are not supported by this adapter")
+    @Synchronized override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) {
+        if (isReadOnly) throw IOException("SFTP BlockDevice is read-only")
+        if (offset < 0L || length < 0 || srcOffset < 0 || srcOffset + length > buffer.size ||
+            offset + length < offset || offset + length > currentSize)
+            throw IOException("Invalid SFTP random-write range")
+        if (length == 0) return
+        check(!closed) { "SFTP random-write device is closed" }
+        val started = android.os.SystemClock.uptimeMillis()
+        clientPool.withChannel(config, credentials) { sftp ->
+            // JSch's RESUME stream opens without truncation and initializes its
+            // SFTP write offset to (remote size + supplied offset). The negative
+            // delta positions writes at an arbitrary byte inside the pre-sized file.
+            sftp.put(remotePath, null, ChannelSftp.RESUME, offset - currentSize).use { output ->
+                output.write(buffer, srcOffset, length)
+                output.flush()
+            }
+        }
+        currentSize = maxOf(currentSize, offset + length)
+        com.infinifolder.storage.DiagnosticLog.record("sftp.range.write",
+            "path=$remotePath offset=$offset bytes=$length elapsedMs=${android.os.SystemClock.uptimeMillis() - started}")
     }
 
-    override fun flush() {}
+    @Synchronized override fun truncate(newSize: Long) {
+        if (isReadOnly) throw IOException("SFTP BlockDevice is read-only")
+        if (newSize < 0L) throw IOException("Negative SFTP file size")
+        check(!closed) { "SFTP random-write device is closed" }
+        clientPool.withChannel(config, credentials) { sftp ->
+            val attrs = sftp.stat(remotePath)
+            attrs.setSIZE(newSize)
+            sftp.setStat(remotePath, attrs)
+        }
+        currentSize = newSize
+    }
+
+    override fun flush() { /* each offset write is completed by the server before returning */ }
 
     @Synchronized override fun close() {
         closed = true

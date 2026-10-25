@@ -34,6 +34,8 @@ interface StorageProvider : java.io.Closeable {
     /** The caller owns the returned device. A writable request must never silently downgrade. */
     fun openSeekable(ref: ResourceRef, writable: Boolean = false): ProviderResult<com.infinifolder.archive.BlockDevice> =
         ProviderResult.Unsupported(if (writable) ResourceCapability.WRITE else ResourceCapability.SEEK)
+    /** A new-file target for producers that write blocks at arbitrary offsets. */
+    fun openTransferTarget(ref: ResourceRef): ProviderResult<com.infinifolder.archive.BlockDevice> = openSeekable(ref, writable = true)
     /** Optional atomic replacement. Unsupported callers must preserve a recovery copy before streaming. */
     fun replaceContent(ref: ResourceRef, data: ByteArray): ProviderResult<Unit> = ProviderResult.Unsupported(ResourceCapability.WRITE)
 

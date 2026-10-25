@@ -149,18 +149,20 @@ Format reference: [Microsoft FAT specification](https://www.scs.stanford.edu/~zy
 
 Implemented nested File/Edit/View/Select/Settings menus, wildcard/regex selection, name/MIME/size/date sorting with direction, New document/archive templates, and the disk usage treemap. Removed the Virtual root swipe exclusion; changed viewer Back routing and moved the red-default activity light to the far right. These implementations require device acceptance; see [behavior, limits and checks](navigation-menus-disk-usage.md). Most-used sorting remains future work. Notifications, automatic successful-dialog dismissal and debug-toolbar placement are user-confirmed.
 
-## BitTorrent virtual filesystem (proposed)
+## BitTorrent virtual filesystem (initial provider implemented; acceptance pending)
 
-- [ ] Add a separate read-only storage provider for `.torrent` files and `magnet:` links through a shared torrent-engine adapter; do not put torrent-specific reads in viewers.
-- [ ] Fetch magnet metadata before listing, with explicit loading, unavailable-peer and cancellation states. Metadata discovery must not automatically download every payload file.
-- [ ] Expose torrent contents as normal folders/files supporting navigation, pins, selected-set copying, drag-out and existing viewers. Give each torrent a stable identity based on its info hash, independent of tracker URL ordering.
-- [ ] Implement on-demand piece requests, verified piece caching and seekable file reads. Random access may wait for missing pieces; report buffering/progress/timeouts instead of pretending every range is immediately available.
-- [ ] Allow archives and disk images inside torrents to mount through the existing seekable provider path, requesting only needed ranges where their formats allow it.
+- [x] Add a separate read-only provider for `magnet:` links using the Apache-2.0 `bt` engine; keep torrent reads outside viewers.
+- [x] Fetch magnet metadata before listing without downloading payload files. Expose torrent contents as normal folders/files with info-hash-based device identity.
+- [x] Support copying a selected torrent file out by downloading only that file into app cache and returning it after the engine verifies it. Copy is currently a full-file download before the transfer stream starts.
+- [ ] Device acceptance for metadata lookup, folder browsing, multi-selection copy, unavailable peers, cache behavior and large-file progress/cancellation.
+- [ ] Add `.torrent` file URI support and seekable piece reads so archives and disk images inside torrents can mount without downloading full files.
+- [ ] Implement on-demand piece requests and seekable reads, with buffering/progress/timeouts for missing pieces.
+- [ ] Allow archives and disk images inside torrents to mount through the existing seekable provider path without downloading entire files.
 - [ ] Distinguish not-yet-downloaded, waiting for peers, verified cached and failed/corrupt data. Torrent piece-hash checks remain mandatory regardless of optional post-copy verification.
 - [ ] Define cache quota/eviction, cache storage choice, resume/background execution, network/battery preferences and explicit upload/seeding controls. Do not treat cache eviction or unmounting as deleting remote swarm content.
 - [ ] Validate hostile metadata paths, overlapping piece/file boundaries, missing peers, cancellation, v1/v2/hybrid torrents and local fixture swarms. A torrent is not a writable copy/move destination.
 
-Feasibility reference: [libtorrent torrent handle API](https://www.libtorrent.org/reference-Torrent_Handle.html) supports metadata state, file priorities, piece deadlines and piece reads. Android engine/binding selection and packaging remain to be evaluated. This is a proposed feature, not implemented support.
+The initial provider uses [Bt](https://github.com/atomashpolskiy/bt), whose documented features include magnet links, DHT, metadata exchange, partial file selection and Apache-2.0 licensing. Seekable on-demand piece reads and live transfer progress remain follow-up work.
 
 ## Downloads organization by rules (requested; deferred)
 
@@ -215,7 +217,13 @@ The user confirms the two-finger selection gesture working. It is now available 
 - [x] Loading light: green pulses on reads, steady dim green while waiting, idle after completion; latest handset confirmation received.
 - [x] Duplicate Virtual root and missing startup tree links confirmed fixed; exit-selection action confirmed.
 - [ ] Confirm latest unrelated Internal storage breadcrumb removal before a remote connection.
-- [ ] Confirm image-viewer Back and disk usage Parent above the initial scan root.
+- [x] Image-viewer Back confirmed working.
+- [ ] Confirm disk usage Parent above the initial scan root.
 - [ ] Complete shared-cache and external-editor acceptance described above; these remain the next safety-focused checks.
 
 Historical build/test totals describe their original revisions. No tests or build were run for this documentation synchronization. Architecture work and deferred requests are summarized in [project status](project-status.md).
+
+## WebDAV acceptance
+
+- [x] Add saved WebDAV connections, encrypted credentials, browsing, stream reads/writes, create/rename/delete and range reads when advertised.
+- [ ] Complete the real-server protocol, transfer, range and failure checks in [WebDAV support](webdav-support.md).

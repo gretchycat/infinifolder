@@ -16,7 +16,7 @@ Dependency direction is `app/host → viewer modules → viewer-common → stora
 
 `ResourceCapabilities` combines backend features, resource metadata, and operation hints. Supported, unsupported, and unknown are distinct. SAF flags remain per document; actual opens can still fail after permission changes. Seekable handles report demonstrated read/write support; a failed writable request cannot become a writable cache snapshot.
 
-SMB, SFTP, and FTP connections use application-owned pools and existing credential stores. Persisted connection definitions live behind `ConnectionPreferences`; secrets remain separate from non-secret endpoint definitions. NFS, WebDAV, and cloud catalog entries are placeholders.
+SMB, SFTP, and FTP connections use application-owned pools and existing credential stores. Persisted connection definitions live behind `ConnectionPreferences`; secrets remain separate from non-secret endpoint definitions. NFS and cloud catalog entries are placeholders. WebDAV uses the HTTP provider described in [WebDAV support](webdav-support.md); method support still varies by server.
 
 ## Mounting and random access
 

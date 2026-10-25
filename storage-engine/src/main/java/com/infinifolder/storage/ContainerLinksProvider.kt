@@ -60,9 +60,10 @@ class ContainerLinksProvider(context: Context) : StorageProvider {
             require(!ContainerUris.hasPassword(backing)) { "Save passwords in connection settings, not in links" }
             if (ArchiveUri.isArchiveUri(backing)) backing = ArchiveUri.getSourceUri(backing)
         }
-        val container = shortcut.targetIsDirectory || ArchiveUri.isArchiveUri(target) ||
-            ArchiveFormats.isArchive(target.lastPathSegment.orEmpty(), shortcut.targetMimeType.orEmpty()) ||
-            target.scheme.equals("magnet", true) || target.lastPathSegment.orEmpty().endsWith(".torrent", true)
+        val container = shortcut.targetIsDirectory || target.scheme.equals("magnet", true) ||
+            ArchiveUri.isArchiveUri(target) || (target.isHierarchical && (
+                ArchiveFormats.isArchive(target.lastPathSegment.orEmpty(), shortcut.targetMimeType.orEmpty()) ||
+                    target.lastPathSegment.orEmpty().endsWith(".torrent", true)))
         require(container) { "Virtual root accepts links to containers, not regular files" }
     }
     override fun stat(ref: ResourceRef): ProviderResult<ResourceEntry> = guarded {

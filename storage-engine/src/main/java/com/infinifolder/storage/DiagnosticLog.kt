@@ -51,8 +51,19 @@ object DiagnosticLog {
             val description = buildString {
                 append(Instant.now()); append(" ["); append(Thread.currentThread().name); append("] ")
                 append(event); append(' '); append(detail)
-                if (error != null) { append(" "); append(error.javaClass.simpleName); append(": "); append(error.message)
-                    error.stackTrace.take(12).forEach { append("\n    at "); append(it) } }
+                if (error != null) {
+                    var cause: Throwable? = error
+                    val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
+                    var depth = 0
+                    while (cause != null && depth < 8 && seen.add(cause)) {
+                        append(if (depth == 0) " " else "\nCaused by: ")
+                        append(cause.javaClass.name); append(": "); append(cause.message)
+                        cause.stackTrace.take(20).forEach { append("\n    at "); append(it) }
+                        cause = cause.cause
+                        depth++
+                    }
+                    if (cause != null) append("\n    (cause chain truncated)")
+                }
                 append('\n')
             }
             val safeDescription = sanitize(description).take(64 * 1024)

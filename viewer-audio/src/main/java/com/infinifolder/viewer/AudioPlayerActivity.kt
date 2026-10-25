@@ -197,7 +197,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             textSize = 20f
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.TRANSPARENT)
-            setOnClickListener { finish() }
+            setOnClickListener { onBackPressed() }
         }
         topBar.addView(backBtn, LinearLayout.LayoutParams(dp(44), dp(44)))
 

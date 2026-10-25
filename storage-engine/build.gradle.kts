@@ -19,6 +19,20 @@ dependencies {
     api("com.github.mwiede:jsch:2.28.8")
     api("commons-net:commons-net:3.11.1")
     api("eu.agno3.jcifs:jcifs-ng:2.1.10")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.github.atomashpolskiy:bt-core:1.10") {
+        exclude(group = "com.google.inject", module = "guice")
+    }
+    implementation("com.github.atomashpolskiy:bt-dht:1.10") {
+        exclude(group = "com.google.inject", module = "guice")
+    }
+    implementation("com.github.atomashpolskiy:bt-http-tracker-client:1.10") {
+        exclude(group = "com.google.inject", module = "guice")
+    }
+    // Bt 1.10 requests Guice 5, which calls a reflection API missing on Android.
+    // Guice 4's regular artifact uses CGLIB runtime bytecode generation, which ART rejects.
+    // The no_aop artifact avoids both Android incompatibilities; Bt does not use AOP here.
+    implementation("com.google.inject:guice:4.2.3:no_aop")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }

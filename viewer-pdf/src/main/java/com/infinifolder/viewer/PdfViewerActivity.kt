@@ -102,7 +102,7 @@ class PdfViewerActivity : ViewerActivity() {
             textSize = 18f
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.TRANSPARENT)
-            setOnClickListener { finish() }
+            setOnClickListener { onBackPressed() }
         }
         toolbar.addView(backBtn, LinearLayout.LayoutParams(dp(44), dp(44)))
 

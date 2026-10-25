@@ -6,7 +6,7 @@ Updated 2026-10-24. See [current status](project-status.md) for confirmed behavi
 
 - Exercise external-edit source checks, durable unfinished sessions and conflict choices with real editors.
 - Exercise cache eviction, active leases, capacity choices, six-hour expiry and restart behavior.
-- Confirm image-viewer Back and the latest remote breadcrumb repair; retain selected-set/backend gesture regressions.
+- Confirm the latest remote breadcrumb repair; retain selected-set/backend gesture regressions. Image-viewer Back is user-confirmed working.
 - Validate transfer/verification feedback and compressed-container low-space/interruption behavior.
 
 ## Then: finish architectural consistency
@@ -19,7 +19,7 @@ Broaden format-specific byte/metadata/edge checks, multipart ZIP/7z, advanced LV
 
 ## Requested future features
 
-Most-used sorting; torrent/magnet provider; Downloads organization rules; read-only floating browser; home-screen shortcuts; later widget. NFS/WebDAV/cloud providers, broader search/recents/trash and portable metadata remain future scope.
+Most-used sorting; torrent device acceptance and seekable piece reads; Downloads organization rules; read-only floating browser; home-screen shortcuts; later widget. NFS/cloud providers, broader search/recents/trash and portable metadata remain future scope. WebDAV is user-confirmed working.
 
 ## Foundations already implemented
 

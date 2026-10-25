@@ -1,6 +1,7 @@
 package com.infinifolder.viewer
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -106,7 +107,7 @@ class HtmlViewerActivity : ViewerActivity() {
             textSize = 18f
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.TRANSPARENT)
-            setOnClickListener { finish() }
+            setOnClickListener { onBackPressed() }
         }
         toolbar.addView(backBtn, LinearLayout.LayoutParams(dp(44), dp(44)))
 
@@ -432,6 +433,19 @@ class HtmlViewerActivity : ViewerActivity() {
         } catch (e: Exception) {
             Toast.makeText(this, "No external handler found", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    override fun onBackPressed() {
+        if (isDirty) {
+            AlertDialog.Builder(this)
+                .setTitle("Discard edits?")
+                .setMessage("You have unsaved changes. Discard them?")
+                .setPositiveButton("Discard") { _, _ -> finish() }
+                .setNegativeButton("Keep editing", null)
+                .show()
+            return
+        }
+        super.onBackPressed()
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()

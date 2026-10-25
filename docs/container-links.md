@@ -5,13 +5,13 @@ Status reviewed 2026-10-24. See [current confirmations and remaining work](proje
 ## Implemented
 
 - Virtual root accepts container link records, not ordinary file payloads. Create, copy, move, rename and delete operate on link metadata; deleting a link preserves its target.
-- File → New → External storage link offers Android device/SD/USB folder access, SFTP, FTP/FTPS, SMB and container URIs. Android folders use the system grant picker; network links use existing protocol settings and credential storage.
+- The unified File → New → Link flow handles generic URI shortcuts and protocol-specific SFTP, FTP/FTPS, SMB and WebDAV connections. Android folders use the system grant picker.
 - Saved network connections are migrated into Virtual root links. Deleting their link does not remove saved credentials or recreate the link on the next refresh.
 - Long press a remote connection link and choose **Edit connection…** to edit its existing protocol settings. Shared links to that connection continue using the same saved account; link paths remain independent.
 - Public network URIs bind to saved accounts. Ambiguous account matches require a choice; passwords belong in connection settings, not link URIs.
 - Container links support navigation, selection and drag targets. Dropping actual containers onto Virtual root creates links. Ordinary files are rejected.
 - Saving network link metadata does not contact the server. Access is checked when opening it.
-- Torrent/magnet URIs can be retained as links; torrent browsing still requires a future provider.
+- Magnet links open a read-only torrent browser. Metadata is loaded before listing; copying a file downloads only that selected torrent file and verifies it before exposing its contents.
 
 ## Other current changes
 
@@ -22,7 +22,7 @@ Status reviewed 2026-10-24. See [current confirmations and remaining work](proje
 
 - Confirm the new menu routes, remote connection editing, root link copy/move/delete and disk usage refresh on device.
 - Built-in local and authorized Android storage navigation entries remain system-managed. Mutable root link records are separate from those entries.
-- Torrent browsing, Downloads organization, read-only overlay, home-screen shortcuts and widget remain future work in feature-todo.md.
+- Torrent device acceptance, seekable piece reads, Downloads organization, read-only overlay, home-screen shortcuts and widget remain future work in feature-todo.md.
 
 ## SMB direct-open correction
 

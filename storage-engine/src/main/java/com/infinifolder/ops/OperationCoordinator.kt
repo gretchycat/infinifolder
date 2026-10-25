@@ -3,6 +3,8 @@ package com.infinifolder.ops
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.atomic.AtomicBoolean
 
 enum class OperationState { QUEUED, RUNNING, COMPLETE, FAILED, CANCELLED }
@@ -71,11 +73,14 @@ data class OperationSnapshot(
 }
 
 /** UI-independent bounded queue. Observed by OperationService and UI progress dialogs. */
-class OperationCoordinator(private val concurrency: Int = 1) {
-    private val executor = Executors.newFixedThreadPool(concurrency.coerceIn(1, 3))
+class OperationCoordinator(
+    private val concurrency: Int = Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
+) {
+    private val executor = Executors.newFixedThreadPool(concurrency.coerceIn(1, 4))
     private val cancelled = mutableMapOf<String, AtomicBoolean>()
     private val records = LinkedHashMap<String, OperationSnapshot>()
     private val futures = mutableMapOf<String, Future<*>>()
+    private val resourceLocks = ConcurrentHashMap<String, ReentrantLock>()
     private val listeners = mutableListOf<(List<OperationSnapshot>) -> Unit>()
 
     @Synchronized fun snapshots(): List<OperationSnapshot> = records.values.toList()
@@ -102,6 +107,7 @@ class OperationCoordinator(private val concurrency: Int = 1) {
         label: String,
         totalBytes: Long? = null,
         totalItems: Int = 0,
+        conflictKeys: Set<String> = emptySet(),
         work: (update: (OperationUpdate) -> Unit, isCancelled: () -> Boolean) -> Unit
     ): String {
         val id = UUID.randomUUID().toString()
@@ -118,8 +124,15 @@ class OperationCoordinator(private val concurrency: Int = 1) {
         )
         notifyListeners()
         futures[id] = executor.submit {
-            update(id) { it.copy(state = OperationState.RUNNING) }
+            val heldLocks = mutableListOf<ReentrantLock>()
             try {
+                conflictKeys.sorted().forEach { key ->
+                    val lock = resourceLocks.computeIfAbsent(key) { ReentrantLock() }
+                    lock.lockInterruptibly()
+                    heldLocks += lock
+                }
+                if (token.get()) throw InterruptedException("Operation cancelled before start")
+                update(id) { it.copy(state = OperationState.RUNNING) }
                 work({ u ->
                     update(id) {
                         it.copy(
@@ -148,7 +161,7 @@ class OperationCoordinator(private val concurrency: Int = 1) {
                         message = e.message ?: "Operation failed"
                     )
                 }
-            }
+            } finally { heldLocks.asReversed().forEach { it.unlock() } }
         }
         return id
     }
@@ -163,7 +176,12 @@ class OperationCoordinator(private val concurrency: Int = 1) {
 
     var onCancelExternal: ((String) -> Unit)? = null
 
-    @Synchronized fun cancel(id: String) {
+    @Synchronized fun cancel(id: String, reason: String = "unspecified") {
+        val before = records[id]
+        com.infinifolder.storage.DiagnosticLog.record(
+            "operation.cancel.requested",
+            "id=$id label=${before?.label ?: "unknown"} state=${before?.state ?: "unknown"} reason=$reason thread=${Thread.currentThread().name}"
+        )
         cancelled[id]?.set(true)
         futures[id]?.cancel(true)
         onCancelExternal?.invoke(id)

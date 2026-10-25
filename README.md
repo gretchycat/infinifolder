@@ -4,7 +4,7 @@ An Android file browser with interchangeable storage providers, browsable archiv
 
 ## Current functionality
 
-- Local shared/removable storage, user-granted SAF sources, SFTP, FTP/FTPS and SMB. Virtual root supports editable container links, with credentials stored separately.
+- Local shared/removable storage, user-granted SAF sources, SFTP, FTP/FTPS, SMB and WebDAV. Virtual root supports editable container links, with credentials stored separately.
 - Grid/list browsing, navigation tree, breadcrumbs, temporary pinned targets, hold-to-drag files/selected sets and hover navigation. Same-device drops move; different/unknown devices copy. Two-finger rectangle selection leaves one finger available for scrolling.
 - Shared nested File/Edit/View/Select/Settings menus; wildcard/regex selection; name/MIME/size/date sorting in either direction; supported new-document/archive templates.
 - MIME-driven icons, application-package opening and explicit Browse for packaged containers such as APK/LOVE. Native links and .iflink shortcuts share resolution protections.
@@ -33,6 +33,6 @@ In debug builds, choose a dump folder in Debug dump settings under Settings, or 
 
 ## Limits and documentation
 
-Android storage permissions still apply. NFS/WebDAV/cloud providers and torrent browsing are not implemented. Operation queues are process-local. Nested write chains, complete metadata fidelity and several filesystem subsets remain limited. Compressed writes rebuild; they are not in-place compressed random edits. Live VM reads are not snapshots. Cache/external-editor changes still need focused handset acceptance.
+Android storage permissions still apply. Magnet links now have read-only torrent browsing and selected-file copying; live device acceptance, in-progress download feedback and seekable piece reads remain open. NFS/cloud providers are not implemented. Operation queues are process-local. Nested write chains, complete metadata fidelity and several filesystem subsets remain limited. Compressed writes rebuild; they are not in-place compressed random edits. Live VM reads are not snapshots. Cache/external-editor changes still need focused handset acceptance.
 
 Start with the [documentation index](docs/README.md), [architecture](docs/architecture.md), [format coverage](docs/file-formats.md), and [task list](docs/feature-todo.md). Historical audit/test evidence is retained with its revision; no new tests or APK build were run for the documentation update.

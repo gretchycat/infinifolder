@@ -4,7 +4,9 @@ Updated 2026-10-24. This is the current status reference. Checked implementation
 
 ## Confirmed on the handset
 
-- Local/SAF and network transfers exercised; FTP works and SMB direct share opening is fixed. The earlier FTP 502 unique-create rejection is historical.
+- Image-viewer Back returns to the directory; user-confirmed.
+
+- Local/SAF and network transfers exercised; FTP works, SMB direct share opening is fixed, and WebDAV connection/browsing is user-confirmed working. Broader DAV mutation/range coverage remains server-dependent. The earlier FTP 502 unique-create rejection is historical.
 - ZIP file/directory writes, FAT size-limit preflight, link creation and copy-through-link behavior work. FAT16 small-file copying and batched deletion are substantially faster and accepted.
 - UFS/compressed UFS, NTFS, HFS/HFS+/HFSX and general RAR/ARJ/CAB browsing work within their documented subsets. Whole-disk partition browsing and VDI/LVM navigation work; this does not establish every variant or metadata case.
 - FAT deleted-file copy-out and partial recovery work on the delivered safety fixtures. Recovery never proves original bytes merely from free allocation; fragmented reconstruction and exFAT recovery remain unsupported.
@@ -19,7 +21,7 @@ Updated 2026-10-24. This is the current status reference. Checked implementation
 | --- | --- |
 | Shared disk cache | 200 MiB total, separate file limit, LRU before prompting, active leases, copy/raise choices, six-hour expiry, restart cleanup and themed dialogs |
 | External editing | Real editor handoff/return; explicit Finish editing and save; unchanged files; source conflicts; save-as/copy/overwrite; interrupted sessions across providers |
-| Navigation | Image-viewer Back; latest unrelated Internal storage breadcrumb removal before remote connections; disk usage Parent above its initial scan root |
+| Navigation | Latest unrelated Internal storage breadcrumb removal before remote connections; disk usage Parent above its initial scan root |
 | Menus and targets | New templates, wildcard/regex, sort directions, pins/hover and selected-set drops across backends/orientations |
 | Transfer UI | Stable sizing, per-file/overall and verification progress, remembered verification switch, queues/cancellation and denied notification permissions |
 | Storage coverage | Low-space/interrupted compressed-container writes, FAT12/FAT32 batches, retained-file hashes and format-specific edge fixtures |
@@ -37,7 +39,7 @@ Ordinary copy verification is remembered and optional; moves and recovery retain
 
 ## Deferred requested features
 
-Most-used sorting; torrent/magnet browsing (URI links can already be stored); rule-based Downloads organization; read-only floating file browser; arbitrary-item home-screen shortcuts; later floating-view widget. NFS, WebDAV and cloud catalogs do not yet have active providers.
+Most-used sorting; torrent device acceptance and seekable piece reads; rule-based Downloads organization; read-only floating file browser; arbitrary-item home-screen shortcuts; later floating-view widget. NFS and cloud catalogs do not yet have active providers. WebDAV is user-confirmed working.
 
 ## Documentation and validation
 

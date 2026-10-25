@@ -4,7 +4,7 @@ Updated 2026-10-24. See [current status](project-status.md) for acceptance disti
 
 ## Menus and navigation
 
-Hamburger and overflow open the same nested File/Edit/View/Select/Settings menu, with right-aligned submenu triangles. The Tree/Files toolbar label switches panes. File → New contains folder, link, external storage connection links and supported document/archive templates. Unsupported archive writers are disabled explicitly. View exposes hidden files, internal viewing, sorting and themes; Select offers mode and wildcard/regex matching in the current folder. Most-used sorting remains future work.
+Hamburger and overflow open the same nested File/Edit/View/Select/Settings menu, with right-aligned submenu triangles. The Tree/Files toolbar label switches panes. File → New contains folder, link, external storage connection links and supported document/archive templates. Link creation offers a protocol dropdown for custom URI, SFTP/SSH, SMB/Samba, WebDAV and FTP/FTPS, with saved-connection selection or the matching setup form. The same choices are available when adding container links at Virtual root. Unsupported archive writers are disabled explicitly. View exposes hidden files, internal viewing, sorting and themes; Select offers mode and wildcard/regex matching in the current folder. Most-used sorting remains future work.
 
 Temporary half-size container pins sit between toolbar and breadcrumbs; the row disappears when empty. Pin to top/Unpin are long-press actions. Pins, breadcrumbs, containers and visible tree nodes accept transfers and linger navigation. The navigation tree has no long-press actions and uses the common theme without a separate green tint.
 
@@ -24,6 +24,8 @@ Parent folder zooms to an in-memory parent or resolves/scans the provider parent
 
 Scans are bounded to 200,000 nodes/depth 128 and do not follow symlinks. Unreadable/incomplete totals are lower bounds; logical byte sizes differ from allocated blocks and hardlinks may count more than once. Live changing directories are not atomic snapshots.
 
+Image-viewer Back is user-confirmed working.
+
 ## Remaining acceptance
 
-Image-viewer Back, Parent beyond initial scan root, latest remote breadcrumb fix, menu/templates/pattern options, pins/selected-set transfers and broader permission/theme/queue regressions. Current-folder explorer behavior is broadly accepted. Compilation evidence lives in the individual implementation records; this docs update ran no tests/build.
+Parent beyond initial scan root, latest remote breadcrumb fix, menu/templates/pattern options, pins/selected-set transfers and broader permission/theme/queue regressions. Current-folder explorer behavior is broadly accepted. Compilation evidence lives in the individual implementation records; this docs update ran no tests/build.

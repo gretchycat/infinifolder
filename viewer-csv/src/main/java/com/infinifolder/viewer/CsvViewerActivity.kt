@@ -101,7 +101,7 @@ class CsvViewerActivity : ViewerActivity() {
             textSize = 18f
             setTextColor(if (isDark) Color.WHITE else Color.BLACK)
             setBackgroundColor(Color.TRANSPARENT)
-            setOnClickListener { finish() }
+            setOnClickListener { onBackPressed() }
         }
         toolbar.addView(backBtn, LinearLayout.LayoutParams(dp(44), dp(44)))
 
@@ -445,6 +445,19 @@ class CsvViewerActivity : ViewerActivity() {
         } catch (e: Exception) {
             Toast.makeText(this, "No external handler found", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    override fun onBackPressed() {
+        if (isDirty) {
+            AlertDialog.Builder(this)
+                .setTitle("Discard changes?")
+                .setMessage("You have unsaved spreadsheet changes. Discard them?")
+                .setPositiveButton("Discard") { _, _ -> finish() }
+                .setNegativeButton("Keep editing", null)
+                .show()
+            return
+        }
+        super.onBackPressed()
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {

@@ -68,6 +68,9 @@ import com.infinifolder.smb.SmbDiscoveryService
 import com.infinifolder.smb.SmbProviderFactory
 import com.infinifolder.smb.SmbStorageProvider
 import com.infinifolder.smb.SmbUri
+import com.infinifolder.webdav.WebDavStorageProvider
+import com.infinifolder.webdav.WebDavCredentials
+import com.infinifolder.webdav.WebDavUri
 import com.infinifolder.shortcut.ShortcutInfo
 import com.infinifolder.storage.ContainerUris
 import com.infinifolder.storage.ContainerLinksProvider
@@ -210,6 +213,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 SftpUri.isSftpUri(uri) -> (sftpProvider.openRead(ResourceRef("sftp", uri.toString())) as? ProviderResult.Success)?.value
                 FtpUri.isFtpUri(uri) -> (ftpProvider.openRead(ResourceRef("ftp", uri.toString())) as? ProviderResult.Success)?.value
                 SmbUri.isSmbUri(uri) -> (smbProvider.openRead(ResourceRef("smb", uri.toString())) as? ProviderResult.Success)?.value
+                WebDavUri.owns(uri) -> (webDavProvider.openRead(ResourceRef("webdav", uri.toString())) as? ProviderResult.Success)?.value
                 uri.scheme == "file" -> uri.path?.let { File(it).inputStream() }
                 else -> null
             }
@@ -252,6 +256,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private lateinit var sftpProvider: SftpStorageProvider
     private lateinit var ftpProvider: FtpStorageProvider
     private lateinit var smbProvider: SmbStorageProvider
+    private lateinit var webDavProvider: WebDavStorageProvider
     private val pickSftpFileRequest = 9005
     private var pendingSftpFileCallback: ((String) -> Unit)? = null
     private var internalSharedEntries = emptyList<ResourceEntry>()
@@ -279,6 +284,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private var browserPaneTransitionInProgress = false
     private var browserPaneTransitionGeneration = 0
     private lateinit var status: TextView
+    private lateinit var loadingIndicator: ProgressBar
     private lateinit var shared: android.content.SharedPreferences
     private val operations = AppOperations.coordinator
     private val history = mutableListOf<Uri>()
@@ -296,6 +302,14 @@ class MainActivity : Activity(), DebugDumpObserver {
     private val entryIconViews = mutableMapOf<Uri, View>()
     private var renderedFileLocation: Uri? = null
     private var listingIsLoading = false
+    private var openingTorrentDirectory = false
+    private var openingVirtualDirectoryLabel: String? = null
+    private var entryActionLoading = false
+    private var storageOperationLoading = false
+    private var entryActionLoadingMessage = ""
+    private var entryActionLoadingToken = 0
+    private val activeEntryActionMessages = linkedMapOf<Int, String>()
+    private var entryActionPreviousStatus = ""
     private var listingNotice: String? = null
     private var listingError: String? = null
     private var grid = true
@@ -334,7 +348,8 @@ class MainActivity : Activity(), DebugDumpObserver {
     private var activeDialogOpId: String? = null
     private var progressTitleView: TextView? = null
     private var progressQueueView: TextView? = null
-    private var progressCurrentItemView: TextView? = null
+    private var progressStatusView: TextView? = null
+    private var progressItemNameView: TextView? = null
     private var progressBar: ProgressBar? = null
     private var progressFileBar: ProgressBar? = null
     private var progressFileLabel: TextView? = null
@@ -354,6 +369,10 @@ class MainActivity : Activity(), DebugDumpObserver {
     private val treeRoots = mutableListOf<TreeNode>()
     private val homeItems = mutableListOf<HomeItem>()
     private val applicationPublicItems = mutableListOf<HomeItem>()
+    private data class ExternalLinkVisit(val uri: String, val title: String, val openedAt: Long)
+    private enum class LinkNavigationOrigin { DIRECTORY_LINK, VIRTUAL_ROOT, EXTERNAL_HISTORY }
+    private val externalLinkHistoryKey = "external_link_history_v1"
+    private val externalLinkSchemes = setOf("ftp", "ftps", "sftp", "ssh", "sshfs", "smb", "webdav", "dav", "davs", "magnet", "torrent")
     private val pickTreeRequest = 4101
     private val pickCustomIconRequest = 4103
     private val pickThemeArchiveRequest = 4104
@@ -472,6 +491,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         sftpProvider = runtime.sftp
         ftpProvider = runtime.ftp
         smbProvider = runtime.smb
+        webDavProvider = runtime.webdav
         providerRegistry = runtime.registry
         provider = runtime.provider
         applicationStorage = provider
@@ -520,12 +540,69 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         }
         handleCacheCopyRequest(intent)
+        handleExternalLinkIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleCacheCopyRequest(intent)
+        handleExternalLinkIntent(intent)
+    }
+
+    private fun handleExternalLinkIntent(request: Intent?) {
+        if (request?.action != Intent.ACTION_VIEW) return
+        val uri = request.data ?: return
+        if (uri.scheme?.lowercase(Locale.ROOT) !in externalLinkSchemes) return
+        val title = uri.host ?: "${uri.scheme?.uppercase(Locale.ROOT) ?: "External"} link"
+        openContainerLinkUri(uri, title, requireContainer = true, origin = LinkNavigationOrigin.EXTERNAL_HISTORY)
+    }
+
+    private fun externalLinkVisits(): List<ExternalLinkVisit> = runCatching {
+        val array = JSONArray(shared.getString(externalLinkHistoryKey, "[]"))
+        (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            val uri = item.optString("uri").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            ExternalLinkVisit(uri, item.optString("title", "External link"), item.optLong("openedAt"))
+        }.sortedByDescending { it.openedAt }
+    }.getOrDefault(emptyList())
+
+    private fun recordExternalLinkVisit(rawUri: Uri, title: String) {
+        val safeUri = if (rawUri.isHierarchical && rawUri.userInfo != null)
+            rawUri.buildUpon().encodedAuthority(rawUri.encodedAuthority?.substringAfter('@')).build()
+        else rawUri
+        val visits = (externalLinkVisits().filterNot { it.uri == safeUri.toString() } +
+            ExternalLinkVisit(safeUri.toString(), title.ifBlank { "External link" }, System.currentTimeMillis()))
+            .takeLast(100).asReversed()
+        val array = JSONArray()
+        visits.forEach { visit -> array.put(JSONObject().put("uri", visit.uri).put("title", visit.title).put("openedAt", visit.openedAt)) }
+        shared.edit().putString(externalLinkHistoryKey, array.toString()).apply()
+        com.infinifolder.storage.DiagnosticLog.record("external-link.open", "scheme=${safeUri.scheme} title=$title uri=$safeUri")
+        if (homeMode && homePage == "external_link_history") runOnUiThread { renderHomeItems() }
+    }
+
+    private fun removeExternalLinkVisit(uri: String) {
+        val array = JSONArray()
+        externalLinkVisits().filterNot { it.uri == uri }.forEach { visit ->
+            array.put(JSONObject().put("uri", visit.uri).put("title", visit.title).put("openedAt", visit.openedAt))
+        }
+        shared.edit().putString(externalLinkHistoryKey, array.toString()).apply()
+        renderHomeItems()
+    }
+
+    private fun showExternalLinkHistory() {
+        loadGeneration++
+        homeMode = true
+        listingIsLoading = false
+        cancelEntryActionLoading()
+        updateEntryLoadingFeedback()
+        homePage = "external_link_history"
+        logicalLocationPrefix = null
+        currentProgramName = null
+        updateCreateAction()
+        renderLocation()
+        status.text = "Links opened from other apps and recently browsed container links"
+        renderHomeItems()
     }
 
     private fun handleCacheCopyRequest(request: Intent?) {
@@ -658,7 +735,22 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
             }
         }
-        root.addView(status)
+        loadingIndicator = ProgressBar(this).apply {
+            isIndeterminate = true
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(theme.accent)
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply {
+                marginStart = dp(4)
+                marginEnd = dp(8)
+                gravity = Gravity.CENTER_VERTICAL
+            }
+        }
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(loadingIndicator)
+            addView(status, LinearLayout.LayoutParams(0, -2, 1f))
+        })
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             isLongClickable = true
@@ -1344,7 +1436,6 @@ class MainActivity : Activity(), DebugDumpObserver {
         headerRow.addView(iconBox)
         headerRow.addView(headerInfoCol)
         layout.addView(headerRow)
-
         iconBox.setOnClickListener {
             pendingIconTargetType = "create_link"
             pendingIconTargetUri = null
@@ -1360,6 +1451,14 @@ class MainActivity : Activity(), DebugDumpObserver {
             launchCustomIconPicker()
         }
 
+        val linkProtocolIds=listOf("custom","sftp","smb","webdav","ftp")
+        val linkProtocolLabels=listOf("Custom / unknown protocol","SFTP / SSH","SMB / Samba","WebDAV","FTP / FTPS")
+        val protocolSelector=Spinner(context).apply {
+            adapter=ArrayAdapter(context,android.R.layout.simple_spinner_dropdown_item,linkProtocolLabels)
+            setSelection(0)
+        }
+        layout.addView(TextView(context).apply { text="Protocol";textSize=12f;setTextColor(setTextColorForTheme()) })
+        layout.addView(protocolSelector)
         val uriLabel = TextView(context).apply {
             text = "Target URI:"
             textSize = 12f
@@ -1373,12 +1472,46 @@ class MainActivity : Activity(), DebugDumpObserver {
             textSize = 14f
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
         }
+        var updateProtocolFields: () -> Unit = {}
+
+        protocolSelector.onItemSelectedListener=object: android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?)=Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?,view:View?,position:Int,id:Long) {
+                uriInput.hint=when(linkProtocolIds.getOrElse(position){"custom"}) {
+                    "sftp"->"server.example/path or sftp://server/path"
+                    "smb"->"server/share/path or smb://server/share/path"
+                    "webdav"->"https://server/dav/ or server/dav/"
+                    "ftp"->"server/path, ftp://… or ftps://…"
+                    else->"https://example.com, content://…, file://…, apps://…"
+                }
+                updateProtocolFields()
+            }
+        }
+        if(!initialUri.isNullOrBlank()) {
+            val scheme=runCatching { Uri.parse(initialUri).scheme?.lowercase() }.getOrNull()
+            val index=when(scheme){"sftp","ssh"->1;"smb","cifs"->2;"webdav","dav","davs"->3;"ftp","ftps"->4;else->0}
+            protocolSelector.setSelection(index)
+        }
 
         val quickActionsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(2), 0, dp(6))
         }
+        val protocolSetupPanel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        val protocolSetupHint = TextView(context).apply {
+            textSize = 13f
+            setTextColor(setTextColorForTheme())
+        }
+        val configureProtocolButton = Button(context).apply { text = "Set up connection…" }
+        val useSavedProtocolButton = Button(context).apply { text = "Use saved connection…" }
+        protocolSetupPanel.addView(protocolSetupHint)
+        protocolSetupPanel.addView(configureProtocolButton)
+        protocolSetupPanel.addView(useSavedProtocolButton)
 
         fun quickActionBtn(label: String, onClick: () -> Unit): TextView = TextView(context).apply {
             text = label
@@ -1426,6 +1559,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                 iconImage.setImageDrawable(null)
                 iconPlaceholder.visibility = View.VISIBLE
                 iconPlaceholder.text = when {
+                    linkProtocolIds.getOrElse(protocolSelector.selectedItemPosition){"custom"}=="sftp" -> "🔐"
+                    linkProtocolIds.getOrElse(protocolSelector.selectedItemPosition){"custom"}=="smb" -> "🖧"
+                    linkProtocolIds.getOrElse(protocolSelector.selectedItemPosition){"custom"} in setOf("webdav","ftp") -> "🌐"
                     WebMetadataResolver.isWebUri(normalized) -> "🌐"
                     isFolderCheck.isChecked -> "📁"
                     parsed != null && AppsUri.isAppUri(parsed) -> "📱"
@@ -1490,8 +1626,11 @@ class MainActivity : Activity(), DebugDumpObserver {
             override fun afterTextChanged(s: android.text.Editable?) {
                 val raw = s?.toString()?.trim() ?: ""
                 debounceRunnable?.let { root.removeCallbacks(it) }
+                val typedScheme=runCatching { Uri.parse(raw).scheme?.lowercase() }.getOrNull()
+                val typedProtocol=when(typedScheme){"ssh","sftp"->"sftp";"smb","cifs"->"smb";"dav","davs","webdav"->"webdav";"ftp","ftps"->"ftp";else->null}
+                if(typedProtocol!=null && linkProtocolIds.getOrElse(protocolSelector.selectedItemPosition){"custom"}=="custom") protocolSelector.setSelection(linkProtocolIds.indexOf(typedProtocol))
                 val normalized = WebMetadataResolver.normalizeInputUri(raw)
-                if (WebMetadataResolver.isWebUri(normalized)) {
+                if (linkProtocolIds.getOrElse(protocolSelector.selectedItemPosition){"custom"}=="custom" && WebMetadataResolver.isWebUri(normalized)) {
                     isFolderCheck.isChecked = false
                     updatePlaceholderIcon(raw)
                     val task = Runnable {
@@ -1545,7 +1684,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         })
         quickActionsRow.addView(quickActionBtn("Detect web info") {
             val raw = uriInput.text.toString().trim()
-            if (raw.isEmpty()) {
+            if (linkProtocolIds.getOrElse(protocolSelector.selectedItemPosition){"custom"}!="custom") {
+                Toast.makeText(this,"Page detection is available for custom HTTP/HTTPS links.",Toast.LENGTH_SHORT).show()
+            } else if (raw.isEmpty()) {
                 Toast.makeText(this, "Enter or paste a web URL first.", Toast.LENGTH_SHORT).show()
             } else {
                 debounceRunnable?.let { root.removeCallbacks(it) }
@@ -1603,6 +1744,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         layout.addView(uriLabel)
         layout.addView(uriInput)
         layout.addView(quickActionsRow)
+        layout.addView(protocolSetupPanel)
         layout.addView(nameLabel)
         layout.addView(nameInput)
         layout.addView(isFolderCheck)
@@ -1623,6 +1765,58 @@ class MainActivity : Activity(), DebugDumpObserver {
             .setPositiveButton("Create", null)
             .create()
 
+        updateProtocolFields = {
+            val protocol = linkProtocolIds.getOrElse(protocolSelector.selectedItemPosition) { "custom" }
+            val custom = protocol == "custom"
+            uriLabel.visibility = if (custom) View.VISIBLE else View.GONE
+            uriInput.visibility = if (custom) View.VISIBLE else View.GONE
+            quickActionsRow.visibility = if (custom) View.VISIBLE else View.GONE
+            isFolderCheck.visibility = if (custom) View.VISIBLE else View.GONE
+            protocolSetupPanel.visibility = if (custom) View.GONE else View.VISIBLE
+            protocolSetupHint.text = "${linkProtocolLabels.getOrElse(protocolSelector.selectedItemPosition) { "Storage" }} needs a saved connection. Configure its server, path, and authentication, or use an existing connection."
+        }
+        updateProtocolFields()
+
+        fun addConnectionShortcut(connection: ProviderConnection) {
+            val targetPath = if (connection.sourceTypeId == "smb" && !connection.options["initialShare"].isNullOrBlank())
+                "/${connection.options["initialShare"].orEmpty().trim('/')}" else connection.options["initialPath"] ?: "/"
+            val target = Uri.Builder().scheme(connection.sourceTypeId).authority(connection.id).path(targetPath).build()
+            val title = nameInput.text.toString().trim().removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION)
+                .ifBlank { connection.displayName }
+            val info = ShortcutInfo(targetUri = target.toString(), targetPath = targetPath,
+                displayNameOverride = title, targetMimeType = "vnd.android.document/directory", targetIsDirectory = true,
+                iconBase64 = customSelectedIconBase64)
+            val stem = WebMetadataResolver.sanitizeFileName(title, connection.displayName)
+            dialog.dismiss()
+            createShortcutFile(targetFolderUri, "$stem${ShortcutInfo.SHORTCUT_EXTENSION}", info)
+        }
+        fun configureConnection(protocol: String, existing: ProviderConnection? = null) {
+            val initial = uriInput.text.toString().trim().takeIf { it.isNotBlank() }?.let { runCatching { Uri.parse(it) }.getOrNull() }
+            val display = nameInput.text.toString().trim()
+            dialog.dismiss()
+            val onSaved: (ProviderConnection) -> Unit = ::addConnectionShortcut
+            when (protocol) {
+                "sftp" -> showSftpConnectionDialog(existing = existing, initialName = display, initialUri = initial, onSaved = onSaved)
+                "smb" -> showSmbConnectionDialog(existing = existing, initialName = display, initialUri = initial, onSaved = onSaved)
+                "webdav" -> showWebDavConnectionDialog(existing = existing, initialName = display, initialUri = initial, onSaved = onSaved)
+                "ftp" -> showFtpConnectionDialog(existing = existing, initialName = display, initialUri = initial, onSaved = onSaved)
+            }
+        }
+        configureProtocolButton.setOnClickListener {
+            configureConnection(linkProtocolIds.getOrElse(protocolSelector.selectedItemPosition) { return@setOnClickListener })
+        }
+        useSavedProtocolButton.setOnClickListener {
+            val protocol = linkProtocolIds.getOrElse(protocolSelector.selectedItemPosition) { "custom" }
+            val candidates = savedConnections().filter { it.sourceTypeId == protocol }
+            if (candidates.isEmpty()) {
+                Toast.makeText(this, "No saved ${linkProtocolLabels[protocolSelector.selectedItemPosition]} connection", Toast.LENGTH_SHORT).show()
+            } else {
+                dialogBuilder().setTitle("Use saved connection").setItems(candidates.map { "${it.displayName} · ${it.endpoint ?: it.options["url"].orEmpty()}" }.toTypedArray()) { _, which ->
+                    addConnectionShortcut(candidates[which])
+                }.setNegativeButton("Cancel", null).show()
+            }
+        }
+
         dialog.setOnDismissListener {
             isDialogClosed = true
             debounceRunnable?.let { root.removeCallbacks(it) }
@@ -1635,6 +1829,10 @@ class MainActivity : Activity(), DebugDumpObserver {
         dialog.setOnShowListener {
             dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val rawUri = uriInput.text.toString().trim()
+                if (linkProtocolIds.getOrElse(protocolSelector.selectedItemPosition) { "custom" } != "custom") {
+                    Toast.makeText(this, "Set up the selected protocol connection or choose a saved connection.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
                 if (rawUri.isEmpty()) {
                     uriInput.error = "Enter or paste a URI"
                     return@setOnClickListener
@@ -1650,7 +1848,20 @@ class MainActivity : Activity(), DebugDumpObserver {
                     Toast.makeText(this, "Cannot create link in a read-only location.", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
-                val normalizedUri = WebMetadataResolver.normalizeInputUri(rawUri)
+                val selectedProtocol=linkProtocolIds.getOrElse(protocolSelector.selectedItemPosition){"custom"}
+                val protocolUri=when(selectedProtocol) {
+                    "sftp" -> if("://" in rawUri) rawUri else "sftp://$rawUri"
+                    "smb" -> if("://" in rawUri) rawUri else "smb://$rawUri"
+                    "ftp" -> if("://" in rawUri) rawUri else "ftp://$rawUri"
+                    "webdav" -> when {
+                        rawUri.startsWith("https://",true) -> "davs://${rawUri.substringAfter("//")}"
+                        rawUri.startsWith("http://",true) -> "dav://${rawUri.substringAfter("//")}"
+                        "://" in rawUri -> rawUri
+                        else -> "davs://$rawUri"
+                    }
+                    else -> rawUri
+                }
+                val normalizedUri = WebMetadataResolver.normalizeInputUri(protocolUri)
                 val userEnteredName = nameInput.text.toString().trim()
                     .removeSuffix(".lnk").removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION)
                     .removeSuffix(".LNK")
@@ -1829,46 +2040,87 @@ class MainActivity : Activity(), DebugDumpObserver {
             "ftp" -> showFtpConnectionDialog(initialName = name, initialUri = uri, onSaved = saved)
             "sftp" -> showSftpConnectionDialog(initialName = name, initialUri = uri, onSaved = saved)
             "smb" -> showSmbConnectionDialog(initialName = name, initialUri = uri, onSaved = saved)
+            "webdav" -> showWebDavConnectionDialog(initialName = name, initialUri = uri, onSaved = saved)
         }
     }
 
-    private fun containerUriHint(uri: Uri): Uri = if (!ArchiveUri.isArchiveUri(uri) &&
-        !uri.path.orEmpty().endsWith('/') && ArchiveFormats.isArchive(uri.lastPathSegment.orEmpty()))
-        ArchiveUri.toArchiveUri(uri) else uri
+    private fun containerUriHint(uri: Uri): Uri {
+        if (!uri.isHierarchical || ArchiveUri.isArchiveUri(uri)) return uri
+        return if (!uri.path.orEmpty().endsWith('/') && ArchiveFormats.isArchive(uri.lastPathSegment.orEmpty()))
+            ArchiveUri.toArchiveUri(uri) else uri
+    }
 
     private fun showRootContainerLinkDialog(initialUri: String? = null) {
-        val context = dialogContext()
-        val body = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(4)) }
-        val name = EditText(context).apply { hint = "Link name"; isSingleLine = true }
-        val uri = EditText(context).apply {
-            hint = "ftp://server/folder/ or another container URI"; setText(initialUri.orEmpty())
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+        val context=dialogContext()
+        val body=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(20),dp(8),dp(20),dp(4)) }
+        val protocolLabels=listOf("Custom URI / unknown protocol","SFTP / SSH","SMB / Samba","WebDAV","FTP / FTPS")
+        val protocolIds=listOf("custom","sftp","smb","webdav","ftp")
+        val selector=Spinner(context).apply { adapter=ArrayAdapter(context,android.R.layout.simple_spinner_dropdown_item,protocolLabels) }
+        val name=EditText(context).apply { hint="Link name"; isSingleLine=true }
+        val uri=EditText(context).apply { hint="https://…, content://…, or custom URI"; setText(initialUri.orEmpty()); inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI }
+        val uriLabel=TextView(context).apply { text="Target URI"; textSize=12f; setTextColor(setTextColorForTheme()) }
+        val savedButton=Button(context).apply { text="Use saved connection…" }
+        body.addView(TextView(context).apply { text="Protocol"; textSize=12f; setTextColor(setTextColorForTheme()) })
+        body.addView(selector); body.addView(name); body.addView(uriLabel); body.addView(uri); body.addView(savedButton)
+        fun selectedProtocol()=protocolIds.getOrElse(selector.selectedItemPosition){"custom"}
+        fun updateFields(){
+            val custom=selectedProtocol()=="custom"
+            uriLabel.visibility=if(custom) View.VISIBLE else View.GONE
+            uri.visibility=if(custom) View.VISIBLE else View.GONE
+            savedButton.visibility=if(custom) View.GONE else View.VISIBLE
         }
-        body.addView(name); body.addView(uri)
-        body.addView(Button(context).apply {
-            text = "Choose existing container…"
-            setOnClickListener {
-                showFolderPicker("Choose link target", current) { selected, path ->
-                    uri.setText(selected.toString()); if (name.text.isBlank()) name.setText(path.substringAfterLast('/'))
-                }
-            }
-        })
-        val dialog = dialogBuilder().setTitle("Container link on Virtual root")
-            .setMessage("Only links to folders, storage servers, archives and other containers belong here. Removing the link leaves its target untouched.")
-            .setView(body).setNegativeButton("Cancel", null).setPositiveButton("Create link", null).create()
+        if(!initialUri.isNullOrBlank()) {
+            val scheme=runCatching { Uri.parse(initialUri).scheme?.lowercase() }.getOrNull()
+            val selected=when(scheme){"sftp","ssh"->"sftp";"smb","cifs"->"smb";"webdav","dav","davs"->"webdav";"ftp","ftps"->"ftp";else->"custom"}
+            selector.setSelection(protocolIds.indexOf(selected).coerceAtLeast(0))
+        }
+        var pickedConnection:ProviderConnection?=null
+        selector.onItemSelectedListener=object: android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?)=Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?,view:View?,position:Int,id:Long){ pickedConnection=null; updateFields() }
+        }
+        savedButton.setOnClickListener {
+            val type=selectedProtocol(); val candidates=savedConnections().filter { it.sourceTypeId==type }
+            if(candidates.isEmpty()) { Toast.makeText(this,"No saved ${protocolLabels.getOrElse(selector.selectedItemPosition){""}} connection",Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            dialogBuilder().setTitle("Choose saved connection").setItems(candidates.map { "${it.displayName} · ${it.endpoint ?: it.options["url"].orEmpty()}" }.toTypedArray()) { _,which ->
+                pickedConnection=candidates[which]; name.setText(pickedConnection?.displayName)
+            }.setNegativeButton("Cancel",null).show()
+        }
+        val dialog=dialogBuilder().setTitle("New link").setMessage("Create a browsable storage connection on Virtual root, or choose a custom URI. Removing a link never deletes its target.")
+            .setView(body).setNegativeButton("Cancel",null).setPositiveButton("Create link",null).create()
         dialog.setOnShowListener {
             dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val target = runCatching { Uri.parse(uri.text.toString().trim()) }.getOrNull()
-                if (target?.scheme.isNullOrBlank() || target == ContainerLinksProvider.ROOT) { uri.error = "Enter a container URI"; return@setOnClickListener }
-                if (target == null) return@setOnClickListener
-                if (ContainerUris.hasPassword(target)) { uri.error = "Use connection settings for the password"; return@setOnClickListener }
-                val title = name.text.toString().trim().ifEmpty { target.host ?: target.lastPathSegment ?: "Container" }
-                dialog.dismiss()
-                bindContainerUri(target, title) { canonical ->
-                    addContainerRootLink(ShortcutInfo(targetUri = containerUriHint(canonical).toString(),
-                        displayNameOverride = title, targetIsDirectory = true,
-                        targetMimeType = "vnd.android.document/directory"))
+                val protocol=selectedProtocol(); val display=name.text.toString().trim()
+                if(protocol!="custom") {
+                    val selected=pickedConnection
+                    if(selected!=null) {
+                        val targetPath=when(selected.sourceTypeId){"smb"->if(!selected.options["initialShare"].isNullOrBlank()) "/${selected.options["initialShare"]!!.trim('/')}" else selected.options["initialPath"] ?: "/";else->selected.options["initialPath"] ?: "/"}
+                        val target=Uri.Builder().scheme(selected.sourceTypeId).authority(selected.id).path(targetPath).build()
+                        dialog.dismiss(); addContainerRootLink(ShortcutInfo(targetUri=target.toString(),displayNameOverride=display.ifEmpty { selected.displayName },targetIsDirectory=true,targetMimeType="vnd.android.document/directory"));return@setOnClickListener
+                    }
+                    if(display.isEmpty()){name.error="Enter a link name";return@setOnClickListener}
+                    val saved:(ProviderConnection)->Unit={ connection ->
+                        val targetPath=when(connection.sourceTypeId){"smb"->if(!connection.options["initialShare"].isNullOrBlank()) "/${connection.options["initialShare"]!!.trim('/')}" else connection.options["initialPath"] ?: "/";else->connection.options["initialPath"] ?: "/"}
+                        val target=Uri.Builder().scheme(connection.sourceTypeId).authority(connection.id).path(targetPath).build()
+                        addContainerRootLink(ShortcutInfo(targetUri=target.toString(),displayNameOverride=display.ifEmpty { connection.displayName },targetIsDirectory=true,targetMimeType="vnd.android.document/directory"))
+                    }
+                    val suppliedUri=initialUri?.let { runCatching { Uri.parse(it) }.getOrNull() }
+                    dialog.dismiss()
+                    when(protocol){
+                        "sftp"->showSftpConnectionDialog(initialName=display,initialUri=suppliedUri,onSaved=saved)
+                        "smb"->showSmbConnectionDialog(initialName=display,initialUri=suppliedUri,onSaved=saved)
+                        "webdav"->showWebDavConnectionDialog(initialName=display,initialUri=suppliedUri,onSaved=saved)
+                        "ftp"->showFtpConnectionDialog(initialName=display,initialUri=suppliedUri,onSaved=saved)
+                    }
+                    return@setOnClickListener
                 }
+                val raw=uri.text.toString().trim(); val target=runCatching { Uri.parse(raw) }.getOrNull()
+                if(raw.isEmpty() || target?.scheme.isNullOrBlank()){uri.error="Enter a valid URI";return@setOnClickListener}
+                if(target==null || target==ContainerLinksProvider.ROOT){uri.error="Enter a container URI";return@setOnClickListener}
+                if(ContainerUris.hasPassword(target)){uri.error="Use connection settings for the password";return@setOnClickListener}
+                val title=display.ifEmpty { target.host ?: (if (target.isHierarchical) target.lastPathSegment else null) ?: "Container" }
+                dialog.dismiss()
+                bindContainerUri(target,title){canonical -> addContainerRootLink(ShortcutInfo(targetUri=containerUriHint(canonical).toString(),displayNameOverride=title,targetIsDirectory=true,targetMimeType="vnd.android.document/directory"))}
             }
         }
         dialog.show()
@@ -1910,7 +2162,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun migrateContainerConnectionLinks() {
-        savedConnections().filter { it.sourceTypeId in setOf("ftp", "sftp", "smb") }.forEach { connection ->
+        savedConnections().filter { it.sourceTypeId in setOf("ftp", "sftp", "smb", "webdav") }.forEach { connection ->
             if (shared.getBoolean("root_link_migrated_${connection.id}", false)) return@forEach
             val path = if (connection.sourceTypeId == "smb" && !connection.options["initialShare"].isNullOrBlank())
                 "/${connection.options["initialShare"].orEmpty().trim('/')}" else connection.options["initialPath"] ?: "/"
@@ -1933,13 +2185,42 @@ class MainActivity : Activity(), DebugDumpObserver {
             else -> "🔗"
         }
         return HomeItem(icon, shortcut.displayNameOverride ?: entry.metadata.name.removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION),
-            shortcut.targetPath ?: shortcut.targetUri, { openContainerLinkUri(target, shortcut.displayNameOverride, true) },
+            shortcut.targetPath ?: shortcut.targetUri, { openContainerLinkUri(target, shortcut.displayNameOverride, true, LinkNavigationOrigin.VIRTUAL_ROOT) },
             { showEntryMenu(entry) }, "root_link_${entry.uri}", target.takeIf { browsable }, browsable,
             linkEntry = entry)
     }
 
-    private fun openContainerLinkUri(uri: Uri, name: String? = null, requireContainer: Boolean = false) {
-        val title = name ?: uri.lastPathSegment ?: "Container"
+    private fun openContainerLinkUri(
+        uri: Uri,
+        name: String? = null,
+        requireContainer: Boolean = false,
+        origin: LinkNavigationOrigin = LinkNavigationOrigin.VIRTUAL_ROOT
+    ) {
+        val title = name ?: (if (uri.isHierarchical) uri.lastPathSegment else null) ?: "Container"
+        if (uri.scheme.equals("magnet", true) || uri.scheme.equals("torrent", true)) {
+            // Change the browser location before doing history, tree, metadata, or peer work.
+            try {
+                // The opaque magnet URI itself is a valid virtual root. Avoid provider
+                // initialization here so the browser can navigate before any loading work.
+                val target = uri
+                logicalLocationPrefix = if (origin == LinkNavigationOrigin.EXTERNAL_HISTORY) "External link history" else
+                    logicalLocationPrefix.takeIf { origin == LinkNavigationOrigin.DIRECTORY_LINK }
+                currentProgramName = null
+                if (origin != LinkNavigationOrigin.DIRECTORY_LINK) {
+                    history.clear(); historyNames.clear()
+                }
+                current = null
+                navigate(target, push = origin == LinkNavigationOrigin.DIRECTORY_LINK, displayName = title, deferInitialLoad = true)
+                setTreeVisible(false)
+                if (uri.scheme?.lowercase(Locale.ROOT) in externalLinkSchemes) recordExternalLinkVisit(uri, title)
+            } catch (error: Exception) {
+                dialogBuilder().setTitle("Cannot browse $title")
+                    .setMessage(error.message ?: "Invalid magnet link")
+                    .setPositiveButton("OK", null).show()
+            }
+            return
+        }
+        if (uri.scheme?.lowercase(Locale.ROOT) in externalLinkSchemes) recordExternalLinkVisit(uri, title)
         bindContainerUri(uri, title) { canonical ->
             val target = if (requireContainer) containerUriHint(canonical) else canonical
             val ref = provider.refForUri(target)
@@ -2008,7 +2289,41 @@ class MainActivity : Activity(), DebugDumpObserver {
         ftpProvider.clientPool.disconnect(connectionId)
         smbProvider.credentialStore.remove(connectionId)
         smbProvider.clientPool.disconnect(connectionId)
+        webDavProvider.credentialStore.remove(connectionId)
         showHomeRoot()
+    }
+
+    private fun showWebDavConnectionDialog(existing: ProviderConnection? = null, initialName: String = "", initialUrl: String = "", initialUri: Uri? = null, onSaved: ((ProviderConnection) -> Unit)? = null) {
+        val context=dialogContext(); val body=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(20),dp(10),dp(20),dp(10)) }; val scroll=ScrollView(context).apply { addView(body) }
+        val name=EditText(context).apply { hint="Connection name"; setText(existing?.displayName ?: initialName.ifBlank { initialUri?.host ?: "" }) }
+        val url=EditText(context).apply { hint="WebDAV URL (https://server/remote.php/dav/files/user/)"; setText(existing?.options?.get("url") ?: initialUrl.ifBlank { initialUri?.let { val scheme=when(it.scheme?.lowercase()){"davs","webdav"->"https";"dav"->"http";else->it.scheme}; "${scheme}://${it.host}${if(it.port>0) ":${it.port}" else ""}${it.path ?: "/"}" }.orEmpty() }) }
+        val user=EditText(context).apply { hint="Username"; setText(existing?.options?.get("username") ?: initialUri?.userInfo.orEmpty()) }
+        val password=EditText(context).apply { hint="Password"; inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD; setText(existing?.let { webDavProvider.credentialStore.load(it.id)?.password }.orEmpty()) }
+        val path=EditText(context).apply { hint="Initial path within collection"; setText(existing?.options?.get("initialPath") ?: "/") }
+        body.addView(name);body.addView(url);body.addView(user);body.addView(password);body.addView(path)
+        body.addView(TextView(context).apply { text="Use HTTPS when available. Basic authentication over HTTP sends credentials without transport encryption."; textSize=12f; setTextColor(if(dark) 0xFFFFCC80.toInt() else 0xFF8D4B00.toInt()); setPadding(0,dp(6),0,dp(4)) })
+        dialogBuilder().setTitle(if(existing==null) "Add WebDAV Connection" else "Edit WebDAV Connection").setView(scroll).setNeutralButton("Test Connection",null).setNegativeButton("Cancel",null).setPositiveButton(if(existing==null) "Save & Connect" else "Save",null).create().also { dialog ->
+            dialog.setOnShowListener {
+                dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                    val endpoint=url.text.toString().trim(); if(!endpoint.startsWith("https://",true) && !endpoint.startsWith("http://",true)){url.error="Enter an http:// or https:// URL";return@setOnClickListener}
+                    val c=ProviderConnection(id="webdav_test",sourceTypeId="webdav",displayName=name.text.toString().ifBlank { Uri.parse(endpoint).host ?: "WebDAV" },endpoint=endpoint,options=mapOf("url" to endpoint,"username" to user.text.toString().trim(),"initialPath" to path.text.toString().ifBlank { "/" }))
+                    val testUser=user.text.toString().trim(); val testPassword=password.text.toString()
+                    val progress=android.app.ProgressDialog(this).apply { setMessage("Testing WebDAV connection…");setCancelable(false);show() }
+                    accessIo.execute { val result=webDavProvider.testConnection(c,testUser,testPassword);runOnUiThread { progress.dismiss();result.onSuccess { msg -> dialogBuilder().setTitle("Connection Succeeded").setMessage(msg).setPositiveButton("OK",null).show() }.onFailure { e -> dialogBuilder().setTitle("Connection Failed").setMessage(e.message ?: "Unknown error").setPositiveButton("OK",null).show() } } }
+                }
+                dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    val endpoint=url.text.toString().trim();val parsed=runCatching { Uri.parse(endpoint) }.getOrNull()
+                    if(parsed==null || parsed.scheme !in setOf("https","http") || parsed.host.isNullOrBlank() || !parsed.userInfo.isNullOrEmpty()){url.error="Enter a valid http:// or https:// WebDAV URL without a username or password";return@setOnClickListener}
+                    val id=existing?.id ?: UUID.randomUUID().toString();val display=name.text.toString().trim().ifBlank { parsed.host!! };val initial=path.text.toString().trim().ifBlank { "/" }
+                    webDavProvider.credentialStore.save(id,WebDavCredentials(password.text.toString().ifEmpty { null }))
+                    val options=mapOf("url" to endpoint,"host" to parsed.host.orEmpty(),"port" to (if(parsed.port>0)parsed.port else if(parsed.scheme=="https")443 else 80).toString(),"tls" to (parsed.scheme=="https").toString(),"username" to user.text.toString().trim(),"initialPath" to initial)
+                    val connection=ProviderConnection(id=id,sourceTypeId="webdav",displayName=display,endpoint=endpoint,options=options,credentialHandle="webdav_vault")
+                    saveConnection(connection);dialog.dismiss()
+                    if(onSaved!=null){onSaved(connection);return@setOnClickListener}
+                    showHomeRoot();openRoot(WebDavUri.build(id,initial),rememberAuthorizedRoot=false)
+                }
+            }
+        }.show()
     }
 
     private fun showSavedConnectionActions(connection: ProviderConnection) {
@@ -2113,6 +2428,21 @@ class MainActivity : Activity(), DebugDumpObserver {
                         .setPositiveButton("Remove") { _, _ ->
                             removeConnection(connection.id)
                         }.show()
+                }
+            }.show()
+            return
+        }
+        if (connection.sourceTypeId == "webdav") {
+            dialogBuilder().setTitle(connection.displayName).setItems(arrayOf("Open", "Test connection", "Edit connection", "Remove saved connection")) { _, which ->
+                when(which) {
+                    0 -> openRoot(WebDavUri.build(connection.id, connection.options["initialPath"] ?: "/"), rememberAuthorizedRoot=false)
+                    1 -> {
+                        val cfg=connection; val user=cfg.options["username"].orEmpty(); val pass=webDavProvider.credentialStore.load(cfg.id)?.password.orEmpty()
+                        val progress=android.app.ProgressDialog(this).apply { setMessage("Testing WebDAV connection…"); setCancelable(false); show() }
+                        accessIo.execute { val result=webDavProvider.testConnection(cfg,user,pass); runOnUiThread { progress.dismiss(); result.onSuccess { msg -> dialogBuilder().setTitle("Connection Succeeded").setMessage(msg).setPositiveButton("OK",null).show() }.onFailure { err -> dialogBuilder().setTitle("Connection Failed").setMessage(err.message ?: "Unknown error").setPositiveButton("OK",null).show() } } }
+                    }
+                    2 -> showWebDavConnectionDialog(existing=connection)
+                    3 -> dialogBuilder().setMessage("Remove ${connection.displayName} from the Virtual root?").setNegativeButton("Cancel",null).setPositiveButton("Remove") { _,_ -> removeConnection(connection.id) }.show()
                 }
             }.show()
             return
@@ -2977,7 +3307,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             val key = item.treeKey ?: return@mapNotNull null
             val target = item.initialUri ?: item.treeUri ?: return@mapNotNull null
             if (localProvider.owns(target) || AppsUri.isAppsUri(target) || SftpUri.isSftpUri(target) ||
-                FtpUri.isFtpUri(target) || SmbUri.isSmbUri(target) ||
+                FtpUri.isFtpUri(target) || SmbUri.isSmbUri(target) || WebDavUri.owns(target) ||
                 ArchiveUri.isArchiveUri(target) || key.startsWith("sftp_") || key.startsWith("ftp_") || key.startsWith("smb_") || key.startsWith("archive_") ||
                 key == "internal_shared" || key == "application_public" || key == "installed_apps") return@mapNotNull null
             key to target
@@ -3316,7 +3646,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
     private fun rememberAuthorizedTreeRoot(uri: Uri, name: String, path: String) {
         if (localProvider.owns(uri) || AppsUri.isAppsUri(uri) || ArchiveUri.isArchiveUri(uri) || SftpUri.isSftpUri(uri) ||
-            FtpUri.isFtpUri(uri) || SmbUri.isSmbUri(uri) || AppDocumentSources.isAppAuthority(uri) ||
+            FtpUri.isFtpUri(uri) || SmbUri.isSmbUri(uri) || WebDavUri.owns(uri) || AppDocumentSources.isAppAuthority(uri) ||
             (localProvider.hasAccess() && isPrimaryExternalStorageUri(uri))) return
         val key = "authorized_${sourceIdentity(uri)}"
         val existing = homeItems.indexOfFirst { it.treeKey == key }
@@ -3327,7 +3657,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun emptyState() {
         showHomeRoot()
     }
-    private fun navigate(uri: Uri, push: Boolean = true, displayName: String? = null) {
+    private fun navigate(uri: Uri, push: Boolean = true, displayName: String? = null, deferInitialLoad: Boolean = false) {
         if (uri == ContainerLinksProvider.ROOT) { showHomeRoot(); return }
         try {
             browserNavigationGeneration++
@@ -3344,7 +3674,34 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             current = uri
             renderLocation()
-            load(uri)
+            if (deferInitialLoad) {
+                loadGeneration++ // Invalidate any listing still finishing for the prior location.
+                openingTorrentDirectory = true
+                openingVirtualDirectoryLabel = displayName ?: "Torrent"
+                listingIsLoading = false
+                listingNotice = null
+                listingError = null
+                entries = emptyList()
+                status.text = "Opening torrent folder…"
+                updateEntryLoadingFeedback()
+                content.removeAllViews()
+                renderEntries()
+                val navigationToken = browserNavigationGeneration
+                // Show an unlocked, empty virtual folder first. Start network/metadata work
+                // only after that new location has had time to render on screen.
+                root.postDelayed({
+                    if (!isFinishing && !isDestroyed && !homeMode && current == uri &&
+                        browserNavigationGeneration == navigationToken) {
+                        openingTorrentDirectory = false
+                        openingVirtualDirectoryLabel = null
+                        load(uri)
+                    }
+                }, 120L)
+            } else {
+                openingTorrentDirectory = false
+                openingVirtualDirectoryLabel = null
+                load(uri)
+            }
         } catch (t: Throwable) {
             android.util.Log.e("InfiniFolder", "Error navigating to $uri", t)
             com.infinifolder.storage.DiagnosticLog.record("browser.failure", error = t)
@@ -3385,6 +3742,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                     breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
                     breadcrumb.addView(crumbText("Application public", setTextColorForTheme(), true) { showApplicationPublic() })
                 }
+                if (homePage == "external_link_history") {
+                    breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
+                    breadcrumb.addView(crumbText("External link history", setTextColorForTheme(), true) { showExternalLinkHistory() })
+                }
                 renderTree()
                 return
             }
@@ -3401,6 +3762,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     when (prefix) {
                         "Application public" -> showApplicationPublic()
                         "Installed Applications" -> openInstalledApps()
+                        "External link history" -> showExternalLinkHistory()
                         else -> showInternalShared()
                     }
                 })
@@ -3445,12 +3807,14 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun setTextColorForTheme() = if (dark) 0xFFF0F0E9.toInt() else 0xFF20231F.toInt()
     private fun load(uri: Uri, loadingAttempt: Int = 0) {
         if (uri == ContainerLinksProvider.ROOT) { showHomeRoot(); return }
+        if (loadingAttempt == 0) cancelEntryActionLoading()
         val requestGeneration = ++loadGeneration
         homeMode = false
         listingError = null
         if (loadingAttempt == 0) {
             listingIsLoading = true; listingNotice = null
             status.text = "Loading…"
+            updateEntryLoadingFeedback()
             // Keep the current rows and scroll extent while refreshing the same folder.
             if (renderedFileLocation != uri) {
                 cancelDragContainerHover()
@@ -3462,6 +3826,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         val ref = try {
             resourceRef(uri)
         } catch (t: Throwable) {
+            listingIsLoading = false
+            updateEntryLoadingFeedback()
             listingError = "Invalid folder reference: ${t.message}"
             status.text = listingError
             return
@@ -3497,6 +3863,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                             }
                             is ProviderResult.Failure -> {
                                 entries = emptyList(); listingIsLoading = false; listingError = result.message
+                                updateEntryLoadingFeedback()
                                 status.text = result.message; renderEntries()
                                 val failureCause = result.cause
                                 if (failureCause != null && com.infinifolder.viewer.CacheFailureUi.offerCopy(this, failureCause,
@@ -3504,12 +3871,13 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 if (localProvider.owns(uri)) {
                                     if (!localProvider.hasAccess()) requestSharedStorageAccess()
                                     else status.text = "Android restricts access to this folder: ${result.message}"
-                                } else if (!ArchiveUri.isArchiveUri(uri) && !AppsUri.isAppsUri(uri) && !SftpUri.isSftpUri(uri) && !FtpUri.isFtpUri(uri) && !SmbUri.isSmbUri(uri) && isAccessFailure(result.message, result.cause)) {
+                                } else if (!ArchiveUri.isArchiveUri(uri) && !AppsUri.isAppsUri(uri) && !SftpUri.isSftpUri(uri) && !FtpUri.isFtpUri(uri) && !SmbUri.isSmbUri(uri) && !WebDavUri.owns(uri) && isAccessFailure(result.message, result.cause)) {
                                     rootPicker(uri, "tree_permission_regrant")
                                 }
                             }
                             is ProviderResult.Unsupported -> {
                                 entries = emptyList(); listingIsLoading = false
+                                updateEntryLoadingFeedback()
                                 listingError = "This provider cannot list this folder."
                                 status.text = listingError; renderEntries()
                             }
@@ -3517,6 +3885,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                     } catch (t: Throwable) {
                         android.util.Log.e("InfiniFolder", "Error rendering listing for $uri", t)
                         com.infinifolder.storage.DiagnosticLog.record("browser.failure", error = t)
+                        listingIsLoading = false
+                        updateEntryLoadingFeedback()
                         status.text = "Error rendering folder: ${t.message}"
                     }
                 }
@@ -3525,6 +3895,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 com.infinifolder.storage.DiagnosticLog.record("browser.failure", error = t)
                 runOnUiThread {
                     if (requestGeneration == loadGeneration && current == uri) {
+                        listingIsLoading = false
+                        updateEntryLoadingFeedback()
                         status.text = "Failed to list folder: ${t.message}"
                     }
                 }
@@ -3532,6 +3904,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
     private fun updateListingStatus(notice: String? = listingNotice, isLoading: Boolean = listingIsLoading, loadingAttempt: Int = 0) {
+        updateEntryLoadingFeedback()
         if (!isLoading && ::fileScroll.isInitialized) {
             fileScroll.isRefreshing = false
         }
@@ -3550,8 +3923,117 @@ class MainActivity : Activity(), DebugDumpObserver {
             else -> "${visible.size} items$hiddenNotice"
         }
     }
+
+    /** Keep network and archive work asynchronous and visible without disabling browser icons. */
+    private fun updateEntryLoadingFeedback() {
+        if (::loadingIndicator.isInitialized) {
+            loadingIndicator.visibility = if (listingIsLoading || entryActionLoading || storageOperationLoading) View.VISIBLE else View.GONE
+            loadingIndicator.contentDescription = when {
+                entryActionLoading -> entryActionLoadingMessage
+                listingIsLoading -> "Loading folder"
+                storageOperationLoading -> "File operation in progress"
+                else -> null
+            }
+        }
+    }
+
+    /** Present a fresh empty directory surface before resolving a shortcut target. */
+    private fun showOpeningVirtualDirectory(label: String, preserveBreadcrumbs: Boolean): Long {
+        browserNavigationGeneration++
+        loadGeneration++
+        if (selectionMode) exitSelectionMode()
+        if (::fileScroll.isInitialized) fileScroll.resetPull(smooth = false)
+        homeMode = false
+        current = null
+        if (!preserveBreadcrumbs) {
+            history.clear(); historyNames.clear()
+            logicalLocationPrefix = null
+        }
+        entries = emptyList()
+        listingIsLoading = false
+        listingError = null
+        listingNotice = null
+        openingTorrentDirectory = false
+        openingVirtualDirectoryLabel = label.ifBlank { "Container" }
+        updateCreateAction()
+        renderLocation()
+        content.removeAllViews()
+        renderEntries()
+        status.text = "Opening virtual directory…"
+        return browserNavigationGeneration
+    }
+
+    private fun beginEntryActionLoading(message: String): Int? {
+        if (isFinishing || isDestroyed) return null
+        if (activeEntryActionMessages.isEmpty()) entryActionPreviousStatus = status.text?.toString().orEmpty()
+        val token = ++entryActionLoadingToken
+        activeEntryActionMessages[token] = message
+        entryActionLoading = true
+        entryActionLoadingMessage = message
+        status.text = message
+        updateEntryLoadingFeedback()
+        return token
+    }
+
+    private fun finishEntryActionLoading(token: Int) {
+        if (activeEntryActionMessages.remove(token) == null) return
+        entryActionLoading = activeEntryActionMessages.isNotEmpty()
+        entryActionLoadingMessage = activeEntryActionMessages.values.lastOrNull().orEmpty()
+        updateEntryLoadingFeedback()
+        if (entryActionLoading) status.text = entryActionLoadingMessage
+        else if (listingIsLoading) updateListingStatus()
+        else status.text = entryActionPreviousStatus
+    }
+    private fun cancelEntryActionLoading() {
+        if (!entryActionLoading) return
+        activeEntryActionMessages.clear()
+        entryActionLoading = false
+        entryActionLoadingMessage = ""
+        entryActionLoadingToken++
+        updateEntryLoadingFeedback()
+    }
     private fun resourceRef(uri: Uri): ResourceRef = provider.refForUri(uri)
         ?: throw IllegalArgumentException("No configured storage provider owns this URI")
+    private fun operationResourceKey(ref: ResourceRef): String = "resource:${ref.providerId}:${ref.documentId}"
+    private fun operationTargetKey(parent: ResourceRef, name: String): String =
+        "object:${parent.providerId}:${parent.documentId}:${name.lowercase(java.util.Locale.ROOT)}"
+
+    private fun operationEntryKeys(entry: ResourceEntry): Set<String> = buildSet {
+        add(operationResourceKey(entry.ref))
+        knownResourceParents[entry.uri]?.let { parentUri ->
+            runCatching { operationTargetKey(resourceRef(parentUri), entry.metadata.name) }.getOrNull()?.let(::add)
+        }
+    }
+
+    private fun transferConflictKeys(
+        items: List<ResourceEntry>,
+        destination: Uri,
+        createLinks: Boolean,
+        partialRecovery: Boolean = false
+    ): Set<String> = buildSet {
+        items.forEach { entry ->
+            addAll(operationEntryKeys(entry))
+            val base = entry.metadata.name
+            val targetName = when {
+                partialRecovery && entry.metadata.partialRecoveryAvailable -> {
+                    val dot = base.lastIndexOf('.').takeIf { it > 0 } ?: base.length
+                    base.substring(0, dot) + ".partial" + base.substring(dot)
+                }
+                createLinks || com.infinifolder.shortcut.ShortcutInfo.isShortcut(base, entry.metadata.mimeType) ->
+                    base + com.infinifolder.shortcut.ShortcutInfo.SHORTCUT_EXTENSION
+                entry.ref.providerId == "apps" && !base.endsWith(".apk", true) -> "$base.apk"
+                else -> base
+            }
+            runCatching { operationTargetKey(resourceRef(destination), targetName) }.getOrNull()?.let(::add)
+            if (entry.ref.providerId == "torrent") {
+                runCatching { operationTargetKey(resourceRef(destination), "$targetName.incomplete") }.getOrNull()?.let(::add)
+            }
+            // Filesystems such as FAT replace invalid characters; include that alias
+            // in the lock key so distinct source names cannot race to one output path.
+            val compatibleGuess = targetName.replace(Regex("[<>:\"|?*]"), "_")
+            runCatching { operationTargetKey(resourceRef(destination), compatibleGuess) }.getOrNull()?.let(::add)
+        }
+    }
     private fun isAccessFailure(message: String, cause: Throwable?): Boolean =
         cause is SecurityException || listOf("revoked", "permission", "access denied", "permission denied")
             .any { message.contains(it, ignoreCase = true) }
@@ -3652,7 +4134,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             val rows = visible.sortedWith(compareBy<ResourceEntry> { !it.metadata.isDirectory }.then(ordering))
             if (rows.isEmpty()) {
                 content.addView(TextView(this).apply {
-                    text = listingError ?: if (listingIsLoading) "Waiting for the storage provider…" else
+                    text = openingVirtualDirectoryLabel?.let { "Opening $it…" }
+                        ?: if (openingTorrentDirectory) "Opening a new torrent folder…" else listingError ?: if (listingIsLoading) "Waiting for the storage provider…" else
                         listingNotice ?: "No files or folders were returned for this location."
                     textSize = 16f; setTextColor(setTextColorForTheme()); setPadding(dp(18), dp(28), dp(18), dp(12))
                     setOnLongClickListener { onEmptyAreaLongPress() }
@@ -3783,6 +4266,28 @@ class MainActivity : Activity(), DebugDumpObserver {
                 setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
                 gravity = Gravity.CENTER
                 includeFontPadding = false
+            }
+        }
+    }
+
+    private fun browseNestedArchive(entry: ResourceEntry) {
+        val loadingToken = beginEntryActionLoading("Opening ${entry.metadata.name}…") ?: return
+        val nestedVirtualPath = if (historyNames.isNotEmpty())
+            (historyNames + entry.metadata.name).joinToString("/") else null
+        io.execute {
+            val result = try {
+                val cached = archiveProvider.extractToCache(entry.uri, nestedVirtualPath)
+                ArchiveUri.toArchiveUri(Uri.fromFile(cached))
+            } catch (error: Exception) {
+                error
+            }
+            runOnUiThread {
+                finishEntryActionLoading(loadingToken)
+                when (result) {
+                    is Uri -> navigate(result, displayName = entry.metadata.name)
+                    is Exception -> if (!com.infinifolder.viewer.CacheFailureUi.offerCopy(this, result, entry.uri))
+                        Toast.makeText(this, "Could not open archive: ${result.message}", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -4229,17 +4734,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             )
             if (isArc && !isPkg) {
                 if (ArchiveUri.isArchiveUri(entry.uri)) {
-                    val nestedVirtualPath = if (historyNames.isNotEmpty()) (historyNames + entry.metadata.name).joinToString("/") else null
-                    io.execute {
-                        try {
-                            val cached = archiveProvider.extractToCache(entry.uri, nestedVirtualPath)
-                            val fileUri = Uri.fromFile(cached)
-                            val nestedUri = ArchiveUri.toArchiveUri(fileUri)
-                            runOnUiThread { navigate(nestedUri, displayName = entry.metadata.name) }
-                        } catch (e: Exception) {
-                            runOnUiThread { if (!com.infinifolder.viewer.CacheFailureUi.offerCopy(this@MainActivity, e, entry.uri)) Toast.makeText(this@MainActivity, "Could not open archive: ${e.message}", Toast.LENGTH_SHORT).show() }
-                        }
-                    }
+                    browseNestedArchive(entry)
                 } else {
                     val archiveUri = ArchiveUri.toArchiveUri(entry.uri)
                     navigate(archiveUri, displayName = entry.metadata.name)
@@ -4248,6 +4743,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
 
             if (cachedMagic == null && !isPkg && FileMagicDetector.isAmbiguousOrUnknown(entry.metadata.name, entry.metadata.mimeType)) {
+                val loadingToken = beginEntryActionLoading("Checking file type…") ?: return@OnClickListener
                 io.execute {
                     val magic = try {
                         if (localProvider.owns(entry.uri)) {
@@ -4269,20 +4765,11 @@ class MainActivity : Activity(), DebugDumpObserver {
                         (magic != null && (magic.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(entry.metadata.name, magic.mimeType)))
                     )
                     runOnUiThread {
+                        finishEntryActionLoading(loadingToken)
                         if (isFinishing || isDestroyed) return@runOnUiThread
                         if (probeIsArc && !probeIsPkg) {
                             if (ArchiveUri.isArchiveUri(entry.uri)) {
-                                val nestedVirtualPath = if (historyNames.isNotEmpty()) (historyNames + entry.metadata.name).joinToString("/") else null
-                                io.execute {
-                                    try {
-                                        val cached = archiveProvider.extractToCache(entry.uri, nestedVirtualPath)
-                                        val fileUri = Uri.fromFile(cached)
-                                        val nestedUri = ArchiveUri.toArchiveUri(fileUri)
-                                        runOnUiThread { navigate(nestedUri, displayName = entry.metadata.name) }
-                                    } catch (e: Exception) {
-                                        runOnUiThread { if (!com.infinifolder.viewer.CacheFailureUi.offerCopy(this@MainActivity, e, entry.uri)) Toast.makeText(this@MainActivity, "Could not open archive: ${e.message}", Toast.LENGTH_SHORT).show() }
-                                    }
-                                }
+                                browseNestedArchive(entry)
                             } else {
                                 navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
                             }
@@ -4851,16 +5338,28 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun open(entry: ResourceEntry, externalOnly: Boolean = false) {
         if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null) {
-            io.execute {
+            val linkNavigationToken = if (!externalOnly &&
+                (ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType) || entry.ref.providerId == containerLinkProvider.id))
+                showOpeningVirtualDirectory(entry.metadata.name.removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION), preserveBreadcrumbs = true)
+            else null
+            val resolveLink = Runnable { io.execute {
                 val info = if (!entry.metadata.isSymbolicLink) readShortcutInfo(entry) else null
                 val linkedUri = info?.targetUri?.let(Uri::parse)
                 if (!externalOnly && linkedUri != null &&
-                    (ContainerUris.networkType(linkedUri) != null || entry.ref.providerId == containerLinkProvider.id)) {
-                    runOnUiThread { if (!isDestroyed) openContainerLinkUri(linkedUri, info.displayNameOverride, info.targetIsDirectory || entry.ref.providerId == containerLinkProvider.id) }
+                    (ContainerUris.networkType(linkedUri) != null || linkedUri.scheme.equals("magnet", true) ||
+                        linkedUri.scheme.equals("torrent", true) || entry.ref.providerId == containerLinkProvider.id)) {
+                    runOnUiThread {
+                        if (!isDestroyed && (linkNavigationToken == null || browserNavigationGeneration == linkNavigationToken))
+                            openContainerLinkUri(linkedUri, info.displayNameOverride,
+                                info.targetIsDirectory || entry.ref.providerId == containerLinkProvider.id,
+                                LinkNavigationOrigin.DIRECTORY_LINK)
+                    }
                     return@execute
                 }
-                val resolved = com.infinifolder.storage.LinkResolver.resolve(provider, entry)
+                val resolved = try { com.infinifolder.storage.LinkResolver.resolve(provider, entry) }
+                    catch (error: Throwable) { ProviderResult.Failure(error.message ?: "Could not resolve link", error) }
                 runOnUiThread {
+                    if (linkNavigationToken != null && browserNavigationGeneration != linkNavigationToken) return@runOnUiThread
                     when (resolved) {
                         is ProviderResult.Success -> {
                             val target = resolved.value
@@ -4873,7 +5372,18 @@ class MainActivity : Activity(), DebugDumpObserver {
                         else -> Unit
                     }
                 }
-            }
+            } }
+            if (linkNavigationToken != null) {
+                // Give the blank virtual directory a frame before reading link metadata
+                // or initiating any provider/network resolution.
+                root.postDelayed({
+                    if (!isDestroyed && browserNavigationGeneration == linkNavigationToken) resolveLink.run()
+                }, 120L)
+            } else resolveLink.run()
+            return
+        }
+        if (!externalOnly && entry.ref.providerId != "torrent" && entry.metadata.name.endsWith(".torrent", ignoreCase = true)) {
+            openTorrentFile(entry)
             return
         }
         if (AppsUri.isAppUri(entry.uri)) {
@@ -4909,6 +5419,50 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (provider.refForUri(entry.uri) != null) {
             startActivity(Intent(this, com.infinifolder.viewer.ExternalEditActivity::class.java).setData(entry.uri))
         } else launchExternalViewIntent(entry.uri, externalMime, entry.metadata.name)
+    }
+
+    /** Enter a blank torrent directory first, then parse local .torrent metadata off the UI thread. */
+    private fun openTorrentFile(entry: ResourceEntry) {
+        val title = entry.metadata.name.removeSuffix(".torrent").ifBlank { "Torrent" }
+        val navigationToken = showOpeningVirtualDirectory(title, preserveBreadcrumbs = true)
+        io.execute {
+            try {
+                val input = when (val result = provider.openRead(entry.ref)) {
+                    is ProviderResult.Success -> result.value
+                    is ProviderResult.Failure -> throw java.io.IOException(result.message, result.cause)
+                    is ProviderResult.Unsupported -> throw java.io.IOException("This storage provider cannot read torrent files")
+                }
+                val bytes = input.use { stream ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(32 * 1024)
+                    while (true) {
+                        val count = stream.read(buffer)
+                        if (count < 0) break
+                        if (output.size() + count > 16 * 1024 * 1024) {
+                            throw java.io.IOException("Torrent file is larger than the supported 16 MiB limit")
+                        }
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                }
+                val torrentUri = com.infinifolder.storage.StorageRuntime.get(this).torrents.registerTorrentFile(bytes)
+                runOnUiThread {
+                    if (!isDestroyed && browserNavigationGeneration == navigationToken) {
+                        navigate(torrentUri, push = true, displayName = title, deferInitialLoad = true)
+                    }
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    if (!isDestroyed && browserNavigationGeneration == navigationToken) {
+                        openingVirtualDirectoryLabel = null
+                        openingTorrentDirectory = false
+                        listingError = error.message ?: "Could not read torrent file"
+                        status.text = listingError
+                        renderEntries()
+                    }
+                }
+            }
+        }
     }
 
     private fun launchExternalViewIntent(targetUri: Uri, mimeType: String? = null, displayName: String? = null) {
@@ -4981,6 +5535,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         val generation = ++homeSourcesGeneration
         accessRequestGeneration++
         homeMode = true
+        listingIsLoading = false
+        cancelEntryActionLoading()
+        updateEntryLoadingFeedback()
         homePage = "root"
         logicalLocationPrefix = null
         currentProgramName = null
@@ -4992,6 +5549,17 @@ class MainActivity : Activity(), DebugDumpObserver {
 
         fun buildStaticTailItems(): List<HomeItem> {
             val tail = mutableListOf<HomeItem>()
+            tail += HomeItem("🕘", "External link history", "Recently opened storage links", {
+                showExternalLinkHistory()
+            }, longAction = {
+                dialogBuilder().setTitle("External link history")
+                    .setMessage("Clear all remembered external links?")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Clear") { _, _ ->
+                        shared.edit().remove(externalLinkHistoryKey).apply()
+                        if (homeMode && homePage == "external_link_history") renderHomeItems()
+                    }.show()
+            }, treeKey = "external_link_history")
             savedConnections().forEach { connection ->
                 if (shared.getBoolean("root_link_migrated_${connection.id}", false)) return@forEach
                 val source = providerRegistry.sourceTypes().firstOrNull { it.id == connection.sourceTypeId }
@@ -5040,6 +5608,11 @@ class MainActivity : Activity(), DebugDumpObserver {
                         treeUri = rootUri,
                         treeExpandable = true
                     )
+                } else if (connection.sourceTypeId == "webdav") {
+                    val rootUri=WebDavUri.build(connection.id,connection.options["initialPath"] ?: "/")
+                    tail += HomeItem(icon, connection.displayName, "${connection.endpoint ?: connection.options["url"] ?: "WebDAV"} · ${connection.options["username"] ?: "user"}",
+                        { openRoot(rootUri,rememberAuthorizedRoot=false) }, { showSavedConnectionActions(connection) },
+                        treeKey="webdav_${connection.id}",treeUri=rootUri,treeExpandable=true)
                 } else {
                     tail += HomeItem(icon, connection.displayName, detail, {
                         dialogBuilder().setTitle(connection.displayName)
@@ -5078,7 +5651,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 contentResolver.persistedUriPermissions
                     .filter { it.isReadPermission && it.uri.pathSegments.contains("tree") }
                     .map { it.uri }
-                    .filterNot { AppDocumentSources.isAppAuthority(it) || AppsUri.isAppsUri(it) || SftpUri.isSftpUri(it) || FtpUri.isFtpUri(it) || SmbUri.isSmbUri(it) || ArchiveUri.isArchiveUri(it) }
+                    .filterNot { AppDocumentSources.isAppAuthority(it) || AppsUri.isAppsUri(it) || SftpUri.isSftpUri(it) || FtpUri.isFtpUri(it) || SmbUri.isSmbUri(it) || WebDavUri.owns(it) || ArchiveUri.isArchiveUri(it) }
                     .distinctBy(::sourceIdentity)
                     .toMutableList()
             } catch (_: Exception) {
@@ -5086,7 +5659,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             shared.getString("root", null)?.let { rootString ->
                 val uri = Uri.parse(rootString)
-                if (AppsUri.isAppsUri(uri) || SftpUri.isSftpUri(uri) || FtpUri.isFtpUri(uri) || SmbUri.isSmbUri(uri) || ArchiveUri.isArchiveUri(uri)) {
+                if (AppsUri.isAppsUri(uri) || SftpUri.isSftpUri(uri) || FtpUri.isFtpUri(uri) || SmbUri.isSmbUri(uri) || WebDavUri.owns(uri) || ArchiveUri.isArchiveUri(uri)) {
                     // Virtual / remote roots are not SAF document trees
                 } else if (!localProvider.owns(uri) && !AppDocumentSources.isAppAuthority(uri) &&
                     grantedRoots.none { sourceIdentity(it) == sourceIdentity(uri) }) {
@@ -5097,7 +5670,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             val discoveredItems = mutableListOf<HomeItem>()
             val pathsToResolve = mutableListOf<Pair<Uri, String>>()
             grantedRoots.forEach { uri ->
-                if (SftpUri.isSftpUri(uri) || FtpUri.isFtpUri(uri) || SmbUri.isSmbUri(uri) || ArchiveUri.isArchiveUri(uri)) return@forEach
+                if (SftpUri.isSftpUri(uri) || FtpUri.isFtpUri(uri) || SmbUri.isSmbUri(uri) || WebDavUri.owns(uri) || ArchiveUri.isArchiveUri(uri)) return@forEach
                 if (hasLocalAccess && isPrimaryExternalStorageUri(uri)) return@forEach
                 val name = shared.getString("source_name_${uri}", null) ?: "Storage folder"
                 val cachedPath = shared.getString("source_path_v2_${uri}", null)
@@ -5205,6 +5778,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         loadGeneration++
         accessRequestGeneration++
         homeMode = true
+        listingIsLoading = false
+        cancelEntryActionLoading()
+        updateEntryLoadingFeedback()
         homePage = "internal_shared"
         logicalLocationPrefix = null
         currentProgramName = null
@@ -5285,6 +5861,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         loadGeneration++
         accessRequestGeneration++
         homeMode = true
+        listingIsLoading = false
+        cancelEntryActionLoading()
+        updateEntryLoadingFeedback()
         homePage = "application_public"
         logicalLocationPrefix = null
         currentProgramName = null
@@ -5339,7 +5918,30 @@ class MainActivity : Activity(), DebugDumpObserver {
                 .sortedBy { if (it.treeKey?.startsWith("public_") == true) 0 else 1 }
         } else if (homePage == "application_public") {
             applicationPublicItems
+        } else if (homePage == "external_link_history") {
+            externalLinkVisits().map { visit ->
+                val target = Uri.parse(visit.uri)
+                HomeItem(
+                    icon = if (target.scheme.equals("magnet", true)) "🧲" else "🔗",
+                    title = visit.title,
+                    detail = target.toString().take(180),
+                    action = { openContainerLinkUri(target, visit.title, requireContainer = true, origin = LinkNavigationOrigin.EXTERNAL_HISTORY) },
+                    longAction = {
+                        dialogBuilder().setTitle("Remove link from history?")
+                            .setNegativeButton("Cancel", null)
+                            .setPositiveButton("Remove") { _, _ -> removeExternalLinkVisit(visit.uri) }.show()
+                    }
+                )
+            }
         } else homeItems.filter { it.showInHome && it.treeParentKey == null }
+        if (homePage == "external_link_history" && visibleItems.isEmpty()) {
+            content.addView(TextView(dialogContext()).apply {
+                text = "Links opened from other apps will appear here."
+                setTextColor(setTextColorForTheme())
+                setPadding(dp(16), dp(18), dp(16), dp(18))
+            })
+            return
+        }
         if (homePage == "internal_shared" && !localProvider.hasAccess()) {
             content.addView(Button(dialogContext()).apply {
                 text = "Allow internal storage access"
@@ -5457,7 +6059,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 item.treeKey == "application_public" -> item.action()
                 item.providerAuthority != null -> item.action()
                 item.treeKey?.startsWith("sftp_") == true || item.treeKey?.startsWith("ftp_") == true || item.treeKey?.startsWith("smb_") == true -> item.action()
-                item.initialUri != null && !SftpUri.isSftpUri(item.initialUri) && !FtpUri.isFtpUri(item.initialUri) && !SmbUri.isSmbUri(item.initialUri) -> rootPicker(item.initialUri, item.treeKey)
+                item.initialUri != null && !SftpUri.isSftpUri(item.initialUri) && !FtpUri.isFtpUri(item.initialUri) && !SmbUri.isSmbUri(item.initialUri) && !WebDavUri.owns(item.initialUri) -> rootPicker(item.initialUri, item.treeKey)
                 else -> item.action()
             }
         } else item.action()
@@ -6551,7 +7153,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 key == "internal_shared" -> item.action
                 key == "application_public" -> item.action
                 key.startsWith("sftp_") || key.startsWith("ftp_") || key.startsWith("smb_") -> item.action
-                item.initialUri != null && !SftpUri.isSftpUri(item.initialUri) && !FtpUri.isFtpUri(item.initialUri) && !SmbUri.isSmbUri(item.initialUri) -> ({ rootPicker(item.initialUri, key) })
+                item.initialUri != null && !SftpUri.isSftpUri(item.initialUri) && !FtpUri.isFtpUri(item.initialUri) && !SmbUri.isSmbUri(item.initialUri) && !WebDavUri.owns(item.initialUri) -> ({ rootPicker(item.initialUri, key) })
                 else -> item.action
             }
             if (key == "internal_shared") {
@@ -7053,7 +7655,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 node.onRequestAccess = { requestSharedStorageAccess() }
                                 requestSharedStorageAccess()
                             }
-                        } else if (!ArchiveUri.isArchiveUri(uri) && !AppsUri.isAppsUri(uri) && !SftpUri.isSftpUri(uri) && !FtpUri.isFtpUri(uri) && !SmbUri.isSmbUri(uri) && isAccessFailure(result.message, result.cause)) {
+                        } else if (!ArchiveUri.isArchiveUri(uri) && !AppsUri.isAppsUri(uri) && !SftpUri.isSftpUri(uri) && !FtpUri.isFtpUri(uri) && !SmbUri.isSmbUri(uri) && !WebDavUri.owns(uri) && isAccessFailure(result.message, result.cause)) {
                             node.needsAccessBadge = true
                             node.onRequestAccess = { rootPicker(node.uri, "tree_permission_regrant") }
                             node.onRequestAccess?.invoke()
@@ -7323,13 +7925,6 @@ class MainActivity : Activity(), DebugDumpObserver {
                 submenu("New", listOf(
                     action("Folder…", folder) { showCreateDirectoryDialog() },
                     action("Link…", folder || (homeMode && homePage == "root")) { showCreateUriLinkDialog() },
-                    submenu("External storage link", listOf(
-                        action("Device / SD card / USB folder…") { rootPicker() },
-                        action("SFTP…") { showSftpConnectionDialog() },
-                        action("FTP / FTPS…") { showFtpConnectionDialog() },
-                        action("SMB…") { showSmbConnectionDialog() },
-                        action("Container URI…") { showRootContainerLinkDialog() }
-                    )),
                     submenu("Document / image", NewFileTemplates.documents.map { template ->
                         action(template.label + "…", folder) { showNewFileDialog(template) }
                     }),
@@ -7510,7 +8105,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                     input.error = "Enter a valid filename"; return@setOnClickListener
                 }
                 dialog.dismiss()
-                val id = operations.submit("Create $name", null, 1) { update, cancelled ->
+                val id = operations.submit("Create $name", null, 1,
+                    conflictKeys = setOf(operationTargetKey(resourceRef(parent), name))) { update, cancelled ->
                     val staged = File.createTempFile("new-document-", ".${template.extension}", cacheDir)
                     try {
                         NewFileTemplates.write(template, staged)
@@ -7928,6 +8524,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) &&
                 !it.id.startsWith("playback_")
             }
+            storageOperationLoading = activeList.isNotEmpty()
+            updateEntryLoadingFeedback()
             if (activeList.isNotEmpty() && !operationStatusTickScheduled) {
                 operationStatusTickScheduled = true
                 operationUiHandler.postDelayed(operationStatusTick, 1000)
@@ -8082,8 +8680,14 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         progressQueueView = queueView
 
+        val statusLabel = TextView(context).apply {
+            text = "Status"
+            textSize = 12f
+            setTextColor(setTextColorForTheme())
+            setPadding(0, 0, 0, dp(3))
+        }
         val currentItemView = TextView(context).apply {
-            text = active.message ?: active.currentItem ?: "Starting…"
+            text = active.message ?: if (active.state == OperationState.QUEUED) "Waiting in queue…" else "Starting…"
             textSize = 13f
             setTextColor(if (dark) 0xFFBFC5BA.toInt() else 0xFF686D65.toInt())
             setLines(3)
@@ -8091,17 +8695,26 @@ class MainActivity : Activity(), DebugDumpObserver {
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(0, 0, 0, dp(12))
         }
-        progressCurrentItemView = currentItemView
-        // Reserve the same status space for short phases and long filenames.
-        // Failure details can grow inside this viewport without resizing the dialog.
+        progressStatusView = currentItemView
+        // Keep status and filename in separate, fixed areas so progress updates cannot swap them.
         val currentItemScroll = ScrollView(context).apply {
             addView(currentItemView, FrameLayout.LayoutParams(-1, -2))
             layoutParams = LinearLayout.LayoutParams(-1,
                 currentItemView.lineHeight * 3 + currentItemView.compoundPaddingTop + currentItemView.compoundPaddingBottom)
         }
 
+        val itemNameView = TextView(context).apply {
+            text = "Current item: ${active.currentItem ?: "—"}"
+            textSize = 12f
+            setTextColor(if (dark) 0xFFBFC5BA.toInt() else 0xFF686D65.toInt())
+            setLines(1)
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(0, 0, 0, dp(12))
+        }
+        progressItemNameView = itemNameView
+
         val fileLabel = TextView(context).apply {
-            text = "Current file"
+            text = "Current file progress"
             textSize = 12f
             setLines(1)
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -8218,7 +8831,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             visibility = if (active.state in setOf(OperationState.COMPLETE, OperationState.FAILED, OperationState.CANCELLED)) View.INVISIBLE else View.VISIBLE
             setOnClickListener {
                 activeDialogOpId?.let { opId ->
-                    operations.cancel(opId)
+                    operations.cancel(opId, "progress-dialog")
                     text = "Cancelling…"
                     isEnabled = false
                 }
@@ -8231,7 +8844,9 @@ class MainActivity : Activity(), DebugDumpObserver {
 
         body.addView(titleView)
         body.addView(queueView)
+        body.addView(statusLabel)
         body.addView(currentItemScroll)
+        body.addView(itemNameView)
         body.addView(fileLabel)
         body.addView(fileBar)
         body.addView(overallLabel)
@@ -8262,7 +8877,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             activeDialogOpId = null
             progressTitleView = null
             progressQueueView = null
-            progressCurrentItemView = null
+            progressStatusView = null
+            progressItemNameView = null
             progressBar = null
             progressFileBar = null
             progressFileLabel = null
@@ -8287,6 +8903,11 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun updateProgressDialogContent(op: OperationSnapshot, allSnapshots: List<OperationSnapshot> = operations.snapshots()) {
+        currentProgressDialog?.window?.let { window ->
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            window.attributes = window.attributes.apply { dimAmount = 0f }
+        }
         val activeList = allSnapshots.filter { it.state == OperationState.RUNNING || it.state == OperationState.QUEUED }
         val waitingAfterCurrent = operationWindowQueue.count { id ->
             id != op.id && allSnapshots.any { it.id == id && (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) }
@@ -8339,7 +8960,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             text = if (required) "Verification required for moves / recovery" else "Verify copied data (remembered)"
         }
         progressTitleView?.text = op.label
-        progressCurrentItemView?.text = op.message ?: op.currentItem ?: if (op.state == OperationState.QUEUED) "Waiting in queue…" else "Starting…"
+        progressStatusView?.text = op.message ?: if (op.state == OperationState.QUEUED) "Waiting in queue…" else "Starting…"
+        progressItemNameView?.text = "Current item: ${op.currentItem ?: "—"}"
         val filePct = op.currentItemProgressPercent
         progressFileBar?.isIndeterminate = filePct < 0
         if (filePct >= 0) progressFileBar?.progress = filePct
@@ -8348,7 +8970,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             val done = android.text.format.Formatter.formatShortFileSize(this, fileBytes)
             val total = op.currentItemTotalBytes?.let { android.text.format.Formatter.formatShortFileSize(this, it) }
             "${if (op.message?.startsWith("Verifying") == true) "Verification" else "Current file"}: $done" + (total?.let { " / $it" } ?: "") + (if (filePct >= 0) " ($filePct%)" else "")
-        } else "Current item"
+        } else "File progress"
         val pct = op.overallProgressPercent
         if (pct >= 0) {
             progressBar?.isIndeterminate = false
@@ -8380,7 +9002,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
                 OperationState.FAILED -> {
                     progressTitleView?.text = "${op.label} failed"
-                    progressCurrentItemView?.apply {
+                        progressStatusView?.apply {
                         text = op.message ?: "Operation failed"
                         maxLines = Int.MAX_VALUE
                         ellipsize = null
@@ -8393,7 +9015,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 else -> Unit
             }
         } else {
-            progressCurrentItemView?.apply {
+            progressStatusView?.apply {
                 maxLines = 3
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 setTextIsSelectable(false)
@@ -9582,6 +10204,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         "sftp" -> showSftpConnectionDialog(existing = connection)
                         "ftp" -> showFtpConnectionDialog(existing = connection)
                         "smb" -> showSmbConnectionDialog(existing = connection)
+                        "webdav" -> showWebDavConnectionDialog(existing = connection)
                     }
                 }
                 "Pin to top" -> entryBrowseDestination(entry)?.let { pinContainer(entry, it) }
@@ -11098,7 +11721,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         val isAppMove = move && hasApps
 
         val verifyCopies = shared.getBoolean("verify_copies", true)
-        val id = operations.submit(label, null, count) { update, cancelled ->
+        val id = operations.submit(label, null, count,
+            conflictKeys = transferConflictKeys(entries, destination, createLinks, partialRecovery)) { update, cancelled ->
             var transferSucceeded = false
             val transferWarnings = mutableListOf<String>()
             var latestTransferUpdate = OperationUpdate()
@@ -11214,13 +11838,21 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         val count = entries.size
         val label = if (count == 1) "Delete ${entries[0].metadata.name}" else "Delete $count items"
-        val id = operations.submit(label, null, count) { update, cancelled ->
+        val id = operations.submit(label, null, count,
+            conflictKeys = entries.flatMapTo(mutableSetOf(), ::operationEntryKeys)) { update, cancelled ->
             try { FileOperations.batchDelete(
                 entries = entries,
                 provider = provider,
                 update = update,
                 isCancelled = cancelled
-            ) } finally { if (onFinished != null) runOnUiThread { if (!isDestroyed) onFinished() } }
+            ) } finally {
+                runOnUiThread {
+                    if (!isDestroyed) {
+                        refreshCurrentLocation()
+                        onFinished?.invoke()
+                    }
+                }
+            }
         }
         enqueueOperationWindow(id)
     }
@@ -11351,7 +11983,11 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun startCreateArchive(entries: List<ResourceEntry>, archiveName: String, destinationFolderUri: Uri) {
-        val id = operations.submit("Create archive $archiveName", null, entries.size) { update, cancelled ->
+        val id = operations.submit("Create archive $archiveName", null, entries.size,
+            conflictKeys = buildSet {
+                entries.forEach { addAll(operationEntryKeys(it)) }
+                add(operationTargetKey(resourceRef(destinationFolderUri), archiveName))
+            }) { update, cancelled ->
             val totalInputBytes = FileOperations.calculateTotalBytes(entries, provider, isCancelled = cancelled).takeIf { it > 0 }
             var destCreatedRef: ResourceRef? = null
             try {
@@ -11659,7 +12295,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             .setNegativeButton("Cancel operation & exit") { _, _ ->
                 operations.snapshots().forEach {
                     if (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) {
-                        operations.cancel(it.id)
+                        operations.cancel(it.id, "exit-dialog")
                     }
                 }
                 OperationService.stop(this)
@@ -11701,6 +12337,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     override fun onResume() {
         super.onResume()
+        OperationService.start(this)
         if (lastDumpRefresh != DebugTools.dumpGeneration) onDebugDumpFinished()
         val snapshots = operations.snapshots()
         val hasActive = snapshots.any { it.state == OperationState.RUNNING || it.state == OperationState.QUEUED }
@@ -11804,6 +12441,9 @@ class MainActivity : Activity(), DebugDumpObserver {
             } else {
                 remotePath.substringAfterLast('/')
             }
+        } else if (WebDavUri.owns(treeUri)) {
+            val conn=savedConnections().firstOrNull { it.id==WebDavUri.id(treeUri) }; val path=WebDavUri.path(treeUri)
+            if(path=="/") conn?.displayName ?: "WebDAV" else path.substringAfterLast('/')
         } else if (localProvider.owns(treeUri)) {
             if (treeUri == localProvider.rootUri) "Internal shared storage" else runCatching { localProvider.fileFor(treeUri).name }.getOrNull()
         } else if (treeUri.scheme == "file") {
@@ -11858,6 +12498,9 @@ class MainActivity : Activity(), DebugDumpObserver {
             val connName = conn?.displayName ?: "SMB"
             val remotePath = SmbUri.getRemotePath(treeUri)
             if (remotePath == "/" || remotePath.isEmpty()) connName else "$connName / ${remotePath.trimStart('/')}"
+        } else if (WebDavUri.owns(treeUri)) {
+            val conn=savedConnections().firstOrNull { it.id==WebDavUri.id(treeUri) }; val path=WebDavUri.path(treeUri)
+            if(path=="/") conn?.displayName ?: "WebDAV" else "${conn?.displayName ?: "WebDAV"} / ${path.trimStart('/')}"
         } else if (localProvider.owns(treeUri)) {
             runCatching { localProvider.fileFor(treeUri).path }.getOrNull()
         } else if (treeUri.scheme == "file") {
@@ -11899,6 +12542,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             SftpUri.isSftpUri(uri) -> uri.toString()
             FtpUri.isFtpUri(uri) -> uri.toString()
             SmbUri.isSmbUri(uri) -> uri.toString()
+            WebDavUri.owns(uri) -> uri.toString()
             localProvider.owns(uri) -> uri.toString()
             uri.scheme != "content" -> uri.toString()
             else -> "${uri.authority.orEmpty()}|${uriDocumentId(uri)}"

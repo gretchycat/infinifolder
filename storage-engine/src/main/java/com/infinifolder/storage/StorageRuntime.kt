@@ -7,6 +7,8 @@ import com.infinifolder.archive.SeekableSourceResolver
 import com.infinifolder.sftp.SftpProviderFactory
 import com.infinifolder.ftp.FtpProviderFactory
 import com.infinifolder.smb.SmbProviderFactory
+import com.infinifolder.webdav.WebDavProviderFactory
+import com.infinifolder.torrent.MagnetStorageProvider
 import com.infinifolder.model.*
 import java.io.IOException
 
@@ -21,23 +23,26 @@ class StorageRuntime private constructor(context: Context) {
     private val sftpFactory = SftpProviderFactory(app) { id -> connections.list().firstOrNull { it.id == id } }
     private val ftpFactory = FtpProviderFactory(app) { id -> connections.list().firstOrNull { it.id == id } }
     private val smbFactory = SmbProviderFactory(app) { id -> connections.list().firstOrNull { it.id == id } }
+    private val webDavFactory = WebDavProviderFactory(app) { id -> connections.list().firstOrNull { it.id == id } }
     val sftp = sftpFactory.provider
     val ftp = ftpFactory.provider
     val smb = smbFactory.provider
+    val webdav = webDavFactory.provider
+    val torrents = MagnetStorageProvider(app)
     val registry = StorageProviderRegistry().apply {
-        register(SafProviderFactory()); register(sftpFactory); register(ftpFactory); register(smbFactory)
+        register(SafProviderFactory()); register(sftpFactory); register(ftpFactory); register(smbFactory); register(webDavFactory)
     }
-    val provider = RoutingStorageProvider(local, archives, apps, sftp, ftp, smb, containerLinks, SafProvider(app.contentResolver),
+    val provider = RoutingStorageProvider(local, archives, apps, sftp, ftp, smb, webdav, torrents, containerLinks, SafProvider(app.contentResolver),
         uriResolver = { uri -> if (ContainerUris.networkType(uri) == null) uri else ContainerUris.resolve(uri, connections.list()) })
     init {
         DiagnosticLog.init(app)
         containerLinks.validateTarget = validate@ { shortcut ->
             val uri = android.net.Uri.parse(shortcut.targetUri)
             // Saving an alias must not connect to a server; opening it validates remote access.
-            if (ContainerUris.networkType(uri) != null ||
+            if (ContainerUris.networkType(uri) != null || uri.scheme.equals("magnet", true) ||
                 com.infinifolder.archive.ArchiveUri.isArchiveUri(uri) ||
-                com.infinifolder.archive.ArchiveFormats.isArchive(uri.lastPathSegment.orEmpty()) ||
-                uri.scheme == "magnet" || uri.lastPathSegment.orEmpty().endsWith(".torrent", true)) return@validate
+                (uri.isHierarchical && (com.infinifolder.archive.ArchiveFormats.isArchive(uri.lastPathSegment.orEmpty()) ||
+                    uri.lastPathSegment.orEmpty().endsWith(".torrent", true)))) return@validate
             val ref = provider.refForUri(uri) ?: return@validate
             val entry = (provider.stat(ref) as? ProviderResult.Success)?.value ?: return@validate // Offline links remain saveable.
             if (!entry.metadata.isDirectory) {

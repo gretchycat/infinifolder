@@ -11,7 +11,7 @@ The user confirms FTP, SMB opening, FAT16 batch performance, general format brow
 ## Active acceptance priorities
 
 1. External-edit conflict and interruption cases; cache quota/LRU/expiry/copy-or-raise behavior.
-2. Image-viewer Back and latest remote breadcrumb ancestry correction.
+2. Latest remote breadcrumb ancestry correction. Image-viewer Back is now user-confirmed working.
 3. Transfer window sizing/progress/verification controls, pins/templates and selected-set/backend regression coverage.
 4. Compressed destination low space, FAT12/FAT32 batches, retained-file hashes and individual format variants.
 

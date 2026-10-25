@@ -45,3 +45,5 @@ Updated 2026-10-24. Start with [project status](project-status.md), [task list](
 - [Decision 0003: Application public represents app-exported SAF sources](decisions/0003-app-document-sources.md)
 
 Current status separates implemented, user-confirmed, acceptance-pending and deferred work. Original audits, decision records and dump timelines retain their historical evidence.
+
+- [WebDAV provider scope and remaining server checks](webdav-support.md)

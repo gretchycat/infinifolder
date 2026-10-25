@@ -2,10 +2,11 @@
 
 Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
 
-Implemented 2026-10-23; handset acceptance pending.
+Implemented 2026-10-23. Image-viewer Back is user-confirmed working. Broader viewer/provider and unsaved-edit cases below remain acceptance checks.
 
 - All built-in viewers share `ViewerActivity`. System Back on Android 13+ now reaches the same `onBackPressed` action as toolbar/legacy Back through a registered `OnBackInvokedCallback`. The base action finishes the viewer, exposing the unchanged browser directory beneath it. The viewer modules remain independent of the browser.
-- Text, image and Markdown editors retain their existing unsaved-change prompts before finishing.
+- Text, image and Markdown editors retain their existing unsaved-change prompts before finishing. CSV and HTML now prompt before discarding unsaved changes as well.
+- Every viewer toolbar Back button routes through its activity's Back handler, matching system Back. This preserves editor prompts while simple readers close to the same underlying directory. Audio playback remains governed by its playback service when the player screen closes.
 - Browser Back moves to the current directory's actual parent through `StorageProvider.parent`, rather than following visit history. It also clears file selection during that action. A visible tree no longer consumes Back merely to hide itself.
 - Leaving an archive/image root resolves the parent of its backing file. This also covers nested containers opened for reading.
 - When a provider does not implement parent lookup, the browser uses parent relationships learned from listings or the navigation tree. The listing relationship cache is bounded. No parent is guessed by splitting opaque SAF document IDs or returning to an unrelated pinned destination's history.
@@ -15,7 +16,7 @@ Implemented 2026-10-23; handset acceptance pending.
 ## Manual acceptance
 
 - [ ] System gesture and three-button Back close every viewer to the same directory and scroll position.
-- [ ] Unsaved text/image/Markdown edits still require confirmation.
+- [ ] Unsaved text/image/Markdown/CSV/HTML edits still require confirmation through toolbar and system Back.
 - [ ] Local, SAF, SFTP, FTP, SMB, archive, and image folders move up exactly one level.
 - [ ] After jumping via a pin or tree node, Back selects the real parent rather than the prior visited folder.
 - [ ] Archive/image roots return to their backing file's directory; storage/grant roots return to source navigation.

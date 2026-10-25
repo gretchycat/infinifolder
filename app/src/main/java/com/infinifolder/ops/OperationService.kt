@@ -21,6 +21,12 @@ class OperationService : Service() {
         const val EXTRA_OP_ID = "extra_op_id"
 
         fun start(context: Context) {
+            val runtimeProvider = com.infinifolder.storage.StorageRuntime.get(context.applicationContext).provider
+            val currentlyActive = AppOperations.coordinator.snapshots().any {
+                (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) &&
+                !it.id.startsWith("playback_")
+            }
+            if (!currentlyActive) runtimeProvider.resumePendingTorrentTransfers()
             val hasFileOps = AppOperations.coordinator.snapshots().any {
                 (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) &&
                 !it.id.startsWith("playback_")
@@ -78,14 +84,19 @@ class OperationService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (AppOperations.coordinator.snapshots().none {
+                (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) && !it.id.startsWith("playback_")
+            }) {
+            com.infinifolder.storage.StorageRuntime.get(applicationContext).provider.resumePendingTorrentTransfers()
+        }
         if (intent?.action == ACTION_CANCEL) {
             val opId = intent.getStringExtra(EXTRA_OP_ID)
             if (opId != null) {
-                AppOperations.coordinator.cancel(opId)
+                AppOperations.coordinator.cancel(opId, "notification")
             } else {
                 AppOperations.coordinator.snapshots().forEach {
                     if (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) {
-                        AppOperations.coordinator.cancel(it.id)
+                        AppOperations.coordinator.cancel(it.id, "notification-cancel-all")
                     }
                 }
             }
@@ -117,7 +128,7 @@ class OperationService : Service() {
             }
             stopSelf()
         }
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     override fun onDestroy() {

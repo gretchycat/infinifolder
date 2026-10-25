@@ -9,10 +9,11 @@ object ContainerUris {
         "ftp", "ftps" -> "ftp"
         "sftp", "sshfs", "ssh" -> "sftp"
         "smb", "cifs" -> "smb"
+        "webdav", "dav", "davs" -> "webdav"
         else -> null
     }
     fun hasPassword(uri: Uri): Boolean = networkType(uri) != null && uri.userInfo?.contains(':') == true
-    fun defaultPort(uri: Uri): Int = when (networkType(uri)) { "ftp" -> 21; "smb" -> 445; else -> 22 }
+    fun defaultPort(uri: Uri): Int = when (networkType(uri)) { "ftp" -> 21; "smb" -> 445; "webdav" -> if(uri.scheme.equals("dav",true)) 80 else 443; else -> 22 }
     fun candidates(uri: Uri, connections: List<ProviderConnection>): List<ProviderConnection> {
         val type = networkType(uri) ?: return emptyList()
         if (hasPassword(uri)) return emptyList()
@@ -23,11 +24,21 @@ object ContainerUris {
         return connections.filter { connection ->
             val endpointHost = connection.options["host"] ?: connection.endpoint?.substringBefore(':')
             connection.sourceTypeId == type && endpointHost?.trim('[', ']')?.equals(host, true) == true &&
-                (connection.options["port"]?.toIntOrNull() ?: defaultPort(uri)) == port &&
+                (if (type == "webdav" && uri.port <= 0) true else (connection.options["port"]?.toIntOrNull() ?: defaultPort(uri)) == port) &&
                 (username == null || connection.options["username"] == username) &&
-                (type != "ftp" || (connection.options["useFtps"] == "true") == uri.scheme.equals("ftps", true))
+                (type != "ftp" || (connection.options["useFtps"] == "true") == uri.scheme.equals("ftps", true)) &&
+                (type != "webdav" || webDavPathMatches(uri, connection))
         }
     }
+
+    private fun webDavPathMatches(uri: Uri, connection: ProviderConnection): Boolean {
+        if (uri.scheme.equals("dav", true) && connection.options["tls"] == "true") return false
+        if (uri.scheme.equals("davs", true) && connection.options["tls"] == "false") return false
+        val basePath=runCatching { Uri.parse(connection.options["url"] ?: connection.endpoint).path.orEmpty().trimEnd('/') }.getOrDefault("")
+        val target=uri.path.orEmpty().trimEnd('/')
+        return basePath.isEmpty() || target==basePath || target.startsWith("$basePath/")
+    }
+
     fun bind(uri: Uri, connection: ProviderConnection): Uri {
         val type = networkType(uri) ?: error("Not a storage server URI")
         require(type == connection.sourceTypeId)

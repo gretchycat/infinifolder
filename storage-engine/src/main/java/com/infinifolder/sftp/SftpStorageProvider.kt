@@ -91,6 +91,19 @@ class SftpStorageProvider(
         }
     } catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot open remote random access", e) }
 
+    /** Direct remote random-write target for new files; ordinary image edits remain staged. */
+    override fun openTransferTarget(ref: ResourceRef): ProviderResult<com.infinifolder.archive.BlockDevice> = try {
+        val uri = Uri.parse(ref.documentId)
+        val (config, creds) = resolveConfigAndCredentials(SftpUri.getConnectionId(uri))
+        val path = SftpUri.getRemotePath(uri)
+        val size = clientPool.withChannel(config, creds) { channel ->
+            val attrs = channel.lstat(path)
+            if (!attrs.isReg || attrs.isLink) throw IOException("Random-write transfer target must be a regular file")
+            attrs.size
+        }
+        ProviderResult.Success(SftpBlockDevice(clientPool, config, creds, path, isReadOnly = false, initialSize = size))
+    } catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot open SFTP transfer target", e) }
+
     fun resolveConfigAndCredentials(connectionId: String): Pair<SftpConfig, SftpCredentials> {
         val conn = connectionLookup(connectionId)
             ?: throw IOException("Saved SFTP connection not found: $connectionId")

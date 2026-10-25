@@ -132,7 +132,7 @@ class EpubViewerActivity : ViewerActivity() {
             setBackgroundColor(Color.TRANSPARENT)
             setPadding(dp(8), dp(8), dp(8), dp(8))
             contentDescription = "Back"
-            setOnClickListener { finish() }
+            setOnClickListener { onBackPressed() }
         }
         toolbar.addView(backBtn, LinearLayout.LayoutParams(dp(40), dp(40)))
 
