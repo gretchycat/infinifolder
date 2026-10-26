@@ -19,7 +19,7 @@ Broaden format-specific byte/metadata/edge checks, multipart ZIP/7z, advanced LV
 
 ## Requested future features
 
-Most-used sorting; torrent device acceptance and seekable piece reads; Downloads organization rules; read-only floating browser; home-screen shortcuts; later widget. NFS/cloud providers, broader search/recents/trash and portable metadata remain future scope. WebDAV is user-confirmed working.
+Most-used sorting; torrent device acceptance and seekable piece reads; Downloads organization rules; handset acceptance for floating browser and home-screen shortcuts; later widget. NFS/cloud providers, broader search/recents/trash and portable metadata remain future scope. WebDAV is user-confirmed working.
 
 ## Foundations already implemented
 

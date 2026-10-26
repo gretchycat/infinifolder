@@ -1,0 +1,29 @@
+# Winamp skin integration
+
+## Supported resources
+
+Classic `.wsz`/ZIP skins can be imported from Interface Theme → Import Winamp Skin using a path, storage URI, or Browse button. Import reads a private copy on a worker thread, validates it, then publishes the theme on the main thread. The private archive and display name survive app restarts. Failed imports leave the selected theme intact.
+
+- `PLEDIT.TXT`: Normal, Current, NormalBG, SelectedBG and Font. Keys tolerate whitespace and case differences. Arial maps to the platform sans-serif font; monospace/Courier/console names select monospace. Arbitrary Windows font files are not imported.
+- `VISCOLOR.TXT`: background and spectrum/oscilloscope colors, including decimal RGB values with leading zeroes and inline comments.
+- `MAIN.BMP`, `GEN.BMP`, `CBUTTONS.BMP`: bitmap-derived surface, toolbar and button palettes. Black backgrounds receive differentiated fallback surfaces when artwork is missing.
+- `TITLEBAR.BMP`: classic title-bar end caps and a blank texture section, adapted to toolbar width without copying the embedded Winamp title text.
+- Floating-window borders use narrow edge strips from `MAIN.BMP`, excluding playback controls. Bitmap strips are tiled and scaled in whole-number steps without smoothing.
+
+File labels and selection backgrounds now consume the selected theme instead of fixed modern colors. Foreground colors for selected text and toolbar/button text receive contrast correction. The main toolbar and audio viewer share the title-bar drawable; floating windows also use the bitmap frame. Icons still follow the separate icon-theme system.
+
+## Findings from project fixtures
+
+All four files in `Winamp/` contain classic bitmap skins, despite the Winamp3, Winamp5 and Bento names. They contain both palette text files, main/title-bar bitmap sheets, and generic-window bitmap sheets. Base has green-on-black text and blue selection; Classified v3 has pale green text; Classified v5 has white text on a blue background; Bento has blue-gray text on near-black.
+
+Previously the importer ignored all bitmap sheets, SelectedBG and Font, always marked imports dark/monospace, and could report success for unrelated ZIP files by generating a fabricated fallback theme. Copy failures could apply a theme that was not durably saved. File-card colors were also hardcoded, masking imported text colors.
+
+## Limits and validation
+
+This adapts classic skin chrome and palettes to the existing file manager layout; it does not execute Winamp scripts or implement modern XML/WAL skins, custom player layouts, cursors, or every bitmap control. Empty/unrecognized ZIP archives are rejected. Recognized entries are bounded to 8 MiB each, 24 MiB combined, at most 512 archive entries; the imported compressed file is limited to 32 MiB. Bitmap decoding checks dimensions before allocating pixels (maximum 2 million pixels).
+
+Fixture archive contents were inspected directly. APK compilation validates integration; handset confirmation of each skin's appearance, theme restoration and floating chrome is pending.
+
+## Image scaling preference
+
+Interface Theme → Skin image scaling offers Integer scaling (crisp pixels, default) and Smooth scaling (fractional scaling with bitmap filtering). The setting is remembered across application restarts and applies to the shared bitmap toolbar and floating frame.

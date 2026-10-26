@@ -1,6 +1,6 @@
 # Documentation
 
-Updated 2026-10-24. Start with [project status](project-status.md), [task list](feature-todo.md), [roadmap](roadmap.md) and [architecture](architecture.md).
+Updated 2026-10-26. Start with [project status](project-status.md), [task list](feature-todo.md), [roadmap](roadmap.md) and [architecture](architecture.md).
 
 ## Reference and evidence
 
@@ -11,10 +11,13 @@ Updated 2026-10-24. Start with [project status](project-status.md), [task list](
 - [TAR and compressed image mutation](compressed-container-writes.md)
 - [Container mutation batches](container-batching.md)
 - [Container links and Virtual root](container-links.md)
+- [Common locations and destination suggestions](common-locations.md)
 - [Copying into mounted images and ZIP containers](container-targets.md)
 - [Device dump follow-up](device-dump-follow-up.md)
 - [Shared disk cache policy](disk-cache-policy.md)
 - [External editing and source conflict checks](external-edit-writeback.md)
+- [Ext2/3/4 image writes and journals](ext-image-writes.md)
+- [Transfer metadata and filesystem integrity](metadata-integrity.md)
 - [FAT deleted-file recovery](fat-deleted-file-recovery.md)
 - [Feature to-do list](feature-todo.md)
 - [File formats and resource types](file-formats.md)
@@ -32,7 +35,9 @@ Updated 2026-10-24. Start with [project status](project-status.md), [task list](
 - [Roadmap](roadmap.md)
 - [Filesystem limits and destination preflight](storage-filesystem-limits.md)
 - [Storage safety and architecture progress](storage-safety-progress.md)
+- [Storage API consistency and remaining tasks](storage-api-consistency.md)
 - [Transfer verification and completion feedback](transfer-verification-feedback.md)
+- [Torrent checkpoint corruption and failure checks](torrent-checkpoint-safety.md)
 - [UFS and legacy archive support](ufs-and-legacy-compression.md)
 - [UI responsiveness investigation](ui-responsiveness.md)
 - [Independent viewer applications](viewer-modules.md)
@@ -47,3 +52,10 @@ Updated 2026-10-24. Start with [project status](project-status.md), [task list](
 Current status separates implemented, user-confirmed, acceptance-pending and deferred work. Original audits, decision records and dump timelines retain their historical evidence.
 
 - [WebDAV provider scope and remaining server checks](webdav-support.md)
+
+- [Winamp skin integration](winamp-skins.md): import behavior, classic bitmap chrome, fixture findings and compatibility limits.
+- [Resource icons](resource-icons.md): cached-first artwork, application icon refresh and per-file `.icon-<full filename>.png` images.
+- [Private partial-download collection](partial-download-discovery.md): persisted private links, passive discovery, source permissions and resume behavior.
+
+- [Concurrent operations and Activity overview](concurrent-activity.md): scheduling,
+  conflict waits, transfer overview/detail navigation, and pending device checks.

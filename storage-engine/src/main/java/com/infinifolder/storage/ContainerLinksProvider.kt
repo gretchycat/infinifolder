@@ -18,7 +18,9 @@ class ContainerLinksProvider(context: Context) : StorageProvider {
     }
     var validateTarget: ((ShortcutInfo) -> Unit)? = null
     override val id = "container-links"
-    override val features = BackendFeatures(creation = CreationGuarantee.EXCLUSIVE, rename = Support.SUPPORTED, delete = Support.SUPPORTED)
+    override val features = BackendFeatures(randomRead = Support.UNSUPPORTED, randomWrite = Support.UNSUPPORTED,
+        creation = CreationGuarantee.EXCLUSIVE, rename = Support.SUPPORTED, delete = Support.SUPPORTED,
+        nativeLinks = Support.UNSUPPORTED)
     private val root by lazy { File(context.applicationContext.filesDir, "container-links").apply {
         if (!isDirectory && !mkdirs()) throw IOException("Cannot create container-link storage")
     } }
@@ -49,6 +51,8 @@ class ContainerLinksProvider(context: Context) : StorageProvider {
             if (isRoot) "vnd.android.document/directory" else ShortcutInfo.SHORTCUT_MIME,
             if (isRoot) null else file.length(), file.lastModified(), isRoot,
             canRead = valid, canWrite = true,
+            operationHints = if (isRoot) mapOf(ResourceCapability.DELETE to Support.UNSUPPORTED,
+                ResourceCapability.RENAME to Support.UNSUPPORTED, ResourceCapability.MOVE to Support.UNSUPPORTED) else emptyMap(),
             readError = if (valid) null else "Incomplete or invalid container link"), uri)
     }
     fun validate(shortcut: ShortcutInfo) {

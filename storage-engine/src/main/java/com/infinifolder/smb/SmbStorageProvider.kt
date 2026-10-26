@@ -19,7 +19,8 @@ class SmbStorageProvider(
 
     override fun close() { clientPool.close() }
     override val id = "smb"
-    override val features = BackendFeatures(Support.SUPPORTED, Support.SUPPORTED, creation = CreationGuarantee.EXCLUSIVE, rename = Support.SUPPORTED, delete = Support.SUPPORTED)
+    override val features = BackendFeatures(Support.SUPPORTED, Support.SUPPORTED, creation = CreationGuarantee.EXCLUSIVE, rename = Support.SUPPORTED, delete = Support.SUPPORTED,
+        transferTarget = Support.SUPPORTED)
 
 
     override fun refForUri(uri: Uri): ResourceRef? = if (SmbUri.isSmbUri(uri)) ResourceRef(id, uri.toString()) else null

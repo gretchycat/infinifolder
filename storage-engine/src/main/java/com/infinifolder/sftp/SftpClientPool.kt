@@ -23,7 +23,7 @@ class SftpClientPool : Closeable {
 
     private data class ActiveClient(
         val session: Session,
-        val channel: ChannelSftp,
+        var channel: ChannelSftp,
         val config: SftpConfig,
         val credentials: SftpCredentials,
         var lastUsedMillis: Long = System.currentTimeMillis()
@@ -34,15 +34,25 @@ class SftpClientPool : Closeable {
 
     fun <T> withChannel(config: SftpConfig, credentials: SftpCredentials, block: (ChannelSftp) -> T): T {
         val client = getOrCreateClient(config, credentials)
-        return try {
-            synchronized(client) {
+        return synchronized(client) {
+            try {
+                if (!client.channel.isConnected) {
+                    client.channel = (client.session.openChannel("sftp") as ChannelSftp).also {
+                        try {
+                            it.setBulkRequests(128)
+                            it.connect(config.timeoutSeconds * 1000)
+                        } catch (error: Exception) { it.disconnect(); throw error }
+                    }
+                }
                 client.lastUsedMillis = System.currentTimeMillis()
                 block(client.channel)
+            } catch (e: Exception) {
+                // Interrupted requests can leave unread replies on an otherwise
+                // connected channel. Replace it for the next operation, without
+                // replaying this callback or disconnecting independent readers.
+                client.channel.disconnect()
+                throw e
             }
-        } catch (e: Exception) {
-            // A callback may have already mutated the server. Never replay it implicitly.
-            if (!client.session.isConnected || !client.channel.isConnected) disconnect(config.id)
-            throw e
         }
     }
 
@@ -63,7 +73,7 @@ class SftpClientPool : Closeable {
     private fun getOrCreateClient(config: SftpConfig, credentials: SftpCredentials): ActiveClient {
         synchronized(lock) {
             val existing = clients[config.id]
-            if (existing != null && existing.session.isConnected && existing.channel.isConnected) {
+            if (existing != null && existing.session.isConnected) {
                 return existing
             }
             if (existing != null) {

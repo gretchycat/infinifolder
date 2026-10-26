@@ -30,12 +30,24 @@ interface StorageProvider : java.io.Closeable {
     /** Stable transfer identity. Unknown identities must be treated as different devices. */
     fun deviceIdentity(ref: ResourceRef): String? = null
     fun stat(ref: ResourceRef): ProviderResult<ResourceEntry> = ProviderResult.Unsupported(ResourceCapability.STAT)
+    /** Export portable attributes; a backend may supply richer ACL/xattr data. */
+    fun readTransferMetadata(ref: ResourceRef): ProviderResult<TransferMetadata> = when (val result = stat(ref)) {
+        is ProviderResult.Success -> ProviderResult.Success(TransferMetadata.from(result.value.metadata))
+        is ProviderResult.Failure -> result
+        is ProviderResult.Unsupported -> result
+    }
+    /** Retain all requested fields. Unsupported must make no changes. */
+    fun applyTransferMetadata(ref: ResourceRef, metadata: TransferMetadata): ProviderResult<Unit> =
+        ProviderResult.Unsupported(ResourceCapability.METADATA)
 
-    /** The caller owns the returned device. A writable request must never silently downgrade. */
+    /** Caller owns the device. Success requires READ/SEEK, plus WRITE when requested.
+     * Writable access must never silently downgrade. Unsupported uses SEEK/SEEK_WRITE;
+     * permission, connection and I/O failures are Failure, not a fallback signal. */
     fun openSeekable(ref: ResourceRef, writable: Boolean = false): ProviderResult<com.infinifolder.archive.BlockDevice> =
-        ProviderResult.Unsupported(if (writable) ResourceCapability.WRITE else ResourceCapability.SEEK)
-    /** A new-file target for producers that write blocks at arbitrary offsets. */
-    fun openTransferTarget(ref: ResourceRef): ProviderResult<com.infinifolder.archive.BlockDevice> = openSeekable(ref, writable = true)
+        ProviderResult.Unsupported(if (writable) ResourceCapability.SEEK_WRITE else ResourceCapability.SEEK)
+    /** Target must also support TRUNCATE (shrink and grow) for reservation/resume. */
+    fun openTransferTarget(ref: ResourceRef): ProviderResult<com.infinifolder.archive.BlockDevice> =
+        validateSeekableResult(openSeekable(ref, writable = true), writable = true, resizable = true)
     /** Optional atomic replacement. Unsupported callers must preserve a recovery copy before streaming. */
     fun replaceContent(ref: ResourceRef, data: ByteArray): ProviderResult<Unit> = ProviderResult.Unsupported(ResourceCapability.WRITE)
 
@@ -54,6 +66,21 @@ interface StorageProvider : java.io.Closeable {
     fun delete(ref: ResourceRef): ProviderResult<Unit>
     fun copy(source: ResourceRef, destination: ResourceRef): ProviderResult<ResourceRef>
     fun move(source: ResourceRef, destination: ResourceRef): ProviderResult<ResourceRef>
+}
+
+/** One validation rule for direct backend callers and routed operations. */
+internal fun validateSeekableResult(result: ProviderResult<com.infinifolder.archive.BlockDevice>,
+                                    writable: Boolean, resizable: Boolean = false): ProviderResult<com.infinifolder.archive.BlockDevice> {
+    val unsupported = ProviderResult.Unsupported(if (writable) ResourceCapability.SEEK_WRITE else ResourceCapability.SEEK)
+    if (result is ProviderResult.Unsupported) return unsupported
+    if (result !is ProviderResult.Success) return result
+    val device = result.value
+    val required = setOf(com.infinifolder.archive.DeviceCapability.READ, com.infinifolder.archive.DeviceCapability.SEEK) +
+        (if (writable) setOf(com.infinifolder.archive.DeviceCapability.WRITE) else emptySet()) +
+        (if (resizable) setOf(com.infinifolder.archive.DeviceCapability.TRUNCATE) else emptySet())
+    if (device.capabilities.containsAll(required) && (!writable || !device.isReadOnly)) return result
+    return try { device.close(); unsupported }
+    catch (error: Exception) { ProviderResult.Failure("Cannot close an unsuitable random-access handle", error) }
 }
 
 /** SAF tree grants are persisted by Android; URI/document IDs remain opaque provider identities. */

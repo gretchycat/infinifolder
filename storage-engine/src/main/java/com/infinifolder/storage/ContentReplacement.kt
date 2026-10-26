@@ -18,8 +18,8 @@ object ContentReplacement {
         val info = (provider.fileSystemInfo(ref) as? ProviderResult.Success)?.value
         info?.requireFileFits("updated container", file.length())
         info?.availableBytes?.let { available ->
-            if (file.length() > available) throw IOException("Not enough destination space to safely publish the updated container: " +
-                "need ${file.length()} bytes, have $available. Original retained.")
+            if (file.length() > available) throw IOException("Not enough space to save the container. " +
+                "About ${StorageMessages.approximateSize(file.length())} needed; ${StorageMessages.approximateSize(available)} available. Original retained.")
         }
         val expected = file.inputStream().use(ContentRevision::read)
         replaceWith(provider, ref, recoveryRoot, expectedRevision, expected,

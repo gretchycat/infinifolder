@@ -5,34 +5,61 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import com.infinifolder.theme.ThemeChangeListener
+import com.infinifolder.theme.ThemeColors
+import com.infinifolder.theme.ThemeManager
 import android.widget.*
 import com.infinifolder.storage.*
 import java.io.IOException
 
 /** External program handoff, explicit completion and conflict decisions; independent of the browser. */
-class ExternalEditActivity : ViewerActivity() {
+class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
     private lateinit var store: ExternalEdits
     private var session: ExternalEdits.Session? = null
     private lateinit var column: LinearLayout
     private lateinit var status: TextView
+    private lateinit var title: TextView
     private lateinit var progress: ProgressBar
     private var busy = false
     private var pendingCopyName: String? = null
+    private var pendingReview = false
+    private var reviewingWindow = false
+    private var reviewWindowAlpha = 1f
+    private var reviewWindowFlags = 0
+    private val reviewFlagMask = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_DIM_BEHIND
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        ThemeManager.init(applicationContext)
+        setTheme(if (ThemeManager.activeTheme.isDark) android.R.style.Theme_Material_Dialog_NoActionBar
+            else android.R.style.Theme_Material_Light_Dialog_NoActionBar)
         super.onCreate(savedInstanceState)
         store = ExternalEdits(this)
-        val theme = com.infinifolder.theme.ThemeManager.activeTheme
-        column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 24, 24, 24); setBackgroundColor(theme.background) }
-        status = TextView(this).apply { textSize = 17f; setTextColor(theme.textPrimary); text = "External file editing" }
-        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { isIndeterminate = true }
-        column.addView(status); column.addView(progress)
-        setContentView(ScrollView(this).apply { addView(column) })
+        column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(16), dp(20), dp(12)) }
+        title = TextView(this).apply { textSize = 18f; setTypeface(typeface, android.graphics.Typeface.BOLD); text = "External file" }
+        status = TextView(this).apply { textSize = 14f; text = "Preparing file…"; setPadding(0, dp(8), 0, dp(8)) }
+        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { isIndeterminate = true; visibility = View.GONE }
+        column.addView(title); column.addView(status); column.addView(progress,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(8)))
+        setContentView(object : ScrollView(this) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(
+                    (resources.displayMetrics.heightPixels * .8f).toInt(), View.MeasureSpec.AT_MOST))
+            }
+        }.apply { isFillViewport = false; addView(column) })
+        setFinishOnTouchOutside(false)
+        window.setLayout(minOf(dp(480), (resources.displayMetrics.widthPixels * .92f).toInt()), ViewGroup.LayoutParams.WRAP_CONTENT)
+        ThemeManager.addListener(this)
+        applyTheme(ThemeManager.activeTheme)
         val id = savedInstanceState?.getString("session") ?: intent.getStringExtra("session")
         pendingCopyName = savedInstanceState?.getString("copy_name")
         if (id != null) {
             session = store.find(id)
-            showActions("Working copy retained. Close the external program, then finish editing to check and save it.")
+            if (session == null) finish() else reviewChanges()
         } else if (intent.data != null) {
             work("Preparing file…") {
                 val prepared = store.prepare(intent.data!!, ::report)
@@ -43,6 +70,41 @@ class ExternalEditActivity : ViewerActivity() {
                 }
             }
         } else showPending()
+    }
+    override fun onThemeChanged(theme: ThemeColors) { runOnUiThread { if (!isDestroyed) applyTheme(theme) } }
+    private fun applyTheme(theme: ThemeColors) {
+        window.setBackgroundDrawable(android.graphics.drawable.GradientDrawable().apply {
+            setColor(theme.surface); cornerRadius = dp(theme.cornerRadiusDp.toInt()).toFloat()
+        })
+        column.setBackgroundColor(theme.surface)
+        fun style(view: View) {
+            if (view is TextView) view.setTextColor(if (view is Button) theme.buttonText else if (view === status) theme.textSecondary else theme.textPrimary)
+            if (view is Button) view.backgroundTintList = android.content.res.ColorStateList.valueOf(theme.buttonBackground)
+            if (view is ViewGroup) for (i in 0 until view.childCount) style(view.getChildAt(i))
+        }
+        style(column)
+        val tint = android.content.res.ColorStateList.valueOf(theme.accent)
+        progress.progressTintList = tint; progress.indeterminateTintList = tint
+    }
+    private fun clearActions() { while (column.childCount > 3) column.removeViewAt(3) }
+    private fun hideForReview() {
+        if (reviewingWindow) return
+        val attributes = window.attributes
+        reviewWindowAlpha = attributes.alpha
+        reviewWindowFlags = attributes.flags and reviewFlagMask
+        attributes.alpha = 0f
+        attributes.flags = (attributes.flags and reviewFlagMask.inv()) or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        window.attributes = attributes
+        reviewingWindow = true
+    }
+    private fun showAfterReview() {
+        if (!reviewingWindow) return
+        val attributes = window.attributes
+        attributes.alpha = reviewWindowAlpha
+        attributes.flags = (attributes.flags and reviewFlagMask.inv()) or reviewWindowFlags
+        window.attributes = attributes
+        reviewingWindow = false
     }
     private fun report(message: String, bytes: Long, total: Long?) {
         runOnUiThread {
@@ -59,11 +121,17 @@ class ExternalEditActivity : ViewerActivity() {
         status.text = message
         progress.visibility = android.view.View.VISIBLE
         progress.isIndeterminate = true
-        while (column.childCount > 2) column.removeViewAt(2)
+        clearActions()
         Thread({
             try { action() }
             catch (error: Exception) { runOnUiThread { if (!isFinishing && !isDestroyed) showFailure(error) } }
-            finally { runOnUiThread { busy = false; if (!isDestroyed) progress.visibility = android.view.View.GONE } }
+            finally { runOnUiThread {
+                busy = false
+                if (!isDestroyed) {
+                    progress.visibility = View.GONE
+                    if (pendingReview && !isFinishing) reviewChanges()
+                }
+            } }
         }, "ExternalEditSession").start()
     }
     private fun button(label: String, action: () -> Unit) {
@@ -76,9 +144,11 @@ class ExternalEditActivity : ViewerActivity() {
     }
     private fun showActions(message: String) {
         if (isDestroyed || isFinishing) return
-        status.text = (session?.name?.let { "$it\n\n" } ?: "") + message
+        showAfterReview()
+        title.text = session?.name ?: "External file"
+        status.text = message
         progress.visibility = android.view.View.GONE
-        while (column.childCount > 2) column.removeViewAt(2)
+        clearActions()
         if (session == null) {
             if (intent.data != null) button("Retry opening file") {
                 work("Preparing file…") {
@@ -90,24 +160,51 @@ class ExternalEditActivity : ViewerActivity() {
             button("Unfinished external edits") { showPending() }
             return
         }
-        button("Finish editing and save") { complete(false) }
-        button("Open external program again") { launchEditor() }
-        button("Save with a new name…") { newName() }
-        button("Copy to another folder…") { copyToFolder() }
-        button("Keep edits for later") { finish() }
-        button("Discard working copy…") { confirmDiscard() }
+        button("Save changes") { complete(false) }
+        button("Save a copy…") {
+            val dialog = CacheDialogs.builder(this).setTitle("Save edited copy")
+                .setItems(arrayOf("New name in original folder…", "Another folder…")) { _, which ->
+                    if (which == 0) newName() else copyToFolder()
+                }.create()
+            dialog.show(); CacheDialogs.style(dialog)
+        }
+        button("More…") {
+            val dialog = CacheDialogs.builder(this).setTitle("Edited file")
+                .setItems(arrayOf("Open external program again", "Keep edits for later", "Discard edits…")) { _, which ->
+                    when (which) { 0 -> launchEditor(); 1 -> finish(); else -> confirmDiscard() }
+                }.create()
+            dialog.show(); CacheDialogs.style(dialog)
+        }
+    }
+    private fun reviewChanges() {
+        pendingReview = true
+        if (busy) return
+        val item = session ?: return
+        pendingReview = false
+        // Keep the browser visible while checking. Read-only opens must not
+        // flash a save dialog before we know that any local bytes changed.
+        hideForReview()
+        title.text = item.name
+        work("Checking for local edits…") {
+            val changed = store.reviewChanges(item, ::report)
+            runOnUiThread {
+                if (changed) showActions("This working copy has changed. Save it to the original location or keep a separate copy.")
+                else finish()
+            }
+        }
     }
     private fun showPending() {
         status.text = "Unfinished external edits"
         progress.visibility = android.view.View.GONE
-        while (column.childCount > 2) column.removeViewAt(2)
+        title.text = "Unfinished external edits"
+        clearActions()
         work("Loading unfinished edits…") {
             val pending = store.pending()
             runOnUiThread {
                 status.text = if (pending.isEmpty()) "No unfinished external edits." else "Unfinished external edits"
                 pending.forEach { item -> button(item.name + "\n" + item.ref.documentId) {
                     session = item
-                    showActions("Working copy retained. Close the external program before saving.")
+                    reviewChanges()
                 } }
             }
         }
@@ -121,14 +218,17 @@ class ExternalEditActivity : ViewerActivity() {
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             handoff.clipData = android.content.ClipData.newRawUri(item.name, uri)
             startActivityForResult(Intent.createChooser(handoff, "Open ${item.name}"), 701)
-            showActions("When the external program is finished, return here and choose Finish editing and save.")
+            title.text = item.name
+            status.text = "Open in external program"
+            progress.visibility = View.GONE
+            clearActions()
         } catch (error: Exception) { showFailure(error) }
     }
     @Deprecated("Legacy result callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 701) {
-            showActions("Close the external program, then finish editing to check the source and save your changes.")
+            reviewChanges()
         } else if (requestCode == 702 && resultCode == RESULT_OK && data?.data != null) {
             val target = data.data!!
             val name = pendingCopyName ?: session?.name ?: "edited-file"
@@ -148,19 +248,23 @@ class ExternalEditActivity : ViewerActivity() {
         }
     }
     private fun showFailure(error: Exception) {
-        if (CacheFailureUi.offerCopy(this, error, intent.data ?: session?.ref?.documentId?.let(Uri::parse) ?: Uri.EMPTY)) {
+        showAfterReview()
+        if (session == null && CacheFailureUi.offerCopy(this, error, intent.data ?: Uri.EMPTY)) {
             showActions("The file could not fit in the cache. Change the limits and reopen it, or save a copy.")
             return
         }
-        showActions(error.message ?: "Operation failed. Your working copy is kept.")
+        if (session == null) { showActions(error.message ?: "Could not open this file."); return }
+        title.text = session!!.name
+        status.text = error.message ?: "Operation failed. Your working copy is kept."
+        progress.visibility = View.GONE
+        clearActions()
         if (session != null && (error is ExternalSourceConflict || generateSequence(error.cause) { it.cause }.any { it is ExternalSourceConflict })) {
-            val dialog = CacheDialogs.builder(this).setTitle("File changed at source")
-                .setMessage("The file changed at the source while we were working on it. Your edited copy has been kept. Save with a new name, copy it to another location, or explicitly overwrite the source.")
-                .setPositiveButton("Save as…") { _, _ -> newName() }
-                .setNeutralButton("Copy elsewhere…") { _, _ -> copyToFolder() }
-                .setNegativeButton("Overwrite…") { _, _ -> confirmOverwrite() }.create()
-            dialog.show(); CacheDialogs.style(dialog)
-        }
+            status.text = "The original file's contents changed at its storage location while you were editing. Your edited copy is kept."
+            button("Save with a new name…") { newName() }
+            button("Copy elsewhere…") { copyToFolder() }
+            button("Overwrite original…") { confirmOverwrite() }
+        } else button("Check again") { reviewChanges() }
+        button("Keep for later") { finish() }
     }
     private fun confirmOverwrite() {
         val dialog = CacheDialogs.builder(this).setTitle("Overwrite source?")
@@ -221,4 +325,5 @@ class ExternalEditActivity : ViewerActivity() {
         outState.putString("copy_name", pendingCopyName)
         super.onSaveInstanceState(outState)
     }
+    override fun onDestroy() { ThemeManager.removeListener(this); super.onDestroy() }
 }

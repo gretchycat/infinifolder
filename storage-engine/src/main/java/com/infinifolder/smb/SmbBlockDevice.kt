@@ -2,6 +2,7 @@ package com.infinifolder.smb
 
 import com.infinifolder.archive.BlockDevice
 import com.infinifolder.archive.DeviceCapability
+import com.infinifolder.archive.requireDeviceRange
 import jcifs.smb.SmbFile
 import jcifs.smb.SmbRandomAccessFile
 import java.io.IOException
@@ -35,7 +36,8 @@ class SmbBlockDevice(
         get() = synchronized(smbRaf) { smbRaf.length() }
 
     override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {
-        if (offset < 0 || offset >= size || length <= 0) return 0
+        requireDeviceRange(offset, buffer, dstOffset, length)
+        if (offset >= size || length == 0) return 0
         val toRead = length.toLong().coerceAtMost(size - offset).toInt()
         synchronized(smbRaf) {
             smbRaf.seek(offset)
@@ -46,7 +48,8 @@ class SmbBlockDevice(
 
     override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) {
         if (isReadOnly) throw IOException("SmbBlockDevice is read-only")
-        if (offset < 0 || length < 0) throw IOException("Invalid offset or length (offset=$offset, length=$length)")
+        requireDeviceRange(offset, buffer, srcOffset, length)
+        if (length == 0) return
         synchronized(smbRaf) {
             smbRaf.seek(offset)
             smbRaf.write(buffer, srcOffset, length)
@@ -67,7 +70,7 @@ class SmbBlockDevice(
 
     override fun close() {
         synchronized(smbRaf) {
-            try { smbRaf.close() } catch (_: Throwable) {}
+            smbRaf.close()
         }
     }
 }

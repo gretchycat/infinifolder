@@ -1,0 +1,53 @@
+{
+  "image": "ext4-metadata-tests.img",
+  "source_directory": "copy-from",
+  "return_directory": "copy-back-here",
+  "files": {
+    "plain-0644.txt": {
+      "mode": "0644",
+      "uid": 1000,
+      "gid": 1000,
+      "mtime_unix": 1700000000,
+      "bytes": 42,
+      "sha256": "ffae35757439fda4ecfc0cf441b7630939e2d48cef4bca248784aed26720fe4f"
+    },
+    "private-0600.txt": {
+      "mode": "0600",
+      "uid": 1000,
+      "gid": 1000,
+      "mtime_unix": 1700000000,
+      "bytes": 28,
+      "sha256": "6d38af5b258b28bf9acd4dba949519c967d600e5c04de1b2f016122e5d9b1951"
+    },
+    "executable-0755.sh": {
+      "mode": "0755",
+      "uid": 1000,
+      "gid": 1000,
+      "mtime_unix": 1700000000,
+      "bytes": 38,
+      "sha256": "4602bd9017f843f0c59e256e37e2bcbaea3250462db6ca9ddecdc9b236a572c2"
+    },
+    "acl-and-xattrs-0640.txt": {
+      "mode": "0640",
+      "uid": 1000,
+      "gid": 1000,
+      "mtime_unix": 1700000000,
+      "bytes": 39,
+      "sha256": "0dcfcc2500cdf8e4d56617b26fe3af24983cfcb1660aa32c719ef52762820d5b",
+      "xattrs": {
+        "user.test_label": "InfiniFolder metadata fixture",
+        "user.large_bytes": 400,
+        "user.large_sha256": "358dece80234759cc7cceb5771b653fc80b6c0374757c3d6d1511eef6e40742b",
+        "system.posix_acl_access": "owner rw-, user:1234 r--, group r--, mask r--, other ---"
+      }
+    },
+    "nested/nested-0640.txt": {
+      "mode": "0640",
+      "uid": 1000,
+      "gid": 1000,
+      "mtime_unix": 1700000000,
+      "bytes": 34,
+      "sha256": "724c27d6e988b463a789b3fa8ca8a9497b3b048e6dab5fd4df14caffc92571b8"
+    }
+  }
+}

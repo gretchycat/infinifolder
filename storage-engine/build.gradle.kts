@@ -9,6 +9,25 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     testOptions { unitTests.isReturnDefaultValues = true }
+    if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
+        sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("extNative"))
+    } else {
+        externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
+    }
+}
+
+if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
+    val buildExtNative = tasks.register<Exec>("buildExtNative") {
+        inputs.dir("src/main/cpp")
+        outputs.dir(layout.buildDirectory.dir("extNative"))
+        commandLine("sh", file("src/main/cpp/build-termux.sh"),
+            layout.buildDirectory.dir("extNative").get().asFile, System.getProperty("java.home"))
+    }
+    tasks.named("preBuild").configure { dependsOn(buildExtNative) }
+    tasks.withType<Test>().configureEach {
+        dependsOn(buildExtNative)
+        jvmArgs("-Djava.library.path=${layout.buildDirectory.dir("extNative/arm64-v8a").get().asFile}")
+    }
 }
 dependencies {
     api("androidx.core:core:1.15.0")

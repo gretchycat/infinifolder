@@ -2,6 +2,7 @@ package com.infinifolder.sftp
 
 import com.infinifolder.archive.BlockDevice
 import com.infinifolder.archive.DeviceCapability
+import com.infinifolder.archive.requireDeviceRange
 import com.jcraft.jsch.ChannelSftp
 import java.io.IOException
 
@@ -48,7 +49,8 @@ class SftpBlockDevice(
         }
 
     @Synchronized override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {
-        if (offset < 0 || offset >= currentSize || length <= 0) return 0
+        requireDeviceRange(offset, buffer, dstOffset, length)
+        if (offset >= currentSize || length == 0) return 0
         val toRead = length.toLong().coerceAtMost(currentSize - offset).toInt()
 
         check(!closed) { "SFTP range reader is closed" }
@@ -96,13 +98,13 @@ class SftpBlockDevice(
 
     @Synchronized override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) {
         if (isReadOnly) throw IOException("SFTP BlockDevice is read-only")
-        if (offset < 0L || length < 0 || srcOffset < 0 || srcOffset + length > buffer.size ||
-            offset + length < offset || offset + length > currentSize)
+        requireDeviceRange(offset, buffer, srcOffset, length)
+        if (offset + length > currentSize)
             throw IOException("Invalid SFTP random-write range")
         if (length == 0) return
         check(!closed) { "SFTP random-write device is closed" }
         val started = android.os.SystemClock.uptimeMillis()
-        clientPool.withChannel(config, credentials) { sftp ->
+        try { clientPool.withChannel(config, credentials) { sftp ->
             // JSch's RESUME stream opens without truncation and initializes its
             // SFTP write offset to (remote size + supplied offset). The negative
             // delta positions writes at an arbitrary byte inside the pre-sized file.
@@ -110,6 +112,10 @@ class SftpBlockDevice(
                 output.write(buffer, srcOffset, length)
                 output.flush()
             }
+        } } catch (error: Exception) {
+            val code = (error as? com.jcraft.jsch.SftpException)?.id?.let { " (SFTP code $it)" }.orEmpty()
+            val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+            throw IOException("SFTP random write failed at offset $offset ($length bytes): $detail$code", error)
         }
         currentSize = maxOf(currentSize, offset + length)
         com.infinifolder.storage.DiagnosticLog.record("sftp.range.write",

@@ -1,0 +1,20 @@
+[
+  {
+    "path": "filesystems/linux/ext2-write-tests.img",
+    "size": 25165824,
+    "sha256": "636da63f2a4108938190bd7bc03c2e1e4ee9cb3fb572dcbb840dd47367063cee",
+    "purpose": "File and nonempty-directory moves, writes, deletion, links and retained metadata"
+  },
+  {
+    "path": "filesystems/linux/ext3-write-tests.img",
+    "size": 25165824,
+    "sha256": "0a811ae92d22e49091d94153b2d1a965cd67615104ba86ffc0961d4339b8a652",
+    "purpose": "File and nonempty-directory moves, writes, deletion, links and retained metadata"
+  },
+  {
+    "path": "filesystems/linux/ext4-write-tests.img",
+    "size": 25165824,
+    "sha256": "689560c911419a2bb5a2bc6f77fdfdb63e876b4b736107d7706dd6eb4206389b",
+    "purpose": "File and nonempty-directory moves, writes, deletion, links and retained metadata"
+  }
+]

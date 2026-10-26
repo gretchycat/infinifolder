@@ -27,6 +27,7 @@ object MimeRegistry {
     private val aliases = mapOf("application/x-java-archive" to "application/java-archive", "application/x-zip-compressed" to "application/zip",
         "application/x-gzip" to "application/gzip", "text/xml" to "application/xml", "text/x-markdown" to "text/markdown")
     private val extensions = mapOf(
+        "incomplete" to "application/vnd.infinifolder.torrent-partial",
         "txt" to "text/plain", "log" to "text/plain", "cfg" to "text/plain", "conf" to "text/plain", "ini" to "text/plain", "properties" to "text/plain",
         "md" to "text/markdown", "markdown" to "text/markdown", "mdown" to "text/markdown", "mkd" to "text/markdown", "mkdn" to "text/markdown",
         "csv" to "text/csv", "tsv" to "text/tab-separated-values", "html" to "text/html", "htm" to "text/html", "xhtml" to "application/xhtml+xml",
@@ -73,6 +74,8 @@ object MimeRegistry {
     }
     fun effective(name: String, supplied: String?, detected: String? = null): String {
         if (normalize(supplied) == "vnd.android.document/directory") return "vnd.android.document/directory"
+        if (name.endsWith(".incomplete", true)) return "application/vnd.infinifolder.torrent-partial"
+        if (normalize(supplied) == "application/vnd.infinifolder.partial-download") return normalize(supplied)
         packageFormat(name, supplied)?.let { return it.mime }
         val stated = normalize(supplied)
         val sniffed = normalize(detected)
@@ -84,6 +87,7 @@ object MimeRegistry {
         return stated
     }
     fun fallbackIcon(mimeType: String): String = when (val mime = normalize(mimeType)) {
+        "application/vnd.infinifolder.partial-download", "application/vnd.infinifolder.torrent-partial" -> "⬇"
         "vnd.android.document/directory" -> "📁"
         "application/vnd.android.package-archive" -> "🤖"
         "application/x-love-game" -> "🎮"

@@ -25,6 +25,7 @@ object OperationFeedback {
         Thread(task, "OperationCompletionNotifications").apply { isDaemon = true }
     }
     private val listeners = mutableSetOf<(OperationSnapshot) -> Unit>()
+    private val failureWarnings = OperationFailureWarnings()
     @Volatile private var foreground = false
     private var installed = false
 
@@ -44,20 +45,24 @@ object OperationFeedback {
                 started.remove(activity)
                 foreground = started.isNotEmpty() || activity.isChangingConfigurations
             }
-            override fun onActivityDestroyed(activity: Activity) { started.remove(activity) }
+            override fun onActivityDestroyed(activity: Activity) {
+                started.remove(activity)
+                failureWarnings.paused(activity)
+            }
             override fun onActivityCreated(activity: Activity, state: Bundle?) {}
-            override fun onActivityResumed(activity: Activity) {}
-            override fun onActivityPaused(activity: Activity) {}
+            override fun onActivityResumed(activity: Activity) { failureWarnings.resumed(activity) }
+            override fun onActivityPaused(activity: Activity) { failureWarnings.paused(activity) }
             override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) {}
         })
         // Seed history so recreating an activity never announces old completed jobs.
         val announced = AppOperations.coordinator.snapshots().filter { it.isTerminal() }.map { it.id }.toMutableSet()
         AppOperations.coordinator.addListener { snapshots ->
             val finished = synchronized(announced) {
-                snapshots.filter { !it.id.startsWith("playback_") && it.isTerminal() && announced.add(it.id) }
+                snapshots.filter { !it.id.startsWith("playback_") && !it.restoredFromHistory && it.isTerminal() && announced.add(it.id) }
             }
             for (op in finished) {
                 DiagnosticLog.record("operation.completion.dispatch", "id=${op.id} state=${op.state} foreground=$foreground label=${op.label}")
+                if (op.state == OperationState.FAILED) main.post { failureWarnings.enqueue(op) }
                 if (foreground) {
                     main.post { listeners.toList().forEach { it(op) } }
                 } else if (op.state != OperationState.CANCELLED) {

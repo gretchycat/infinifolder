@@ -12,7 +12,12 @@ Implemented 2026-10-23; handset acceptance is pending.
 - Creating a folder/file, deleting an entry, and saving an existing compressed-image file also use a private session. Existing TAR file saves preserve the original entry's metadata through a verified rebuild.
 - ZIP behavior remains a rebuild with existing compressed payloads copied without recompression.
 
-Compression does not add a writable filesystem decoder. ISO, exFAT and ext image filesystems remain read-only; UFS, NTFS and HFS currently lack app image readers. zstd and legacy Unix `.Z` write support are not included. Nested-container writes remain read-only.
+Current filesystem scope (2026-10-26): FAT12/16/32 and the supported ext2/3/4
+feature subset can be edited through private decompressed batches. Ext changes use
+the [journal-aware writer](ext-image-writes.md). ISO, exFAT, UFS, NTFS and HFS image
+views support reading only. Compression does not add missing filesystem writers.
+Nested-container writes remain read-only. Earlier codec/build statements describe
+the original increment; current codec availability follows `ContainerCompression`.
 
 ## Safety and space
 

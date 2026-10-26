@@ -136,7 +136,14 @@ class DiskCache private constructor(context: Context) {
     /** Pin a managed source while a provider/device accesses it. Unmanaged user files need no lease. */
     @Synchronized fun pin(file: File): java.io.Closeable? {
         val path = file.canonicalFile.toPath()
-        val entry = entries.firstOrNull { path.startsWith(it.dir.canonicalFile.toPath()) } ?: return null
+        val cacheRoot = directory.canonicalFile.toPath()
+        // Ordinary source files have no cache lease. Avoid canonicalizing every
+        // managed entry for every tiny sibling PNG/link opened outside the cache.
+        if (!path.startsWith(cacheRoot)) return null
+        val relative = cacheRoot.relativize(path)
+        if (relative.nameCount < 2) return null
+        val entryName = relative.getName(0).toString()
+        val entry = entries.firstOrNull { it.dir.name == entryName } ?: return null
         entry.pins++
         touch(entry)
         val released = java.util.concurrent.atomic.AtomicBoolean(false)

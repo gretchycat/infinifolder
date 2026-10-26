@@ -2,6 +2,7 @@ package com.infinifolder.ftp
 
 import com.infinifolder.archive.BlockDevice
 import com.infinifolder.archive.DeviceCapability
+import com.infinifolder.archive.requireDeviceRange
 import java.io.IOException
 
 /**
@@ -24,7 +25,8 @@ class FtpBlockDevice(
         get() = setOf(DeviceCapability.READ, DeviceCapability.SEEK)
 
     override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {
-        if (offset < 0 || offset >= size || length <= 0) return 0
+        requireDeviceRange(offset, buffer, dstOffset, length)
+        if (offset >= size || length == 0) return 0
         val toRead = length.toLong().coerceAtMost(size - offset).toInt()
 
         return clientPool.withClient(config, credentials) { client ->

@@ -69,17 +69,13 @@ class ExternalEdits(private val context: Context) {
             }
         }.use(ContentRevision::read)
     }
-    private fun stamp(ref: ResourceRef, message: String, progress: (String, Long, Long?) -> Unit): Stamp {
-        runtime.archives.invalidateReadCaches()
+    private fun stamp(ref: ResourceRef, message: String, progress: (String, Long, Long?) -> Unit): Stamp = runtime.archives.withFreshReads {
         val before = result(provider.stat(ref)).metadata
         if (before.isDirectory) throw IOException("External editing requires a file")
         progress(message, 0, before.sizeBytes)
         val revision = fingerprint(open(ref), message, before.sizeBytes, progress)
-        runtime.archives.invalidateReadCaches()
-        val after = result(provider.stat(ref)).metadata
-        if (before.sizeBytes != after.sizeBytes || before.modifiedAtMillis != after.modifiedAtMillis ||
-            (after.sizeBytes != null && after.sizeBytes != revision.size)) throw ExternalSourceConflict()
-        return Stamp(revision, after.modifiedAtMillis)
+        // Metadata is a progress hint, never evidence of changed file content.
+        Stamp(revision, before.modifiedAtMillis)
     }
     fun prepare(uri: Uri, progress: (String, Long, Long?) -> Unit): Session {
         val ref = provider.refForUri(uri) ?: throw IOException("No provider owns this file")
@@ -90,7 +86,7 @@ class ExternalEdits(private val context: Context) {
             val before = stamp(ref, "Checking source before opening…", progress)
             lease.reserve(before.revision.size)
             progress("Preparing external working copy…", 0, before.revision.size)
-            open(ref).use { input -> lease.output().use { output ->
+            runtime.archives.withFreshReads { open(ref).use { input -> lease.output().use { output ->
                 val buffer = ByteArray(128 * 1024)
                 var bytes = 0L
                 var reported = 0L
@@ -102,10 +98,10 @@ class ExternalEdits(private val context: Context) {
                     val now = android.os.SystemClock.uptimeMillis()
                     if (now - reported >= 250) { reported = now; progress("Preparing external working copy…", bytes, before.revision.size) }
                 }
-            } }
+            } } }
             val grabbed = lease.file.inputStream().use(ContentRevision::read)
             val after = stamp(ref, "Checking source after opening…", progress)
-            if (before != after || grabbed != before.revision) throw ExternalSourceConflict()
+            if (before.revision != after.revision || grabbed != before.revision) throw ExternalSourceConflict()
             val directory = File(root, UUID.randomUUID().toString()).apply { if (!mkdir()) throw IOException("Cannot create working copy") }
             val magic = FileMagicDetector.detect(lease.file, peekCompressedPayload = true)
             val mime = com.infinifolder.mime.MimeRegistry.effective(metadata.name, metadata.mimeType, magic?.mimeType)
@@ -149,12 +145,36 @@ class ExternalEdits(private val context: Context) {
         if (session.id in operations) throw IOException("This edit session is busy")
         phase(session, "editing")
     }
-    private fun freeze(session: Session): Pair<File, ContentRevision> {
+
+    /** Returning from a read-only viewer needs no edit UI or source/network check. */
+    fun reviewChanges(session: Session, progress: (String, Long, Long?) -> Unit): Boolean = synchronized(lock(session.id)) {
+        if (session.id in operations) throw IOException("This edit session is busy")
+        val hasWriters = (writers[session.id] ?: 0) > 0
+        if (!hasWriters) phase(session, "checking") // Block new writable handles during the check.
+        try {
+            val revision = fingerprint(session.working.inputStream(), "Checking for local edits…", session.working.length(), progress)
+            val changed = revision != session.baseline.revision
+            if (!changed && !hasWriters) discard(session)
+            else if (!hasWriters) phase(session, "pending")
+            DiagnosticLog.record("external-edit.review", "session=${session.id} changed=$changed writers=$hasWriters")
+            // A program still holding a writable handle may save later. Keep its
+            // session, but do not show save/conflict controls for unchanged bytes.
+            changed
+        } catch (error: Throwable) {
+            if (!hasWriters) runCatching { phase(session, "pending") }
+            throw error
+        }
+    }
+
+    private fun localRevision(session: Session, progress: (String, Long, Long?) -> Unit): ContentRevision {
         synchronized(lock(session.id)) {
             if ((writers[session.id] ?: 0) > 0) throw IOException("The external program still has the file open for writing. Close it before finishing.")
             phase(session, "checking")
         }
-        val before = session.working.inputStream().use(ContentRevision::read)
+        return fingerprint(session.working.inputStream(), "Checking for local edits…", session.working.length(), progress)
+    }
+    private fun freeze(session: Session, revision: ContentRevision? = null): Pair<File, ContentRevision> {
+        val before = revision ?: localRevision(session) { _, _, _ -> }
         val snapshot = File(session.directory, "publish.bin")
         if (before.size > session.directory.usableSpace - 1024 * 1024) throw IOException("Not enough space to preserve the edited file for saving. Your working copy is kept.")
         session.working.inputStream().use { input -> snapshot.outputStream().use { output -> input.copyTo(output); output.fd.sync() } }
@@ -166,18 +186,21 @@ class ExternalEdits(private val context: Context) {
     fun finish(session: Session, overwrite: Boolean, progress: (String, Long, Long?) -> Unit): Boolean {
         synchronized(lock(session.id)) { if (!operations.add(session.id)) throw IOException("This edit session is busy") }
         try {
-            val (snapshot, edited) = freeze(session)
-            val current = stamp(session.ref, "Checking source after external editing…", progress)
+            val edited = localRevision(session, progress)
             if (edited == session.baseline.revision) return false
-            if (!overwrite && current != session.baseline) throw ExternalSourceConflict()
+            val (snapshot, _) = freeze(session, edited)
+            val current = stamp(session.ref, "Checking source after external editing…", progress)
+            if (!overwrite && current.revision != session.baseline.revision) throw ExternalSourceConflict()
             progress("Saving edited file to source…", 0, null)
-            val replacement = ContentReplacement.replaceFromFile(provider, session.ref, snapshot,
-                File(context.filesDir, "save_recovery"), current.revision) {
+            val replacement = runtime.archives.withFreshReads {
+                ContentReplacement.replaceFromFile(provider, session.ref, snapshot,
+                    File(context.filesDir, "save_recovery"), current.revision) {
+                    // ContentReplacement compares fresh byte hashes immediately
+                    // before native/stream publication. Timestamp changes alone
+                    // do not turn that comparison into a conflict.
                     runtime.archives.invalidateReadCaches()
-                    val metadata = result(provider.stat(session.ref)).metadata
-                    if ((metadata.sizeBytes != null && metadata.sizeBytes != current.revision.size) || metadata.modifiedAtMillis != current.modified)
-                        throw ExternalSourceConflict()
                 }
+            }
             if (replacement is ProviderResult.Failure && generateSequence(replacement.cause) { it.cause }.any { it is RevisionConflictException })
                 throw ExternalSourceConflict()
             result(replacement)

@@ -31,6 +31,12 @@ import java.util.TimeZone
  * - Transparent decompression for .gz, .bz2, .bz, .xz, .lzma, .zst wrapped disc images
  */
 class DiscImageReader(private val tempDir: File, private val diskCache: com.infinifolder.storage.DiskCache? = null) {
+    private val freshReads = ThreadLocal.withInitial { false }
+    internal fun <T> withFreshReads(block: () -> T): T {
+        val previous = freshReads.get()
+        freshReads.set(true)
+        return try { block() } finally { freshReads.set(previous) }
+    }
     private class UnrecognizedFilesystem(offset: Long) : IOException("Unrecognized filesystem at offset $offset")
 
     data class DiscEntry(
@@ -293,7 +299,7 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
                 isIso9660(target, 0L) -> com.infinifolder.storage.FileSystemInfo("ISO 9660", null, "Image volume descriptor")
                 isFatFs(target, 0L) -> FatFileSystem(target).fileSystemInfoWithSpace()
                 isExFat(target, 0L) -> com.infinifolder.storage.FileSystemInfo("exfat", null, "Image boot sector")
-                isExtFs(target, 0L) -> com.infinifolder.storage.FileSystemInfo("ext2/3/4", null, "Image superblock", caseSensitive = true)
+                isExtFs(target, 0L) -> ExtFileSystem.info(target)
                 NtfsFileSystem.isNtfs(target) -> NtfsFileSystem(target).info()
                 HfsFileSystem.isHfs(target) -> HfsFileSystem(target).info()
                 UfsFileSystem.isUfs(target) -> UfsFileSystem(target).info()
@@ -309,6 +315,26 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
     fun isWritable(archiveName: String, localFile: File?, device: BlockDevice? = null, entryPath: String? = null): Boolean =
         writableFailureReason(archiveName, localFile, device, entryPath) == null
 
+    fun readTransferMetadata(archiveName: String, entryPath: String, openStream: () -> InputStream,
+        localFile: File?, device: BlockDevice?): com.infinifolder.model.TransferMetadata? =
+        withBlockDevice(archiveName, openStream, localFile, device = device) { raw ->
+            val type = fileSystemInfo("metadata.img", entryPath, { throw IOException("Device required") }, device = raw)?.type
+            if (type !in setOf("ext2", "ext3", "ext4")) null else
+                withWritableFilesystem("metadata.img", null, raw, entryPath, probeOnly = true) { fs, relative -> fs.readTransferMetadata(relative) }
+        }
+
+    fun applyTransferMetadata(archiveName: String, localFile: File?, device: BlockDevice?, entryPath: String,
+        metadata: com.infinifolder.model.TransferMetadata) {
+        withWritableFilesystem(archiveName, localFile, device, entryPath) { fs, relative -> fs.applyTransferMetadata(relative, metadata) }
+    }
+
+    /** Compressed images use a decompressed, read-only probe before staging any edits. */
+    fun compressedWritableFailureReason(archiveName: String, entryPath: String, openStream: () -> InputStream,
+        localFile: File?, device: BlockDevice?): String? =
+        withBlockDevice(archiveName, openStream, localFile, device = device) { raw ->
+            writableFailureReason("decompressed.img", null, raw, entryPath, probeOnly = true)
+        }
+
     /** Probe exactly the filesystem selection used by writes, without modifying any bytes. */
     fun writableFailureReason(archiveName: String, localFile: File?, device: BlockDevice? = null,
         entryPath: String? = null, probeOnly: Boolean = false): String? = try {
@@ -316,19 +342,19 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
         if (listOf(".gz", ".bz2", ".bz", ".xz", ".lzma", ".zst", ".z").any { lower.endsWith(it) } ||
             (localFile != null && isCompressedFileMagic(localFile)))
             throw IOException("Compressed disk images are read-only; decompress the image before editing")
-        withWritableFat(archiveName, localFile, device, entryPath.orEmpty(), probeOnly) { _, _ -> Unit }
+        withWritableFilesystem(archiveName, localFile, device, entryPath.orEmpty(), probeOnly) { _, _ -> Unit }
         null
     } catch (e: Exception) {
         e.message ?: "Cannot open this filesystem for writing"
     }
 
-    private fun <T> withWritableFat(
+    private fun <T> withWritableFilesystem(
         archiveName: String,
         localFile: File?,
         device: BlockDevice? = null,
         entryPath: String,
         probeOnly: Boolean = false,
-        block: (FatFileSystem, String) -> T
+        block: (WritableImageFileSystem, String) -> T
     ): T {
         // ArchiveStorageProvider supplies this marker only for its private,
         // unpublished batch snapshot. The original backing image is checked
@@ -343,21 +369,24 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
         require((localFile != null && localFile.exists()) || (device != null && (probeOnly || !device.isReadOnly))) {
             "Writable file or BlockDevice required for disc writing"
         }
-        val result = withBlockDevice(archiveName, { throw IOException("Writable target required") }, localFile, writable = !probeOnly, device = device) { dev ->
+        val result = try { withBlockDevice(archiveName, { throw IOException("Writable target required") }, localFile, writable = !probeOnly, device = device) { dev ->
             if (!probeOnly && dev.isReadOnly) throw IOException("The backing provider or image decoder supplies read-only random access")
             if (isIso9660(dev, 0L)) throw IOException("ISO filesystem views are read-only")
             if (isFatFs(dev, 0L)) {
                 val fatFs = FatFileSystem(dev, 0L, "")
                 return@withBlockDevice block(fatFs, entryPath)
             }
-            if (HfsFileSystem.isHfs(dev)) throw IOException("HFS/HFS+/HFSX filesystem views are read-only; image writing is not implemented")
-            if (NtfsFileSystem.isNtfs(dev)) throw IOException("NTFS filesystem views are read-only; NTFS image writing is not implemented")
+            if (isExtFs(dev, 0L)) {
+                val extFs = ExtFileSystem(dev, tempDir, privateSnapshot).also { it.probe() }
+                return@withBlockDevice block(extFs, entryPath)
+            }
+            rejectReadOnlyImageFilesystem(dev)
             val partitions = detectPartitions(dev)
             if (partitions.isNotEmpty()) {
                 val cleanPath = normalizePath(entryPath)
                 if (partitions.size == 1) {
                     val p = partitions.first()
-                    val slice = PartitionSliceBlockDevice(dev, p.offsetBytes, p.sizeBytes)
+                    val slice = PartitionSliceBlockDevice(dev, p.offsetBytes, p.sizeBytes, dev.isReadOnly)
                     if (isFatFs(slice, 0L)) {
                         val subPath = when {
                             cleanPath == p.name -> ""
@@ -367,51 +396,118 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
                         val fatFs = FatFileSystem(slice, 0L, "")
                         return@withBlockDevice block(fatFs, subPath)
                     }
+                    if (isExtFs(slice, 0L)) {
+                        val subPath = when {
+                            cleanPath == p.name -> ""
+                            cleanPath.startsWith("${p.name}/") -> cleanPath.removePrefix("${p.name}/")
+                            else -> cleanPath
+                        }
+                        val extFs = ExtFileSystem(slice, tempDir, privateSnapshot).also { it.probe() }
+                        return@withBlockDevice block(extFs, subPath)
+                    }
+                    rejectReadOnlyImageFilesystem(slice)
                 } else {
                     for (p in partitions) {
                         if (cleanPath == p.name || cleanPath.startsWith("${p.name}/")) {
-                            val slice = PartitionSliceBlockDevice(dev, p.offsetBytes, p.sizeBytes)
+                            val slice = PartitionSliceBlockDevice(dev, p.offsetBytes, p.sizeBytes, dev.isReadOnly)
                             if (isFatFs(slice, 0L)) {
                                 val subPath = cleanPath.removePrefix("${p.name}/").removePrefix(p.name)
                                 val fatFs = FatFileSystem(slice, 0L, "")
                                 return@withBlockDevice block(fatFs, subPath)
                             }
+                            if (isExtFs(slice, 0L)) {
+                                val subPath = if (cleanPath == p.name) "" else cleanPath.removePrefix("${p.name}/")
+                                val extFs = ExtFileSystem(slice, tempDir, privateSnapshot).also { it.probe() }
+                                return@withBlockDevice block(extFs, subPath)
+                            }
+                            rejectReadOnlyImageFilesystem(slice)
                         }
                     }
                 }
             }
-            if (UfsFileSystem.isUfs(dev)) throw IOException("UFS filesystem views are read-only; UFS image writing is not implemented")
-            throw IOException("No writable FAT filesystem found for path: $entryPath")
+            throw IOException("This image location does not support writing. Select a supported writable filesystem directory.")
+        } } catch (error: Exception) {
+            if (!probeOnly) (device as? PrivateBatchBlockDevice)?.markFailed(error)
+            throw error
         }
         // Intermediate FAT flushes must never publish an incomplete remote transaction.
         if (!probeOnly) (device as? com.infinifolder.storage.StagedBlockCommit)?.commit()
         return result
     }
 
+    /** Share format rejection between whole-volume and selected-partition probes.
+     * These formats can be read, but supplying writable backing bytes does not
+     * supply the missing filesystem metadata/allocation writer.
+     */
+    private fun rejectReadOnlyImageFilesystem(dev: BlockDevice) {
+        val format = when {
+            isIso9660(dev, 0L) -> "ISO"
+            isExFat(dev, 0L) -> "exFAT"
+            HfsFileSystem.isHfs(dev) -> "HFS/HFS+/HFSX"
+            NtfsFileSystem.isNtfs(dev) -> "NTFS"
+            UfsFileSystem.isUfs(dev) -> "UFS"
+            LvmDecoder.isLvm(dev) -> "LVM logical-volume"
+            else -> return
+        }
+        throw IOException("$format image views are read-only in InfiniFolder; writing into this filesystem is not implemented. You can browse and copy files out.")
+    }
+
     fun createFile(archiveName: String, localFile: File? = null, entryPath: String, data: ByteArray = ByteArray(0), device: BlockDevice? = null) {
-        withWritableFat(archiveName, localFile, device, entryPath) { fatFs, relPath ->
+        withWritableFilesystem(archiveName, localFile, device, entryPath) { fatFs, relPath ->
             fatFs.createFile(relPath, data)
         }
     }
 
     fun writeEntryFromFile(archiveName: String, localFile: File?, entryPath: String, content: File, device: BlockDevice? = null) {
-        withWritableFat(archiveName, localFile, device, entryPath) { fs, path -> fs.writeEntryFromFile(path, content) }
+        withWritableFilesystem(archiveName, localFile, device, entryPath) { fs, path -> fs.writeEntryFromFile(path, content) }
     }
 
     fun createDirectory(archiveName: String, localFile: File? = null, entryPath: String, device: BlockDevice? = null) {
-        withWritableFat(archiveName, localFile, device, entryPath) { fatFs, relPath ->
+        withWritableFilesystem(archiveName, localFile, device, entryPath) { fatFs, relPath ->
             fatFs.createDirectory(relPath)
         }
     }
 
     fun writeEntry(archiveName: String, localFile: File? = null, entryPath: String, data: ByteArray, device: BlockDevice? = null) {
-        withWritableFat(archiveName, localFile, device, entryPath) { fatFs, relPath ->
+        withWritableFilesystem(archiveName, localFile, device, entryPath) { fatFs, relPath ->
             fatFs.writeEntry(relPath, data)
         }
     }
 
+    internal fun relocateEntry(archiveName: String, localFile: File?, entryPath: String,
+                              destinationPath: String, device: BlockDevice?) {
+        withWritableFilesystem(archiveName, localFile, device, entryPath) { fs, relativeSource ->
+            val source = normalizePath(entryPath)
+            val relative = normalizePath(relativeSource)
+            val prefix = source.removeSuffix(relative).trimEnd('/')
+            val destination = normalizePath(destinationPath)
+            val target = when {
+                prefix.isEmpty() -> destination
+                destination == prefix -> ""
+                destination.startsWith("$prefix/") -> destination.substring(prefix.length + 1)
+                else -> throw IOException("Cannot relocate between filesystem partitions; use Copy instead. Sources retained.")
+            }
+            fs.relocateEntry(relative, target)
+        }
+    }
+
+    /** Preflight the entire relocation set before changing any partition. */
+    internal fun sameRelocationFilesystem(archiveName: String, localFile: File?, device: BlockDevice?, paths: List<String>): Boolean =
+        withBlockDevice(archiveName, { throw IOException("Image device required") }, localFile, device = device) { dev ->
+            if (isFatFs(dev, 0L) || isExtFs(dev, 0L)) true else {
+                val partitions = detectPartitions(dev)
+                if (partitions.size == 1) true else {
+                    val owners = paths.map { path ->
+                        val clean = normalizePath(path)
+                        partitions.indexOfFirst { clean == it.name || clean.startsWith("${it.name}/") }
+                    }
+                    owners.isNotEmpty() && owners.all { it >= 0 && it == owners.first() }
+                }
+            }
+        }
+
     fun deleteEntry(archiveName: String, localFile: File? = null, entryPath: String, device: BlockDevice? = null) {
-        withWritableFat(archiveName, localFile, device, entryPath) { fatFs, relPath ->
+        withWritableFilesystem(archiveName, localFile, device, entryPath) { fatFs, relPath ->
             fatFs.deleteEntry(relPath)
         }
     }
@@ -422,7 +518,7 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
         localFile: File?,
         writable: Boolean = false,
         device: BlockDevice? = null,
-        freshSnapshot: Boolean = false,
+        freshSnapshot: Boolean = freshReads.get(),
         block: (BlockDevice) -> T
     ): T {
         val lowerName = archiveName.lowercase(Locale.ROOT)
@@ -1780,6 +1876,9 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
                         }
                         val childInodeBytes = readBytesAt(dev, getInodeOffset(childInode), inodeSize)
                         val mode = u16le(childInodeBytes, 0)
+                        val linuxIds = u32le(sb, 72) == 0L && childInodeBytes.size >= 124
+                        val uid = u16le(childInodeBytes, 2).toLong() or (if (linuxIds) u16le(childInodeBytes, 120).toLong() shl 16 else 0L)
+                        val gid = u16le(childInodeBytes, 24).toLong() or (if (linuxIds) u16le(childInodeBytes, 122).toLong() shl 16 else 0L)
                         val isDir = (mode and 0xF000) == 0x4000
                         val isLink = (mode and 0xF000) == 0xA000
                         val mtimeSec = u32le(childInodeBytes, 16)
@@ -1794,7 +1893,8 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
                                 path = childPath,
                                 isDirectory = true,
                                 sizeBytes = null,
-                                modifiedAtMillis = modifiedAtMillis
+                                modifiedAtMillis = modifiedAtMillis,
+                                permissionsMode = mode and 0xfff, owner = uid.toString(), group = gid.toString()
                             )
                             if (targetDirectory == null || !listing) walkExtDir(childInode, childPath)
                         } else if (isLink) {
@@ -1804,7 +1904,8 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
                                 childInodeBytes.copyOfRange(40, 40 + childSize.toInt())
                             } else ByteArrayOutputStream().also { streamInodeData(dev, childInodeBytes, childSize, it) }.toByteArray()
                             entries += DiscEntry(childPath, false, childSize, modifiedAtMillis,
-                                isSymbolicLink = true, linkTarget = String(targetBytes, StandardCharsets.UTF_8))
+                                isSymbolicLink = true, linkTarget = String(targetBytes, StandardCharsets.UTF_8),
+                                permissionsMode = mode and 0xfff, owner = uid.toString(), group = gid.toString())
                         } else {
                             val snapshotInode = childInodeBytes.copyOf()
                             entries += DiscEntry(
@@ -1814,7 +1915,7 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
                                 modifiedAtMillis = modifiedAtMillis,
                                 extractor = { d, out ->
                                     streamInodeData(d, snapshotInode, childSize, out)
-                                }
+                                }, permissionsMode = mode and 0xfff, owner = uid.toString(), group = gid.toString()
                             )
                         }
                     }

@@ -17,6 +17,8 @@ FTP status: the user reports that FTP is functioning after testing. The earlier 
 
 ## Temporary pinned container targets
 
+- [x] Hold a URI-backed breadcrumb and drag it into the file area to create an `.iflink` to that location in the displayed directory. The breadcrumb drag ignores selected files, never moves its source, and uses the existing link writer and collision handling. Releasing a held breadcrumb without dragging retains its pin menu. Device acceptance is pending.
+
 Implemented 2026-10-23; handset acceptance is pending. Pins are kept in Activity memory for the current session and survive handled orientation changes, but are not saved as permanent bookmarks.
 
 - [x] Allow a browsable container to be pinned: a directory, archive, disk-image folder, or another supported storage container.
@@ -136,6 +138,8 @@ Format reference: [Microsoft FAT specification](https://www.scs.stanford.edu/~zy
 
 ### Operation progress and navigation acceptance
 
+- [x] Add shared transfer and verification ETA, including resumed torrent missing-byte accounting, external progress producers and background notifications. Handset acceptance is pending.
+
 - [ ] Accept separate per-file and overall operation bars, including source preparation, verification, container publication, unknown sizes and fixed dialog sizing.
 - [ ] Recheck intermittent Back failures with the refresh-generation fix and direct mounted-parent navigation; new retained Back logs should identify any remaining missed callback/slow parent lookup.
 
@@ -149,8 +153,13 @@ Format reference: [Microsoft FAT specification](https://www.scs.stanford.edu/~zy
 
 Implemented nested File/Edit/View/Select/Settings menus, wildcard/regex selection, name/MIME/size/date sorting with direction, New document/archive templates, and the disk usage treemap. Removed the Virtual root swipe exclusion; changed viewer Back routing and moved the red-default activity light to the far right. These implementations require device acceptance; see [behavior, limits and checks](navigation-menus-disk-usage.md). Most-used sorting remains future work. Notifications, automatic successful-dialog dismissal and debug-toolbar placement are user-confirmed.
 
-## BitTorrent virtual filesystem (initial provider implemented; acceptance pending)
+## BitTorrent virtual filesystem (downloads and resume confirmed; broader checks pending)
 
+- [x] User confirms BitTorrent and magnet-link downloads and resuming working on the handset (2026-10-26). The detailed compatibility and failure-case checks below remain separate.
+- [x] Retry after failure reuses partial files and saved checksums; user-confirmed.
+- [x] Missing/corrupt checksum-cache recovery safely rechecks existing data; user-confirmed.
+- [x] Indefinite peer waiting; user-confirmed.
+- [x] Simultaneous transfers; user-confirmed. Detailed Activity row routing/rates and same-file conflict checks remain separate.
 - [x] Add a separate read-only provider for `magnet:` links using the Apache-2.0 `bt` engine; keep torrent reads outside viewers.
 - [x] Fetch magnet metadata before listing without downloading payload files. Expose torrent contents as normal folders/files with info-hash-based device identity.
 - [x] Support copying a selected torrent file out by downloading only that file into app cache and returning it after the engine verifies it. Copy is currently a full-file download before the transfer stream starts.
@@ -174,16 +183,27 @@ The initial provider uses [Bt](https://github.com/atomashpolskiy/bt), whose docu
 
 Requested as a future feature only; do not implement as part of current container-link/navigation work.
 
-## Read-only overlay, home-screen shortcuts and widget (requested; deferred)
+## Read-only overlay, home-screen shortcuts and widget
 
-- [ ] Add an explicitly enabled **Display over other apps** window resembling the file-display view, with the required Android overlay-permission flow and a normal-activity fallback.
-- [ ] Keep the overlay display/read-only and launch-only: browsing/opening items is allowed; deletion, modification and conversion between modes are unavailable there.
-- [ ] Long press anywhere in the overlay offers **Launch editor**, opening the full application/editor for modification rather than editing inside the overlay.
-- [ ] Provide a long-press action to add an arbitrary item to the Android home screen: files, folders, container links and other URI targets, using supported launcher shortcut APIs and preserving access requirements.
+- [x] Add a read-only floating container browser with an Android overlay-permission prompt and a normal InfiniFolder fallback.
+- [x] Open home-screen shortcuts to folders and mounted archive/disk-image roots in the floating browser; default size is half the display height by two-thirds of its width, with title-bar movement and a button that opens the current directory in the full file manager.
+- [x] Allow pinch gestures to resize the floating browser's icon view.
+- [x] Add themed lower-left/lower-right triangular window resize handles with enlarged grab areas, preserving icon scale and saved window geometry. User-confirmed working (2026-10-26).
+- [x] Reuse the main file view's grid, icon cards, badges, filename rendering, sorting, MIME/theme icon selection and scroll/pinch view in the overlay. Disable icon dragging and per-item long-press menus. Long press anywhere in the grid opens the full application at the displayed directory and closes the floating window.
+- [x] Provide **Add to home screen** in item long-press menus for files, folders, links and other entries, using Android pinned shortcuts and MIME-based fallback icons.
+- [ ] Validate pinned shortcuts, permission return/fallback, all supported storage providers, and overlay lifecycle on a handset. This implementation has build validation only so far.
 - [ ] Later provide the floating-window-style display as a home-screen widget, adapting its read-only navigation and launch actions to Android widget capabilities.
 - [ ] Reuse the same URI/resource identities and MIME opening rules across normal browsing, overlay, shortcuts and widget; do not duplicate storage engines or bypass provider permissions.
 
-This is requested future work only; do not implement it as part of current container-link/disk-usage changes.
+The first app implementation landed on 2026-10-25. Device acceptance and widget support remain pending.
+
+Launching a file or application from the floating browser closes the floating window after handing off the launch. Navigating into folders or browsable archives keeps the window open.
+
+First-launch routing follow-up: the transparent dispatcher is now also the application's launcher entry and the activity associated with resource shortcuts. The ordinary app icon routes to the full browser; resource shortcuts stay in an independent transparent task. Existing shortcut routing migrates on package replacement and app startup without opening remote storage. Legacy intents delivered to an existing browser hide and finish that browser before dispatching. First-launch handset confirmation remains pending.
+
+Floating-window follow-up: directory `.icon.*`/cover artwork, themed folder icons, installed application icons, category icons and link artwork now resolve asynchronously for visible cards. Home-screen pins use the same artwork resolver and existing pins are refreshed to use the transparent shortcut dispatcher. Container shortcuts open the overlay without constructing the full browser; application shortcuts launch the installed program directly. The floating toolbar has high-contrast open-in-file-manager/close controls and no parent-directory control. Handset acceptance of these changes is pending.
+
+Startup crash (2026-10-25): automatic crash dumps identify `ForegroundServiceDidNotStartInTimeException` in `OperationService`, immediately after a resumed torrent fails to resolve the unavailable SFTP host `Boson.local`. A coordinator listener could stop the service before its foreground handshake. The service now enters foreground mode before listener registration and before processing every start command; callbacks run on the main thread, read current operation state, and stop only after a start command is received. Cancellation does not schedule automatic resumes. Saved torrent sessions remain intact. Build and handset validation of the fix are tracked separately; offline-launch confirmation is pending. Debug builds capture fatal errors before Activity construction and attempt automatic export to the configured dump folder, retrying at the next launch if needed.
 
 ## Handset confirmations and interaction follow-up (2026-10-24)
 
@@ -207,8 +227,17 @@ The user confirms the two-finger selection gesture working. It is now available 
 
 ## External write-back and cache expiry (implemented; device acceptance pending)
 
+- [x] Gate external-edit return actions on the working copy's checksum; unchanged
+  copies return automatically without a source read. Source conflict warnings use
+  freshly read original content, ignoring timestamp-only differences.
+- [x] Use a compact themed edit dialog with progress only during work and nested
+  secondary actions. Handset acceptance pending for unchanged opens, timestamp-only
+  updates, actual source-content conflicts and light/dark themes.
+
 - [x] External working-copy handoff with before/after-staging and completion source fingerprints; source-conflict choices for a new name/location or explicit overwrite.
 - [x] Durable unfinished external-edit review, explicit completion, writer-handle checks and verified publication without retaining version history.
+- [x] Confirm editor return without a crash and a successful SFTP save; user
+  confirmation and the 2026-10-26 22:07 UTC dump agree.
 - [x] Six-hour idle cache expiry with a separate setting; active files and unfinished edits are exempt.
 - [ ] Accept real-editor handoff/return, conflict choices and recovery on device. See [write-back behavior and limits](external-edit-writeback.md).
 
@@ -227,3 +256,135 @@ Historical build/test totals describe their original revisions. No tests or buil
 
 - [x] Add saved WebDAV connections, encrypted credentials, browsing, stream reads/writes, create/rename/delete and range reads when advertised.
 - [ ] Complete the real-server protocol, transfer, range and failure checks in [WebDAV support](webdav-support.md).
+
+Floating/full-browser switching: the floating title-bar maximize button now opens its current directory in the main file manager and closes the overlay. The main toolbar has an **Open current directory in floating window** button while browsing a directory; it opens that location and backgrounds the main browser, preserving its task. Toolbar controls scroll horizontally on narrow screens while the activity light stays fixed on the right. Android overlay permission uses the existing transparent dispatcher. Handset acceptance is pending.
+
+
+## Storage API consistency pass (2026-10-26)
+
+- [ ] Show actual extended attributes and POSIX ACL entries in Properties where
+  the provider can read them; clearly identify unavailable metadata instead of
+  presenting synthesized default Unix permissions as observed values.
+- [ ] Accept an ext-to-ext metadata copy and copy-back using
+  `filesystem-test-images/filesystems/linux/ext4-metadata-retry.img`, then inspect
+  its modes, ownership, ACL, xattrs and contents against the adjacent JSON manifest.
+- [x] Fix missing directory checksum update on moves of non-indexed ext directories;
+  disposable-image regression and filesystem checks passed.
+- [x] Confirm non-indexed directory moves on the handset and verify the resulting
+  filesystem, file hashes, mode, owner/group, mtime, ACL and xattrs.
+- [ ] Investigate the second damaged
+  directory block and whether unrelated existing corruption can be detected before
+  publishing changes. Preserve the original `ext4-metadata-tests.img` as evidence.
+
+- [x] Add shared transfer metadata read/apply hooks with local and ext implementations,
+  precise timestamps, ownership/modes, xattrs and ext ACL conversion/coherence checks.
+  Read back destination attributes and retain move sources on metadata loss.
+- [x] Preflight partition relocation sets and preserve native links during directory
+  moves; refuse unsafe fallback for link-containing selections.
+- [ ] Complete metadata parity for network/SAF/archive providers, hardlink topology,
+  behavioral flags and the volume-integrity work in [metadata integrity](metadata-integrity.md).
+- [ ] Confirm metadata-preserving copies and failure/source-retention behavior on
+  the handset. Existing ext integration coverage does not establish provider parity.
+
+- [x] Add a guarded ext2/ext3/ext4 writer through shared image mutations, private
+  batches and checked publication. Include journal replay/transactions for journaled
+  volumes, inode-preserving internal moves and explicit unsupported-feature gates.
+  See [implementation, tests and limits](ext-image-writes.md).
+- [ ] Confirm ext2/3/4 create/copy/delete and internal file/nonempty-directory moves
+  on the handset, including compressed images and SAF/network publication. Extend
+  indexed-directory, full-volume, fragmented and damaged-journal coverage.
+- [x] Replace misleading FAT write errors for known read-only image filesystems
+  with format-specific explanations, including ext2/3/4 and selected partitions.
+
+- [x] Persist terminal Activity results and supported manual replay requests across
+  launches, save removals, expose older results and suppress replayed notifications.
+- [ ] Confirm result/removal persistence after app relaunch, including paused and
+  cancelled torrent resume actions and ordinary-transfer restart source checks.
+
+- [x] Route single/selected-set drops on empty file-pane space into the displayed
+  container, and drops on non-container files into their provider-reported parent.
+  Keep container/navigation targets, self-drop menus, capability checks and same-
+  device move/cross-device copy rules. Already-in-folder drops do nothing.
+- [ ] Validate blank-space/file-parent drops after drag-hover navigation in grid/list
+  and portrait/landscape modes, with multiple selections, archives/FAT, read-only
+  targets, Virtual root rules and same-folder no-ops.
+
+- [x] Correct immediate Activity-history refresh after removal/Clear finished:
+  guard dialog dismissal callbacks by identity, consume current task snapshots,
+  and refresh after confirmation dismissal. Handset acceptance pending.
+
+- [x] Add confirmed directional Activity gestures: active left Cancel/right Pause
+  where resumable; failed/cancelled left Remove/right supported Resume/Restart.
+  Clear finished includes failed/stopped history; files and checkpoints remain.
+  User confirms swipe activities working in normal use (20:00 UTC follow-up);
+  individual edge cases remain separate checks.
+- [x] Keep data-only copy/move/link replay requests, refresh sources before restart,
+  and retain collision protection. Pause/Cancel disable torrent automatic resume
+  until explicit resume. Handset acceptance pending; general stream pause and
+  process-death recovery for ordinary transfers remain separate work.
+
+- [x] Implement optional batch-native relocation, with FAT12/16/32 preserving payload
+  clusters instead of requiring duplicate free space for an internal move. Native
+  FAT32 file moves user-confirmed in the 19:24 UTC dump: eight files, zero warnings.
+  Directory/low-space/FAT12/16/compressed variants remain pending.
+- [ ] Validate FAT relocation with less free space than the moved data, nonempty
+  directories, long names/collisions, reopen, cancellation and failed publication.
+- [ ] Extend safe native move support to other capable storage backends; copy/delete
+  fallback can impose the same duplicate-space limit there.
+
+- [x] Implement explicit failure reason warnings, one at a time, with foreground
+  browser/viewer hosting and deferred background display; keep failed tasks and
+  their reason available in Activity. Focused handset checks pending; BitTorrent/
+  magnet completion tests are still running.
+
+- [x] Add persistent common locations, Settings editing, automatic usage history,
+  folder-picker shortcuts and capability-checked destination suggestions. Handset
+  acceptance pending; see [common locations](common-locations.md).
+- [x] Stop operation-status/resume callbacks reopening hidden Activity windows;
+  preserve explicit Activity/notification access. Viewer-return acceptance pending.
+- [x] Move hidden-operation feedback to a bottom status bar with action/item counts,
+  combined rate and aggregate percentage; hide it completely when unused or Activity
+  is visible. User-confirmed working; further polish deferred.
+- [x] Add overall status-bar ETA from a time-weighted rolling one-minute transfer
+  rate, retaining background history and counting stalls; adapt the strip to narrow
+  screens. Status bar user-confirmed working; further polish deferred.
+- [x] Centralize final capability restrictions and per-resource creation guarantees;
+  copy through readable symbolic links, deny moves of non-deletable resources,
+  report torrent read-only support, and stop fabricating SAF POSIX modes.
+- [x] Share random-target validation, preserve backend-specific hooks, distinguish
+  unsupported seek/write from real failures, and correct local/SAF resizing and
+  range-cache invalidation around failed mutations.
+- [x] Warn before random-access producers use unsupported targets; offer another
+  target, explicit staged continuation, or cancellation without blocking the UI.
+- [ ] Device acceptance of the new contract and staged fallback paths.
+- [x] Share source/destination action decisions across menus, picker, paste, drops
+  and transfer preflight; distinguish internal container moves from incoming moves.
+  Internal ZIP moves user-confirmed with a clean committed transfer in the
+  2026-10-26 18:57 UTC dump. FAT32 and broader acceptance remain pending.
+- [ ] Move remaining mounted-source preflight disk I/O off the UI thread without
+  weakening mounted-image protection; observed in the ZIP move dump.
+- [ ] Finish remaining toolbar/New/catalog action dispatch, metadata preservation,
+  access/publication guarantees and workspace policy. See
+  [findings and remaining tasks](storage-api-consistency.md).
+
+## Torrent verification checkpoint follow-up (2026-10-25)
+
+- [x] Persist verified pieces in a sibling `.incomplete.cache` file and reuse matching clean checkpoints. User reports working.
+- [ ] Recognize existing completed files and orphaned partial files; offer verify-and-reuse instead of automatically choosing another filename. Preserve existing data until the user explicitly authorizes replacement.
+- [x] Add focused JVM coverage for changed/corrupt/missing companions, interrupted writes, failed flushes, lost acknowledgements, corrupt piece bytes, memory-cache overlap/eviction and completion cleanup. See [checkpoint safety checks](torrent-checkpoint-safety.md).
+- [x] Confirm recovery from final-rename failure on SFTP: retained pieces reused,
+  final file published, checkpoint/resume state cleaned, COMPLETE with zero warnings.
+  User confirmation and the 2026-10-26 21:39 UTC dump agree.
+- [ ] Complete remaining real-device network/process interruption cases across
+  storage providers; this single successful SFTP recovery does not cover all failures.
+- [ ] Investigate the 22:06 UTC SFTP torrent checkpoint read failure, reported as
+  “channel is not opened.” Later torrent writes continued; establish whether saved
+  verification progress and retries recovered safely.
+- [ ] Review Bt teardown ordering: the successful 21:39 UTC run logs closed incoming
+  listeners and task submissions after executor shutdown.
+- [ ] Move cache initialization and debug-dump preference lookup off the main thread;
+  StrictMode reports both in the 21:39 UTC dump.
+
+- [x] Save each newly verified piece immediately during downloads and file verification, including partially completed startup scans; log saved-piece counts and checkpoint rejection reasons. 95 focused/regression checks pass; physical-device interruption acceptance remains pending.
+
+- [x] Rename the torrent stop action to **Finish later**, preserve saved progress through interrupt-aware shutdown, fence queued writes and show paused history. 102 targeted/regression checks pass; device confirmation remains pending.

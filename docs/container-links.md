@@ -22,7 +22,7 @@ Status reviewed 2026-10-24. See [current confirmations and remaining work](proje
 
 - Confirm the new menu routes, remote connection editing, root link copy/move/delete and disk usage refresh on device.
 - Built-in local and authorized Android storage navigation entries remain system-managed. Mutable root link records are separate from those entries.
-- Torrent device acceptance, seekable piece reads, Downloads organization, read-only overlay, home-screen shortcuts and widget remain future work in feature-todo.md.
+- Torrent device acceptance, seekable piece reads and Downloads organization remain future work. Floating-browser/home-shortcut code exists and awaits handset acceptance; widget support remains future work in feature-todo.md.
 
 ## SMB direct-open correction
 

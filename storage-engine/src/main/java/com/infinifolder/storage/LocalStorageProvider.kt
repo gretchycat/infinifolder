@@ -82,7 +82,8 @@ class SharedFileProvider : FileProvider() {
 /** Primary shared storage only; root discovered from Android, enabled by an explicit system grant. */
 class LocalStorageProvider(private val context: Context) : StorageProvider {
     override val id = "local"
-    override val features = BackendFeatures(Support.SUPPORTED, Support.SUPPORTED, Support.SUPPORTED, CreationGuarantee.EXCLUSIVE, Support.SUPPORTED, Support.SUPPORTED, Support.SUPPORTED)
+    override val features = BackendFeatures(Support.SUPPORTED, Support.SUPPORTED, Support.SUPPORTED, CreationGuarantee.EXCLUSIVE, Support.SUPPORTED, Support.SUPPORTED, Support.SUPPORTED,
+        transferTarget = Support.SUPPORTED)
 
     val authority = context.packageName + ".files"
     val store = LocalFileStore(Environment.getExternalStorageDirectory())
@@ -110,6 +111,46 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
         checkAccess(target)
         if (!Files.exists(target.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) throw java.io.FileNotFoundException(target.path)
         entry(target)
+    }
+
+    override fun readTransferMetadata(ref: ResourceRef): ProviderResult<TransferMetadata> = access {
+        val target = file(ref); checkAccess(target)
+        require(!Files.isSymbolicLink(target.toPath())) { "Resolve the source link before reading transfer metadata" }
+        val stat = android.system.Os.lstat(target.path)
+        val basic = Files.readAttributes(target.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java,
+            java.nio.file.LinkOption.NOFOLLOW_LINKS)
+        val modified = basic.lastModifiedTime().toInstant(); val accessed = basic.lastAccessTime().toInstant()
+        val attributes = try {
+            android.system.Os.listxattr(target.path).associateWith { name -> android.system.Os.getxattr(target.path, name) }
+        } catch (error: android.system.ErrnoException) {
+            if (error.errno == android.system.OsConstants.EOPNOTSUPP) emptyMap() else throw error
+        }
+        TransferMetadata(stat.st_mode and 0xfff, stat.st_uid.toLong() and 0xffffffffL, stat.st_gid.toLong() and 0xffffffffL,
+            modified.epochSecond, modified.nano, accessed.epochSecond, accessed.nano, attributes)
+    }
+
+    override fun applyTransferMetadata(ref: ResourceRef, metadata: TransferMetadata): ProviderResult<Unit> = access {
+        val target = file(ref); checkAccess(target); requireMutable(target)
+        require(!Files.isSymbolicLink(target.toPath())) { "Cannot apply transfer metadata through a symbolic link" }
+        val before = android.system.Os.lstat(target.path)
+        if (metadata.uid != null && metadata.uid != (before.st_uid.toLong() and 0xffffffffL) ||
+            metadata.gid != null && metadata.gid != (before.st_gid.toLong() and 0xffffffffL)) {
+            android.system.Os.chown(target.path, metadata.uid?.toInt() ?: -1, metadata.gid?.toInt() ?: -1)
+        }
+        metadata.mode?.let { if (it != before.st_mode and 0xfff) android.system.Os.chmod(target.path, it) }
+        metadata.xattrs?.forEach { (name, value) ->
+            val existing = runCatching { android.system.Os.getxattr(target.path, name) }.getOrNull()
+            if (existing == null || !existing.contentEquals(value)) android.system.Os.setxattr(target.path, name, value, 0)
+        }
+        fun timestamp(seconds: Long?, nanos: Int) = seconds?.let {
+            java.nio.file.attribute.FileTime.from(java.time.Instant.ofEpochSecond(it, nanos.toLong()))
+        }
+        Files.getFileAttributeView(target.toPath(), java.nio.file.attribute.BasicFileAttributeView::class.java,
+            java.nio.file.LinkOption.NOFOLLOW_LINKS).setTimes(timestamp(metadata.modifiedSeconds, metadata.modifiedNanos),
+                timestamp(metadata.accessedSeconds, metadata.accessedNanos), null)
+        val actual = readTransferMetadata(ref)
+        if (actual !is ProviderResult.Success || !metadata.matches(actual.value))
+            throw IOException("Destination metadata could not be retained exactly")
     }
 
     override fun replaceContent(ref: ResourceRef, data: ByteArray): ProviderResult<Unit> = access {
@@ -262,19 +303,16 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
         return fileFor(Uri.parse(ref.documentId))
     }
 
+    private val appInternalRoots: List<java.nio.file.Path> by lazy {
+        val folders = mutableListOf(context.filesDir, context.cacheDir)
+        runCatching { folders.addAll(context.getExternalFilesDirs(null).filterNotNull()) }
+        runCatching { folders.addAll(context.getExternalCacheDirs().filterNotNull()) }
+        folders.map { it.canonicalFile.toPath() }.distinct()
+    }
+
     private fun isAppInternal(file: File): Boolean {
-        val canonical = file.canonicalPath
-        if (canonical.startsWith(context.filesDir.canonicalPath)) return true
-        if (canonical.startsWith(context.cacheDir.canonicalPath)) return true
-        runCatching {
-            context.getExternalFilesDirs(null).filterNotNull().forEach {
-                if (canonical.startsWith(it.canonicalPath)) return true
-            }
-            context.getExternalCacheDirs().filterNotNull().forEach {
-                if (canonical.startsWith(it.canonicalPath)) return true
-            }
-        }
-        return false
+        val canonical = file.canonicalFile.toPath()
+        return appInternalRoots.any { canonical.startsWith(it) }
     }
 
     private fun checkAccess(file: File) {
@@ -301,7 +339,9 @@ class LocalStorageProvider(private val context: Context) : StorageProvider {
     override fun openRead(ref: ResourceRef) = access {
         val f = file(ref)
         checkAccess(f)
-        val lease = DiskCache.get(context).pin(f)
+        // Ordinary source reads must not initialize or wait on the private cache.
+        val lease = if (f.canonicalFile.toPath().startsWith(context.cacheDir.canonicalFile.toPath()))
+            DiskCache.get(context).pin(f) else null
         try {
             object : java.io.FilterInputStream(f.inputStream()) {
                 override fun close() { try { super.close() } finally { lease?.close() } }

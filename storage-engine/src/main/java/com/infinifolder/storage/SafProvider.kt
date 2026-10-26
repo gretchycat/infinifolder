@@ -14,7 +14,7 @@ import java.io.IOException
 class SafProvider(private val resolver: ContentResolver) : StorageProvider {
     private val observedParents = android.util.LruCache<String, ResourceRef>(8192)
     override val id = "saf"
-    override val features = BackendFeatures(creation = CreationGuarantee.SERVER_UNIQUE_NAME)
+    override val features = BackendFeatures(creation = CreationGuarantee.SERVER_UNIQUE_NAME, nativeLinks = Support.UNSUPPORTED)
 
 
     override fun refForUri(uri: Uri): ResourceRef? =
@@ -68,10 +68,13 @@ class SafProvider(private val resolver: ContentResolver) : StorageProvider {
             val device = com.infinifolder.archive.ContentUriBlockDevice(descriptor, !writable)
             descriptor = null // Ownership transferred to device.
             ProviderResult.Success(com.infinifolder.archive.RangeCachedBlockDevice(device))
-        } catch (e: java.io.IOException) {
-            ProviderResult.Unsupported(if (writable) ResourceCapability.WRITE else ResourceCapability.SEEK)
         } catch (e: Exception) {
-            ProviderResult.Failure(e.message ?: "Cannot open document descriptor", e)
+            val nonSeekable = generateSequence<Throwable>(e) { it.cause }.take(16).any {
+                (it is android.system.ErrnoException && it.errno == android.system.OsConstants.ESPIPE) ||
+                    it is UnsupportedOperationException
+            }
+            if (nonSeekable) ProviderResult.Unsupported(if (writable) ResourceCapability.SEEK_WRITE else ResourceCapability.SEEK)
+            else ProviderResult.Failure(e.message ?: "Cannot open document descriptor", e)
         } finally { descriptor?.close() }
     }
 
@@ -110,9 +113,6 @@ class SafProvider(private val resolver: ContentResolver) : StorageProvider {
                 } else {
                     (flags and DocumentsContract.Document.FLAG_SUPPORTS_WRITE) != 0
                 }
-                val mode = if (canWrite) (if (folder) 0b111_101_101 else 0b110_100_100)
-                           else (if (folder) 0b101_101_101 else 0b100_100_100)
-                val formatted = PermissionHelper.formatPosix(mode, folder)
                 rows += ResourceEntry(
                     ResourceRef(id, uri.toString()),
                     ResourceMetadata(
@@ -123,8 +123,6 @@ class SafProvider(private val resolver: ContentResolver) : StorageProvider {
                         isDirectory = folder,
                         canRead = true,
                         canWrite = canWrite,
-                        permissionsMode = mode,
-                        permissionsFormatted = formatted,
                         operationHints = operationHints(flags, folder)
                     ),
                     uri
@@ -189,9 +187,6 @@ class SafProvider(private val resolver: ContentResolver) : StorageProvider {
                 } else {
                     (flags and DocumentsContract.Document.FLAG_SUPPORTS_WRITE) != 0
                 }
-                val mode = if (canWrite) (if (folder) 0b111_101_101 else 0b110_100_100)
-                           else (if (folder) 0b101_101_101 else 0b100_100_100)
-                val formatted = PermissionHelper.formatPosix(mode, folder)
                 return ResourceEntry(
                     ResourceRef(id, uri.toString()),
                     ResourceMetadata(
@@ -202,8 +197,6 @@ class SafProvider(private val resolver: ContentResolver) : StorageProvider {
                         isDirectory = folder,
                         canRead = true,
                         canWrite = canWrite,
-                        permissionsMode = mode,
-                        permissionsFormatted = formatted,
                         operationHints = operationHints(flags, folder)
                     ),
                     uri

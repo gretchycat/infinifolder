@@ -16,10 +16,15 @@ import java.io.IOException
 class StorageRuntime private constructor(context: Context) {
     private val app = context.applicationContext
     val connections = ConnectionPreferences(app)
+    val commonLocations = CommonLocationsPreferences(app)
+    private val locationRecorder = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+        Thread(task, "common-locations-record").apply { isDaemon = true }
+    }
     val local = LocalStorageProvider(app)
     val archives = ArchiveStorageProvider(app, local)
     val apps = AppsStorageProvider(app)
     val containerLinks = ContainerLinksProvider(app)
+    val partialDownloads = PartialDownloadsProvider(app)
     private val sftpFactory = SftpProviderFactory(app) { id -> connections.list().firstOrNull { it.id == id } }
     private val ftpFactory = FtpProviderFactory(app) { id -> connections.list().firstOrNull { it.id == id } }
     private val smbFactory = SmbProviderFactory(app) { id -> connections.list().firstOrNull { it.id == id } }
@@ -32,10 +37,20 @@ class StorageRuntime private constructor(context: Context) {
     val registry = StorageProviderRegistry().apply {
         register(SafProviderFactory()); register(sftpFactory); register(ftpFactory); register(smbFactory); register(webDavFactory)
     }
-    val provider = RoutingStorageProvider(local, archives, apps, sftp, ftp, smb, webdav, torrents, containerLinks, SafProvider(app.contentResolver),
+    val provider = RoutingStorageProvider(local, archives, apps, sftp, ftp, smb, webdav, torrents, containerLinks, partialDownloads, SafProvider(app.contentResolver),
         uriResolver = { uri -> if (ContainerUris.networkType(uri) == null) uri else ContainerUris.resolve(uri, connections.list()) })
     init {
         DiagnosticLog.init(app)
+        provider.onEntriesObserved = partialDownloads::observe
+        provider.onResourceRemoved = partialDownloads::forget
+        provider.onRandomAccessTargetWritten = { destination ->
+            locationRecorder.execute {
+                runCatching {
+                    val parent = (provider.parent(destination) as? ProviderResult.Success)?.value
+                    parent?.let { commonLocations.recordRandomWriteSuccess(android.net.Uri.parse(it.documentId)) }
+                }.onFailure { DiagnosticLog.record("common-locations.observe.failed", error = it) }
+            }
+        }
         containerLinks.validateTarget = validate@ { shortcut ->
             val uri = android.net.Uri.parse(shortcut.targetUri)
             // Saving an alias must not connect to a server; opening it validates remote access.

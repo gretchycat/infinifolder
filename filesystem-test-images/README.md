@@ -1,5 +1,37 @@
 # Storage fixtures
 
+## Ext metadata copy fixture
+
+**2026-10-26 follow-up:** `ext4-metadata-tests.img` now has directory checksum
+errors after handset operations. Preserve it for investigation and avoid further
+writes. `ext4-metadata-retry.img` is a new clean fixture with the same initial
+contents and expected values. A separate repaired copy is retained at
+`build/ext-metadata-investigation/recovery-copy.img`; its filesystem check passes,
+its five file hashes match the manifest, and its ACL and xattrs are present.
+The original image was not overwritten. `ext4-write-tests.img` also has a directory
+checksum error after a subsequent copy; preserve it and avoid further writes.
+
+`filesystems/linux/ext4-metadata-retry.img` contains `copy-from/` and an empty
+`copy-back-here/` directory. Copy the whole `copy-from/` directory into a second
+ext image, such as `ext4-metadata-copy-target.img/copy-to/`, then copy it back into
+`ext4-metadata-retry.img/copy-back-here/`. Offload a debug dump afterward; the
+resulting image can be inspected with `debugfs` and `e2fsck`.
+
+The fixture contains 0644, 0600, 0755 and 0640 files, a nested directory, UID/GID
+1000, and known timestamps. `acl-and-xattrs-0640.txt` has a named-user POSIX ACL
+plus `user.test_label` and a 400-byte `user.large` attribute. The complete expected
+file hashes and metadata are in `filesystems/linux/ext4-metadata-tests.json`.
+Image verification on creation: `e2fsck -fn` passed; attribute values were read
+back and compared to the fixture bytes. Recreate with
+`python3 generate-ext-metadata-fixture.py` only after placing any existing fixture
+and manifest elsewhere; the generator refuses to overwrite either.
+
+Properties currently displays basic permission bits and owner/group when supplied
+by the provider, but not individual ACL entries or extended attributes. Some
+providers do not expose Unix modes; the current screen can show an estimated
+default in those cases. Copying to a destination unable to preserve these fields
+may generate a metadata warning. Test ext-to-ext first to exercise preservation.
+
 The original `fat*.img`, `ext*.img`, `hfs.img`, `ntfs.img`, and archive files are user-owned test data. The generator never overwrites them or any existing generated fixtures. Work on copies when testing destructive operations.
 
 ## Layout
@@ -19,6 +51,16 @@ The original `fat*.img`, `ext*.img`, `hfs.img`, `ntfs.img`, and archive files ar
 The OS groups are organizational labels; these formats can be used by other operating systems. Existing fixture names and bytes were retained during the move. `layout-migration.json` maps old paths to current paths. All generators use the shared layout resolver; `manifest.json` now records relative paths.
 
 ## Added fixtures
+
+Ext mutation fixtures: `filesystems/linux/ext2-write-tests.img`,
+`ext3-write-tests.img`, and `ext4-write-tests.img` contain `move-from` and
+`move-to`. Move `single-file.txt` and `directory-with-files` into `move-to`, then
+reopen and copy them out. They include nested data, Unicode names, an empty
+directory, a symbolic link and an outside hardlink for metadata/deletion checks.
+`outside-hardlink.txt` should retain its contents when the other link is moved or
+deleted. Use copies for destructive runs. `generate-ext-writes.py` creates these
+only if absent and checks new images with `e2fsck`; it never changes the original
+ext fixtures. Details and expected scope: [ext support](../docs/ext-image-writes.md).
 
 | Files | Contents and purpose |
 | --- | --- |

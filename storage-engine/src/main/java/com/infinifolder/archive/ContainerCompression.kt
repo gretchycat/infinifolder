@@ -60,7 +60,9 @@ internal object ContainerSpace {
             throw IOException("Container working-space requirement is too large")
         val available = directory.usableSpace
         if (available < bytes + reserved + MARGIN)
-            throw IOException("Not enough temporary space for container changes: need ${bytes + reserved + MARGIN} bytes free, have $available. Original retained.")
+            throw IOException("Not enough temporary space for container changes. About " +
+                "${com.infinifolder.storage.StorageMessages.approximateSize(bytes + reserved + MARGIN)} needed; " +
+                "${com.infinifolder.storage.StorageMessages.approximateSize(available)} available. Original retained.")
     }
     fun copy(input: InputStream, output: OutputStream, directory: File, reserved: Long = 0,
         cancelled: () -> Boolean = { false }) {

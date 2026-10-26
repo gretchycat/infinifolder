@@ -16,7 +16,29 @@ Dependency direction is `app/host → viewer modules → viewer-common → stora
 
 `ResourceCapabilities` combines backend features, resource metadata, and operation hints. Supported, unsupported, and unknown are distinct. SAF flags remain per document; actual opens can still fail after permission changes. Seekable handles report demonstrated read/write support; a failed writable request cannot become a writable cache snapshot.
 
+Shared capability restrictions are applied after resource/provider overrides.
+TRANSFER_TARGET describes resizable random-write children separately from seeking
+the directory itself. Router and direct default transfer-target calls validate the
+same required handle capabilities. Sources requiring random writes prompt before
+unsupported destinations use full-file staging; background resume never silently
+opts into that fallback. See [contract and remaining tasks](storage-api-consistency.md).
+
 SMB, SFTP, and FTP connections use application-owned pools and existing credential stores. Persisted connection definitions live behind `ConnectionPreferences`; secrets remain separate from non-secret endpoint definitions. NFS and cloud catalog entries are placeholders. WebDAV uses the HTTP provider described in [WebDAV support](webdav-support.md); method support still varies by server.
+
+`StorageActionPolicy` centralizes source action availability and contextual transfer
+eligibility for menus, picker, paste, drops and operation preflight. Container moves
+require explicit `ACCEPT_INTERNAL_MOVE` support and matching backing resources in
+one mutation scope. Device/capability inspection for drops runs off the UI thread.
+Toolbar creation affordances and special catalog/link conversion still need further
+extraction from MainActivity. See [action rules](storage-api-consistency.md).
+
+Private `StorageWriteBatch` views can optionally relocate existing entries without
+duplicating their payload allocation. FAT12/16/32 implements this by preserving
+cluster chains and verifying updated directory records before normal snapshot
+publication. The generic transfer path keeps its space-checked copy/delete fallback
+for batches without native relocation. FAT32 native file moves are user-confirmed
+(19:24 UTC dump); directory moves and FAT12/16/compressed variants remain pending.
+See [FAT findings](storage-api-consistency.md).
 
 ## Mounting and random access
 
@@ -69,3 +91,29 @@ External edit sessions stage and recheck source bytes, then retain a durable wor
 StorageActivity supplies loading/write/verification counters and read pulses. The toolbar uses green reads, steady dim-green waiting, red writes and amber verification. Debug dumping is exposed on the toolbar only in debug builds. Operations survive Activity changes through the foreground service/coordinator; process-death durable queues remain unimplemented.
 
 Current confirmations, acceptance gaps and remaining architecture work are maintained in [project status](project-status.md).
+
+Activity operations support confirmed directional controls: left Cancel/right Pause
+for resumable active downloads, left Remove/right supported Restart/Resume for
+failed/stopped transfers. The coordinator restricts history removal to terminal
+records and retains data-only transfer replay requests. Restart source inspection
+runs on workers; user-stopped torrent sessions disable automatic resume until a
+manual resume reenables it. Arbitrary stream pause and general process-death replay
+remain separate work. See [Activity controls](concurrent-activity.md).
+
+Application startup initializes an app-private terminal operation-history store.
+A single worker loads and atomically saves completed/failed/stopped snapshots and
+their supported manual replay requests. Restored rows merge with live operations
+and suppress old completion feedback; removal is persisted. This store is separate
+from torrent resume sessions and does not persist active ordinary operation queues.
+
+File-pane background drops use the displayed container. Non-container icon drops
+resolve the target's parent entry through the provider on a worker. These paths use
+the same transfer policy as container/navigation drops and retain the full selected
+set; identical source parents/destination are treated as a no-op. See
+[drop destination rules](storage-api-consistency.md).
+
+FAT and the ext2/3/4 write subset share `WritableImageFileSystem`. Ext uses the
+vendored lwext4 JNI engine through bounded `BlockDevice` callbacks. It permits
+mutations only in private batches, replays supported journals there, commits and
+unmounts before checked publication, and relocates inodes without copying payloads.
+Failed image mutations poison their private batch. See [ext support](ext-image-writes.md).

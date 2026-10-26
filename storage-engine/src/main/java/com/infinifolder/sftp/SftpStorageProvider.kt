@@ -23,7 +23,8 @@ class SftpStorageProvider(
 
     override fun close() { clientPool.close() }
     override val id = "sftp"
-    override val features = BackendFeatures(Support.SUPPORTED, Support.SUPPORTED, creation = CreationGuarantee.UNKNOWN, rename = Support.UNKNOWN, delete = Support.SUPPORTED, nativeLinks = Support.SUPPORTED)
+    override val features = BackendFeatures(Support.SUPPORTED, Support.SUPPORTED, creation = CreationGuarantee.UNKNOWN, rename = Support.UNKNOWN, delete = Support.SUPPORTED, nativeLinks = Support.SUPPORTED,
+        transferTarget = Support.SUPPORTED)
 
 
     override fun refForUri(uri: Uri): ResourceRef? = if (SftpUri.isSftpUri(uri)) ResourceRef(id, uri.toString()) else null
@@ -38,10 +39,11 @@ class SftpStorageProvider(
             val (config, creds) = resolveConfigAndCredentials(SftpUri.getConnectionId(uri))
             val exclusive = clientPool.withChannel(config, creds) { it.getExtension("hardlink@openssh.com") == "1" }
             val meta = result.value.metadata
-            val base = ResourceCapabilities.from(meta, features)
-            ProviderResult.Success(base.copy(operations = base.operations + mapOf(
+            ProviderResult.Success(ResourceCapabilities.from(meta, features, overrides = mapOf(
                 ResourceCapability.CREATE to if (meta.isDirectory && meta.canWrite && exclusive) Support.SUPPORTED else Support.UNSUPPORTED,
-                ResourceCapability.RENAME to if (SftpUri.getRemotePath(uri).trim('/').isNotEmpty() && (meta.isDirectory || exclusive)) Support.SUPPORTED else Support.UNSUPPORTED)))
+                ResourceCapability.RENAME to if (SftpUri.getRemotePath(uri).trim('/').isNotEmpty() &&
+                    ((meta.isDirectory && !meta.isSymbolicLink) || exclusive)) Support.SUPPORTED else Support.UNSUPPORTED),
+                creation = if (exclusive) CreationGuarantee.EXCLUSIVE else CreationGuarantee.UNSUPPORTED))
         } catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot query server capabilities", e) }
         is ProviderResult.Failure -> result
         is ProviderResult.Unsupported -> result
@@ -348,7 +350,9 @@ class SftpStorageProvider(
     }
 
     @Synchronized
-    override fun rename(ref: ResourceRef, name: String): ProviderResult<ResourceEntry> = try {
+    override fun rename(ref: ResourceRef, name: String): ProviderResult<ResourceEntry> {
+        var stage = "checking destination name"
+        return try {
         val uri = Uri.parse(ref.documentId)
         val renameParent = SftpUri.getParentUri(uri) ?: throw IOException("Cannot rename the connection root")
         com.infinifolder.storage.StorageSafety.requireNewName(this, ResourceRef(id, renameParent.toString()), name)
@@ -359,12 +363,19 @@ class SftpStorageProvider(
         val (config, creds) = resolveConfigAndCredentials(connId)
 
         clientPool.withChannel(config, creds) { channel ->
+            stage = "reading original attributes"
             val original = channel.lstat(oldPath)
-            if (original.isDir && !original.isLink) channel.rename(oldPath, newPath) else {
+            if (original.isDir && !original.isLink) {
+                stage = "renaming directory"
+                channel.rename(oldPath, newPath)
+            } else {
                 if (channel.getExtension("hardlink@openssh.com") != "1") throw IOException("Safe rename is unavailable on this server")
+                stage = "creating final name without overwriting"
                 channel.hardlink(oldPath, newPath)
+                stage = "removing original name after linking"
                 try { channel.rm(oldPath) } catch (e: Exception) { throw IOException("New link created, but original name could not be removed", e) }
             }
+            stage = "reading renamed attributes"
             val stat = channel.stat(newPath)
             val isDir = stat.isDir
             val newUri = SftpUri.build(connId, newPath)
@@ -381,7 +392,10 @@ class SftpStorageProvider(
             )
         }.let { ProviderResult.Success(it) }
     } catch (e: Exception) {
-        ProviderResult.Failure(e.message ?: "Failed to rename remote item", e)
+        val code = (e as? com.jcraft.jsch.SftpException)?.id?.let { " (SFTP code $it)" }.orEmpty()
+        val detail = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+        ProviderResult.Failure("SFTP rename failed while $stage: $detail$code", e)
+    }
     }
 
     @Synchronized

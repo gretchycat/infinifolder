@@ -107,11 +107,11 @@ class WebDavStorageProvider(
     private fun entry(cfg: Config, p: Prop, connId: String): ResourceEntry {
         val path=responsePath(cfg,p.href); val name=p.name.ifBlank { path.trimEnd('/').substringAfterLast('/') }
         val uri=WebDavUri.build(connId,path)
-        return ResourceEntry(ResourceRef(id,uri.toString()), ResourceMetadata(name,if(p.directory) "vnd.android.document/directory" else java.net.URLConnection.guessContentTypeFromName(name) ?: "application/octet-stream",p.size,p.modified,p.directory),uri)
+        return ResourceEntry(ResourceRef(id,uri.toString()), ResourceMetadata(name,if(p.directory) "vnd.android.document/directory" else com.infinifolder.mime.MimeRegistry.guess(name),p.size,p.modified,p.directory),uri)
     }
     override fun openSeekable(ref: ResourceRef, writable: Boolean): ProviderResult<BlockDevice> {
         return try {
-        if (writable) ProviderResult.Unsupported(ResourceCapability.WRITE) else {
+        if (writable) ProviderResult.Unsupported(ResourceCapability.SEEK_WRITE) else {
         val uri=Uri.parse(ref.documentId); val cfg=config(uri); val path=WebDavUri.path(uri)
         val head=request(cfg,path,"GET",mapOf("Range" to "bytes=0-0")); val code=head.code
         val size=head.header("Content-Range")?.substringAfterLast('/')?.toLongOrNull()
@@ -124,8 +124,8 @@ class WebDavStorageProvider(
             override fun close() {}
             override fun writeAt(offset:Long,buffer:ByteArray,srcOffset:Int,length:Int){throw IOException("WebDAV range source is read-only")}
             override fun readAt(offset:Long,buffer:ByteArray,dstOffset:Int,length:Int):Int {
-                require(offset>=0 && dstOffset>=0 && length>=0 && dstOffset+length<=buffer.size)
-                if(length==0 || offset>=fileSize) return -1
+                com.infinifolder.archive.requireDeviceRange(offset,buffer,dstOffset,length)
+                if(length==0 || offset>=fileSize) return 0
                 val last=(offset+length-1).coerceAtMost(fileSize-1); val c=request(cfg,path,"GET",mapOf("Range" to "bytes=$offset-$last"))
                 if(c.code!=206) { val status=c.code; c.close(); throw IOException("WebDAV server stopped honoring byte ranges (HTTP $status)") }
                 val wanted=(last-offset+1).toInt(); var total=0

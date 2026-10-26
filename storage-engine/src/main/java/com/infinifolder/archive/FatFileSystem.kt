@@ -20,7 +20,7 @@ class FatFileSystem(
     val dev: BlockDevice,
     val baseOffset: Long = 0L,
     val prefix: String = ""
-) {
+) : WritableImageFileSystem {
 
     enum class FatType { FAT12, FAT16, FAT32 }
 
@@ -629,7 +629,7 @@ class FatFileSystem(
     // Write Operations: Create File, Create Directory, Delete Entry
     // =========================================================================
 
-    fun createFile(relativePath: String, data: ByteArray) = createFileFrom(relativePath, data.size.toLong()) { data.inputStream() }
+    override fun createFile(relativePath: String, data: ByteArray) = createFileFrom(relativePath, data.size.toLong()) { data.inputStream() }
     private fun createFileFrom(relativePath: String, dataSize: Long, open: () -> java.io.InputStream) {
         fileSystemInfo.requirePath(relativePath)
         fileSystemInfo.requireFileFits(relativePath, dataSize)
@@ -680,7 +680,7 @@ class FatFileSystem(
         dev.flush()
     }
 
-    fun createDirectory(relativePath: String) {
+    override fun createDirectory(relativePath: String) {
         fileSystemInfo.requirePath(relativePath)
         val cleanPath = normalizePath(relativePath)
         val parentPath = cleanPath.substringBeforeLast('/', "")
@@ -747,8 +747,8 @@ class FatFileSystem(
         }
     }
 
-    fun writeEntry(relativePath: String, data: ByteArray) = writeEntryFrom(relativePath, data.size.toLong()) { data.inputStream() }
-    fun writeEntryFromFile(relativePath: String, file: java.io.File) = writeEntryFrom(relativePath, file.length()) { file.inputStream() }
+    override fun writeEntry(relativePath: String, data: ByteArray) = writeEntryFrom(relativePath, data.size.toLong()) { data.inputStream() }
+    override fun writeEntryFromFile(relativePath: String, file: java.io.File) = writeEntryFrom(relativePath, file.length()) { file.inputStream() }
     private fun writeEntryFrom(relativePath: String, dataSize: Long, open: () -> java.io.InputStream) {
         fileSystemInfo.requirePath(relativePath)
         fileSystemInfo.requireFileFits(relativePath, dataSize)
@@ -833,7 +833,88 @@ class FatFileSystem(
         }
     }
 
-    fun deleteEntry(relativePath: String) {
+    /** Relocate directory records in an unpublished snapshot. File chains and child
+     * directory contents stay allocated; only a moved directory's '..' changes.
+     * The caller must discard the snapshot on any failure, never publish it partially.
+     */
+    override fun relocateEntry(relativePath: String, targetPath: String) {
+        fileSystemInfo.requirePath(relativePath)
+        fileSystemInfo.requirePath(targetPath)
+        val source = normalizePath(relativePath)
+        val target = normalizePath(targetPath)
+        if (source.isEmpty() || target.isEmpty()) throw IOException("Cannot move a FAT volume root")
+        if (source.equals(target, ignoreCase = true)) return
+        val sourceParent = findParentDirectoryCluster(source.substringBeforeLast('/', ""))
+        val item = listDirectoryItems(sourceParent).firstOrNull {
+            it.name.equals(source.substringAfterLast('/'), ignoreCase = true)
+        } ?: throw IOException("FAT move source is no longer present: $source")
+        val targetParentPath = target.substringBeforeLast('/', "")
+        val targetParent = findParentDirectoryCluster(targetParentPath)
+        if (item.isDirectory) {
+            // Resolve real directory clusters rather than trusting path spelling.
+            val segments = targetParentPath.split('/').filter { it.isNotEmpty() }
+            for (index in 0..segments.size) {
+                val cluster = findParentDirectoryCluster(segments.take(index).joinToString("/"))
+                if (cluster == item.startCluster) throw IOException("Cannot move a folder into itself or its descendants")
+            }
+        }
+        val targetName = target.substringAfterLast('/')
+        val targetItems = listDirectoryItems(targetParent)
+        if (targetItems.any { it.name.equals(targetName, ignoreCase = true) ||
+                decodeFatShortName(it.shortName11.toByteArray(StandardCharsets.US_ASCII), 0).equals(targetName, ignoreCase = true) })
+            throw java.nio.file.FileAlreadyExistsException(targetName)
+        val original = dev.readBytes(item.slotDevOffset, 32)
+        if (original.size != 32) throw IOException("Cannot read FAT move source metadata")
+        val shortName = generate83Name(targetName, targetItems.map { it.shortName11 }.toSet())
+        val longEntries = if (needsLfn(targetName, shortName)) createVfatEntries(targetName, shortName) else emptyList()
+        val replacement = original.copyOf()
+        shortName.copyInto(replacement, endIndex = 11)
+        replacement[12] = 0 // New short alias has no inherited lowercase-name flags.
+        var dotDotOffset: Long? = null
+        var dotDot: ByteArray? = null
+        if (item.isDirectory && sourceParent != targetParent) {
+            if (item.startCluster < 2L) throw IOException("FAT directory has no valid allocation")
+            val offset = dataStartOffset + (item.startCluster - 2L) * clusterSize
+            val header = dev.readBytes(offset, 64)
+            if (header.size != 64 || decodeFatShortName(header, 0) != "." ||
+                decodeFatShortName(header, 32) != ".." || (u8(header, 11) and 0x10) == 0 || (u8(header, 43) and 0x10) == 0)
+                throw IOException("FAT directory parent records are invalid; source retained")
+            fun clusterAt(position: Int) = u16le(header, position + 26).toLong() or
+                (if (fatType == FatType.FAT32) u16le(header, position + 20).toLong() shl 16 else 0L)
+            val oldParent = if (sourceParent == rootCluster) 0L else sourceParent
+            val recordedParent = clusterAt(32)
+            val validParent = recordedParent == oldParent || (sourceParent == rootCluster && recordedParent == rootCluster)
+            if (clusterAt(0) != item.startCluster || !validParent)
+                throw IOException("FAT directory parent identity changed; source retained")
+            val parent = if (targetParent == rootCluster) 0L else targetParent
+            dotDotOffset = offset + 32
+            dotDot = header.copyOfRange(32, 64).apply {
+                this[26] = parent.toByte(); this[27] = (parent ushr 8).toByte()
+                if (fatType == FatType.FAT32) {
+                    this[20] = (parent ushr 16).toByte(); this[21] = (parent ushr 24).toByte()
+                }
+            }
+        }
+        val slots = allocateDirectorySlots(targetParent, longEntries.size + 1)
+        longEntries.forEachIndexed { index, bytes -> dev.writeBytes(slots[index], bytes) }
+        dev.writeBytes(slots.last(), replacement)
+        if (dotDotOffset != null && dotDot != null) dev.writeBytes(dotDotOffset, dotDot)
+        dev.flush()
+        if (!dev.readBytes(slots.last(), 32).contentEquals(replacement) ||
+            (dotDotOffset != null && !dev.readBytes(dotDotOffset, 32).contentEquals(dotDot)))
+            throw IOException("FAT move metadata failed verification; source retained")
+        // Unlink only the old name. Never free its file or directory cluster chain.
+        item.entrySlotOffsets.asReversed().forEach { dev.writeBytes(it, byteArrayOf(0xE5.toByte())) }
+        dev.flush()
+        val moved = listDirectoryItems(targetParent).firstOrNull { it.name == targetName }
+        if (moved == null || moved.startCluster != item.startCluster || moved.fileSize != item.fileSize ||
+            moved.isDirectory != item.isDirectory || listDirectoryItems(sourceParent).any { it.slotDevOffset == item.slotDevOffset })
+            throw IOException("FAT relocated entry failed verification; source retained")
+        com.infinifolder.storage.DiagnosticLog.record("image.entry.relocated",
+            "type=$fatType source=$source target=$target cluster=${item.startCluster} bytes=${item.fileSize} payloadCopied=false")
+    }
+
+    override fun deleteEntry(relativePath: String) {
         val cleanPath = normalizePath(relativePath)
         val parentPath = cleanPath.substringBeforeLast('/', "")
         val entryName = cleanPath.substringAfterLast('/')

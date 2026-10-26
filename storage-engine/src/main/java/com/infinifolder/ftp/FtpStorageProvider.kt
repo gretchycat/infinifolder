@@ -55,7 +55,7 @@ class FtpStorageProvider(
         val uri = Uri.parse(ref.documentId)
         val (config, creds) = resolveConfigAndCredentials(FtpUri.getConnectionId(uri))
         val path = FtpUri.getRemotePath(uri)
-        if (writable) ProviderResult.Unsupported(ResourceCapability.WRITE) else {
+        if (writable) ProviderResult.Unsupported(ResourceCapability.SEEK_WRITE) else {
             val size = getMetadata(uri)?.first ?: throw IOException("Cannot determine remote file size")
             val supportsRestart = clientPool.withClient(config, creds) { it.sendCommand("REST", "0") == 350 }
             if (!supportsRestart) ProviderResult.Unsupported(ResourceCapability.SEEK) else

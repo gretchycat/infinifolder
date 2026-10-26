@@ -11,12 +11,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <queries>
         <intent>
             <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
         </intent>
     </queries>
     <application
+        android:name=".InfiniFolderApplication"
         android:largeHeap="true"
         android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true"
@@ -33,8 +35,18 @@
             android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|uiMode">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/vnd.infinifolder.torrent-partial" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" android:pathPattern=".*\\.incomplete" />
+                <data android:mimeType="*/*" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -60,10 +72,29 @@
 
 
 
+        <activity
+            android:name=".HomeItemActivity"
+            android:exported="true"
+            android:theme="@style/HomeShortcutTheme"
+            android:excludeFromRecents="true"
+            android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <receiver android:name=".ShortcutUpdateReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <service
             android:name=".ops.OperationService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <service
+            android:name=".overlay.FloatingContainerService"
+            android:exported="false" />
         <meta-data android:name="com.infinifolder.CACHE_COPY_HANDLER" android:value="com.infinifolder.MainActivity" />
     </application>
 </manifest>

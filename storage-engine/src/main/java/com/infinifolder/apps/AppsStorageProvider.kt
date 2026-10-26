@@ -61,6 +61,8 @@ class AppsStorageProvider(
     private var cachedAtMillis: Long = 0L
 
     private val singleAppCache = ConcurrentHashMap<String, InstalledAppItem>()
+    private val iconFetchedAt = ConcurrentHashMap<String, Long>()
+    private val iconSourceVersion = ConcurrentHashMap<String, Long>()
     private val labelMemoryCache = ConcurrentHashMap<String, String>()
     @Volatile
     private var diskLabelsLoaded = false
@@ -80,6 +82,8 @@ class AppsStorageProvider(
         cachedAppsByPackage = emptyMap()
         cachedAtMillis = 0L
         singleAppCache.clear()
+        iconFetchedAt.clear()
+        iconSourceVersion.clear()
     }
 
     private fun ensureDiskLabelsLoaded() {
@@ -239,21 +243,32 @@ class AppsStorageProvider(
         return iconMemoryCache["$packageName:$targetSize"]
     }
 
-    fun getAppIconBitmap(packageName: String, sizePx: Int): Bitmap? {
+    fun getAppIconBitmap(packageName: String, sizePx: Int, useDiskCache: Boolean = true): Bitmap? {
         val targetSize = sizePx.coerceAtLeast(1)
         val memKey = "$packageName:$targetSize"
-        iconMemoryCache[memKey]?.let { return it }
+        val previous = iconMemoryCache[memKey]
+        val now = System.currentTimeMillis()
+        // Icon retrieval must not build app metadata or read APK attributes just to get artwork.
+        val sourceVersion = cachedAppsByPackage[packageName]?.lastUpdateTime
+            ?: singleAppCache[packageName]?.lastUpdateTime ?: 0L
+        if (previous != null && iconSourceVersion[memKey] == sourceVersion &&
+            now - (iconFetchedAt[memKey] ?: 0L) in 0 until 60 * 60 * 1000L) return previous
 
-        val cache = context?.let { com.infinifolder.storage.DiskCache.get(it) }
-        val diskKey = "app-icon:$packageName:$targetSize"
+        val cache = if (useDiskCache) context?.let { com.infinifolder.storage.DiskCache.get(it) } else null
+        val diskKey = "app-icon:$packageName:$targetSize:$sourceVersion:${now / (60 * 60 * 1000L)}"
         try {
             cache?.acquire(diskKey)?.use { lease ->
                 val decoded = BitmapFactory.decodeFile(lease.file.absolutePath)
-                if (decoded != null) { iconMemoryCache[memKey] = decoded; return decoded }
+                if (decoded != null) {
+                    iconMemoryCache[memKey] = decoded
+                    iconFetchedAt[memKey] = lease.file.lastModified()
+                    iconSourceVersion[memKey] = sourceVersion
+                    return decoded
+                }
             }
         } catch (_: Exception) {}
 
-        val pm = packageManager ?: return null
+        val pm = packageManager ?: return previous
         return try {
             val drawable = pm.getApplicationIcon(packageName)
             val bitmap = Bitmap.createBitmap(targetSize, targetSize, Bitmap.Config.ARGB_8888)
@@ -261,6 +276,8 @@ class AppsStorageProvider(
             drawable.setBounds(0, 0, canvas.width, canvas.height)
             drawable.draw(canvas)
             iconMemoryCache[memKey] = bitmap
+            iconFetchedAt[memKey] = now
+            iconSourceVersion[memKey] = sourceVersion
             if (cache != null) {
                 try {
                     cache.allocate("app-icon.png").use { lease ->
@@ -271,7 +288,7 @@ class AppsStorageProvider(
             }
             bitmap
         } catch (_: Throwable) {
-            null
+            previous
         }
     }
 
@@ -382,7 +399,7 @@ class AppsStorageProvider(
     }
 
     override fun openWrite(ref: ResourceRef): ProviderResult<OutputStream> =
-        ProviderResult.Unsupported(ResourceCapability.CREATE)
+        ProviderResult.Unsupported(ResourceCapability.WRITE)
 
     override fun createDirectory(parent: ResourceRef, name: String): ProviderResult<ResourceEntry> =
         ProviderResult.Unsupported(ResourceCapability.CREATE)

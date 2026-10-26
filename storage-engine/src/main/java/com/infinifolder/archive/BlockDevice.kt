@@ -24,6 +24,12 @@ enum class DeviceCapability {
     SEEK
 }
 
+/** Validate before touching storage or caches, including zero-length operations. */
+fun requireDeviceRange(offset: Long, buffer: ByteArray, bufferOffset: Int, length: Int) {
+    if (offset < 0 || length < 0 || bufferOffset < 0 || bufferOffset > buffer.size - length ||
+        offset > Long.MAX_VALUE - length) throw IOException("Invalid block-device byte range")
+}
+
 /**
  * Low-level random-access block abstraction allowing transparent read and write
  * across raw files, partition slices, virtual machine disk containers
@@ -42,17 +48,17 @@ interface BlockDevice : Closeable {
     val isReadOnly: Boolean
         get() = !capabilities.contains(DeviceCapability.WRITE)
 
+    /** Returns zero at EOF; stream/channel adapters translate this to their own EOF convention. */
     @Throws(IOException::class)
     fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int = 0, length: Int = buffer.size): Int
 
     @Throws(IOException::class)
     fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int = 0, length: Int = buffer.size)
 
+    /** Resize the file, including zero-filled growth; fixed-size devices must reject this. */
     @Throws(IOException::class)
     fun truncate(newSize: Long) {
-        if (!capabilities.contains(DeviceCapability.TRUNCATE)) {
-            throw IOException("Truncate not supported on this BlockDevice")
-        }
+        throw IOException("Resize not implemented on this BlockDevice")
     }
 
     fun flush() {}
@@ -86,10 +92,13 @@ fun BlockDevice.slice(startOffset: Long, size: Long, isReadOnly: Boolean = this.
 class FileBlockDevice(
     private val raf: RandomAccessFile,
     override val isReadOnly: Boolean = false,
-    override val size: Long = raf.length(),
+    size: Long? = null,
     private val ownsFile: Boolean = false,
     private val flushOnRequest: Boolean = true
 ) : BlockDevice {
+
+    @Volatile private var currentSize = size ?: raf.length()
+    override val size: Long get() = currentSize
 
     override val capabilities: Set<DeviceCapability>
         get() = if (isReadOnly) {
@@ -105,9 +114,10 @@ class FileBlockDevice(
         }
 
     override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {
-        if (offset < 0 || offset >= size || length <= 0) return 0
-        val toRead = length.toLong().coerceAtMost(size - offset).toInt()
+        requireDeviceRange(offset, buffer, dstOffset, length)
         synchronized(raf) {
+            if (offset >= currentSize || length == 0) return 0
+            val toRead = length.toLong().coerceAtMost(currentSize - offset).toInt()
             raf.seek(offset)
             val bytesRead = raf.read(buffer, dstOffset, toRead)
             return if (bytesRead < 0) 0 else bytesRead
@@ -116,10 +126,12 @@ class FileBlockDevice(
 
     override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) {
         if (isReadOnly) throw IOException("BlockDevice is read-only")
-        if (offset < 0 || length < 0) throw IOException("Invalid offset or length (offset=$offset, length=$length)")
+        requireDeviceRange(offset, buffer, srcOffset, length)
+        if (length == 0) return
         synchronized(raf) {
             raf.seek(offset)
             raf.write(buffer, srcOffset, length)
+            currentSize = maxOf(currentSize, offset + length)
         }
     }
 
@@ -128,15 +140,14 @@ class FileBlockDevice(
         if (newSize < 0) throw IOException("Negative truncate size: $newSize")
         synchronized(raf) {
             raf.setLength(newSize)
+            currentSize = newSize
         }
     }
 
     override fun flush() {
         if (!flushOnRequest) return
         synchronized(raf) {
-            try {
-                raf.channel.force(true)
-            } catch (_: Exception) {}
+            raf.channel.force(true)
         }
     }
 
@@ -173,7 +184,8 @@ class MemoryBlockDevice(
 
     @Synchronized
     override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {
-        if (offset < 0 || offset >= currentSize || length <= 0) return 0
+        requireDeviceRange(offset, buffer, dstOffset, length)
+        if (offset >= currentSize || length == 0) return 0
         val toRead = length.toLong().coerceAtMost(currentSize - offset).toInt()
         System.arraycopy(data, offset.toInt(), buffer, dstOffset, toRead)
         return toRead
@@ -182,12 +194,14 @@ class MemoryBlockDevice(
     @Synchronized
     override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) {
         if (isReadOnly) throw IOException("MemoryBlockDevice is read-only")
-        if (offset < 0 || length < 0) throw IOException("Invalid offset or length")
+        requireDeviceRange(offset, buffer, srcOffset, length)
+        if (length == 0) return
         val requiredSize = offset + length
+        if (requiredSize > Int.MAX_VALUE) throw IOException("Memory block device exceeds maximum array size")
         if (requiredSize > data.size) {
-            var newCap = (data.size * 2).coerceAtLeast(1024)
+            var newCap = (data.size.toLong() * 2).coerceIn(1024, Int.MAX_VALUE.toLong()).toInt()
             while (newCap < requiredSize) {
-                newCap *= 2
+                newCap = (newCap.toLong() * 2).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             }
             data = data.copyOf(newCap)
         }
@@ -200,10 +214,11 @@ class MemoryBlockDevice(
     @Synchronized
     override fun truncate(newSize: Long) {
         if (isReadOnly) throw IOException("MemoryBlockDevice is read-only")
-        if (newSize < 0) throw IOException("Negative size: $newSize")
+        if (newSize < 0 || newSize > Int.MAX_VALUE) throw IOException("Invalid memory block-device size: $newSize")
         if (newSize > data.size) {
             data = data.copyOf(newSize.toInt())
         }
+        if (newSize < currentSize) data.fill(0, newSize.toInt(), currentSize.toInt())
         currentSize = newSize
     }
 
@@ -248,7 +263,8 @@ class ContentUriBlockDevice(
         }
 
     override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {
-        if (offset < 0 || offset >= size || length <= 0) return 0
+        requireDeviceRange(offset, buffer, dstOffset, length)
+        if (offset >= size || length == 0) return 0
         val toRead = length.toLong().coerceAtMost(size - offset).toInt()
         val byteBuf = ByteBuffer.wrap(buffer, dstOffset, toRead)
         synchronized(channel) {
@@ -260,7 +276,7 @@ class ContentUriBlockDevice(
 
     override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) {
         if (isReadOnly) throw IOException("ContentUriBlockDevice is read-only")
-        if (offset < 0 || length < 0) throw IOException("Invalid offset or length")
+        requireDeviceRange(offset, buffer, srcOffset, length)
         val byteBuf = ByteBuffer.wrap(buffer, srcOffset, length)
         synchronized(channel) {
             val writer = writeChannel ?: throw NonWritableChannelException()
@@ -273,8 +289,11 @@ class ContentUriBlockDevice(
 
     override fun truncate(newSize: Long) {
         if (isReadOnly) throw IOException("ContentUriBlockDevice is read-only")
+        if (newSize < 0) throw IOException("Negative size: $newSize")
         synchronized(channel) {
-            (writeChannel ?: throw NonWritableChannelException()).truncate(newSize)
+            // FileChannel.truncate cannot grow a file; reserve targets need both directions.
+            try { android.system.Os.ftruncate(pfd.fileDescriptor, newSize) }
+            catch (error: android.system.ErrnoException) { throw IOException("Cannot resize document to $newSize bytes", error) }
         }
     }
 
@@ -316,14 +335,16 @@ class PartitionSliceBlockDevice(
         get() = readOnlyOverride == true || parent.isReadOnly
 
     override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {
-        if (offset < 0 || offset >= size || length <= 0) return 0
+        requireDeviceRange(offset, buffer, dstOffset, length)
+        if (offset >= size || length == 0) return 0
         val toRead = length.toLong().coerceAtMost(size - offset).toInt()
         return parent.readAt(startOffset + offset, buffer, dstOffset, toRead)
     }
 
     override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) {
         if (isReadOnly) throw IOException("SliceBlockDevice is read-only")
-        if (offset < 0 || offset + length > size) {
+        requireDeviceRange(offset, buffer, srcOffset, length)
+        if (offset + length > size) {
             throw IOException("Write out of slice bounds (offset=$offset, len=$length, sliceSize=$size)")
         }
         parent.writeAt(startOffset + offset, buffer, srcOffset, length)
@@ -368,7 +389,8 @@ class CompositeBlockDevice(
         get() = readOnlyOverride == true || segments.any { it.device.isReadOnly }
 
     override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {
-        if (offset < 0 || offset >= size || length <= 0) return 0
+        requireDeviceRange(offset, buffer, dstOffset, length)
+        if (offset >= size || length == 0) return 0
         var totalRead = 0
         var curLogical = offset
         var curDst = dstOffset
@@ -391,7 +413,8 @@ class CompositeBlockDevice(
 
     override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) {
         if (isReadOnly) throw IOException("CompositeBlockDevice is read-only")
-        if (offset < 0 || offset + length > size) throw IOException("Write out of bounds")
+        requireDeviceRange(offset, buffer, srcOffset, length)
+        if (offset + length > size) throw IOException("Write out of bounds")
         var curLogical = offset
         var curSrc = srcOffset
         var remaining = length.toLong()
@@ -474,8 +497,12 @@ class BlockDeviceSeekableByteChannel(private val dev: BlockDevice) : SeekableByt
     override fun truncate(size: Long): SeekableByteChannel {
         if (!open) throw ClosedChannelException()
         if (dev.isReadOnly) throw NonWritableChannelException()
-        dev.truncate(size)
-        if (pos > size) pos = size
+        require(size >= 0) { "Negative channel size" }
+        // NIO truncate only shrinks, unlike the block-device resize contract.
+        if (size < dev.size) {
+            dev.truncate(size)
+            if (pos > size) pos = size
+        }
         return this
     }
 }
@@ -504,6 +531,8 @@ class BlockDeviceInputStream(
     }
 
     override fun read(b: ByteArray, off: Int, len: Int): Int {
+        if (off < 0 || len < 0 || off > b.size - len) throw IndexOutOfBoundsException()
+        if (len == 0) return 0
         if (currentPos >= endOffset) return -1
         val toRead = len.toLong().coerceAtMost(endOffset - currentPos).toInt()
         if (toRead <= 0) return 0
@@ -511,7 +540,7 @@ class BlockDeviceInputStream(
         if (read > 0) {
             currentPos += read
         }
-        return read
+        return if (read > 0) read else -1
     }
 
     override fun available(): Int {

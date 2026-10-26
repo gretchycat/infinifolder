@@ -6,6 +6,12 @@ Updated: 2026-10-22.
 
 ## Using a container destination
 
+Current ext-family support (2026-10-26): ext2/ext3/ext4 now have a journal-aware
+writer for supported feature sets, including selected disk partitions. Changes
+use private image batches and checked publication; native internal moves preserve
+inodes. Unsupported features remain read-only with a reason. See
+[ext writes, validation and pending handset checks](ext-image-writes.md).
+
 1. Long-press source files/folders and select **Copy to…**.
 2. Expand the storage location and the archive/image node in the destination tree. Containers directly under Internal shared storage are included as well as containers in subfolders.
 3. For an image with multiple partitions, expand a writable FAT partition; its partition-table root is a virtual listing, not a filesystem directory.

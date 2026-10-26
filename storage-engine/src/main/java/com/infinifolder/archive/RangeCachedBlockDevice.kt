@@ -17,6 +17,8 @@ class RangeCachedBlockDevice(
     val maxCachedBlocks: Int = 256 // 16 MiB cache footprint
 ) : BlockDevice {
 
+    init { require(blockSize > 0 && maxCachedBlocks > 0) }
+
     override val size: Long get() = parent.size
     override val capabilities: Set<DeviceCapability> get() = parent.capabilities
 
@@ -34,7 +36,8 @@ class RangeCachedBlockDevice(
 
     @Synchronized
     override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int {
-        if (offset < 0 || offset >= size || length <= 0) return 0
+        requireDeviceRange(offset, buffer, dstOffset, length)
+        if (offset >= size || length == 0) return 0
         val toRead = length.toLong().coerceAtMost(size - offset).toInt()
         bytesReadRequested += toRead
 
@@ -86,29 +89,22 @@ class RangeCachedBlockDevice(
     @Synchronized
     override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) {
         if (isReadOnly) throw IOException("BlockDevice is read-only")
-        parent.writeAt(offset, buffer, srcOffset, length)
-
-        // Invalidate cached blocks that overlap the modified range
+        requireDeviceRange(offset, buffer, srcOffset, length)
+        if (length == 0) return
+        // Invalidate before mutation: a failed write can still change some bytes.
         val startBlock = offset / blockSize
-        val endBlock = (offset + length) / blockSize
-        for (b in startBlock..endBlock) {
-            cache.remove(b)
-        }
+        val endBlock = (offset + length - 1) / blockSize
+        cache.keys.removeAll { it in startBlock..endBlock }
+        parent.writeAt(offset, buffer, srcOffset, length)
     }
 
     @Synchronized
     override fun truncate(newSize: Long) {
         if (isReadOnly) throw IOException("BlockDevice is read-only")
+        if (newSize < 0) throw IOException("Negative block-device size")
+        // Also drop a short cached tail when growing, and on partially failed resizes.
+        cache.clear()
         parent.truncate(newSize)
-
-        // Evict all blocks at or beyond the new truncated boundary
-        val minInvalidBlock = newSize / blockSize
-        val it = cache.keys.iterator()
-        while (it.hasNext()) {
-            if (it.next() >= minInvalidBlock) {
-                it.remove()
-            }
-        }
     }
 
     @Synchronized

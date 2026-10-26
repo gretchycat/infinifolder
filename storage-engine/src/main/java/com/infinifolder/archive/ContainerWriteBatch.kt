@@ -25,13 +25,32 @@ internal class ContainerWriteBatch private constructor(
     private val dirty: () -> Boolean,
     private val cancelled: () -> Boolean,
     private val sourceFile: File?,
+    private val relocation: ((List<StorageRelocation>, ResourceRef) -> ProviderResult<List<ResourceEntry>>)?,
+    private val requireHealthy: () -> Unit,
     private val published: () -> Unit
 ) : StorageWriteBatch {
     private var closed = false
     private var committed = false
+    private var relocationFailed = false
+
+    override val supportsRelocation: Boolean get() = relocation != null
+    override fun relocate(entries: List<StorageRelocation>, destination: ResourceRef): ProviderResult<List<ResourceEntry>> {
+        check(!closed && !committed) { "Container batch is no longer active" }
+        if (cancelled()) throw InterruptedException("Container operation cancelled")
+        return try {
+            (relocation?.invoke(entries, destination) ?: ProviderResult.Unsupported(ResourceCapability.MOVE)).also {
+                if (it is ProviderResult.Failure) relocationFailed = true
+            }
+        } catch (error: Exception) {
+            relocationFailed = true
+            throw error
+        }
+    }
 
     override fun commit() {
         check(!closed && !committed) { "Container batch is no longer active" }
+        check(!relocationFailed) { "Cannot publish a failed container relocation; original retained" }
+        requireHealthy()
         if (cancelled()) throw InterruptedException("Container operation cancelled")
         if (!dirty()) { committed = true; return }
         val updated = if (overlay != null) {
@@ -146,9 +165,14 @@ internal class ContainerWriteBatch private constructor(
                         entryPath = ArchiveUri.getEntryPath(Uri.parse(destination.documentId)), probeOnly = true)
                     if (failure != null) throw IOException(failure)
                 }
+                val nativeRelocation = !streamArchive &&
+                    (view.fileSystemInfo(destination) as? ProviderResult.Success)?.value?.type?.uppercase(java.util.Locale.ROOT) in
+                        setOf("FAT12", "FAT16", "FAT32", "EXT2", "EXT3", "EXT4")
                 return ContainerWriteBatch(view, storage, backing, work, working, revision,
                     File(context.filesDir, "save_recovery"), overlay, sourceName, imageCompression, { overlay?.hasChanges() ?: imageDirty }, cancelled,
                     if (local?.owns(source) == true) local.fileFor(source) else if (source.scheme == "file") File(source.path ?: "") else null,
+                    if (nativeRelocation) { entries, target -> mapped.relocate(entries, target, cancelled) } else null,
+                    { scratch.requireHealthyPrivateBatch() },
                     published)
             } catch (e: Exception) { work.deleteRecursively(); throw e }
         }
@@ -190,6 +214,10 @@ private class MappedContainerView(
     }
     override fun capabilities(ref: ResourceRef) = if (owns(ref)) scratch.capabilities(mapped(ref)) else fallback.capabilities(ref)
     override fun fileSystemInfo(ref: ResourceRef) = if (owns(ref)) scratch.fileSystemInfo(mapped(ref)) else fallback.fileSystemInfo(ref)
+    override fun readTransferMetadata(ref: ResourceRef) = if (owns(ref)) scratch.readTransferMetadata(mapped(ref)) else fallback.readTransferMetadata(ref)
+    override fun applyTransferMetadata(ref: ResourceRef, metadata: TransferMetadata) = if (owns(ref)) scratch.applyTransferMetadata(mapped(ref), metadata).also {
+        if (it is ProviderResult.Success) changed()
+    } else fallback.applyTransferMetadata(ref, metadata)
     override fun openRead(ref: ResourceRef) = if (owns(ref)) scratch.openRead(mapped(ref)) else fallback.openRead(ref)
     override fun openWrite(ref: ResourceRef): ProviderResult<OutputStream> = if (owns(ref)) scratch.openWrite(mapped(ref)).also {
         if (it is ProviderResult.Success) changed()
@@ -201,6 +229,22 @@ private class MappedContainerView(
     override fun delete(ref: ResourceRef) = if (owns(ref)) scratch.delete(mapped(ref)).also {
         if (it is ProviderResult.Success) changed()
     } else fallback.delete(ref)
+    fun relocate(entries: List<StorageRelocation>, destination: ResourceRef,
+                 cancelled: () -> Boolean): ProviderResult<List<ResourceEntry>> { return try {
+        if (!owns(destination) || entries.any { !owns(it.source) })
+            throw IOException("All relocated entries must belong to the destination container")
+        if (!scratch.canRelocatePrivateEntries(entries.map { mapped(it.source) }, mapped(destination)))
+            return ProviderResult.Unsupported(ResourceCapability.MOVE)
+        val result = entries.map { item ->
+            if (cancelled()) throw InterruptedException("Container move cancelled")
+            when (val moved = mappedEntry(scratch.relocatePrivateEntry(mapped(item.source), mapped(destination), item.name), true)) {
+                is ProviderResult.Success -> moved.value
+                is ProviderResult.Failure -> throw IOException(moved.message, moved.cause)
+                is ProviderResult.Unsupported -> throw IOException("The private container cannot relocate this entry")
+            }
+        }
+        ProviderResult.Success(result)
+    } catch (error: Exception) { ProviderResult.Failure(error.message ?: "Container relocation failed", error) } }
     override fun close() {} // The batch owns its workspace, not the application provider graph.
 }
 

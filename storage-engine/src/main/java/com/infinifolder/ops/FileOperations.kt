@@ -7,9 +7,14 @@ import com.infinifolder.model.RecoveryReport
 import com.infinifolder.model.RecoveryDisposition
 import com.infinifolder.model.ProviderResult
 import com.infinifolder.model.ResourceEntry
+import com.infinifolder.model.TransferMetadata
 import com.infinifolder.model.ResourceRef
+import com.infinifolder.model.ResourceCapability
+import com.infinifolder.model.Support
 import com.infinifolder.shortcut.ShortcutInfo
 import com.infinifolder.storage.StorageProvider
+import com.infinifolder.storage.StorageAction
+import com.infinifolder.storage.StorageActionPolicy
 import com.infinifolder.storage.StorageSafety
 import java.security.MessageDigest
 import java.io.IOException
@@ -113,7 +118,8 @@ object FileOperations {
         onWarning: (String) -> Unit = {},
         partialRecovery: Boolean = false,
         verifyCopies: Boolean = true,
-        copyVerificationEnabled: (() -> Boolean)? = null
+        copyVerificationEnabled: (() -> Boolean)? = null,
+        confirmRandomAccessFallback: ((com.infinifolder.storage.RandomAccessFallbackRequest) -> Boolean)? = null
     ): List<ResourceRef> = com.infinifolder.archive.RecoveryCancellation.withCancellation(isCancelled) {
         if (com.infinifolder.storage.ContainerLinksProvider.owns(destinationFolderUri) && !createLinks &&
             entries.any { it.metadata.isDirectory || !ShortcutInfo.isShortcut(it.metadata.name, it.metadata.mimeType) })
@@ -125,14 +131,16 @@ object FileOperations {
             entries.none { it.metadata.recoveryNote != null || provider.recoverySource(it.ref) != null }
         com.infinifolder.archive.ReadDeviceScope.withScope(reuseReads, onWarning) {
         batchTransferInternal(entries, destinationFolderUri, move, provider, resourceRef, update,
-            { isCancelled() || Thread.currentThread().isInterrupted }, createLinks, onWarning, partialRecovery, verifyCopies, copyVerificationEnabled)
+            { isCancelled() || Thread.currentThread().isInterrupted }, createLinks, onWarning, partialRecovery, verifyCopies, copyVerificationEnabled,
+            confirmRandomAccessFallback)
         }
     }
 
     private fun batchTransferInternal(
         entries: List<ResourceEntry>, destinationFolderUri: Uri, move: Boolean, provider: StorageProvider,
         resourceRef: (Uri) -> ResourceRef, update: (OperationUpdate) -> Unit, isCancelled: () -> Boolean,
-        createLinks: Boolean, onWarning: (String) -> Unit, partialRecovery: Boolean, verifyCopies: Boolean, copyVerificationEnabled: (() -> Boolean)?
+        createLinks: Boolean, onWarning: (String) -> Unit, partialRecovery: Boolean, verifyCopies: Boolean, copyVerificationEnabled: (() -> Boolean)?,
+        confirmRandomAccessFallback: ((com.infinifolder.storage.RandomAccessFallbackRequest) -> Boolean)?
     ): List<ResourceRef> {
         var activeProvider = provider
         fun verificationWanted() = copyVerificationEnabled?.invoke() ?: verifyCopies
@@ -146,11 +154,16 @@ object FileOperations {
         var activeFileName: String? = null
         var activeFileBytes: Long? = null
         var activeFileTotalBytes: Long? = null
+        var torrentRemainingBytes: Long? = null
+        var activeTorrentTransfer = false
+        var activeResumeDestination: ResourceRef? = null
+        val torrentStats = java.util.concurrent.atomic.AtomicReference<com.infinifolder.storage.TorrentTransferStats?>()
         fun phase(message: String, item: String? = null) {
             com.infinifolder.storage.DiagnosticLog.record("transfer.phase", "stage=$message item=$item bytes=$transferredBytes")
             update(OperationUpdate(bytes = transferredBytes, totalBytes = totalBytes,
                 itemsProcessed = itemsDone, totalItems = totalItems, currentItem = item,
                 message = message, indeterminate = true,
+                resumable = activeTorrentTransfer, resumeDestination = activeResumeDestination,
                 currentItemBytes = activeFileBytes.takeIf { item == activeFileName },
                 currentItemTotalBytes = activeFileTotalBytes.takeIf { item == activeFileName }))
         }
@@ -164,20 +177,27 @@ object FileOperations {
                     "stage=$label item=$item elapsedMs=${(System.nanoTime() - start) / 1_000_000} success=$success")
             }
         }
-        val destinationContainers = mutableSetOf<ResourceRef>()
-        var backing = activeProvider.backingResource(destRef)
-        while (backing != null) {
-            if (!destinationContainers.add(backing) || destinationContainers.size > 16)
-                throw IOException("Invalid container dependency chain")
-            backing = activeProvider.backingResource(backing)
-        }
-        val destinationBacking = activeProvider.backingResource(destRef)
-        if (move && destinationContainers.isNotEmpty()) {
-            val sameContainerSources = entries.all { source ->
-                source.ref.providerId == "archive" && activeProvider.backingResource(source.ref) == destinationBacking
+        val destinationAssessment = timed("Checking destination capabilities") {
+            when (val result = StorageActionPolicy.destination(activeProvider, destRef, entries, move)) {
+                is ProviderResult.Success -> result.value.also { it.decision.requireAllowed() }
+                is ProviderResult.Failure -> throw IOException(result.message, result.cause)
+                is ProviderResult.Unsupported -> throw IOException("Cannot check destination capabilities: ${result.capability}")
             }
-            if (!sameContainerSources || destinationContainers.size != 1) throw IOException(
-                "Moving into a container is supported only when every source is inside that same container. Use Copy for other sources; originals retained.")
+        }
+        val destinationContainers = destinationAssessment.containers
+        val nativeLinkCandidate = move && destinationContainers.size == 1 && entries.all {
+            provider.backingResource(it.ref) == destinationContainers.first()
+        }
+        var requiresNativeLinkPreservation = false
+        if (move) timed("Checking source move capabilities") {
+            entries.forEach { entry ->
+                val capabilities = when (val result = activeProvider.capabilities(entry.ref)) {
+                    is ProviderResult.Success -> result.value
+                    is ProviderResult.Failure -> throw IOException(result.message, result.cause)
+                    is ProviderResult.Unsupported -> null
+                }
+                StorageActionPolicy.action(StorageAction.MOVE, entry.metadata, capabilities).requireAllowed()
+            }
         }
         val shortcutPayloads = mutableMapOf<ResourceRef, ByteArray>()
         val sourceChildren = mutableMapOf<ResourceRef, List<ResourceEntry>>()
@@ -220,6 +240,10 @@ object FileOperations {
                 com.infinifolder.storage.DiagnosticLog.record("transfer.link-shortcut",
                     "sourceProvider=${entry.ref.providerId} name=${entry.metadata.name} originalRetained=true")
                 return entry.copy(metadata = entry.metadata.copy(isDirectory = false, isSymbolicLink = false))
+            }
+            if (entry.metadata.isSymbolicLink && nativeLinkCandidate) {
+                requiresNativeLinkPreservation = true
+                return entry // Relink the containing inode tree; never follow or recreate these links.
             }
             if (!entry.metadata.canRead && !(partialRecovery && entry.metadata.partialRecoveryAvailable)) {
                 skipped(entry, entry.metadata.readError ?: "source cannot be read")
@@ -325,15 +349,51 @@ object FileOperations {
             val requiredBytes = transferEntries.fold(0L) { sum, entry -> Math.addExact(sum, requiredSpace(entry)) }
             val availableBytes = fileSystem?.availableBytes
             if (availableBytes != null && requiredBytes > availableBytes) {
-                val number = java.text.NumberFormat.getIntegerInstance()
-                val message = "Not enough space on ${fileSystem?.displayName}: this copy needs at least " +
-                    "${number.format(requiredBytes)} bytes, but only ${number.format(availableBytes)} bytes are free. " +
-                    "No destination entries were created. Sources retained."
-                com.infinifolder.storage.DiagnosticLog.record("transfer.capacity-rejected", message)
+                val message = "Not enough space on ${fileSystem?.displayName}. " +
+                    "About ${com.infinifolder.storage.StorageMessages.approximateSize(requiredBytes)} needed; " +
+                    "${com.infinifolder.storage.StorageMessages.approximateSize(availableBytes)} available. Sources retained."
+                com.infinifolder.storage.DiagnosticLog.record("transfer.capacity-rejected",
+                    "requiredBytes=$requiredBytes availableBytes=$availableBytes move=$move filesystem=${fileSystem?.type}")
                 throw IOException(message)
             }
         }
-        checkCapacity()
+        // A private batch may relocate existing allocations without duplicating payloads.
+        // Defer its payload-space check until the batch declares whether it can do so.
+        val tryBatchRelocation = move && destinationContainers.isNotEmpty() && incompleteRoots.isEmpty()
+        if (!tryBatchRelocation) checkCapacity()
+        var useStagedRandomAccessFallback = false
+        fun approveStagedFallback(source: ResourceEntry, reason: String) {
+            if (useStagedRandomAccessFallback) return
+            val request = com.infinifolder.storage.RandomAccessFallbackRequest(source.ref, source.metadata.name,
+                destRef, transferSize(source), reason)
+            phase("Waiting for target choice", source.metadata.name)
+            val approved = confirmRandomAccessFallback?.invoke(request)
+                ?: throw IOException(request.message + "\nExplicit approval is required for staged transfer.")
+            if (isCancelled()) throw InterruptedException("Transfer cancelled")
+            if (!approved) throw OperationDeclinedException("Transfer stopped; choose a different target")
+            useStagedRandomAccessFallback = true
+            com.infinifolder.storage.DiagnosticLog.record("transfer.random-access.fallback-approved",
+                "source=${source.ref.providerId} destination=${destRef.providerId} bytes=${transferSize(source)}")
+        }
+        val transferRouter = provider as? com.infinifolder.storage.RandomAccessTransferRouter
+        fun firstRandomAccessSource(entry: ResourceEntry): ResourceEntry? =
+            if (entry.metadata.isDirectory) sourceChildren[entry.ref].orEmpty().firstNotNullOfOrNull(::firstRandomAccessSource)
+            else entry.takeIf { transferRouter?.requiresRandomAccess(it.ref) == true }
+        if (!move && !createLinks && !partialRecovery) {
+            val source = transferEntries.firstNotNullOfOrNull(::firstRandomAccessSource)
+            if (source != null) {
+                when (val targetCapabilities = provider.capabilities(destRef)) {
+                    is ProviderResult.Success -> {
+                        if (targetCapabilities.value[ResourceCapability.CREATE] == Support.UNSUPPORTED)
+                            throw IOException("The target cannot safely create new files. Choose a different target; source retained.")
+                        if (targetCapabilities.value[ResourceCapability.TRANSFER_TARGET] == Support.UNSUPPORTED)
+                            approveStagedFallback(source, "The destination reports no support for random-access transfer targets.")
+                    }
+                    is ProviderResult.Failure -> throw IOException(targetCapabilities.message, targetCapabilities.cause)
+                    is ProviderResult.Unsupported -> Unit // Probe the actual created handle before deciding.
+                }
+            }
+        }
         val batch = when (val result = timed("Preparing destination batch") { activeProvider.beginWriteBatch(destRef, isCancelled) }) {
             is ProviderResult.Success -> result.value
             is ProviderResult.Unsupported -> null
@@ -349,6 +409,8 @@ object FileOperations {
                     is ProviderResult.Unsupported -> Unit
                 }
                 transferEntries.forEach(::validateSize)
+                if (!tryBatchRelocation || !batch.supportsRelocation) checkCapacity()
+            } else if (tryBatchRelocation) {
                 checkCapacity()
             }
             val destinationNames = mutableMapOf<ResourceRef, MutableSet<String>>()
@@ -377,6 +439,77 @@ object FileOperations {
                 } while (candidate.lowercase(java.util.Locale.ROOT) in names)
                 names.add(candidate.lowercase(java.util.Locale.ROOT))
                 return candidate
+            }
+
+            if (tryBatchRelocation && batch?.supportsRelocation == true) {
+                fun containsSelectedDescendant(entry: ResourceEntry, selected: Set<ResourceRef>): Boolean =
+                    sourceChildren[entry.ref].orEmpty().any { it.ref in selected || containsSelectedDescendant(it, selected) }
+                val selected = transferEntries.map { it.ref }.toSet()
+                if (selected.size != transferEntries.size || transferEntries.any { containsSelectedDescendant(it, selected) })
+                    throw IOException("Select each source once, without also selecting its descendants; sources retained")
+                val plan = transferEntries.map {
+                    com.infinifolder.storage.StorageRelocation(it.ref, availableName(destRef, requestedDestinationName(it)))
+                }
+                val relocated = timed("Relocating entries without copying file data") { batch.relocate(plan, destRef) }
+                when (relocated) {
+                    is ProviderResult.Success -> {
+                        if (relocated.value.size != plan.size) throw IOException("Container relocation returned an incomplete result; sources retained")
+                        fun logicalBytes(entry: ResourceEntry): Long = if (entry.metadata.isDirectory)
+                            sourceChildren[entry.ref].orEmpty().fold(0L) { sum, child -> Math.addExact(sum, logicalBytes(child)) }
+                        else entry.metadata.sizeBytes?.coerceAtLeast(0L) ?: 0L
+                        totalBytes = transferEntries.fold(0L) { sum, entry -> Math.addExact(sum, logicalBytes(entry)) }
+                        if (isCancelled()) throw InterruptedException("Move cancelled before container publication")
+                        timed("Publishing relocated container entries") { batch.commit() }
+                        update(OperationUpdate(bytes = totalBytes ?: 0L, totalBytes = totalBytes,
+                            itemsProcessed = transferEntries.size, totalItems = totalItems,
+                            message = "Moved without copying file data", indeterminate = false))
+                        return relocated.value.map { it.ref }
+                    }
+                    is ProviderResult.Failure -> throw IOException(relocated.message, relocated.cause)
+                    is ProviderResult.Unsupported -> {
+                        // Contract: unsupported relocation has made no changes. Use the
+                        // normal verified copy/delete path, with its full space requirement.
+                        checkCapacity()
+                        destinationNames.clear()
+                    }
+                }
+            }
+            if (requiresNativeLinkPreservation)
+                throw IOException("This move requires native link preservation; the destination cannot relocate this selection. Sources retained.")
+
+            val metadataWarnings = mutableSetOf<String>()
+            val capturedMetadata = mutableMapOf<ResourceRef, TransferMetadata>()
+            fun metadataWarning(source: ResourceEntry, reason: String) {
+                if (move) currentSourceRoot?.let { incompleteRoots.add(it) }
+                com.infinifolder.storage.DiagnosticLog.record("transfer.metadata.warning",
+                    "name=${source.metadata.name} reason=$reason sourceRetained=$move")
+                if (metadataWarnings.add("metadata")) onWarning("Some permissions or attributes could not be preserved." +
+                    if (move) " Affected originals will be kept." else " Check the copied files' permissions.")
+            }
+            fun captureMetadata(source: ResourceEntry): TransferMetadata? {
+                if (createLinks || partialRecovery || source.ref.providerId in setOf("torrent", "apps")) return null
+                return when (val result = activeProvider.readTransferMetadata(source.ref)) {
+                    is ProviderResult.Success -> result.value.also {
+                        if (it.mode != null && it.xattrs == null)
+                            metadataWarning(source, "Source provider ${source.ref.providerId} does not export ACLs or extended attributes")
+                    }.takeUnless { it.isEmpty }?.also { capturedMetadata[source.ref] = it }
+                    is ProviderResult.Failure -> { metadataWarning(source, "Cannot read source attributes: ${result.message}"); null }
+                    is ProviderResult.Unsupported -> { metadataWarning(source, "Source provider cannot export attributes"); null }
+                }
+            }
+            fun preserveMetadata(source: ResourceEntry, destination: ResourceRef, metadata: TransferMetadata?) {
+                if (metadata == null) return
+                if (isCancelled()) throw InterruptedException("Transfer cancelled while preserving metadata")
+                when (val applied = activeProvider.applyTransferMetadata(destination, metadata)) {
+                    is ProviderResult.Success -> {
+                        val actual = activeProvider.readTransferMetadata(destination)
+                        if (actual !is ProviderResult.Success || !metadata.matches(actual.value))
+                            metadataWarning(source, "Destination attributes did not match after saving")
+                        else com.infinifolder.storage.DiagnosticLog.record("transfer.metadata.preserved", "name=${source.metadata.name} destinationProvider=${destination.providerId}")
+                    }
+                    is ProviderResult.Unsupported -> metadataWarning(source, "Destination provider ${destination.providerId} cannot retain the requested attributes")
+                    is ProviderResult.Failure -> metadataWarning(source, "Destination attributes failed: ${applied.message}")
+                }
             }
 
             data class TorrentResumeCleanup(
@@ -446,6 +579,12 @@ object FileOperations {
 
             fun verifySource(entry: ResourceEntry) {
                 if (isCancelled()) throw InterruptedException("Transfer cancelled")
+                capturedMetadata[entry.ref]?.let { expected ->
+                    val now = activeProvider.readTransferMetadata(entry.ref)
+                    // Access time can change as a consequence of our own reads.
+                    if (now !is ProviderResult.Success || !expected.copy(accessedSeconds=null, accessedNanos=0).matches(now.value))
+                        throw IOException("Source permissions or attributes changed during transfer; original retained")
+                }
                 if (entry.metadata.isDirectory && !entry.metadata.isSymbolicLink) {
                     val before = sourceChildren.getValue(entry.ref)
                     val after = StorageSafety.complete(activeProvider.list(entry.ref))
@@ -468,7 +607,7 @@ object FileOperations {
             var lastRateTime = System.currentTimeMillis()
             var bytesSinceLast = 0L
 
-            fun reportProgress(currentItem: String, currentRate: Long, statusMessage: String? = null) {
+            fun reportProgress(currentItem: String, currentRate: Long, statusMessage: String? = null, torrentPiecesChecked: Int? = null, torrentPiecesTotal: Int? = null) {
                 update(
                     OperationUpdate(
                         bytes = transferredBytes,
@@ -476,11 +615,19 @@ object FileOperations {
                         itemsProcessed = itemsDone,
                         totalItems = totalItems,
                         currentItem = currentItem,
-                        bytesPerSecond = currentRate,
+                        bytesPerSecond = if (activeTorrentTransfer) torrentStats.get()?.downloadBytesPerSecond ?: currentRate else currentRate,
+                        torrentStats = torrentStats.get().takeIf { activeTorrentTransfer },
                         message = statusMessage ?: "${if (move) "Moving" else "Copying"} $currentItem",
                         indeterminate = false,
                         currentItemBytes = activeFileBytes.takeIf { currentItem == activeFileName },
-                        currentItemTotalBytes = activeFileTotalBytes.takeIf { currentItem == activeFileName }
+                        currentItemTotalBytes = activeFileTotalBytes.takeIf { currentItem == activeFileName },
+                        resumable = activeTorrentTransfer, resumeDestination = activeResumeDestination,
+                        remainingBytes = torrentRemainingBytes?.let { remaining ->
+                            val other = ((totalBytes ?: 0L) - transferredBytes -
+                                ((activeFileTotalBytes ?: 0L) - (activeFileBytes ?: 0L))).coerceAtLeast(0L)
+                            remaining + other
+                        },
+                        torrentPiecesChecked = torrentPiecesChecked, torrentPiecesTotal = torrentPiecesTotal
                     )
                 )
             }
@@ -490,9 +637,13 @@ object FileOperations {
                 destParentRef: ResourceRef
             ): ResourceEntry {
                 if (isCancelled()) throw InterruptedException("Transfer cancelled")
+                val transferMetadata = captureMetadata(source)
+                torrentStats.set(null)
+                activeResumeDestination = null
+                activeTorrentTransfer = !useStagedRandomAccessFallback && !move && !createLinks && !partialRecovery && source.ref.providerId == "torrent"
                 val requestedName = requestedDestinationName(source)
                 val shortcutPayload = shortcutPayloads[source.ref]
-                val resumeRouter = if (!move && source.ref.providerId == "torrent")
+                val resumeRouter = if (!useStagedRandomAccessFallback && !move && source.ref.providerId == "torrent")
                     activeProvider as? com.infinifolder.storage.RandomAccessTransferRouter else null
                 val resumeCandidate = resumeRouter?.findResumeDestination(source.ref, destParentRef, requestedName)
                 var resumedCreate = resumeCandidate?.let { candidate ->
@@ -507,7 +658,8 @@ object FileOperations {
                     resumeRouter?.discardResumeState(source.ref, resumeCandidate.ref)
                     resumeRouter?.forgetResumeDestination(source.ref, destParentRef, requestedName)
                 }
-                val torrentDownload = resumeRouter != null
+                var torrentDownload = resumeRouter != null
+                activeTorrentTransfer = torrentDownload
                 var finalName = resumedCreate?.first?.name?.removeSuffix(".incomplete")
                     ?: availableName(destParentRef, requestedName)
                 var targetName = resumedCreate?.first?.name ?: if (torrentDownload) "$finalName.incomplete" else finalName
@@ -549,6 +701,7 @@ object FileOperations {
                 if (torrentDownload) destinationNames.getValue(destParentRef).add(finalName.lowercase(java.util.Locale.ROOT))
                 activeFileName = targetName
                 activeFileBytes = 0L
+                torrentRemainingBytes = null
                 activeFileTotalBytes = transferSize(source)
                 reportProgress(targetName, 0L)
 
@@ -562,19 +715,21 @@ object FileOperations {
                 var createdEntry = createResult.value
                 destinationNames.getValue(destParentRef).add(createdEntry.metadata.name.lowercase(java.util.Locale.ROOT))
                 resumeRouter?.rememberResumeDestination(source.ref, destParentRef, requestedName, createdEntry.ref, targetName)
+                if (torrentDownload) activeResumeDestination = createdEntry.ref
 
                 var recoveryReport: RecoveryReport? = null
                 var companionRef: ResourceRef? = null
                 var directTorrentBytes: Long? = null
                 val directRouter = activeProvider as? com.infinifolder.storage.RandomAccessTransferRouter
-                if (!move && !createLinks && !partialRecovery && shortcutPayload == null &&
-                    source.ref.providerId == "torrent" && directRouter != null) {
+                if (!useStagedRandomAccessFallback && !move && !createLinks && !partialRecovery && shortcutPayload == null &&
+                    transferRouter?.requiresRandomAccess(source.ref) == true && directRouter != null) {
                     val directProgress = java.util.concurrent.atomic.AtomicLong()
                     val lastDirectReport = java.util.concurrent.atomic.AtomicLong(0L)
                     val directRateTime = java.util.concurrent.atomic.AtomicLong(android.os.SystemClock.uptimeMillis())
                     val directBytesSinceRate = java.util.concurrent.atomic.AtomicLong(0L)
                     val directProgressLock = Any()
                     val lastPieceStatus = java.util.concurrent.atomic.AtomicLong(0L)
+                    val startupStatus = java.util.concurrent.atomic.AtomicReference("Preparing torrent download…")
                     val directResult = timed("Receiving torrent directly: $targetName", targetName) {
                         directRouter.transferRandomAccess(source.ref, createdEntry.ref, isCancelled, onBytesWritten = { delta ->
                             val expectedBytes = transferSize(source) ?: Long.MAX_VALUE
@@ -595,12 +750,36 @@ object FileOperations {
                             }
                         }, onPieceVerification = { verified, total ->
                             val now = android.os.SystemClock.uptimeMillis()
-                            if (now - lastPieceStatus.get() >= 400L || verified >= total) {
+                            if (torrentRemainingBytes == null && (now - lastPieceStatus.get() >= 400L || verified >= total)) {
                                 synchronized(directProgressLock) {
-                                    lastPieceStatus.set(now)
-                                    val message = if (total > 0) "Verified torrent pieces: $verified of $total" else "Checking torrent pieces…"
-                                    reportProgress(targetName, 0L, message)
+                                    if (torrentRemainingBytes == null) {
+                                        lastPieceStatus.set(now)
+                                        reportProgress(targetName, 0L, startupStatus.get(), verified, total)
+                                    }
                                 }
+                            }
+                        }, onBytesRemaining = { remaining ->
+                            synchronized(directProgressLock) {
+                                val firstReady = torrentRemainingBytes == null
+                                torrentRemainingBytes = remaining
+                                if (firstReady) {
+                                    val existing = ((transferSize(source) ?: 0L) - remaining).coerceAtLeast(0L)
+                                    directProgress.set(existing)
+                                    activeFileBytes = existing
+                                    transferredBytes += existing
+                                    reportProgress(targetName, 0L, "Connecting to peers…")
+                                }
+                            }
+                        }, onResumeStatus = { message ->
+                            startupStatus.set(message)
+                            synchronized(directProgressLock) {
+                                if (torrentRemainingBytes == null) reportProgress(targetName, 0L, message)
+                            }
+                        }, onTorrentStats = { stats ->
+                            synchronized(directProgressLock) {
+                                torrentStats.set(stats)
+                                if (torrentRemainingBytes != null) reportProgress(targetName, stats.downloadBytesPerSecond,
+                                    stats.statusMessage())
                             }
                         })
                     }
@@ -620,10 +799,41 @@ object FileOperations {
                             throw IOException("Torrent transfer paused or failed for '$targetName': ${directResult.message}. " +
                                 "The partial destination is retained and can be resumed by retrying this copy. Source retained.", directResult.cause)
                         }
-                        is ProviderResult.Unsupported -> Unit
+                        is ProviderResult.Unsupported -> {
+                            // Unknown per-document support (notably SAF) is decided by
+                            // opening the actual handle, before any payload is written.
+                            try { approveStagedFallback(source, "The created file cannot provide a readable, writable, seekable, resizable handle.") }
+                            catch (error: Exception) {
+                                if (resumedCreate == null) {
+                                    val cleaned = activeProvider.delete(createdEntry.ref)
+                                    if (cleaned is ProviderResult.Success) resumeRouter?.forgetResumeDestination(source.ref, destParentRef, requestedName)
+                                }
+                                throw error
+                            }
+                            if (resumedCreate == null) {
+                                val cleaned = activeProvider.delete(createdEntry.ref)
+                                if (cleaned !is ProviderResult.Success) throw IOException("Cannot remove unused transfer placeholder; source retained")
+                                destinationNames.getValue(destParentRef).remove(createdEntry.metadata.name.lowercase(java.util.Locale.ROOT))
+                                destinationNames.getValue(destParentRef).remove(finalName.lowercase(java.util.Locale.ROOT))
+                                resumeRouter?.forgetResumeDestination(source.ref, destParentRef, requestedName)
+                            }
+                            // Keep an existing partial intact; stream to a fresh final-name file.
+                            finalName = availableName(destParentRef, finalName)
+                            val stagedTarget = activeProvider.createFile(destParentRef, finalName, source.metadata.mimeType)
+                            if (stagedTarget !is ProviderResult.Success) throw IOException((stagedTarget as? ProviderResult.Failure)?.message ?: "Cannot create staged-copy target")
+                            createdEntry = stagedTarget.value
+                            targetName = createdEntry.metadata.name
+                            destinationNames.getValue(destParentRef).add(targetName.lowercase(java.util.Locale.ROOT))
+                            torrentDownload = false
+                            activeTorrentTransfer = false
+                            activeResumeDestination = null
+                            activeFileName = targetName
+                        }
                     }
                 }
-                val readResult = if (directTorrentBytes != null) ProviderResult.Success<InputStream>(java.io.ByteArrayInputStream(ByteArray(0))) else try { timed("Opening source: $targetName", targetName) {
+                val readResult = if (directTorrentBytes != null) ProviderResult.Success<InputStream>(java.io.ByteArrayInputStream(ByteArray(0))) else try { timed(
+                    if (useStagedRandomAccessFallback && transferRouter?.requiresRandomAccess(source.ref) == true)
+                        "Downloading to temporary storage before copying: $targetName" else "Opening source: $targetName", targetName) {
                     if (partialRecovery && source.metadata.partialRecoveryAvailable) {
                         when (val recovered = activeProvider.openPartialRecovery(source.ref)) {
                             is ProviderResult.Success -> { recoveryReport = recovered.value.report; ProviderResult.Success(recovered.value.input) }
@@ -828,27 +1038,34 @@ object FileOperations {
                             ioTimings.entries.joinToString(" ") { "${it.key}Ms=${it.value / 1_000_000}" })
                 }
                 if (torrentDownload && createdEntry.metadata.name != finalName) {
+                    if (isCancelled()) throw java.io.InterruptedIOException("Torrent paused before final rename; completed data retained")
+                    phase("Finalizing completed download…", finalName)
                     val partialRef = createdEntry.ref
+                    com.infinifolder.storage.DiagnosticLog.record("torrent.publication.start",
+                        "destination=${partialRef.providerId} interrupted=${Thread.currentThread().isInterrupted}")
                     val renamed = activeProvider.rename(partialRef, finalName)
                     if (renamed !is ProviderResult.Success) {
                         val failure = renamed as? ProviderResult.Failure
+                        com.infinifolder.storage.DiagnosticLog.record("torrent.publication.failed", failure?.message.orEmpty(), failure?.cause)
                         throw IOException("Torrent data is complete but could not rename '${createdEntry.metadata.name}' to '$finalName'; " +
                             "the verified file remains marked .incomplete. ${failure?.message ?: "Rename unsupported"}", failure?.cause)
                     }
                     resumeRouter?.migrateResumeState(source.ref, partialRef, renamed.value.ref)
                     createdEntry = renamed.value
                     resumeRouter?.rememberResumeDestination(source.ref, destParentRef, requestedName, createdEntry.ref, finalName)
+                    com.infinifolder.storage.DiagnosticLog.record("torrent.publication.complete", "destination=${createdEntry.ref.providerId}")
                 }
                 deferTorrentResumeCleanup(
                     resumeRouter, source.ref, destParentRef, requestedName,
                     destination = createdEntry.ref,
                     clearPieceState = directTorrentBytes != null
                 )
+                preserveMetadata(source, createdEntry.ref, transferMetadata)
                 return createdEntry
             }
 
             fun createDestinationDirectory(source: ResourceEntry, parent: ResourceRef): ResourceEntry {
-                val resumeRouter = if (!move && source.ref.providerId == "torrent")
+                val resumeRouter = if (!useStagedRandomAccessFallback && !move && source.ref.providerId == "torrent")
                     activeProvider as? com.infinifolder.storage.RandomAccessTransferRouter else null
                 val resumeCandidate = resumeRouter?.findResumeDestination(source.ref, parent, source.metadata.name)
                 val resumed = resumeCandidate?.let { candidate ->
@@ -981,6 +1198,7 @@ object FileOperations {
                 if (sourceDir.ref.providerId == "apps" || AppsUri.isCategoryUri(sourceDir.uri)) {
                     return copyAppCategoryAsLinks(sourceDir, destParentRef)
                 }
+                val transferMetadata = captureMetadata(sourceDir)
                 val createdDir = createDestinationDirectory(sourceDir, destParentRef)
                 try {
                     val children = sourceChildren.getValue(sourceDir.ref)
@@ -994,6 +1212,9 @@ object FileOperations {
                             }
                         }
                     }
+                    // Apply directory restrictions/default ACLs only after children
+                    // have their contents and their own attributes in place.
+                    preserveMetadata(sourceDir, createdDir.ref, transferMetadata)
                 } catch (e: Exception) {
                     sourceChange(e)?.let { throw it }
                     // Torrent children may contain verified pieces and a persistent
@@ -1019,7 +1240,7 @@ object FileOperations {
                 if (copied == null) { itemsDone++; continue }
                 destinations += copied.ref
                 if (move && entry.ref in incompleteRoots) {
-                    onWarning("Source '${entry.metadata.name}' retained because unreadable contents were skipped.")
+                    onWarning("Source '${entry.metadata.name}' retained because contents or metadata could not be preserved completely.")
                 }
                 if (move && entry.ref !in incompleteRoots) {
                     timed("Rechecking source: ${entry.metadata.name}", entry.metadata.name) { verifySource(entry) }

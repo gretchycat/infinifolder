@@ -2,6 +2,7 @@ package com.infinifolder
 
 import android.content.Context
 import android.view.Gravity
+import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -13,6 +14,24 @@ import android.widget.ScrollView
 import android.widget.TextView
 
 class PullToRefreshScrollView(context: Context) : ScrollView(context) {
+
+    /** Optional read-only grid action, covering both cards and empty space. */
+    var onGridLongPress: (() -> Unit)? = null
+    private var gridLongPressHandled = false
+    private val gridHoldDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDown(event: MotionEvent) = true
+        override fun onLongPress(event: MotionEvent) {
+            val action = onGridLongPress ?: return
+            gridLongPressHandled = true
+            cancelGridTouch(event)
+            action()
+        }
+    })
+
+    private fun cancelGridTouch(event: MotionEvent) {
+        val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+        try { super.dispatchTouchEvent(cancel) } finally { cancel.recycle() }
+    }
 
     var onRefreshListener: (() -> Unit)? = null
     var isRefreshing: Boolean = false
@@ -98,6 +117,14 @@ class PullToRefreshScrollView(context: Context) : ScrollView(context) {
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) interceptionLogged = false
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) gridLongPressHandled = false
+        if (onGridLongPress != null) {
+            if (ev.pointerCount > 1) {
+                val cancel = MotionEvent.obtain(ev).apply { action = MotionEvent.ACTION_CANCEL }
+                try { gridHoldDetector.onTouchEvent(cancel) } finally { cancel.recycle() }
+            } else gridHoldDetector.onTouchEvent(ev)
+            if (gridLongPressHandled) return true
+        }
         scaleDetector?.onTouchEvent(ev)
         if (scaleDetector?.isInProgress == true) {
             if (isPulling) {

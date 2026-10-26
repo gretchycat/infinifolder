@@ -21,12 +21,11 @@ class OperationService : Service() {
         const val EXTRA_OP_ID = "extra_op_id"
 
         fun start(context: Context) {
-            val runtimeProvider = com.infinifolder.storage.StorageRuntime.get(context.applicationContext).provider
             val currentlyActive = AppOperations.coordinator.snapshots().any {
                 (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) &&
                 !it.id.startsWith("playback_")
             }
-            if (!currentlyActive) runtimeProvider.resumePendingTorrentTransfers()
+            if (!currentlyActive) resumePendingSafely(context)
             val hasFileOps = AppOperations.coordinator.snapshots().any {
                 (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) &&
                 !it.id.startsWith("playback_")
@@ -48,47 +47,82 @@ class OperationService : Service() {
                 context.stopService(Intent(context, OperationService::class.java))
             } catch (_: Exception) {}
         }
+
+        private fun resumePendingSafely(context: Context) {
+            try {
+                com.infinifolder.storage.StorageRuntime.get(context.applicationContext).provider.resumePendingTorrentTransfers()
+            } catch (error: Exception) {
+                com.infinifolder.storage.DiagnosticLog.record("torrent.resume.auto-failed", "Saved sessions retained; browser launch continues", error)
+            }
+        }
     }
 
     private lateinit var notificationManager: NotificationManager
     private var lastNotificationAt = 0L
     private var lastNotificationOperation: String? = null
-    private val listener: (List<OperationSnapshot>) -> Unit = { snapshots ->
-        val active = snapshots.firstOrNull {
+    private val lifecycleHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var latestStartId = 0
+    private var destroyed = false
+    private val refreshState = Runnable {
+        if (!destroyed && latestStartId != 0) refreshServiceState()
+    }
+    private val listener: (List<OperationSnapshot>) -> Unit = {
+        // Coordinator callbacks can arrive on transfer workers, including immediately
+        // during registration. Only the main thread may advance service lifecycle.
+        lifecycleHandler.removeCallbacks(refreshState)
+        lifecycleHandler.post(refreshState)
+    }
+
+    private fun enterForeground() {
+        val notification = buildFallbackNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+        lastNotificationOperation = null
+        lastNotificationAt = 0L
+        com.infinifolder.storage.DiagnosticLog.record("operations.service.foreground", "startId=$latestStartId")
+    }
+
+    private fun refreshServiceState(): Boolean {
+        // Read current state, rather than an old callback queued before a new operation.
+        val active = AppOperations.coordinator.snapshots().firstOrNull {
             (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) &&
-            !it.id.startsWith("playback_")
+                !it.id.startsWith("playback_")
         }
         if (active == null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            // A newer start request must get its own foreground handshake before stop.
+            if (stopSelfResult(latestStartId)) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION")
-                stopForeground(true)
+                com.infinifolder.storage.DiagnosticLog.record("operations.service.idle-stop", "startId=$latestStartId")
             }
-            stopSelf()
-        } else {
-            val now = android.os.SystemClock.uptimeMillis()
-            if (lastNotificationOperation != active.id || now - lastNotificationAt >= 250L) {
-                lastNotificationAt = now
-                lastNotificationOperation = active.id
-                updateNotification(active)
-            }
+            return false
         }
+        val now = android.os.SystemClock.uptimeMillis()
+        if (lastNotificationOperation != active.id || now - lastNotificationAt >= 250L) {
+            lastNotificationAt = now
+            lastNotificationOperation = active.id
+            updateNotification(active)
+        }
+        return true
     }
 
     override fun onCreate() {
         super.onCreate()
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createChannel()
+        // Always fulfill Android's foreground contract before subscribing to operations:
+        // an offline resume may already have failed by the time this service is created.
+        enterForeground()
         AppOperations.coordinator.addListener(listener)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (AppOperations.coordinator.snapshots().none {
-                (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) && !it.id.startsWith("playback_")
-            }) {
-            com.infinifolder.storage.StorageRuntime.get(applicationContext).provider.resumePendingTorrentTransfers()
-        }
+        // A reused service can receive another startForegroundService request after an
+        // idle-stop was requested. Promote again before cancellation or resume callbacks.
+        enterForeground()
+        latestStartId = startId
         if (intent?.action == ACTION_CANCEL) {
             val opId = intent.getStringExtra(EXTRA_OP_ID)
             if (opId != null) {
@@ -100,39 +134,18 @@ class OperationService : Service() {
                     }
                 }
             }
+        } else if (AppOperations.coordinator.snapshots().none {
+                (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) && !it.id.startsWith("playback_")
+            }) {
+            resumePendingSafely(applicationContext)
         }
-        val active = AppOperations.coordinator.snapshots().firstOrNull {
-            (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) &&
-            !it.id.startsWith("playback_")
-        }
-        if (active != null) {
-            val notification = buildNotification(active)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
-            }
-        } else {
-            // Must satisfy foreground service contract before stopping if started via startForegroundService
-            val placeholder = buildFallbackNotification()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIFICATION_ID, placeholder, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                startForeground(NOTIFICATION_ID, placeholder)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION")
-                stopForeground(true)
-            }
-            stopSelf()
-        }
-        return START_STICKY
+        return if (refreshServiceState()) START_STICKY else START_NOT_STICKY
     }
 
     override fun onDestroy() {
+        destroyed = true
         AppOperations.coordinator.removeListener(listener)
+        lifecycleHandler.removeCallbacks(refreshState)
         super.onDestroy()
     }
 
@@ -152,8 +165,10 @@ class OperationService : Service() {
     }
 
     private fun buildNotification(op: OperationSnapshot): android.app.Notification {
+        val active = AppOperations.coordinator.activeSnapshots().filterNot { it.id.startsWith("playback_") }
         val clickIntent = Intent(this, MainActivity::class.java).apply {
             this.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("show_operations", true)
         }
         val pendingClick = PendingIntent.getActivity(
             this,
@@ -164,7 +179,7 @@ class OperationService : Service() {
 
         val cancelIntent = Intent(this, OperationService::class.java).apply {
             action = ACTION_CANCEL
-            putExtra(EXTRA_OP_ID, op.id)
+            if (active.size <= 1) putExtra(EXTRA_OP_ID, op.id)
         }
         val pendingCancel = PendingIntent.getService(
             this,
@@ -174,7 +189,8 @@ class OperationService : Service() {
         )
 
         val rate = op.formatRate()
-        val rateText = if (rate.isNotEmpty()) " · $rate" else ""
+        val rateText = listOf(rate, op.formatEta()).filter { it.isNotEmpty() }.joinToString(" · ")
+            .let { if (it.isEmpty()) "" else " · $it" }
         val contentText = when {
             op.currentItem != null -> "${op.currentItem}$rateText"
             (op.totalBytes ?: 0L) > 0 ->
@@ -184,13 +200,23 @@ class OperationService : Service() {
         }
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(op.label)
+            .setContentTitle(if (active.size > 1) "${active.size} operations" else op.displayName ?: op.label)
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentIntent(pendingClick)
             .setOngoing(true)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", pendingCancel)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, if (active.size > 1) "Cancel all" else op.stopActionLabel, pendingCancel)
 
+        if (active.size > 1) {
+            val overviewStyle = NotificationCompat.InboxStyle()
+                active.take(8).forEach { task ->
+                    val progress = task.progressPercent.takeIf { it >= 0 }?.let { " · $it%" }.orEmpty()
+                    overviewStyle.addLine("${task.displayName ?: task.currentItem ?: task.label}$progress" +
+                        task.destination?.let { " → $it" }.orEmpty())
+                }
+                overviewStyle.setSummaryText("Tap to view all activity")
+                builder.setStyle(overviewStyle)
+        }
         val percent = op.progressPercent
         if (percent >= 0) {
             builder.setProgress(100, percent, false)
@@ -208,7 +234,7 @@ class OperationService : Service() {
     private fun buildFallbackNotification(): android.app.Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("File Operations")
-            .setContentText("Completing operations")
+            .setContentText("Preparing file operations…")
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .build()
     }

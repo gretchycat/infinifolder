@@ -20,7 +20,6 @@ import com.infinifolder.model.*
 import com.infinifolder.storage.*
 import com.infinifolder.archive.BlockDevice
 import java.io.*
-import java.net.URLConnection
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
@@ -32,20 +31,39 @@ import java.util.concurrent.atomic.AtomicInteger
 /** Read-only virtual view of a BitTorrent swarm. Files are fetched only when copied/read. */
 class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTransferSource {
     override val id = "torrent"
-    override val features = BackendFeatures()
+    override val features = BackendFeatures(randomRead = Support.UNSUPPORTED, randomWrite = Support.UNSUPPORTED,
+        creation = CreationGuarantee.UNSUPPORTED, rename = Support.UNSUPPORTED, delete = Support.UNSUPPORTED,
+        nativeLinks = Support.UNSUPPORTED, readOnly = true)
     private val app = context.applicationContext
     private val metadata = ConcurrentHashMap<String, Torrent>()
+    private val activeMetadataRequests = AtomicInteger()
+    private val metadataRequests = ConcurrentHashMap<String, CompletableFuture<Torrent>>()
+    private val metadataPeerHints = ConcurrentHashMap<String, List<bt.net.Peer>>()
+    private val runtimePorts = ConcurrentHashMap<BtRuntime, Int>()
+    private val reservedPorts = ConcurrentHashMap.newKeySet<Int>()
     private val metainfoTorrentKeys = ConcurrentHashMap.newKeySet<String>()
     private val attemptedAutoResumeKeys = ConcurrentHashMap.newKeySet<String>()
     private val cacheRoot = File(app.cacheDir, "torrent-downloads")
+    private val transferPreferences by lazy { app.getSharedPreferences(TorrentTransferPreferences.NAME, Context.MODE_PRIVATE) }
     private val resumePreferences by lazy { app.getSharedPreferences("torrent-resume-targets", Context.MODE_PRIVATE) }
 
     private fun resumeTargetKey(source: ResourceRef, parent: ResourceRef, requestedName: String): String =
         sha256Hex("${source.documentId}\u0000${parent.providerId}\u0000${parent.documentId}\u0000$requestedName")
 
     /** An automatic resume should be attempted once per process; user initiated retries remain available. */
+    private fun autoResumeDisabledKey(destination: ResourceRef) =
+        "auto-disabled." + sha256Hex("${destination.providerId}\u0000${destination.documentId}")
+
+    override fun setAutoResume(destination: ResourceRef, enabled: Boolean) {
+        val editor = resumePreferences.edit()
+        if (enabled) editor.remove(autoResumeDisabledKey(destination))
+        else editor.putBoolean(autoResumeDisabledKey(destination), true)
+        if (!editor.commit()) throw IOException("Could not save the download's automatic resume setting")
+    }
+
     override fun claimAutoResume(source: ResourceRef, destination: ResourceRef): Boolean =
-        attemptedAutoResumeKeys.add(sha256Hex("${source.documentId}\u0000${destination.providerId}\u0000${destination.documentId}"))
+        !resumePreferences.getBoolean(autoResumeDisabledKey(destination), false) &&
+            attemptedAutoResumeKeys.add(sha256Hex("${source.documentId}\u0000${destination.providerId}\u0000${destination.documentId}"))
 
     override fun findResumeDestination(source: ResourceRef, destinationParent: ResourceRef, requestedName: String): ResumeDestination? {
         val key = resumeTargetKey(source, destinationParent, requestedName)
@@ -275,50 +293,118 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
     private fun fetchMetadata(source: String): Torrent {
         val root = Uri.parse(source)
         val key = torrentKey(root)
+        metadata[key]?.let {
+            DiagnosticLog.record("torrent.metadata.cache-hit", "hash=$key source=memory files=${it.files.size}")
+            return it
+        }
+        val requestedAt = System.nanoTime()
+        DiagnosticLog.record("torrent.metadata.request", "hash=$key activeMetadataRequests=${activeMetadataRequests.get()}")
+        val request = CompletableFuture<Torrent>()
+        val pending = metadataRequests.putIfAbsent(key, request)
+        if (pending != null) {
+            DiagnosticLog.record("torrent.metadata.join", "hash=$key sharedRequest=true")
+            try { return pending.get() }
+            catch (error: java.util.concurrent.ExecutionException) {
+                throw IOException("Shared magnet metadata request failed", error.cause ?: error)
+            }
+        }
+        try {
+            val result = fetchMetadataOnce(source, key)
+            request.complete(result)
+            return result
+        } catch (error: Throwable) {
+            request.completeExceptionally(error)
+            throw error
+        } finally {
+            metadataRequests.remove(key, request)
+            DiagnosticLog.record("torrent.metadata.request-finished", "hash=$key elapsedMs=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - requestedAt)}")
+        }
+    }
+
+    private fun fetchMetadataOnce(source: String, key: String): Torrent {
         metadata[key]?.let { return it }
-        synchronized(metadata) {
-            metadata[key]?.let { return it }
-            loadPersistedMetainfo(key)?.let {
-                metadata[key] = it
-                metainfoTorrentKeys.add(key)
-                DiagnosticLog.record("torrent.metainfo.restored", "name=${it.name} hash=$key files=${it.files.size}")
-                return it
-            }
-            recoverLegacyDownloadsMetainfo(key, source)?.let {
-                metadata[key] = it
-                metainfoTorrentKeys.add(key)
-                DiagnosticLog.record("torrent.metainfo.recovered", "name=${it.name} hash=$key source=Downloads")
-                return it
-            }
-            val found = AtomicReference<Torrent?>()
-            val failure = AtomicReference<Throwable?>()
-            val ready = CountDownLatch(1)
-            val clientRef = AtomicReference<bt.runtime.BtClient?>()
-            val dhtConfig = DHTConfig().apply { setShouldUseRouterBootstrap(true) }
-            val client = Bt.client()
-                .storage(DiscardStorage)
-                .magnet(btMagnet(source))
-                .autoLoadModules()
-                .module(DHTModule(dhtConfig))
-                .fileSelector(FilePrioritySkipSelector { FilePriority.SKIP })
-                .afterTorrentFetched { torrent ->
-                    found.set(torrent)
-                    ready.countDown()
-                    clientRef.get()?.stop()
-                }
-                .build()
-            clientRef.set(client)
-            val completion = client.startAsync()
-            completion.whenComplete { _, error ->
-                if (error != null) failure.set(error)
+        loadPersistedMetainfo(key)?.let {
+            metadata[key] = it
+            metainfoTorrentKeys.add(key)
+            DiagnosticLog.record("torrent.metainfo.restored", "name=${it.name} hash=$key files=${it.files.size}")
+            return it
+        }
+        recoverLegacyDownloadsMetainfo(key, source)?.let {
+            metadata[key] = it
+            metainfoTorrentKeys.add(key)
+            DiagnosticLog.record("torrent.metainfo.recovered", "name=${it.name} hash=$key source=Downloads")
+            return it
+        }
+        val query = Uri.parse("https://magnet.invalid/?" + source.substringAfter('?', "").substringBefore('#'))
+        val trackers = query.getQueryParameters("tr")
+        // Host/scheme/port diagnose tracker routing without private path/query tokens.
+        val endpoints = trackers.map { tracker -> runCatching {
+            val endpoint = Uri.parse(tracker)
+            "${endpoint.scheme}://${endpoint.host}:${endpoint.port}"
+        }.getOrDefault("invalid") }
+        DiagnosticLog.record("torrent.metadata.start", "hash=$key timeoutMinutes=$METADATA_TIMEOUT_MINUTES trackers=${trackers.size} endpoints=$endpoints runtime=shared-network-config activeMetadataRequests=${activeMetadataRequests.incrementAndGet()}")
+        val startedAt = System.nanoTime()
+        try {
+        val found = AtomicReference<Torrent?>()
+        val failure = AtomicReference<Throwable?>()
+        val ready = CountDownLatch(1)
+        val runtime = newTorrentRuntime()
+        val client = try { Bt.client(runtime)
+            .storage(DiscardStorage)
+            .magnet(btMagnet(source))
+            .fileSelector(FilePrioritySkipSelector { FilePriority.SKIP })
+            .stopWhenDownloaded()
+            .afterTorrentFetched { torrent ->
+                DiagnosticLog.record("torrent.metadata.received", "hash=$key files=${torrent.files.size} elapsedMs=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)}")
+                rememberMetadataPeers(runtime, torrent)
+                found.set(torrent)
                 ready.countDown()
             }
-            if (!ready.await(METADATA_TIMEOUT_MINUTES, TimeUnit.MINUTES)) client.stop()
-            client.stop()
-            failure.get()?.let { throw IOException("Could not retrieve torrent metadata: ${it.cause?.message ?: it.message}", it) }
-            val torrent = found.get() ?: throw IOException("No peer or tracker supplied metadata for this magnet link")
-            metadata[key] = torrent
-            return torrent
+            .build()
+        } catch (error: Throwable) {
+            releaseTorrentRuntime(runtime)
+            throw error
+        }
+        var metadataCompletion: CompletableFuture<*>? = null
+        try {
+        val completion = client.startAsync()
+        metadataCompletion = completion
+        completion.whenComplete { _, error ->
+            DiagnosticLog.record("torrent.metadata.client-ended", "hash=$key received=${found.get() != null} elapsedMs=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)}", error)
+            if (error != null) failure.set(error)
+            ready.countDown()
+        }
+        try {
+            val deadline = startedAt + TimeUnit.MINUTES.toNanos(METADATA_TIMEOUT_MINUTES)
+            while (true) {
+                val remaining = deadline - System.nanoTime()
+                val waitForever = transferPreferences.getBoolean(TorrentTransferPreferences.WAIT_FOREVER, false)
+                if (!waitForever && remaining <= 0) {
+                    DiagnosticLog.record("torrent.metadata.timeout", "hash=$key received=${found.get() != null} clientDone=${completion.isDone}")
+                    break
+                }
+                val waitNanos = if (waitForever) TimeUnit.SECONDS.toNanos(15) else minOf(remaining, TimeUnit.SECONDS.toNanos(15))
+                if (ready.await(waitNanos, TimeUnit.NANOSECONDS)) break
+                DiagnosticLog.record("torrent.metadata.waiting", "hash=$key elapsedMs=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)} received=${found.get() != null} clientDone=${completion.isDone} indefinite=$waitForever")
+            }
+        } finally {
+            DiagnosticLog.record("torrent.metadata.stopping", "hash=$key received=${found.get() != null}")
+        }
+        failure.get()?.let { throw IOException("Could not retrieve torrent metadata: ${it.cause?.message ?: it.message}", it) }
+        val torrent = found.get() ?: throw IOException("No peer or tracker supplied metadata for this magnet link")
+        metadata[key] = torrent
+        return torrent
+        } finally {
+            if (found.get() != null) try { metadataCompletion?.get(2, TimeUnit.SECONDS) }
+            catch (error: InterruptedException) { Thread.currentThread().interrupt() }
+            catch (error: Exception) { DiagnosticLog.record("torrent.metadata.finish-wait", "hash=$key cause=${error.javaClass.simpleName}") }
+            stopTorrentClient(client, runtime)
+        }
+        } catch (error: Exception) {
+            DiagnosticLog.record("torrent.metadata.failed", "hash=$key elapsedMs=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)}", error)
+            throw error
+        } finally {
+            DiagnosticLog.record("torrent.metadata.finished", "hash=$key activeMetadataRequests=${activeMetadataRequests.decrementAndGet()}")
         }
     }
 
@@ -373,40 +459,76 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
         torrent
     }.onFailure { DiagnosticLog.record("torrent.metainfo.recovery-failed", "hash=$key source=Downloads", it) }.getOrNull()
 
-    private fun newTorrentRuntime(): BtRuntime {
-        val config = bt.runtime.Config().apply {
-            setTrackerTimeout(java.time.Duration.ofSeconds(15))
-            // Bt 1.10 binds every outbound peer socket to acceptorAddress. Its default address
-            // selection picks one local interface (often IPv4), which makes all peers returned
-            // in the other address family fail with "Address family not supported". An IPv6
-            // wildcard lets Android's dual-stack socket route both IPv4 and IPv6 peer sockets.
-            setAcceptorAddress(java.net.InetAddress.getByAddress(ByteArray(16)))
+    private fun newTorrentRuntime(trustedPieces: java.util.BitSet? = null,
+        availablePieces: java.util.BitSet? = null, onChecked: (Int, Boolean) -> Unit = { _, _ -> }): BtRuntime {
+        // Probe both protocols while holding the TCP socket. Retain an in-process
+        // reservation until shutdown so concurrent runtimes never select one port.
+        val port = synchronized(reservedPorts) {
+            var selected: Int? = null
+            repeat(32) {
+                if (selected == null) java.net.ServerSocket(0).use { tcp ->
+                    if (tcp.localPort !in reservedPorts) runCatching {
+                        java.net.DatagramSocket(tcp.localPort).use { selected = tcp.localPort }
+                    }
+                }
+            }
+            (selected ?: throw IOException("No free torrent TCP/UDP listener port")).also { reservedPorts.add(it) }
         }
-        DiagnosticLog.record("torrent.runtime.network", "acceptor=ipv6-wildcard dualStack=true")
-        return BtRuntime.builder(config)
-            .autoLoadModules()
-            // Android's interface enumeration returns no usable NetworkInterface for the
-            // dual-stack wildcard acceptor. LSD then throws once per second and cannot help
-            // discover Internet peers; tracker and DHT discovery remain enabled.
-            .disableLocalServiceDiscovery()
-            .module(DHTModule(DHTConfig().apply { setShouldUseRouterBootstrap(true) }))
-            .build()
+        try {
+            val config = bt.runtime.Config().apply {
+                setAcceptorPort(port)
+                setTrackerTimeout(java.time.Duration.ofSeconds(15))
+                // Bt 1.10 binds every outbound peer socket to acceptorAddress. Its default address
+                // selection picks one local interface (often IPv4), which makes all peers returned
+                // in the other address family fail with "Address family not supported". An IPv6
+                // wildcard lets Android's dual-stack socket route both IPv4 and IPv6 peer sockets.
+                setAcceptorAddress(java.net.InetAddress.getByAddress(ByteArray(16)))
+            }
+            DiagnosticLog.record("torrent.runtime.network", "acceptor=ipv6-wildcard dualStack=true listenerPort=$port dhtPort=$port")
+            val builder = BtRuntime.builder(config)
+                .autoLoadModules()
+                // Android's interface enumeration returns no usable NetworkInterface for the
+                // dual-stack wildcard acceptor. LSD then throws once per second and cannot help
+                // discover Internet peers; tracker and DHT discovery remain enabled.
+                .disableLocalServiceDiscovery()
+                .module(DualStackTrackerModule())
+                .module(TorrentPeerModule())
+                .module(DHTModule(DHTConfig().apply {
+                    setShouldUseRouterBootstrap(true)
+                    setListeningPort(port)
+                }))
+            if (trustedPieces != null) builder.module(ResumeVerifierModule(trustedPieces, onChecked, availablePieces))
+            return builder.build().also { runtimePorts[it] = port }
+        } catch (error: Throwable) {
+            reservedPorts.remove(port)
+            throw error
+        }
     }
 
     /** Query HTTP(S) trackers with OkHttp. Bt 1.10's Apache HTTP client collides with Android's
      * platform Apache classes, so use Android-compatible networking and feed discovered peers
      * directly into the torrent runtime. */
-    private fun probeTrackers(runtime: BtRuntime, torrent: Torrent, operation: String) {
+    private fun probeTrackers(runtime: BtRuntime, torrent: Torrent, operation: String,
+        nextAnnounce: ConcurrentHashMap<String, Long>? = null) {
         val announce = torrent.announceKey.orElse(null)
-        val urls = announce?.let { if (it.isMultiKey) it.trackerUrls.flatten().distinct() else listOf(it.trackerUrl) }.orEmpty()
-        if (urls.isEmpty()) {
-            DiagnosticLog.record("torrent.tracker.probe", "operation=$operation result=no-trackers")
-            return
-        }
+        val allUrls = announce?.let { if (it.isMultiKey) it.trackerUrls.flatten().distinct() else listOf(it.trackerUrl) }.orEmpty()
         val trackerService = runCatching { runtime.service(bt.peer.IPeerRegistry::class.java) }.getOrElse { error ->
             DiagnosticLog.record("torrent.tracker.peer-registry.failed", "operation=$operation", error)
             return
         }
+        if (!torrent.isPrivate) {
+            val udpUrls = allUrls.filter { runCatching { java.net.URI(it).scheme.equals("udp", true) }.getOrDefault(false) }
+            udpUrls.forEach { trackerService.addPeerSource(torrent.torrentId, bt.tracker.AnnounceKey(it)) }
+            val hints = metadataPeerHints[torrent.torrentId.toString()].orEmpty()
+            hints.forEach { peer -> trackerService.addPeer(torrent.torrentId,
+                bt.net.InetPeer.build(peer.inetAddress, peer.port)) }
+            trackerService.triggerPeerCollection(torrent.torrentId)
+            DiagnosticLog.record("torrent.discovery.sources", "operation=$operation hash=${torrent.torrentId} udpTrackers=${udpUrls.size} metadataPeerHints=${hints.size}")
+        }
+        // UDP uses the dual-stack factory and its own tracker interval scheduler.
+        // Never send a UDP URI through OkHttp's HTTP-only request builder.
+        val urls = allUrls.filter { runCatching { java.net.URI(it).scheme?.lowercase() in setOf("http", "https") }.getOrDefault(false) }
+        if (urls.isEmpty()) return
         val peerId = runCatching { runtime.service(bt.service.IdentityService::class.java).localPeerId.bytes }
             .getOrElse { error ->
                 DiagnosticLog.record("torrent.tracker.identity.failed", "operation=$operation", error)
@@ -414,6 +536,17 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
             }
         val left = torrent.files.sumOf { it.size.coerceAtLeast(0L) }
         urls.forEach { url ->
+            if (nextAnnounce != null) {
+                val now = System.nanoTime()
+                var allowed = false
+                nextAnnounce.compute(url) { _, previous ->
+                    if (previous == null || now >= previous) {
+                        allowed = true
+                        now + TimeUnit.MINUTES.toNanos(1)
+                    } else previous
+                }
+                if (!allowed) return@forEach
+            }
             val host = runCatching { java.net.URI(url).host ?: "?" }.getOrDefault("invalid-url")
             DiagnosticLog.record("torrent.tracker.probe.scheduled", "operation=$operation host=$host")
             CompletableFuture.runAsync {
@@ -438,6 +571,9 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
                         val payload = http.body?.bytes() ?: throw IOException("Tracker returned an empty response")
                         val dictionary = BencodeReader(payload).read() as? Map<*, *>
                             ?: throw IOException("Tracker response is not a bencoded dictionary")
+                        nextAnnounce?.set(url, System.nanoTime() + TimeUnit.SECONDS.toNanos(
+                            maxOf(60L, (dictionary["interval"] as? Long) ?: 60L,
+                                (dictionary["min interval"] as? Long) ?: 0L).coerceAtMost(86400L)))
                         val failure = (dictionary["failure reason"] as? ByteArray)?.toString(Charsets.UTF_8)
                         if (failure != null) throw IOException("Tracker rejected announce: ${failure.take(180)}")
                         val peers4 = dictionary["peers"] as? ByteArray
@@ -547,16 +683,35 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
         }
     }
 
+    private fun rememberMetadataPeers(runtime: BtRuntime, torrent: Torrent) {
+        runCatching {
+            val peers = LinkedHashMap<String, bt.net.Peer>()
+            val ownId = runtime.service(bt.service.IdentityService::class.java).localPeerId
+            runtime.service(bt.net.IPeerConnectionPool::class.java).visitConnections(torrent.torrentId) { connection ->
+                val peer = connection.remotePeer
+                if (!connection.isClosed && peer.port in 1..65535 && peer.peerId.orElse(null) != ownId && peers.size < 64)
+                    peers["${peer.inetAddress.hostAddress}:${peer.port}"] = bt.net.InetPeer.build(peer.inetAddress, peer.port)
+            }
+            metadataPeerHints[torrent.torrentId.toString()] = peers.values.toList()
+            DiagnosticLog.record("torrent.metadata.peer-hints", "hash=${torrent.torrentId} peers=${peers.size}")
+        }.onFailure { DiagnosticLog.record("torrent.metadata.peer-hints.failed", "hash=${torrent.torrentId}", it) }
+    }
+
     /** Count discovered candidates and successful connections without putting peer IPs in debug dumps. */
     private fun monitorPeerEvents(runtime: BtRuntime, torrent: Torrent, operation: String) {
         val torrentId = torrent.torrentId
         val discovered = AtomicInteger()
+        val discoveryLogTime = java.util.concurrent.atomic.AtomicLong()
         val connected = AtomicInteger()
         val disconnected = AtomicInteger()
         val connectionStarts = ConcurrentHashMap<bt.net.ConnectionKey, Long>()
         runtime.eventSource
             .onPeerDiscovered(torrentId) {
-                DiagnosticLog.record("torrent.peer.discovered", "operation=$operation count=${discovered.incrementAndGet()}")
+                val count = discovered.incrementAndGet()
+                val now = System.nanoTime()
+                val previous = discoveryLogTime.get()
+                if ((count <= 3 || now - previous >= TimeUnit.SECONDS.toNanos(5)) && discoveryLogTime.compareAndSet(previous, now))
+                    DiagnosticLog.record("torrent.peer.discovered", "operation=$operation count=$count")
             }
             .onPeerConnected(torrentId) { event ->
                 val peer = event.peer
@@ -585,7 +740,15 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
 
     private fun stopTorrentClient(client: bt.runtime.BtClient, runtime: BtRuntime) {
         runCatching { client.stop() }
-        runCatching { runtime.shutdown() }
+        releaseTorrentRuntime(runtime)
+    }
+
+    private fun releaseTorrentRuntime(runtime: BtRuntime) {
+        val stopped = runCatching { runtime.shutdown() }
+        if (stopped.isSuccess) runtimePorts.remove(runtime)?.let { port ->
+            reservedPorts.remove(port)
+            DiagnosticLog.record("torrent.runtime.stopped", "listenerPort=$port")
+        } else DiagnosticLog.record("torrent.runtime.shutdown-failed", "Port reservation retained", stopped.exceptionOrNull())
     }
 
     private fun source(uri: Uri): String = if (isTorrentUri(uri)) magnet(uri) else uri.toString()
@@ -613,9 +776,25 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
         return source.substring(0, queryStart + 1) + query + source.substring(queryEnd)
     }
     private fun torrent(uri: Uri): Torrent = fetchMetadata(source(uri))
+    /** Magnet metadata contains the info dictionary, not its external tracker list. */
+    private fun withMagnetTrackers(torrent: Torrent, source: String): Torrent {
+        if (torrent.announceKey.isPresent) return torrent
+        val query = source.substringAfter('?', "").substringBefore('#')
+        val trackers = Uri.parse("https://magnet.invalid/?$query").getQueryParameters("tr").distinct()
+            .filter { url -> runCatching {
+                val endpoint = java.net.URI(url)
+                endpoint.scheme?.lowercase() in setOf("udp", "http", "https") && !endpoint.host.isNullOrEmpty()
+            }.getOrDefault(false) }
+        if (trackers.isEmpty()) return torrent
+        val announce = bt.tracker.AnnounceKey(trackers.map { listOf(it) })
+        return object : Torrent by torrent {
+            override fun getAnnounceKey(): java.util.Optional<bt.tracker.AnnounceKey> = java.util.Optional.of(announce)
+        }
+    }
+
     private fun configureTorrentSource(builder: bt.TorrentClientBuilder<*>, source: String) {
         val key = torrentKey(Uri.parse(source))
-        val imported = metadata[key]?.takeIf { key in metainfoTorrentKeys }
+        val imported = metadata[key]?.let { withMagnetTrackers(it, source) }
         if (imported != null) {
             val announce = imported.announceKey.orElse(null)
             val trackers = announce?.let {
@@ -626,7 +805,11 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
                 }
             } ?: "none"
             DiagnosticLog.record("torrent.client.source", "type=metainfo hash=$key files=${imported.files.size} trackerCount=${announce?.let { if (it.isMultiKey) it.trackerUrls.flatten().distinct().size else 1 } ?: 0} trackers=$trackers")
-            builder.torrent { imported }
+            builder.torrent {
+                if (imported.isPrivate) imported else object : Torrent by imported {
+                    override fun getAnnounceKey(): java.util.Optional<bt.tracker.AnnounceKey> = java.util.Optional.empty()
+                }
+            }
         } else {
             DiagnosticLog.record("torrent.client.source", "type=magnet hash=$key")
             builder.magnet(btMagnet(source))
@@ -634,14 +817,19 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
     }
 
     /** Record peer and piece state while the client runs, so zero-byte stalls can be distinguished. */
-    private fun startTorrentClient(client: bt.runtime.BtClient, operation: String) =
-        client.startAsync({ state ->
-            DiagnosticLog.record(
-                "torrent.session",
-                "operation=$operation downloaded=${state.downloaded} left=${state.left} " +
-                    "pieces=${state.piecesComplete}/${state.piecesTotal} peers=${state.connectedPeers.size}"
-            )
-        }, SESSION_LOG_INTERVAL_MS)
+    private fun startTorrentClient(client: bt.runtime.BtClient, operation: String,
+        onState: ((bt.torrent.TorrentSessionState) -> Unit)? = null): CompletableFuture<*> {
+        var lastLoggedAt = 0L
+        return client.startAsync({ state ->
+            val now = System.nanoTime()
+            if (now - lastLoggedAt >= TimeUnit.MILLISECONDS.toNanos(SESSION_LOG_INTERVAL_MS)) {
+                lastLoggedAt = now
+                DiagnosticLog.record("torrent.session", "operation=$operation downloaded=${state.downloaded} uploaded=${state.uploaded} left=${state.left} " +
+                    "pieces=${state.piecesComplete}/${state.piecesTotal} peers=${state.connectedPeers.size}")
+            }
+            onState?.invoke(state)
+        }, if (onState != null) 1000L else SESSION_LOG_INTERVAL_MS)
+    }
     // Android exposes an opaque magnet:? URI in pathSegments on some releases;
     // always treat it as the torrent root instead of a child path.
     private fun segments(uri: Uri): List<String> = if (uri.scheme.equals("magnet", true)) emptyList()
@@ -675,7 +863,7 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
     private fun entry(source: String, key: String, node: Node): ResourceEntry {
         val uri = Uri.Builder().scheme("torrent").authority(key).appendQueryParameter("magnet", source)
             .apply { node.path.forEach(::appendPath) }.build()
-        val mime = if (node.directory) "vnd.android.document/directory" else URLConnection.guessContentTypeFromName(node.name) ?: "application/octet-stream"
+        val mime = if (node.directory) "vnd.android.document/directory" else com.infinifolder.mime.MimeRegistry.guess(node.name)
         return ResourceEntry(ResourceRef(id, uri.toString()), ResourceMetadata(node.name, mime, node.size, null, node.directory), uri)
     }
 
@@ -716,7 +904,7 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
     override fun openRead(ref: ResourceRef): ProviderResult<InputStream> = guarded {
         val uri = Uri.parse(ref.documentId)
         val source = source(uri)
-        val t = fetchMetadata(source)
+        val t = withMagnetTrackers(fetchMetadata(source), source)
         val path = segments(uri)
         val desired = if (t.files.size > 1) path.drop(1) else path
         val torrentFile = t.files.firstOrNull { it.pathElements == desired }
@@ -750,12 +938,21 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
             .build()
         val running = startTorrentClient(client, "cache-download")
         probeTrackers(runtime, t, "cache-download")
-        running.whenComplete { _, error -> if (error != null) { failure.set(error); completed.countDown() } }
-        if (!completed.await(DOWNLOAD_TIMEOUT_MINUTES, TimeUnit.MINUTES)) {
-            stopTorrentClient(client, runtime)
-            throw IOException("Torrent download timed out before the file was complete")
+        running.whenComplete { _, error ->
+            if (error != null || completed.count > 0L) {
+                failure.compareAndSet(null, error ?: IOException("Torrent engine stopped before the selected file completed; see torrent processing diagnostics"))
+                completed.countDown()
+            }
         }
-        stopTorrentClient(client, runtime)
+        val waitStarted = System.nanoTime()
+        try {
+            while (!completed.await(250, TimeUnit.MILLISECONDS)) {
+                if (Thread.currentThread().isInterrupted) throw java.io.InterruptedIOException("Torrent download cancelled")
+                if (!transferPreferences.getBoolean(TorrentTransferPreferences.WAIT_FOREVER, false) &&
+                    System.nanoTime() - waitStarted >= TimeUnit.MINUTES.toNanos(DOWNLOAD_TIMEOUT_MINUTES))
+                    throw IOException("Torrent download timed out before the file was complete")
+            }
+        } finally { stopTorrentClient(client, runtime) }
         failure.get()?.let { throw IOException("Torrent download failed: ${it.cause?.message ?: it.message}", it) }
         val downloaded = safeTorrentFile(root, t, torrentFile)
         if (!downloaded.isFile || downloaded.length() != torrentFile.size) throw IOException("Torrent file did not pass its size check")
@@ -770,12 +967,16 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
         target: BlockDevice,
         isCancelled: () -> Boolean,
         onBytesWritten: (Long) -> Unit,
-        onPieceVerification: (verifiedPieces: Int, totalPieces: Int) -> Unit
+        onPieceVerification: (verifiedPieces: Int, totalPieces: Int) -> Unit,
+        checkpointStore: TransferCheckpointStore?,
+        onBytesRemaining: (Long) -> Unit,
+        onResumeStatus: (String) -> Unit,
+        onTorrentStats: (TorrentTransferStats) -> Unit
     ): ProviderResult<Long> = guarded {
         DiagnosticLog.record("torrent.destination.begin", "source=${source.documentId} targetSize=${target.size}")
         val uri = Uri.parse(source.documentId)
         val magnetSource = source(uri)
-        val torrent = fetchMetadata(magnetSource)
+        val torrent = withMagnetTrackers(fetchMetadata(magnetSource), magnetSource)
         val path = segments(uri)
         val selectedPath = if (torrent.files.size > 1) path.drop(1) else path
         val file = torrent.files.firstOrNull { it.pathElements == selectedPath }
@@ -809,17 +1010,87 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
         val selectedIndex = torrent.files.indexOfFirst { it.pathElements == file.pathElements }
         val fileGlobalStart = if (selectedIndex <= 0) 0L else torrent.files.take(selectedIndex).sumOf { it.size.coerceAtLeast(0L) }
 
+        val targetIoLock = Any()
+        val lifecycle = TorrentTransferLifecycle(targetIoLock, isCancelled)
+        val checkpoint = TorrentVerificationCheckpoint(
+            TorrentCheckpointIdentity("${destination.providerId}:${destination.documentId}", torrent.torrentId.toString(),
+                file.pathElements.joinToString("/"), torrent.chunkSize, torrent.chunkHashes.count(),
+                torrent.files.sumOf { it.size }, fileGlobalStart, file.size),
+            checkpointStore, { target.flush() }, destinationAlreadySized
+        ) { event, error -> DiagnosticLog.record("torrent.checkpoint.$event", "Resume checkpoint fallback", error) }
+        val trustedPieces = checkpoint.trustedPieces
+        verifiedPieces.or(trustedPieces)
+        DiagnosticLog.record("torrent.checkpoint.loaded", "trustedPieces=${trustedPieces.cardinality()} destination=${destination.providerId} reason=${checkpoint.loadReason}")
+        val hasExistingData = !verifiedPieces.isEmpty
+        onResumeStatus(when {
+            !hasExistingData -> "Waiting for peers…"
+            !trustedPieces.isEmpty -> "Restoring saved progress: ${java.text.NumberFormat.getIntegerInstance().format(trustedPieces.cardinality())} cached pieces; checking remaining records…"
+            else -> "Checking downloaded pieces…"
+        })
+        DiagnosticLog.record("torrent.resume.startup", "hasExistingData=$hasExistingData availablePieces=${verifiedPieces.cardinality()} trustedPieces=${trustedPieces.cardinality()} unreceivedPieces=unknown")
+        var transferFinished = false
+
+        fun pieceBytesInSelectedFile(index: Int): Long {
+            val start = index.toLong() * torrent.chunkSize
+            return (minOf(fileGlobalStart + file.size, start + torrent.chunkSize) -
+                maxOf(fileGlobalStart, start)).coerceAtLeast(0L)
+        }
+        var verifiedDestinationBytes = 0L
+        var initialPiece = verifiedPieces.nextSetBit(0)
+        while (initialPiece >= 0) {
+            verifiedDestinationBytes += pieceBytesInSelectedFile(initialPiece)
+            initialPiece = verifiedPieces.nextSetBit(initialPiece + 1)
+        }
+        fun setPieceVerified(index: Int, valid: Boolean) {
+            if (verifiedPieces.get(index) != valid) {
+                verifiedDestinationBytes += pieceBytesInSelectedFile(index) * if (valid) 1 else -1
+                verifiedPieces.set(index, valid)
+            }
+        }
+        fun reportRemainingBytes() = onBytesRemaining((file.size - verifiedDestinationBytes).coerceAtLeast(0L))
         val completed = CountDownLatch(1)
         val failure = AtomicReference<Throwable?>()
         val written = java.util.concurrent.atomic.AtomicLong(0L)
+        fun writeDestination(block: () -> Unit) {
+            try { lifecycle.write(block) }
+            catch (error: Exception) {
+                // Bt otherwise retries failed blocks indefinitely, hiding the
+                // storage failure under thousands of identical worker errors.
+                if (!lifecycle.isClosing() && !isCancelled() && failure.compareAndSet(null, error)) {
+                    lifecycle.closeWrites()
+                    DiagnosticLog.record("torrent.destination.write-failed", "Partial data and checkpoints retained", error)
+                    completed.countDown()
+                }
+                throw error
+            }
+        }
+        val lastStorageActivity = java.util.concurrent.atomic.AtomicLong(System.nanoTime())
+        val checkedBytes = java.util.concurrent.atomic.AtomicLong()
+        val receivedCache = TorrentWriteCache()
+        val destinationReadBytes = java.util.concurrent.atomic.AtomicLong()
+        val boundaryMemory = java.util.concurrent.atomic.AtomicLong()
+        val boundaryUnits = java.util.concurrent.CopyOnWriteArrayList<TorrentBoundaryStorageUnit>()
+        val selectedPieceStart = (fileGlobalStart / torrent.chunkSize) * torrent.chunkSize
+        val selectedEnd = fileGlobalStart + file.size
+        val selectedPieceEnd = minOf(torrent.size,
+            selectedEnd + (torrent.chunkSize - selectedEnd % torrent.chunkSize) % torrent.chunkSize)
         val destinationStorage = object : Storage {
             override fun getUnit(torrent: Torrent, candidate: TorrentFile): StorageUnit =
-                if (candidate.pathElements != file.pathElements) discardUnit()
+                if (candidate.pathElements != file.pathElements) {
+                    val index = torrent.files.indexOfFirst { it.pathElements == candidate.pathElements }
+                    val start = torrent.files.take(index.coerceAtLeast(0)).sumOf { it.size }
+                    val keepStart = (selectedPieceStart - start).coerceIn(0L, candidate.size)
+                    val keepEnd = (selectedPieceEnd - start).coerceIn(0L, candidate.size)
+                    DiagnosticLog.record("torrent.destination.skipped-file", "bytes=${candidate.size} boundaryBytes=${(keepEnd - keepStart).coerceAtLeast(0L)}")
+                    TorrentBoundaryStorageUnit(candidate.size, keepStart, keepEnd, boundaryMemory).also { boundaryUnits.add(it) }
+                }
                 else object : StorageUnit {
                     // Do not advertise the pre-sized destination as reusable torrent
                     // data. That would make Bt scan gigabytes over SFTP at startup.
                     // Only bytes received in this session may be read back for hashes.
                     private val writtenRanges = java.util.TreeMap<Long, Long>()
+                    private var readAheadStart = -1L
+                    private var readAhead = ByteArray(0)
 
                     private fun recordWrittenRange(offset: Long, length: Int) {
                         if (length <= 0) return
@@ -860,9 +1131,9 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
                         }
                     }
 
-                    // Bt verifies each assembled piece by reading it back from storage.
-                    // Expose only fully received ranges so the hash check succeeds without
-                    // asking the SFTP server to read this whole pre-sized file up front.
+                    // Bt still performs its normal piece hash check, but newly received
+                    // bytes come from bounded write-through memory instead of a remote
+                    // reread. Previous-session/evicted bytes fall back to the destination.
                     override fun readBlock(buffer: ByteBuffer, offset: Long): Int {
                         val requested = buffer.remaining()
                         if (requested == 0) return 0
@@ -872,15 +1143,35 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
                             readableRangeLength(offset, requested)
                         )
                         if (count <= 0) return -1
-                        val bytes = ByteArray(count)
-                        var total = 0
-                        while (total < count) {
-                            val read = target.readAt(offset + total, bytes, total, count - total)
-                            if (read <= 0) break
-                            total += read
+                        synchronized(targetIoLock) {
+                            val cached = receivedCache.read(buffer, offset, count)
+                            if (cached > 0) {
+                                lastStorageActivity.set(System.nanoTime())
+                                checkedBytes.addAndGet(cached.toLong())
+                                return cached
+                            }
+                            if (offset < readAheadStart || offset + count > readAheadStart + readAhead.size) {
+                                val aheadCount = minOf(1024 * 1024, readableRangeLength(offset, 1024 * 1024), (file.size - offset).coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+                                val bytes = ByteArray(aheadCount)
+                                var total = 0
+                                while (total < bytes.size) {
+                                    if (isCancelled()) throw java.io.InterruptedIOException("Torrent verification cancelled")
+                                    val read = target.readAt(offset + total, bytes, total, bytes.size - total)
+                                    if (read <= 0) break
+                                    total += read
+                                    destinationReadBytes.addAndGet(read.toLong())
+                                    lastStorageActivity.set(System.nanoTime())
+                                }
+                                readAheadStart = offset
+                                readAhead = bytes.copyOf(total)
+                            }
+                            val available = minOf(count, (readAheadStart + readAhead.size - offset).toInt())
+                            if (available <= 0) return -1
+                            buffer.put(readAhead, (offset - readAheadStart).toInt(), available)
+                            lastStorageActivity.set(System.nanoTime())
+                            checkedBytes.addAndGet(available.toLong())
+                            return available
                         }
-                        if (total > 0) buffer.put(bytes, 0, total)
-                        return if (total == 0) -1 else total
                     }
                     override fun writeBlock(buffer: ByteBuffer, offset: Long): Int {
                         if (isCancelled()) throw java.io.InterruptedIOException("Torrent transfer cancelled")
@@ -889,7 +1180,17 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
                         if (written.get() == 0L) DiagnosticLog.record("torrent.destination.first-block", "offset=$offset bytes=$count")
                         val bytes = ByteArray(count)
                         buffer.get(bytes)
-                        target.writeAt(offset, bytes)
+                        writeDestination {
+                            checkpoint.beforeWrite(offset, count)
+                            val firstPiece = ((fileGlobalStart + offset) / torrent.chunkSize).toInt()
+                            val lastPiece = ((fileGlobalStart + offset + count - 1) / torrent.chunkSize).toInt()
+                            for (piece in firstPiece..lastPiece) setPieceVerified(piece, false)
+                            target.writeAt(offset, bytes)
+                            receivedCache.put(offset, bytes)
+                            readAheadStart = -1L
+                            readAhead = ByteArray(0)
+                        }
+                        lastStorageActivity.set(System.nanoTime())
                         recordWrittenRange(offset, count)
                         val total = written.addAndGet(count.toLong())
                         onBytesWritten(count.toLong())
@@ -905,7 +1206,17 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
                         if (written.get() == 0L) DiagnosticLog.record("torrent.destination.first-block", "offset=$offset bytes=$count")
                         val bytes = ByteArray(count)
                         buffer.get(bytes)
-                        target.writeAt(offset, bytes)
+                        writeDestination {
+                            checkpoint.beforeWrite(offset, count)
+                            val firstPiece = ((fileGlobalStart + offset) / torrent.chunkSize).toInt()
+                            val lastPiece = ((fileGlobalStart + offset + count - 1) / torrent.chunkSize).toInt()
+                            for (piece in firstPiece..lastPiece) setPieceVerified(piece, false)
+                            target.writeAt(offset, bytes)
+                            receivedCache.put(offset, bytes)
+                            readAheadStart = -1L
+                            readAhead = ByteArray(0)
+                        }
+                        lastStorageActivity.set(System.nanoTime())
                         recordWrittenRange(offset, count)
                         val total = written.addAndGet(count.toLong())
                         onBytesWritten(count.toLong())
@@ -920,20 +1231,50 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
                 }
             override fun flush() = target.flush()
         }
-        val runtime = newTorrentRuntime()
-        monitorPeerEvents(runtime, torrent, "direct-transfer")
         val totalPieceCount = torrent.chunkHashes.count()
-        onPieceVerification(verifiedPieces.cardinality(), totalPieceCount)
+        var lastStartupReport = 0L
+        val verificationReady = java.util.concurrent.atomic.AtomicBoolean(false)
+        val trackerNextAnnounce = ConcurrentHashMap<String, Long>()
+        if (!hasExistingData) {
+            verificationReady.set(true)
+            reportRemainingBytes()
+        }
+        val availablePieces = verifiedPieces.clone() as java.util.BitSet
+        val runtime = newTorrentRuntime(trustedPieces, availablePieces) { index, valid ->
+            synchronized(targetIoLock) {
+                if (lifecycle.isClosing() || isCancelled()) throw java.io.InterruptedIOException("Torrent verification paused")
+                checkpoint.checked(index, valid)
+                setPieceVerified(index, valid)
+                if (index + 1 == totalPieceCount) {
+                    reportRemainingBytes()
+                    verificationReady.set(true)
+                }
+                lastStorageActivity.set(System.nanoTime())
+                if (index + 1 == totalPieceCount || System.nanoTime() - lastStartupReport >= TimeUnit.MILLISECONDS.toNanos(250)) {
+                    lastStartupReport = System.nanoTime()
+                    if (hasExistingData) onPieceVerification(index + 1, totalPieceCount)
+                }
+                if ((index + 1) % 32 == 0 || index + 1 == totalPieceCount)
+                    DiagnosticLog.record(if (hasExistingData) "torrent.resume.checking" else "torrent.resume.empty-records",
+                        "checkedPieces=${index + 1} totalPieces=$totalPieceCount trustedPieces=${trustedPieces.cardinality()} savedPieces=${checkpoint.savedPieceCount} checkpointSaves=${checkpoint.persistenceCount} checkpointSaveMs=${checkpoint.persistenceMillis}")
+            }
+        }
+        monitorPeerEvents(runtime, torrent, "direct-transfer")
+        if (hasExistingData) onPieceVerification(0, totalPieceCount)
         runtime.eventSource.onPieceVerified(torrent.torrentId) { event ->
-            synchronized(verifiedPieces) {
+            synchronized(targetIoLock) {
+                if (lifecycle.isClosing()) return@onPieceVerified
                 if (!verifiedPieces.get(event.pieceIndex)) {
-                    verifiedPieces.set(event.pieceIndex)
+                    setPieceVerified(event.pieceIndex, true)
                     saveVerifiedPieces(resumeFile, torrent, file, verifiedPieces)
                     if (verifiedPieces.cardinality() % 32 == 0) {
                         DiagnosticLog.record("torrent.resume.piece", "verified=${verifiedPieces.cardinality()} total=$totalPieceCount")
                     }
                 }
-                onPieceVerification(verifiedPieces.cardinality(), totalPieceCount)
+                reportRemainingBytes()
+                checkpoint.pieceVerified(event.pieceIndex)
+                // This is live download validation, not a startup verification phase.
+                // Overall download progress is reported through remaining/received bytes.
             }
         }
         val clientBuilder = Bt.client(runtime).storage(destinationStorage)
@@ -949,27 +1290,63 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
             .build()
         try {
             DiagnosticLog.record("torrent.destination.client-start", "selected=${file.pathElements.joinToString("/")}")
-            val running = startTorrentClient(client, "direct-transfer")
-            probeTrackers(runtime, torrent, "direct-transfer")
+            val peerActivity = runtime.service(TorrentPeerActivity::class.java)
+            var sampledAt = System.nanoTime()
+            var previousDownloaded = 0L
+            var previousUploaded = 0L
+            val running = startTorrentClient(client, "direct-transfer") { state ->
+                val now = System.nanoTime()
+                val elapsed = (now - sampledAt).coerceAtLeast(1L)
+                val downloaded = state.downloaded.coerceAtLeast(0L)
+                val uploaded = state.uploaded.coerceAtLeast(0L)
+                fun rate(delta: Long) = (delta.coerceAtLeast(0L).toDouble() * 1_000_000_000 / elapsed).toLong()
+                onTorrentStats(TorrentTransferStats(state.connectedPeers.size,
+                    peerActivity.servingPeers(torrent.torrentId, state.connectedPeers),
+                    rate(downloaded - previousDownloaded), rate(uploaded - previousUploaded), uploaded,
+                    transferPreferences.getBoolean(TorrentTransferPreferences.WAIT_FOREVER, false)))
+                sampledAt = now; previousDownloaded = downloaded; previousUploaded = uploaded
+            }
             DiagnosticLog.record("torrent.destination.client-started", "done=${running.isDone}")
-            running.whenComplete { _, error -> if (error != null) { failure.set(error); completed.countDown() } }
-            val deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(DOWNLOAD_TIMEOUT_MINUTES)
+            running.whenComplete { _, error ->
+            if (error != null || completed.count > 0L) {
+                failure.compareAndSet(null, error ?: IOException("Torrent engine stopped before the selected file completed; see torrent processing diagnostics"))
+                completed.countDown()
+            }
+        }
             var lastProgress = System.nanoTime()
             var lastLoggedBytes = 0L
+            var lastTrackerRefresh = 0L
             while (!completed.await(250, TimeUnit.MILLISECONDS)) {
                 if (isCancelled() || Thread.currentThread().isInterrupted) {
                     stopTorrentClient(client, runtime)
                     throw java.io.InterruptedIOException("Torrent transfer cancelled")
                 }
-                if (System.nanoTime() >= deadline) {
+                val indefinitePeerWait = verificationReady.get() &&
+                    transferPreferences.getBoolean(TorrentTransferPreferences.WAIT_FOREVER, false)
+                if (!indefinitePeerWait && System.nanoTime() - maxOf(lastProgress, lastStorageActivity.get()) >= TimeUnit.MINUTES.toNanos(DOWNLOAD_TIMEOUT_MINUTES)) {
                     stopTorrentClient(client, runtime)
                     throw IOException("Torrent download timed out before the file was complete")
+                }
+                val now = System.nanoTime()
+                if (verificationReady.get() && lastTrackerRefresh == 0L) {
+                    synchronized(targetIoLock) {
+                        try { checkpoint.save() }
+                        catch (error: Exception) { DiagnosticLog.record("torrent.checkpoint.post-verification-save-failed", "Will recheck if needed", error) }
+                        DiagnosticLog.record("torrent.resume.ready", "verifiedPieces=${verifiedPieces.cardinality()} totalPieces=$totalPieceCount")
+                    }
+                    probeTrackers(runtime, torrent, if (hasExistingData) "direct-transfer-after-verification" else "direct-transfer-new", trackerNextAnnounce)
+                    lastTrackerRefresh = now
+                } else if (verificationReady.get() && now - lastTrackerRefresh >= TimeUnit.MINUTES.toNanos(1) &&
+                    now - maxOf(lastProgress, lastStorageActivity.get()) >= TimeUnit.SECONDS.toNanos(30)) {
+                    DiagnosticLog.record("torrent.peer.refresh", "reason=no-data-after-verification")
+                    probeTrackers(runtime, torrent, "direct-transfer-stalled", trackerNextAnnounce)
+                    lastTrackerRefresh = now
                 }
                 val currentBytes = written.get()
                 if (currentBytes != lastLoggedBytes) {
                     lastLoggedBytes = currentBytes
                     lastProgress = System.nanoTime()
-                } else if (currentBytes == 0L && System.nanoTime() - lastProgress >= TimeUnit.MINUTES.toNanos(NO_DATA_TIMEOUT_MINUTES)) {
+                } else if (!indefinitePeerWait && currentBytes == 0L && System.nanoTime() - maxOf(lastProgress, lastStorageActivity.get()) >= TimeUnit.MINUTES.toNanos(NO_DATA_TIMEOUT_MINUTES)) {
                     stopTorrentClient(client, runtime)
                     throw IOException("No torrent data has arrived for ${NO_DATA_TIMEOUT_MINUTES} minutes. The swarm may have no reachable peers.")
                 }
@@ -977,28 +1354,27 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
             failure.get()?.let { throw IOException("Torrent transfer failed: ${it.cause?.message ?: it.message}", it) }
             target.flush()
             DiagnosticLog.record("torrent.destination.complete", "bytes=${written.get()} expected=${file.size}")
+            transferFinished = true
             ProviderResult.Success(file.size)
         } finally {
-            DiagnosticLog.record("torrent.destination.client-stop", "bytes=${written.get()}")
-            stopTorrentClient(client, runtime)
+            DiagnosticLog.record("torrent.destination.client-stop", "bytes=${written.get()} verificationMemoryBytes=${receivedCache.hitsBytes} destinationReadBytes=${destinationReadBytes.get()}")
+            try {
+                lifecycle.finish(completed = transferFinished, stop = { stopTorrentClient(client, runtime) }, persist = {
+                    target.flush()
+                    // Publication/rename belongs to the caller. Keep the checkpoint
+                    // even after all bytes arrive until the final file is published.
+                    checkpoint.save()
+                    DiagnosticLog.record(if (transferFinished) "torrent.checkpoint.awaiting-publication" else "torrent.checkpoint.paused",
+                        "savedPieces=${checkpoint.savedPieceCount} reason=${if (transferFinished) "download-verified" else if (isCancelled()) "finish-later" else "transfer-stopped"}")
+                })
+            } catch (error: Exception) {
+                DiagnosticLog.record("torrent.checkpoint.final-save-failed", "Resume will recheck if needed", error)
+            } finally {
+                boundaryUnits.forEach { it.close() }
+                try { checkpointStore?.close() }
+                catch (error: Exception) { DiagnosticLog.record("torrent.checkpoint.close-failed", "Checkpoint device cleanup", error) }
+            }
         }
-    }
-
-    private fun discardUnit() = object : StorageUnit {
-        override fun readBlock(buffer: ByteBuffer, offset: Long): Int = -1
-        override fun writeBlock(buffer: ByteBuffer, offset: Long): Int {
-            val count = buffer.remaining()
-            buffer.position(buffer.limit())
-            return count
-        }
-        override fun writeBlock(buffer: ByteBufferView, offset: Long): Int {
-            val count = buffer.remaining()
-            buffer.position(buffer.limit())
-            return count
-        }
-        override fun capacity() = 0L
-        override fun size() = 0L
-        override fun close() = Unit
     }
 
     private fun safeTorrentFile(root: File, torrent: Torrent, file: TorrentFile): File {
@@ -1042,7 +1418,7 @@ class MagnetStorageProvider(context: Context) : StorageProvider, RandomAccessTra
         }
     }
 
-    override fun openSeekable(ref: ResourceRef, writable: Boolean) = ProviderResult.Unsupported(if (writable) ResourceCapability.WRITE else ResourceCapability.SEEK)
+    override fun openSeekable(ref: ResourceRef, writable: Boolean) = ProviderResult.Unsupported(if (writable) ResourceCapability.SEEK_WRITE else ResourceCapability.SEEK)
     override fun openWrite(ref: ResourceRef) = ProviderResult.Unsupported(ResourceCapability.WRITE)
     override fun createDirectory(parent: ResourceRef, name: String) = ProviderResult.Unsupported(ResourceCapability.CREATE)
     override fun createFile(parent: ResourceRef, name: String, mimeType: String) = ProviderResult.Unsupported(ResourceCapability.CREATE)

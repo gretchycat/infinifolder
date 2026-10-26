@@ -27,6 +27,7 @@ import java.io.InputStream
 class ArchiveReader(private val tempDir: File, private val diskCache: com.infinifolder.storage.DiskCache? = null) {
 
     private val discImageReader = DiscImageReader(tempDir, diskCache)
+    internal fun <T> withFreshReads(block: () -> T): T = discImageReader.withFreshReads(block)
     private val nativeReader = NativeArchiveReader(tempDir)
 
     private fun nativeVolumes(name: String, input: () -> InputStream, local: File?, device: BlockDevice?, supplied: ArchiveVolumeSet?): ArchiveVolumeSet {
@@ -83,6 +84,15 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
     fun isWritable(archiveName: String, localFile: File?, device: BlockDevice? = null, entryPath: String? = null): Boolean =
         writableFailureReason(archiveName, localFile, device, entryPath) == null
 
+    fun compressedWritableFailureReason(archiveName: String, entryPath: String, openStream: () -> InputStream,
+        localFile: File?, device: BlockDevice?): String? =
+        discImageReader.compressedWritableFailureReason(archiveName, entryPath, openStream, localFile, device)
+
+    fun readTransferMetadata(archiveName: String, entryPath: String, openStream: () -> InputStream,
+        localFile: File?, device: BlockDevice?) = discImageReader.readTransferMetadata(archiveName, entryPath, openStream, localFile, device)
+    fun applyTransferMetadata(archiveName: String, localFile: File?, device: BlockDevice?, entryPath: String,
+        metadata: com.infinifolder.model.TransferMetadata) = discImageReader.applyTransferMetadata(archiveName, localFile, device, entryPath, metadata)
+
     fun writableFailureReason(archiveName: String, localFile: File?, device: BlockDevice? = null, entryPath: String? = null, probeOnly: Boolean = false): String? =
         if (NativeArchiveReader.isSupported(archiveName)) "RAR/ARJ/CAB archive views are read-only"
         else discImageReader.writableFailureReason(archiveName, localFile, device, entryPath, probeOnly)
@@ -109,6 +119,11 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
 
     fun writeEntryFromFile(archiveName: String, localFile: File?, entryPath: String, content: File, device: BlockDevice? = null) =
         discImageReader.writeEntryFromFile(archiveName, localFile, entryPath, content, device)
+
+    internal fun relocateEntry(archiveName: String, localFile: File?, entryPath: String, targetPath: String, device: BlockDevice?) =
+        discImageReader.relocateEntry(archiveName, localFile, entryPath, targetPath, device)
+    internal fun sameRelocationFilesystem(archiveName: String, localFile: File?, device: BlockDevice?, paths: List<String>) =
+        discImageReader.sameRelocationFilesystem(archiveName, localFile, device, paths)
 
     fun deleteEntry(archiveName: String, localFile: File?, entryPath: String, device: BlockDevice? = null) =
         discImageReader.deleteEntry(archiveName, localFile, entryPath, device)

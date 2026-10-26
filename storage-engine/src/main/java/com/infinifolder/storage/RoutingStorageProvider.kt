@@ -11,19 +11,42 @@ import java.io.OutputStream
 /** Common routing, normalization, error boundaries, and diagnostics for every backend. */
 class RoutingStorageProvider(vararg providers: StorageProvider, private val uriResolver: ((Uri) -> Uri?)? = null) : StorageProvider, RandomAccessTransferRouter {
     override val id = "router"
+    var onEntriesObserved: ((ResourceRef, List<ResourceEntry>, Boolean) -> Unit)? = null
+    var onResourceRemoved: ((ResourceRef) -> Unit)? = null
+    var onRandomAccessTargetWritten: ((ResourceRef) -> Unit)? = null
+    private val completedCheckpointCleanup = java.util.concurrent.ConcurrentHashMap<ResourceRef, TransferCheckpointStore>()
+    private fun cleanupPublishedCheckpoint(destination: ResourceRef) {
+        val checkpoint = completedCheckpointCleanup.remove(destination) ?: return
+        try {
+            checkpoint.delete()
+            DiagnosticLog.record("torrent.checkpoint.published-cleanup", "destination=${destination.providerId}")
+        } catch (error: Exception) {
+            // A leftover cache must not undo successful publication of the data.
+            DiagnosticLog.record("torrent.checkpoint.published-cleanup-failed", "Cache retained after publication", error)
+        } finally { runCatching { checkpoint.close() } }
+    }
     private val byId = providers.associateBy { it.id }.also { require(it.size == providers.size) { "Duplicate provider ID" } }
 
+    fun setTorrentAutoResume(destination: ResourceRef, enabled: Boolean) {
+        (byId["torrent"] as? RandomAccessTransferSource)?.setAutoResume(destination, enabled)
+    }
+
     /** Restart durable direct-to-storage torrent sessions after the process is recreated. */
-    fun resumePendingTorrentTransfers(): Int {
+    fun resumePendingTorrentTransfers(destination: ResourceRef? = null): Int {
         val sessions = (byId["torrent"] as? RandomAccessTransferSource)?.pendingResumeTransfers().orEmpty()
         val torrentSource = byId["torrent"] as? RandomAccessTransferSource
         var scheduled = 0
         for (session in sessions) {
+            if (destination != null && session.destination != destination) continue
+            if (destination != null) torrentSource?.setAutoResume(session.destination, true)
             val label = "Resume torrent: ${session.incompleteName}"
             if (com.infinifolder.ops.AppOperations.coordinator.snapshots().any {
-                    it.label == label && (it.state == com.infinifolder.ops.OperationState.RUNNING || it.state == com.infinifolder.ops.OperationState.QUEUED)
-                }) continue
-            if (torrentSource?.claimAutoResume(session.source, session.destination) == false) {
+                    (it.label == label || it.resumeDestination == session.destination) && (it.state == com.infinifolder.ops.OperationState.RUNNING || it.state == com.infinifolder.ops.OperationState.QUEUED)
+                }) {
+                if (destination != null) scheduled++
+                continue
+            }
+            if (destination == null && torrentSource?.claimAutoResume(session.source, session.destination) == false) {
                 DiagnosticLog.record("torrent.resume.auto-skip", "reason=already-attempted destination=${session.destination.providerId}")
                 continue
             }
@@ -32,30 +55,74 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
                 "object:${session.destinationParent.providerId}:${session.destinationParent.documentId}:${session.finalName.lowercase(java.util.Locale.ROOT)}",
                 "object:${session.destinationParent.providerId}:${session.destinationParent.documentId}:${session.incompleteName.lowercase(java.util.Locale.ROOT)}"
             )
-            com.infinifolder.ops.AppOperations.coordinator.submit(label, null, 1, conflictKeys = conflicts) { update, cancelled ->
+            com.infinifolder.ops.AppOperations.coordinator.submit(label, null, 1, conflictKeys = conflicts,
+                displayName = session.finalName,
+                destination = session.destinationParent.documentId,
+                resumeDestination = session.destination) { publishUpdate, cancelled ->
+                val update: (com.infinifolder.ops.OperationUpdate) -> Unit = { value ->
+                    publishUpdate(value.copy(resumeDestination = session.destination))
+                }
                 val received = java.util.concurrent.atomic.AtomicLong()
+                val remaining = java.util.concurrent.atomic.AtomicLong(-1L)
+                val existing = java.util.concurrent.atomic.AtomicLong()
+                val ready = java.util.concurrent.atomic.AtomicBoolean(false)
+                val startupStatus = java.util.concurrent.atomic.AtomicReference("Preparing torrent download…")
+                val lastReport = java.util.concurrent.atomic.AtomicLong()
+                val torrentStats = java.util.concurrent.atomic.AtomicReference<TorrentTransferStats?>()
+                val expected = (stat(session.source) as? ProviderResult.Success)?.value?.metadata?.sizeBytes
+                fun downloadUpdate(force: Boolean = false) {
+                    val now = System.nanoTime()
+                    if (!force && now - lastReport.get() < 250_000_000L) return
+                    lastReport.set(now)
+                    val completedBytes = (existing.get() + received.get()).let { count -> expected?.let { count.coerceAtMost(it) } ?: count }
+                    update(com.infinifolder.ops.OperationUpdate(bytes = completedBytes, totalBytes = expected,
+                        currentItem = session.incompleteName,
+                        message = torrentStats.get()?.statusMessage() ?: "Connecting to peers…",
+                        indeterminate = false, currentItemBytes = completedBytes, currentItemTotalBytes = expected,
+                        remainingBytes = remaining.get().takeIf { it >= 0 },
+                        bytesPerSecond = torrentStats.get()?.downloadBytesPerSecond ?: 0L,
+                        torrentStats = torrentStats.get()))
+                }
                 update(com.infinifolder.ops.OperationUpdate(currentItem = session.incompleteName,
-                    message = "Resuming verified torrent pieces", indeterminate = true))
+                    message = "Preparing torrent download…", indeterminate = true, resumable = true))
                 when (val result = transferRandomAccess(session.source, session.destination, cancelled, onBytesWritten = { delta ->
-                    val total = received.addAndGet(delta)
-                    update(com.infinifolder.ops.OperationUpdate(bytes = total, currentItem = session.incompleteName,
-                        message = "Downloading torrent", indeterminate = true))
-                }, onPieceVerification = { verified, total ->
-                    update(com.infinifolder.ops.OperationUpdate(bytes = received.get(), currentItem = session.incompleteName,
-                        message = if (total > 0) "Verifying torrent pieces: $verified of $total" else "Checking torrent pieces…",
-                        indeterminate = false, currentItemBytes = verified.toLong(), currentItemTotalBytes = total.toLong()))
+                    received.addAndGet(delta)
+                    downloadUpdate()
+                }, onPieceVerification = { checked, total ->
+                    if (!ready.get()) update(com.infinifolder.ops.OperationUpdate(currentItem = session.incompleteName,
+                        message = startupStatus.get(), indeterminate = false,
+                        torrentPiecesChecked = checked, torrentPiecesTotal = total))
+                }, onBytesRemaining = { missing ->
+                    remaining.set(missing)
+                    if (ready.compareAndSet(false, true)) {
+                        existing.set(expected?.let { (it - missing).coerceAtLeast(0L) } ?: 0L)
+                        downloadUpdate(force = true)
+                    }
+                }, onResumeStatus = { message ->
+                    startupStatus.set(message)
+                    if (!ready.get()) update(com.infinifolder.ops.OperationUpdate(currentItem = session.incompleteName,
+                        message = message, indeterminate = true))
+                }, onTorrentStats = { stats ->
+                    torrentStats.set(stats)
+                    if (ready.get()) downloadUpdate(force = true)
                 })) {
                     is ProviderResult.Success -> {
-                        val destinationProvider = byId[session.destination.providerId]
-                            ?: throw IOException("Destination storage is unavailable for torrent resume")
-                        val renamed = destinationProvider.rename(session.destination, session.finalName)
-                        if (renamed !is ProviderResult.Success) throw IOException(
-                            "Torrent finished but could not rename the completed file: " +
-                                ((renamed as? ProviderResult.Failure)?.message ?: "Rename unsupported"),
-                            (renamed as? ProviderResult.Failure)?.cause
-                        )
+                        if (cancelled()) throw java.io.InterruptedIOException("Torrent paused before final rename; completed data retained")
+                        update(com.infinifolder.ops.OperationUpdate(bytes = result.value, totalBytes = expected,
+                            currentItem = session.finalName, message = "Finalizing completed download…",
+                            currentItemBytes = result.value, currentItemTotalBytes = expected))
+                        DiagnosticLog.record("torrent.publication.start", "destination=${session.destination.providerId} interrupted=${Thread.currentThread().isInterrupted}")
+                        val renamed = rename(session.destination, session.finalName)
+                        if (renamed !is ProviderResult.Success) {
+                            val detail = (renamed as? ProviderResult.Failure)?.message?.takeIf { it.isNotBlank() } ?: "Rename unsupported"
+                            DiagnosticLog.record("torrent.publication.failed", detail, (renamed as? ProviderResult.Failure)?.cause)
+                            throw IOException("Torrent data is complete but final rename failed. Downloaded data and resume state retained; use Retry. $detail",
+                                (renamed as? ProviderResult.Failure)?.cause)
+                        }
+                        migrateResumeState(session.source, session.destination, renamed.value.ref)
                         forgetResumeDestination(session.source, session.destinationParent, session.requestedName)
                         finishResume(session.source, renamed.value.ref)
+                        DiagnosticLog.record("torrent.publication.complete", "destination=${renamed.value.ref.providerId}")
                     }
                     is ProviderResult.Failure -> throw IOException(result.message, result.cause)
                     is ProviderResult.Unsupported -> throw IOException("Destination no longer supports random-access torrent resume")
@@ -73,7 +140,7 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
     private fun normalized(entry: ResourceEntry) = entry.copy(metadata = entry.metadata.copy(
         mimeType = MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType)))
     private fun <T> call(operation: String, ref: ResourceRef, action: (StorageProvider) -> ProviderResult<T>): ProviderResult<T> = StorageActivity.track(
-        if (operation in setOf("batch.begin", "replace", "replace-file", "write", "mkdir", "create", "rename", "delete", "seekable-write"))
+        if (operation in setOf("batch.begin", "replace", "replace-file", "write", "mkdir", "create", "rename", "delete", "seekable-write", "transfer-target", "metadata.apply"))
             StorageActivity.Kind.FILE_OPERATION else StorageActivity.Kind.LOADING
     ) {
         val result = try {
@@ -93,6 +160,8 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
     override fun deviceIdentity(ref: ResourceRef): String? = byId[ref.providerId]?.deviceIdentity(ref)
     override fun capabilities(ref: ResourceRef): ProviderResult<ResourceCapabilities> = call("capabilities", ref) { it.capabilities(ref) }
     override fun fileSystemInfo(ref: ResourceRef): ProviderResult<FileSystemInfo> = call("filesystem", ref) { it.fileSystemInfo(ref) }
+    override fun readTransferMetadata(ref: ResourceRef): ProviderResult<TransferMetadata> = call("metadata.read", ref) { it.readTransferMetadata(ref) }
+    override fun applyTransferMetadata(ref: ResourceRef, metadata: TransferMetadata): ProviderResult<Unit> = call("metadata.apply", ref) { it.applyTransferMetadata(ref, metadata) }
     override fun parent(ref: ResourceRef): ProviderResult<ResourceRef?> = call("parent", ref) { it.parent(ref) }
     override fun resolveLink(ref: ResourceRef): ProviderResult<ResourceRef> = call("link", ref) { it.resolveLink(ref) }
     override fun stat(ref: ResourceRef): ProviderResult<ResourceEntry> = call("stat", ref) { backend ->
@@ -103,58 +172,75 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
     }
     override fun list(parent: ResourceRef): ProviderResult<List<ResourceEntry>> = call("list", parent) { backend ->
         when (val result = backend.list(parent)) {
-            is ProviderResult.Success -> result.copy(value = result.value.map(::normalized))
+            is ProviderResult.Success -> result.copy(value = result.value.map(::normalized)).also { listed ->
+                runCatching { onEntriesObserved?.invoke(parent, listed.value, !listed.isLoading) }
+                    .onFailure { DiagnosticLog.record("partial-downloads.observe.failed", error = it) }
+            }
             else -> result
         }
     }
     override fun openPartialRecovery(ref: ResourceRef): ProviderResult<RecoveryExport> =
         call("recovery.partial", ref) { it.openPartialRecovery(ref) }
     override fun openSeekable(ref: ResourceRef, writable: Boolean): ProviderResult<BlockDevice> = call(if (writable) "seekable-write" else "seekable", ref) { backend ->
-        val result = backend.openSeekable(ref, writable)
-        if (result is ProviderResult.Success && writable && result.value.isReadOnly) {
-            result.value.close()
-            ProviderResult.Unsupported(ResourceCapability.WRITE)
-        } else if (result is ProviderResult.Success) {
-            val device = result.value
-            result.copy(value = object : BlockDevice by device {
+        checkedDevice(backend.openSeekable(ref, writable), writable)
+    }
+    override fun openTransferTarget(ref: ResourceRef): ProviderResult<BlockDevice> = call("transfer-target", ref) { backend ->
+        checkedDevice(backend.openTransferTarget(ref), writable = true, resizable = true)
+    }
+    private fun checkedDevice(result: ProviderResult<BlockDevice>, writable: Boolean,
+                              resizable: Boolean = false): ProviderResult<BlockDevice> {
+        val checked = validateSeekableResult(result, writable, resizable)
+        if (checked is ProviderResult.Success) {
+            val device = checked.value
+            return checked.copy(value = object : BlockDevice by device {
                 override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int =
                     device.readAt(offset, buffer, dstOffset, length).also {
                         if (it > 0) StorageActivity.pulse(StorageActivity.Kind.LOADING)
                     }
             })
-        } else result
+        }
+        return checked
     }
+    override fun requiresRandomAccess(source: ResourceRef): Boolean = byId[source.providerId] is RandomAccessTransferSource
+
     override fun transferRandomAccess(
         source: ResourceRef,
         destination: ResourceRef,
         isCancelled: () -> Boolean,
         onBytesWritten: (Long) -> Unit,
-        onPieceVerification: (Int, Int) -> Unit
+        onPieceVerification: (Int, Int) -> Unit,
+        onBytesRemaining: (Long) -> Unit,
+        onResumeStatus: (String) -> Unit,
+        onTorrentStats: (TorrentTransferStats) -> Unit
     ): ProviderResult<Long> = StorageActivity.track(StorageActivity.Kind.FILE_OPERATION) {
         val producer = byId[source.providerId] as? RandomAccessTransferSource
             ?: return@track ProviderResult.Unsupported(ResourceCapability.SEEK)
         val targetProvider = byId[destination.providerId]
             ?: return@track ProviderResult.Failure("Unknown destination provider: ${destination.providerId}")
-        val targetResult = try { targetProvider.openTransferTarget(destination) }
-            catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot open random-write destination", e) }
+        val targetResult = openTransferTarget(destination)
         val target = when (targetResult) {
             is ProviderResult.Success -> targetResult.value
             is ProviderResult.Failure -> return@track ProviderResult.Failure(targetResult.message, targetResult.cause)
             is ProviderResult.Unsupported -> return@track ProviderResult.Unsupported(targetResult.capability)
         }
-        if (target.isReadOnly || !target.capabilities.contains(com.infinifolder.archive.DeviceCapability.WRITE) ||
-            !target.capabilities.contains(com.infinifolder.archive.DeviceCapability.TRUNCATE)) {
-            runCatching { target.close() }
-            return@track ProviderResult.Unsupported(ResourceCapability.WRITE)
-        }
-        try {
-            producer.transferTo(source, destination, target, isCancelled, onBytesWritten, onPieceVerification)
+        completedCheckpointCleanup.remove(destination)
+        val checkpoint = if (destination.providerId != "archive") SiblingTransferCheckpointStore(targetProvider, destination) else null
+        var result: ProviderResult<Long> = try {
+            producer.transferTo(source, destination, target, isCancelled, onBytesWritten, onPieceVerification,
+                checkpoint, onBytesRemaining, onResumeStatus, onTorrentStats)
         } catch (e: Exception) {
             ProviderResult.Failure(e.message ?: "Random-access transfer failed", e)
-        } finally {
-            try { target.close() }
-            catch (e: Exception) { DiagnosticLog.record("transfer.random-access.target-close-failed", destination.documentId, e) }
         }
+        try { target.close() }
+        catch (error: Exception) {
+            DiagnosticLog.record("transfer.random-access.target-close-failed", destination.documentId, error)
+            if (result is ProviderResult.Success) result = ProviderResult.Failure("Closing the transfer destination failed; partial data and resume state retained", error)
+            else (result as? ProviderResult.Failure)?.cause?.addSuppressed(error)
+        }
+        if (result is ProviderResult.Success && checkpoint != null) completedCheckpointCleanup[destination] = checkpoint
+        if (result is ProviderResult.Success) runCatching { onRandomAccessTargetWritten?.invoke(destination) }
+            .onFailure { DiagnosticLog.record("common-locations.observe.failed", error = it) }
+        result
     }
 
     override fun findResumeDestination(source: ResourceRef, destinationParent: ResourceRef, requestedName: String): ResumeDestination? =
@@ -177,6 +263,7 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
     }
 
     override fun finishResume(source: ResourceRef, destination: ResourceRef) {
+        cleanupPublishedCheckpoint(destination)
         (byId[source.providerId] as? RandomAccessTransferSource)?.finishResume(source, destination)
     }
     override fun replaceContent(ref: ResourceRef, data: ByteArray): ProviderResult<Unit> = call("replace", ref) { it.replaceContent(ref, data) }
@@ -196,12 +283,22 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
     override fun openWrite(ref: ResourceRef): ProviderResult<OutputStream> = call("write", ref) { it.openWrite(ref) }
     override fun createDirectory(parent: ResourceRef, name: String): ProviderResult<ResourceEntry> = call("mkdir", parent) { it.createDirectory(parent, name) }
     override fun createFile(parent: ResourceRef, name: String, mimeType: String): ProviderResult<ResourceEntry> = call("create", parent) {
-        it.createFile(parent, name, MimeRegistry.effective(name, mimeType))
+        it.createFile(parent, name, MimeRegistry.effective(name, mimeType)).also { result ->
+            if (result is ProviderResult.Success) runCatching { onEntriesObserved?.invoke(parent, listOf(result.value), false) }
+        }
     }
-    override fun rename(ref: ResourceRef, name: String): ProviderResult<ResourceEntry> = call("rename", ref) { it.rename(ref, name) }
+    override fun rename(ref: ResourceRef, name: String): ProviderResult<ResourceEntry> = call("rename", ref) {
+        it.rename(ref, name).also { result ->
+            if (result is ProviderResult.Success) {
+                cleanupPublishedCheckpoint(ref)
+                onResourceRemoved?.invoke(ref)
+            }
+        }
+    }
     override fun delete(ref: ResourceRef): ProviderResult<Unit> = call("delete", ref) { backend ->
         val result = backend.delete(ref)
         if (result is ProviderResult.Success) {
+            onResourceRemoved?.invoke(ref)
             val torrent = byId["torrent"] as? RandomAccessTransferSource
             torrent?.pendingResumeTransfers()?.filter { it.destination == ref }?.forEach { session ->
                 torrent.forgetResumeDestination(session.source, session.destinationParent, session.requestedName)

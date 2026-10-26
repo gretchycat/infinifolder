@@ -74,6 +74,35 @@ class ArchiveStorageProvider(
             ArchiveUri.build(ArchiveUri.getSourceUri(uri), path.substringBeforeLast('/', ""), deleted = ArchiveUri.isDeletedView(uri)).toString()))
     } catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot resolve archive parent", e) }
 
+    override fun readTransferMetadata(ref: ResourceRef): ProviderResult<TransferMetadata> { return try {
+        val uri = Uri.parse(ref.documentId)
+        if (ArchiveUri.isDeletedView(uri)) return super<StorageProvider>.readTransferMetadata(ref)
+        val source = ArchiveUri.getSourceUri(uri)
+        if (!ArchiveFormats.isDiscImage(getSourceName(source))) return super<StorageProvider>.readTransferMetadata(ref)
+        val (input, file, dev) = resolveSource(source)
+        val metadata = try { reader.readTransferMetadata(getSourceName(source), ArchiveUri.getEntryPath(uri), input, file, dev) }
+            finally { dev?.close() }
+        if (metadata == null) super<StorageProvider>.readTransferMetadata(ref) else ProviderResult.Success(metadata)
+    } catch (error: Exception) { ProviderResult.Failure(error.message ?: "Cannot read transfer metadata", error) } }
+
+    override fun applyTransferMetadata(ref: ResourceRef, metadata: TransferMetadata): ProviderResult<Unit> { return try {
+        val uri = Uri.parse(ref.documentId)
+        if (ArchiveUri.isDeletedView(uri)) return ProviderResult.Unsupported(ResourceCapability.METADATA)
+        val info = fileSystemInfo(ref)
+        if ((info as? ProviderResult.Success)?.value?.type !in setOf("ext2", "ext3", "ext4"))
+            return if (info is ProviderResult.Failure) info else ProviderResult.Unsupported(ResourceCapability.METADATA)
+        val source = ArchiveUri.getSourceUri(uri)
+        if (needsRebuild(source)) {
+            val path = ArchiveUri.getEntryPath(uri)
+            val parent = ResourceRef(id, ArchiveUri.build(source, path.substringBeforeLast('/', "")).toString())
+            return rebuiltMutation(parent) { it.applyTransferMetadata(ref, metadata) }
+        }
+        val (_, file, dev) = resolveSource(source, writable = true)
+        try { reader.applyTransferMetadata(getSourceName(source), file, dev, ArchiveUri.getEntryPath(uri), metadata) }
+        finally { dev?.close(); treeCache.evictAll() }
+        ProviderResult.Success(Unit)
+    } catch (error: Exception) { ProviderResult.Failure(error.message ?: "Cannot preserve transfer metadata", error) } }
+
     override fun resolveLink(ref: ResourceRef): ProviderResult<ResourceRef> = try {
         val uri = Uri.parse(ref.documentId)
         val source = ArchiveUri.getSourceUri(uri)
@@ -114,9 +143,9 @@ class ArchiveStorageProvider(
             val path = ArchiveUri.getEntryPath(uri)
             val meta = result.value.metadata
             val writable = meta.canWrite
-            val base = ResourceCapabilities.from(meta, features)
-            ProviderResult.Success(base.copy(operations = base.operations + mapOf(
+            ProviderResult.Success(ResourceCapabilities.from(meta, features, overrides = mapOf(
                 ResourceCapability.ACCEPT_MOVE to Support.UNSUPPORTED,
+                ResourceCapability.ACCEPT_INTERNAL_MOVE to if (meta.isDirectory && writable) Support.SUPPORTED else Support.UNSUPPORTED,
                 ResourceCapability.BATCH_WRITE to if (meta.isDirectory && writable) Support.SUPPORTED else Support.UNSUPPORTED,
                 ResourceCapability.CREATE to if (meta.isDirectory && writable) Support.SUPPORTED else Support.UNSUPPORTED,
                 ResourceCapability.DELETE to if (path.isNotEmpty() && writable) Support.SUPPORTED else Support.UNSUPPORTED,
@@ -131,10 +160,18 @@ class ArchiveStorageProvider(
         synchronized(treeCache) { treeCache.evictAll() }
     }
 
+    /** Source conflict checks must inspect stored bytes, including compressed images. */
+    fun <T> withFreshReads(block: () -> T): T = reader.withFreshReads {
+        ReadDeviceScope.withScope(enabled = false) {
+            invalidateReadCaches()
+            block()
+        }
+    }
+
     private val seekDepth = ThreadLocal.withInitial { 0 }
 
     override fun openSeekable(ref: ResourceRef, writable: Boolean): ProviderResult<BlockDevice> {
-        if (writable) return ProviderResult.Unsupported(ResourceCapability.WRITE)
+        if (writable) return ProviderResult.Unsupported(ResourceCapability.SEEK_WRITE)
         val depth = seekDepth.get() ?: 0
         if (depth >= SeekableSourceResolver.MAX_NESTING_DEPTH) return ProviderResult.Failure("Container nesting limit exceeded")
         seekDepth.set(depth + 1)
@@ -226,7 +263,7 @@ class ArchiveStorageProvider(
         val dev = deviceResolver?.invoke(sourceUri, writable)
         val privateSnapshot = trustedBatchSources.contains(sourceUri.toString())
         fun openFileDevice(file: File): BlockDevice? = dev ?: if (!file.exists()) null
-            else if (privateSnapshot) PrivateBatchBlockDevice(file, writable)
+            else if (privateSnapshot) PrivateBatchBlockDevice(file, writable) { privateBatchFailure = it }
             else FileBlockDevice(java.io.RandomAccessFile(file, if (writable) "rw" else "r"),
                 isReadOnly = !writable, ownsFile = true)
         val lp = localProvider
@@ -620,6 +657,25 @@ class ArchiveStorageProvider(
     /** Only private, app-created batch snapshots may skip repeated full-image probes. */
     private val trustedBatchSources = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val loggedBatchSources = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    @Volatile private var privateBatchFailure: Throwable? = null
+
+    internal fun requireHealthyPrivateBatch() {
+        privateBatchFailure?.let { throw IOException("Cannot publish a failed image mutation; original retained", it) }
+    }
+
+    internal fun canRelocatePrivateEntries(entries: List<ResourceRef>, destination: ResourceRef): Boolean {
+        val target = Uri.parse(destination.documentId)
+        val source = ArchiveUri.getSourceUri(target)
+        require(trustedBatchSources.contains(source.toString())) { "Relocation preflight requires a private image" }
+        val paths = (entries + destination).map { ref ->
+            val uri = Uri.parse(ref.documentId)
+            require(ArchiveUri.getSourceUri(uri) == source && !ArchiveUri.isDeletedView(uri))
+            ArchiveUri.getEntryPath(uri)
+        }
+        val (_, file, dev) = resolveSource(source)
+        return try { reader.sameRelocationFilesystem(getSourceName(source), file, dev, paths) }
+            finally { dev?.close() }
+    }
 
     internal fun trustPrivateBatchSource(sourceUri: Uri) {
         require(sourceUri.scheme == "file" && localProvider?.owns(sourceUri) == true) {
@@ -667,8 +723,8 @@ class ArchiveStorageProvider(
 
     private fun isZipSource(source: Uri): Boolean = ArchiveFormats.containerExtension(getSourceName(source)) == "zip"
 
-    private fun needsRebuild(source: Uri): Boolean = getSourceName(source).let {
-        ContainerCompression.isTar(it) || ContainerCompression.isCompressedImage(it)
+    private fun needsRebuild(source: Uri): Boolean = !trustedBatchSources.contains(source.toString()) && getSourceName(source).let {
+        ContainerCompression.isTar(it) || ArchiveFormats.isDiscImage(it)
     }
 
     /** Single UI mutations use the same private commit path as bulk copy/delete. */
@@ -748,10 +804,8 @@ class ArchiveStorageProvider(
             }
             if (failure != null || !compressedImage) return failure
             val (input, file, device) = resolveSource(sourceUri)
-            val info = try { reader.fileSystemInfo(name, entryPath, input, file, device) }
+            return try { reader.compressedWritableFailureReason(name, entryPath, input, file, device) }
                 finally { device?.close() }
-            return if (info?.type?.uppercase(java.util.Locale.ROOT) in setOf("FAT12", "FAT16", "FAT32")) null
-                else "Only FAT12/FAT16/FAT32 filesystems support edits inside compressed images"
         }
         // A provider advertising staged/native seek writes can be checked using read access.
         // Unknown providers still have to supply an actual writable handle. Mutations always
@@ -775,7 +829,7 @@ class ArchiveStorageProvider(
         val uri = Uri.parse(ref.documentId)
         if (ArchiveUri.isDeletedView(uri)) throw IOException("Deleted-file recovery views are read-only")
         val source = ArchiveUri.getSourceUri(uri)
-        if (ContainerCompression.isCompressedImage(getSourceName(source))) {
+        if (ArchiveFormats.isDiscImage(getSourceName(source)) && !trustedBatchSources.contains(source.toString())) {
             val parent = ResourceRef(id, ArchiveUri.build(source, ArchiveUri.getEntryPath(uri).substringBeforeLast('/', "")).toString())
             val batch = when (val opened = beginWriteBatch(parent) { false }) {
                 is ProviderResult.Success -> opened.value
@@ -955,6 +1009,26 @@ class ArchiveStorageProvider(
         ProviderResult.Failure(e.message ?: "Failed to create file in archive", e)
     }
     }
+
+    /** This hook deliberately cannot mutate a public backing image directly. */
+    @Synchronized
+    internal fun relocatePrivateEntry(ref: ResourceRef, destination: ResourceRef, name: String): ProviderResult<ResourceEntry> = try {
+        com.infinifolder.storage.StorageSafety.validateName(name)
+        val sourceUri = Uri.parse(ref.documentId)
+        val destinationUri = Uri.parse(destination.documentId)
+        val source = ArchiveUri.getSourceUri(sourceUri)
+        if (ref.providerId != id || destination.providerId != id ||
+            !trustedBatchSources.contains(source.toString()) || ArchiveUri.getSourceUri(destinationUri) != source ||
+            ArchiveUri.isDeletedView(sourceUri) || ArchiveUri.isDeletedView(destinationUri))
+            throw IOException("Relocation requires the same private writable container snapshot")
+        val parent = ArchiveUri.getEntryPath(destinationUri)
+        val path = if (parent.isEmpty()) name else "$parent/$name"
+        val (_, localFile, device) = resolveSource(source, writable = true)
+        try {
+            reader.relocateEntry(getSourceName(source), localFile, ArchiveUri.getEntryPath(sourceUri), path, device)
+        } finally { treeCache.evictAll(); device?.close() }
+        stat(ResourceRef(id, ArchiveUri.build(source, path).toString()))
+    } catch (error: Exception) { ProviderResult.Failure(error.message ?: "Cannot relocate container entry", error) }
 
     @Synchronized
     override fun rename(ref: ResourceRef, name: String): ProviderResult<ResourceEntry> =

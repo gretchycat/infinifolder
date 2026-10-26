@@ -91,6 +91,9 @@ import com.infinifolder.theme.IconThemeManager
 import com.infinifolder.theme.IconThemeInfo
 import android.os.Build
 import com.infinifolder.storage.StorageProvider
+import com.infinifolder.storage.StorageAction
+import com.infinifolder.storage.StorageActionPolicy
+import com.infinifolder.storage.DestinationAssessment
 import com.infinifolder.storage.StorageProviderRegistry
 import com.infinifolder.storage.FileMagicDetector
 import com.infinifolder.storage.FileMagicResult
@@ -112,7 +115,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         val canMove: Boolean,
         val sourceDirectory: Uri?,
         val sourceScrollY: Int,
-        val sourceDisplayName: String?
+        val sourceDisplayName: String?,
+        val createLinks: Boolean = false
     )
 
     private class DragHoldIndicatorView(context: android.content.Context) : View(context) {
@@ -173,6 +177,8 @@ class MainActivity : Activity(), DebugDumpObserver {
     companion object {
         const val SAFETY_NOTIFICATION_CHANNEL_ID = "infinifolder_safety_channel"
         const val NOTIFICATION_ID_MOUNTED_BLOCKED = 3001
+        const val ACTION_HOME_ITEM = "com.infinifolder.action.OPEN_HOME_ITEM"
+        const val ACTION_HOME_ITEM_IN_APP = "com.infinifolder.action.OPEN_HOME_ITEM_IN_APP"
 
         private var applicationStorage: StorageProvider? = null
         fun resourceRef(uri: Uri): ResourceRef = applicationStorage?.refForUri(uri)
@@ -181,6 +187,9 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
     private val io = com.infinifolder.storage.StorageActivity.loadingExecutor(Executors.newFixedThreadPool(4))
     private val accessIo = com.infinifolder.storage.StorageActivity.loadingExecutor(Executors.newFixedThreadPool(2))
+    @Volatile private var visibleArtworkUris: Set<Uri> = emptySet()
+    private var artworkRenderGeneration = 0
+    private val resourceIconResolver by lazy { ResourceIconResolver(applicationContext) }
     private val imageIo = com.infinifolder.storage.StorageActivity.loadingExecutor(Executors.newFixedThreadPool(4))
     private val thumbnailCache = object : LruCache<String, Bitmap>(16 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount / 1024
@@ -271,6 +280,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private lateinit var toolbar: LinearLayout
     private lateinit var createButton: TextView
     private lateinit var createLinkButton: TextView
+    private lateinit var floatingModeButton: TextView
     private lateinit var content: LinearLayout
     private lateinit var browserArea: LinearLayout
     private lateinit var fileScroll: PullToRefreshScrollView
@@ -297,6 +307,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     @Volatile private var loadGeneration = 0
     private var entries = emptyList<ResourceEntry>()
     private val containerLinkProvider get() = com.infinifolder.storage.StorageRuntime.get(this).containerLinks
+    private val commonLocations get() = com.infinifolder.storage.StorageRuntime.get(this).commonLocations
     @Volatile private var rootContainerLinks = emptyList<Pair<ResourceEntry, ShortcutInfo>>()
     private var homeSourcesGeneration = 0
     private val entryIconViews = mutableMapOf<Uri, View>()
@@ -339,12 +350,15 @@ class MainActivity : Activity(), DebugDumpObserver {
     private val operationCompletionListener: (OperationSnapshot) -> Unit = { op ->
         if (::operationLight.isInitialized) operationLight.completed(op)
     }
-    private lateinit var unhideOperationBar: LinearLayout
-    private lateinit var unhideOperationLabel: TextView
-    private lateinit var unhideOperationButton: TextView
+    private lateinit var unhideOperationBar: OperationStatusBar
     private val operationWindowQueue = ArrayDeque<String>()
     private var isOperationWindowHidden = false
+    private var browserResumed = false
+    private var pendingOperationsIntent = false
     private var currentProgressDialog: android.app.AlertDialog? = null
+    private var operationOverview: OperationOverviewDialog? = null
+    private var autoHideOperationOverview = false
+    private var progressDestinationView: TextView? = null
     private var activeDialogOpId: String? = null
     private var progressTitleView: TextView? = null
     private var progressQueueView: TextView? = null
@@ -356,6 +370,15 @@ class MainActivity : Activity(), DebugDumpObserver {
     private var progressBytesView: TextView? = null
     private var progressVerificationCheck: CheckBox? = null
     private var progressRateView: TextView? = null
+    private var progressTorrentStatsView: TextView? = null
+    private var progressTorrentWaitCheck: CheckBox? = null
+    private var progressRetryButton: Button? = null
+    private val retryingTorrentDestinations = mutableSetOf<ResourceRef>()
+    private val restartingOperations = mutableSetOf<String>()
+    private val stoppingOperations = mutableSetOf<String>()
+    private val torrentTransferPreferences by lazy {
+        getSharedPreferences(com.infinifolder.torrent.TorrentTransferPreferences.NAME, MODE_PRIVATE)
+    }
     private var progressCancelButton: Button? = null
     private var progressHideButton: Button? = null
     private val refreshedTerminalOperations = mutableSetOf<String>()
@@ -376,6 +399,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private val pickTreeRequest = 4101
     private val pickCustomIconRequest = 4103
     private val pickThemeArchiveRequest = 4104
+    private val pickWinampSkinRequest = 4105
     private var pendingTreeSourceKey: String? = null
     private var pendingTreeTarget: Uri? = null
     private var pendingTreeAuthority: String? = null
@@ -464,7 +488,17 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         }
     }
+    private var forwardingHomeShortcut = false
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (intent?.action == ACTION_HOME_ITEM) {
+            forwardingHomeShortcut = true
+            setTheme(R.style.HomeShortcutTheme)
+            super.onCreate(savedInstanceState)
+            intent.data?.let { startActivity(HomeItemActivity.intent(this, it)) }
+            finish()
+            overridePendingTransition(0, 0)
+            return
+        }
         super.onCreate(savedInstanceState)
         backNavigation = ActivityBackNavigation.register(this) { onBackPressed() }
         com.infinifolder.viewer.DebugTools.install(application)
@@ -474,6 +508,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         com.infinifolder.storage.StorageActivity.addListener(storageActivityListener)
         operations.addListener(operationsListener)
         shared = getSharedPreferences("browser", MODE_PRIVATE)
+        isOperationWindowHidden = savedInstanceState?.getBoolean("operation_window_hidden", false) ?: false
         grid = shared.getBoolean("grid", true); sortByName = shared.getBoolean("sort_name", true)
         sortKey = shared.getString("sort_key", if (sortByName) "name" else "modified") ?: "name"
         sortDescending = shared.getBoolean("sort_descending", !sortByName)
@@ -541,18 +576,82 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         handleCacheCopyRequest(intent)
         handleExternalLinkIntent(intent)
+        handleHomeItemIntent(intent)
+        if (intent.getBooleanExtra("show_operations", false)) {
+            intent.removeExtra("show_operations")
+            pendingOperationsIntent = true
+            window.decorView.post {
+                if (browserResumed && pendingOperationsIntent && !isFinishing && !isDestroyed) {
+                    pendingOperationsIntent = false
+                    showOperations()
+                }
+            }
+        }
+        io.execute { HomeShortcuts.refreshPinned(applicationContext) }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.action == ACTION_HOME_ITEM) {
+            // Older pins may still target an existing browser task. Hide it before
+            // handing off, so it cannot draw under the transparent dispatcher.
+            window.decorView.visibility = View.INVISIBLE
+            intent.data?.let { startActivity(HomeItemActivity.intent(this, it)) }
+            finish()
+            overridePendingTransition(0, 0)
+            return
+        }
         setIntent(intent)
         handleCacheCopyRequest(intent)
         handleExternalLinkIntent(intent)
+        handleHomeItemIntent(intent)
+        if (intent.getBooleanExtra("show_operations", false)) {
+            intent.removeExtra("show_operations")
+            pendingOperationsIntent = true
+            window.decorView.post {
+                if (browserResumed && pendingOperationsIntent && !isFinishing && !isDestroyed) {
+                    pendingOperationsIntent = false
+                    showOperations()
+                }
+            }
+        }
+    }
+
+    private fun handleHomeItemIntent(request: Intent?) {
+        if (request?.action == ACTION_HOME_ITEM) {
+            val target = request.data
+            request.action = null
+            target?.let { startActivity(HomeItemActivity.intent(this, it)) }
+            return
+        }
+        if (request?.action != ACTION_HOME_ITEM_IN_APP) return
+        val uri = request.data ?: return
+        request.action = null
+        io.execute {
+            try {
+                val entry = provider.refForUri(uri)?.let { (provider.stat(it) as? ProviderResult.Success)?.value }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    when {
+                        entry == null -> openContainerLinkUri(uri, null, requireContainer = false, origin = LinkNavigationOrigin.EXTERNAL_HISTORY)
+                        entry.metadata.isDirectory -> navigate(entry.uri, displayName = entry.metadata.name)
+                        else -> open(entry)
+                    }
+                }
+            } catch (error: Exception) {
+                runOnUiThread { Toast.makeText(this, error.message ?: "Could not open home-screen item", Toast.LENGTH_LONG).show() }
+            }
+        }
     }
 
     private fun handleExternalLinkIntent(request: Intent?) {
         if (request?.action != Intent.ACTION_VIEW) return
         val uri = request.data ?: return
+        if (uri.scheme in setOf("content", "file")) {
+            val ref = provider.refForUri(uri)
+            if (ref != null) resumeIncompleteDownload(ref)
+            return
+        }
         if (uri.scheme?.lowercase(Locale.ROOT) !in externalLinkSchemes) return
         val title = uri.host ?: "${uri.scheme?.uppercase(Locale.ROOT) ?: "External"} link"
         openContainerLinkUri(uri, title, requireContainer = true, origin = LinkNavigationOrigin.EXTERNAL_HISTORY)
@@ -664,14 +763,31 @@ class MainActivity : Activity(), DebugDumpObserver {
         createLinkButton = button("🔗+", fg) { showCreateUriLinkDialog() }
         button("↻", fg) { refreshCurrentLocation() }
         button(if (grid) "☷" else "▦", fg) { grid = !grid; shared.edit().putBoolean("grid", grid).apply(); renderCurrentContents() }
+        floatingModeButton = button("▣", fg) { showCurrentDirectoryFloating() }.apply {
+            contentDescription = "Open current directory in floating window"
+            tooltipText = contentDescription
+        }
         button("⋮", fg) { showOptions() }
         DebugTools.attachToolbarButton(this, toolbar)
-        toolbar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         operationLight = OperationActivityLight(this).apply {
             setOnClickListener { showOperations() }
         }
-        toolbar.addView(operationLight, LinearLayout.LayoutParams(dp(32), dp(44)))
-        root.addView(toolbar)
+        // Keep the activity light on the right while controls stay reachable on narrow screens.
+        val toolbarStrip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = com.infinifolder.theme.ThemeManager.createToolbarDrawable(theme, density)
+        }
+        toolbar.background = null
+        toolbarStrip.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(toolbar, ViewGroup.LayoutParams(-2, -2))
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        toolbarStrip.addView(operationLight, LinearLayout.LayoutParams(dp(32), dp(44)).apply {
+            marginStart = dp(4); marginEnd = dp(4)
+        })
+        root.addView(toolbarStrip)
         pinnedContainerContent = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -688,44 +804,10 @@ class MainActivity : Activity(), DebugDumpObserver {
             isHorizontalScrollBarEnabled = false
             addView(breadcrumb, android.view.ViewGroup.LayoutParams(-2, -2))
         })
-        unhideOperationBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = GradientDrawable().apply {
-                cornerRadius = dp(8).toFloat()
-                setColor(if (dark) 0xFF283424.toInt() else 0xFFDCEAD5.toInt())
-                setStroke(dp(1), if (dark) 0xFF4CAF50.toInt() else 0xFF2E7D32.toInt())
-            }
-            setPadding(dp(12), dp(6), dp(10), dp(6))
-            layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(4)
-                bottomMargin = dp(4)
-            }
+        unhideOperationBar = OperationStatusBar(this).apply {
             visibility = View.GONE
             setOnClickListener { unhideOperationWindow() }
         }
-        unhideOperationLabel = TextView(this).apply {
-            textSize = 13f
-            setTextColor(setTextColorForTheme())
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
-        }
-        unhideOperationButton = TextView(this).apply {
-            text = "Unhide"
-            textSize = 13f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            setTextColor(if (dark) 0xFF81C784.toInt() else 0xFF1B5E20.toInt())
-            background = GradientDrawable().apply {
-                cornerRadius = dp(6).toFloat()
-                setColor(if (dark) 0xFF3A4935.toInt() else 0xFFC5DEC0.toInt())
-            }
-            setPadding(dp(12), dp(6), dp(12), dp(6))
-            setOnClickListener { unhideOperationWindow() }
-        }
-        unhideOperationBar.addView(unhideOperationLabel)
-        unhideOperationBar.addView(unhideOperationButton)
-        root.addView(unhideOperationBar)
         updateOperationVisibilityUi()
         status = TextView(this).apply {
             textSize = 13f; setTextColor(theme.textSecondary); setPadding(dp(4), dp(4), dp(4), dp(8))
@@ -839,7 +921,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             when (event.action) {
                 android.view.DragEvent.ACTION_DRAG_STARTED -> payload != null
                 android.view.DragEvent.ACTION_DRAG_LOCATION -> true
-                android.view.DragEvent.ACTION_DROP -> false
+                android.view.DragEvent.ACTION_DROP -> if (payload?.createLinks == true) dispatchBreadcrumbLinkDrop(view, event)
+                    else dispatchNavigationDropAtScreen(view, event) || dispatchEntryDropAtScreen(view, event) || dispatchFilePaneDropAtScreen(view, event)
                 else -> true
             }
         }
@@ -1081,6 +1164,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         browserArea.addView(treePanel, LinearLayout.LayoutParams(dp(180), -1))
         browserArea.addView(fileScrollContainer, LinearLayout.LayoutParams(0, -1, 1f))
         root.addView(browserArea, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(unhideOperationBar, LinearLayout.LayoutParams(-1, -2))
         setContentView(root)
         root.setOnDragListener { host, event ->
             when (event.action) {
@@ -1091,14 +1175,16 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
                 android.view.DragEvent.ACTION_DROP -> {
                     cancelDragContainerHover()
-                    dispatchTreeDropAtScreen(host, event) || dispatchNavigationDropAtScreen(host, event) || dispatchEntryDropAtScreen(host, event)
+                    if ((event.localState as? BrowserDragPayload)?.createLinks == true) dispatchBreadcrumbLinkDrop(host, event)
+                    else dispatchTreeDropAtScreen(host, event) || dispatchNavigationDropAtScreen(host, event) ||
+                        dispatchEntryDropAtScreen(host, event) || dispatchFilePaneDropAtScreen(host, event)
                 }
                 android.view.DragEvent.ACTION_DRAG_ENDED -> {
                     val finishedPayload = event.localState as? BrowserDragPayload
                     com.infinifolder.storage.DiagnosticLog.record(
                         "browser.drag.ended", "result=${event.result} locations=$activeDragLocationEvents"
                     )
-                    if (!event.result && !activeDragDropHandled && finishedPayload != null && treeVisible) {
+                    if (!event.result && !activeDragDropHandled && finishedPayload != null && !finishedPayload.createLinks && treeVisible) {
                         val lastPosition = lastDragScreenPosition
                         val hadValidTreeHover = dragHoveredTreeNodeKey != null
                         val fallbackHit = lastPosition?.takeIf {
@@ -1146,7 +1232,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 label == "📁+" || label == "🔗+" -> 17f
                 else -> 21f
             }
-            setTextColor(color)
+            setTextColor(com.infinifolder.theme.ThemeManager.activeTheme.toolbarText)
             gravity = Gravity.CENTER
             setPadding(dp(6), dp(10), dp(6), dp(10))
             minWidth = dp(if (label == "InfiniFolder") 112 else 40)
@@ -1159,10 +1245,12 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
     private fun updateCreateAction() {
         if (!::createButton.isInitialized) return
+        updateFloatingModeAction()
         val inArchive = current?.let { ArchiveUri.isArchiveUri(it) && !archiveProvider.cachedWritable(it) } ?: false
         val inApps = current?.let { AppsUri.isAppsUri(it) } ?: false
-        val canWriteDir = !homeMode && current != null && !inArchive && !inApps
-        createButton.visibility = if ((homeMode && homePage != "root") || inArchive || inApps) View.GONE else View.VISIBLE
+        val inPrivateDownloads = current?.scheme == com.infinifolder.storage.PartialDownloadsProvider.SCHEME
+        val canWriteDir = !homeMode && current != null && !inArchive && !inApps && !inPrivateDownloads
+        createButton.visibility = if ((homeMode && homePage != "root") || inArchive || inApps || inPrivateDownloads) View.GONE else View.VISIBLE
         createButton.text = if (homeMode) "＋" else "📁+"
         createButton.contentDescription = if (homeMode) "Add saved connection" else "Create directory"
         if (::createLinkButton.isInitialized) {
@@ -1171,6 +1259,27 @@ class MainActivity : Activity(), DebugDumpObserver {
             createLinkButton.contentDescription = "Create link"
         }
     }
+    private fun updateFloatingModeAction() {
+        if (::floatingModeButton.isInitialized) {
+            floatingModeButton.isEnabled = !homeMode && current != null
+            floatingModeButton.alpha = if (floatingModeButton.isEnabled) 1f else .4f
+        }
+    }
+    private fun showCurrentDirectoryFloating() {
+        val location = current?.takeUnless { homeMode } ?: return
+        try {
+            if (android.provider.Settings.canDrawOverlays(this)) {
+                startService(com.infinifolder.overlay.FloatingContainerService.intent(this, location))
+            } else {
+                startActivity(HomeItemActivity.intent(this, location).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+            moveTaskToBack(true)
+        } catch (error: Exception) {
+            com.infinifolder.storage.DiagnosticLog.record("browser.floating.failed", error = error)
+            Toast.makeText(this, error.message ?: "Cannot open floating window", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun onCreateAction() {
         if (current?.let { AppsUri.isAppsUri(it) } == true) return
         if (homeMode && homePage == "root") showRootContainerLinkDialog() else if (!homeMode) showCreateDirectoryDialog()
@@ -3398,6 +3507,10 @@ class MainActivity : Activity(), DebugDumpObserver {
     @Deprecated("Use Activity Result APIs when AndroidX lifecycle is introduced")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == pickWinampSkinRequest && resultCode == RESULT_OK) {
+            data?.data?.let(::importWinampSkin)
+            return
+        }
         if (requestCode == pickTreeRequest && resultCode == RESULT_OK) data?.data?.let { uri ->
             permissionQueryGeneration++ // Discard checks that started before this new grant.
             accessRequestGeneration++
@@ -3554,6 +3667,16 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun openRoot(uri: Uri, logicalPrefix: String? = null, rememberAuthorizedRoot: Boolean = true) {
         if (uri == ContainerLinksProvider.ROOT) { showHomeRoot(); return }
+        if (uri == com.infinifolder.storage.PartialDownloadsProvider.ROOT) {
+            accessRequestGeneration++
+            logicalLocationPrefix = null
+            currentProgramName = null
+            history.clear(); historyNames.clear()
+            shared.edit().putString("root", uri.toString()).apply()
+            navigate(uri, push = false, displayName = "Partial downloads")
+            rebuildTreeRoots()
+            return
+        }
         if (AppsUri.isAppsUri(uri)) {
             openInstalledApps(AppsUri.getCategoryName(uri))
             return
@@ -3710,6 +3833,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
     private fun renderLocation() {
+        updateFloatingModeAction()
         try {
             if (!homeMode && current == ContainerLinksProvider.ROOT) { showHomeRoot(); return }
             // Virtual root is rendered separately, never as a folder-history entry.
@@ -3871,7 +3995,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 if (localProvider.owns(uri)) {
                                     if (!localProvider.hasAccess()) requestSharedStorageAccess()
                                     else status.text = "Android restricts access to this folder: ${result.message}"
-                                } else if (!ArchiveUri.isArchiveUri(uri) && !AppsUri.isAppsUri(uri) && !SftpUri.isSftpUri(uri) && !FtpUri.isFtpUri(uri) && !SmbUri.isSmbUri(uri) && !WebDavUri.owns(uri) && isAccessFailure(result.message, result.cause)) {
+                                } else if (uri.scheme == "content" && !ArchiveUri.isArchiveUri(uri) && !AppsUri.isAppsUri(uri) && !SftpUri.isSftpUri(uri) && !FtpUri.isFtpUri(uri) && !SmbUri.isSmbUri(uri) && !WebDavUri.owns(uri) && isAccessFailure(result.message, result.cause)) {
                                     rootPicker(uri, "tree_permission_regrant")
                                 }
                             }
@@ -4038,7 +4162,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         cause is SecurityException || listOf("revoked", "permission", "access denied", "permission denied")
             .any { message.contains(it, ignoreCase = true) }
     private fun scheduleVisibleProbe() {
-        if (visibleProbeScheduled || pendingCardProbes.isEmpty() || !::fileScroll.isInitialized) return
+        if (visibleProbeScheduled || !::fileScroll.isInitialized) return
         visibleProbeScheduled = true
         fileScroll.post {
             visibleProbeScheduled = false
@@ -4047,37 +4171,35 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun isCardVisibleInScroll(cardView: View): Boolean {
-        if (!::fileScroll.isInitialized || !cardView.isAttachedToWindow) return false
-        if (cardView.width <= 0 && cardView.height <= 0) return false
-        val scrollHeight = fileScroll.height
-        if (scrollHeight <= 0) return true
-        val rect = android.graphics.Rect()
-        cardView.getDrawingRect(rect)
-        return try {
-            fileScroll.offsetDescendantRectToMyCoords(cardView, rect)
-            val buffer = dp(160)
-            val visibleTop = fileScroll.scrollY - buffer
-            val visibleBottom = fileScroll.scrollY + scrollHeight + buffer
-            rect.bottom >= visibleTop && rect.top <= visibleBottom
-        } catch (_: Throwable) {
-            false
-        }
+        if (!::fileScroll.isInitialized || !cardView.isAttachedToWindow ||
+            cardView.width <= 0 || cardView.height <= 0 || fileScroll.width <= 0 || fileScroll.height <= 0) return false
+        // Both rectangles use screen coordinates and Android's actual ancestor clipping.
+        // Never queue the whole folder while the scroll viewport is unmeasured.
+        val viewport = android.graphics.Rect()
+        val card = android.graphics.Rect()
+        return fileScroll.getGlobalVisibleRect(viewport) && cardView.getGlobalVisibleRect(card) &&
+            android.graphics.Rect.intersects(viewport, card)
     }
 
     private fun probeVisibleCards() {
+        visibleArtworkUris = entryIconViews.filterValues { isCardVisibleInScroll(it.parent as? View ?: it) }.keys.toSet()
         if (pendingCardProbes.isEmpty()) return
         val currentGen = loadGeneration
         val snapshot = ArrayList(pendingCardProbes)
+        var started = 0
         for (probe in snapshot) {
             if (probe.generation != currentGen) {
                 pendingCardProbes.remove(probe)
             } else if (isCardVisibleInScroll(probe.view)) {
                 pendingCardProbes.remove(probe)
+                started++
                 try {
                     probe.startProbe()
                 } catch (_: Throwable) {}
             }
         }
+        if (started > 0) com.infinifolder.storage.DiagnosticLog.record("artwork.visible-probes",
+            "started=$started deferred=${pendingCardProbes.size} scrollY=${fileScroll.scrollY} viewportHeight=${fileScroll.height}")
     }
 
     private fun registerVisibleCardProbe(cardView: View, generation: Int = loadGeneration, startProbe: () -> Unit) {
@@ -4105,6 +4227,8 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun renderEntries() {
+        artworkRenderGeneration++
+        ResourceIconSidecars.observe(entries, current)
         val renderStartedAt = SystemClock.uptimeMillis()
         if (renderedPinnedIconSize != iconSizeDp) renderPinnedContainers()
         val location = current
@@ -4123,15 +4247,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             visibleProbeScheduled = false
             entryIconViews.clear()
             content.removeAllViews()
-            val visible = if (showHidden) entries else entries.filterNot { it.metadata.isHidden }
-            val byName = compareBy<ResourceEntry> { it.metadata.name.lowercase(Locale.ROOT) }.thenBy { it.metadata.name }
-            val ordering = when (sortKey) {
-                "type" -> compareBy<ResourceEntry> { com.infinifolder.mime.MimeRegistry.normalize(it.metadata.mimeType) }.then(byName)
-                "size" -> compareBy<ResourceEntry> { it.metadata.sizeBytes ?: -1L }.then(byName)
-                "modified" -> compareBy<ResourceEntry> { it.metadata.modifiedAtMillis ?: 0L }.then(byName)
-                else -> byName
-            }.let { if (sortDescending) it.reversed() else it }
-            val rows = visible.sortedWith(compareBy<ResourceEntry> { !it.metadata.isDirectory }.then(ordering))
+            val rows = FileViewGrid.sortedEntries(entries, showHidden, sortKey, sortDescending)
             if (rows.isEmpty()) {
                 content.addView(TextView(this).apply {
                     text = openingVirtualDirectoryLabel?.let { "Opening $it…" }
@@ -4160,28 +4276,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                     (resources.configuration.screenWidthDp - if (treeVisible) 220 else 32).coerceAtLeast(iconSizeDp)
                 }
                 val columns = gridColumns(availableWidth)
-                val table = TableLayout(this).apply {
-                    clipChildren = false
-                    clipToPadding = false
-                    isStretchAllColumns = true
-                    isLongClickable = true
-                    setOnLongClickListener { onEmptyAreaLongPress() }
-                }
-                rows.chunked(columns).forEach { group ->
-                    val tr = TableRow(this).apply {
-                        clipChildren = false
-                        clipToPadding = false
-                        isLongClickable = true
-                        setOnLongClickListener { onEmptyAreaLongPress() }
-                    }
-                    group.forEach { entry -> tr.addView(entryCard(entry, true), TableRow.LayoutParams(0, TableRow.LayoutParams.WRAP_CONTENT, 1f)) }
-                    repeat(columns - group.size) {
-                        tr.addView(View(this).apply {
-                            isLongClickable = true
-                            setOnLongClickListener { onEmptyAreaLongPress() }
-                        }, TableRow.LayoutParams(0, TableRow.LayoutParams.WRAP_CONTENT, 1f))
-                    }
-                    table.addView(tr)
+                val table = FileViewGrid.build(this, rows, columns, ::onEmptyAreaLongPress) { entry ->
+                    entryCard(entry, true)
                 }
                 content.addView(table)
             } else rows.forEach { content.addView(entryCard(it, false)) }
@@ -4210,65 +4306,16 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
     private fun renderCurrentContents() { if (homeMode) renderHomeItems() else renderEntries() }
     private fun iconTextSizeDp(asGrid: Boolean): Float = if (asGrid) (iconSizeDp * 0.72f) else 28f
-    private fun gridColumns(availableWidthDp: Int): Int {
-        val targetCellWidth = (iconSizeDp * 1.35f).coerceAtLeast(36f)
-        return Math.round(availableWidthDp / targetCellWidth).coerceIn(1, 14)
-    }
+    private fun gridColumns(availableWidthDp: Int): Int = FileViewGrid.columns(availableWidthDp, iconSizeDp)
     private fun buildFileIconView(
         entry: ResourceEntry,
         meta: ResourceMetadata,
         asGrid: Boolean,
         box: View
-    ): View {
-        val isDefaultArchive = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isDefaultBrowsableArchive(meta.name, meta.mimeType)
-        val mimeKey = CustomIconStore.resolveMimeKey(meta)
-        val sidePx = dp(if (asGrid) iconSizeDp else 44)
-
-        if (customIconStore.hasMimeIcon(mimeKey)) {
-            return mimeIconPreview(mimeKey, if (isDefaultArchive) "📦" else iconFor(meta), asGrid, box)
-        }
-
-        if (iconThemeManager.hasActiveTheme()) {
-            val themeBmp = iconThemeManager.resolveFileIcon(meta, sidePx)
-            if (themeBmp != null) {
-                return ImageView(this).apply {
-                    scaleType = ImageView.ScaleType.FIT_CENTER
-                    setImageBitmap(themeBmp)
-                    layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
-                }
-            }
-        }
-
-        if (com.infinifolder.mime.MimeRegistry.effective(meta.name, meta.mimeType) == "application/vnd.android.package-archive" && localProvider.owns(entry.uri)) {
-            val localFile = localProvider.fileFor(entry.uri)
-            val apkIcon = appsProvider.getApkFileIconBitmap(localFile.absolutePath, sidePx)
-            if (apkIcon != null) {
-                return ImageView(this).apply {
-                    scaleType = ImageView.ScaleType.FIT_CENTER
-                    setImageBitmap(apkIcon)
-                    layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
-                }
-            }
-        }
-
-        return when {
-            isDefaultArchive -> TextView(this).apply {
-                text = "📦"
-                setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
-                gravity = Gravity.CENTER
-                includeFontPadding = false
-            }
-            ImageFormats.isImage(meta) -> {
-                imagePreview(entry, asGrid, box)
-            }
-            else -> TextView(this).apply {
-                text = iconFor(meta)
-                setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
-                gravity = Gravity.CENTER
-                includeFontPadding = false
-            }
-        }
-    }
+    ): View = FileIconView.create(this, entry, meta, asGrid, iconSizeDp,
+        customIconStore, iconThemeManager, localProvider, appsProvider,
+        mimePreview = { mimeKey, fallback -> mimeIconPreview(mimeKey, fallback, asGrid, box) },
+        imagePreview = { imagePreview(entry, asGrid, box) })
 
     private fun browseNestedArchive(entry: ResourceEntry) {
         val loadingToken = beginEntryActionLoading("Opening ${entry.metadata.name}…") ?: return
@@ -4293,32 +4340,9 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun entryCard(entry: ResourceEntry, asGrid: Boolean): View {
-        val fg = if (dark) 0xFFF0F0E9.toInt() else 0xFF20231F.toInt()
         val isSelected = selectedUris.contains(entry.uri)
-        val box = LinearLayout(this).apply {
-            orientation = if (asGrid) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
-            gravity = if (asGrid) (Gravity.TOP or Gravity.CENTER_HORIZONTAL) else Gravity.CENTER_VERTICAL
-            clipChildren = false
-            clipToPadding = false
-            val hPad = if (asGrid) dp(2) else dp(10)
-            val vPad = if (asGrid) dp(4) else dp(8)
-            setPadding(hPad, vPad, hPad, vPad)
-            minimumHeight = dp(64)
-            if (!asGrid) {
-                if (isSelected) {
-                    background = GradientDrawable().apply {
-                        setColor(if (dark) 0x334CAF50.toInt() else 0x3381C784.toInt())
-                        cornerRadius = dp(8).toFloat()
-                        setStroke(dp(1), if (dark) 0xFF4CAF50.toInt() else 0xFF2E7D32.toInt())
-                    }
-                } else {
-                    setBackgroundResource(android.R.drawable.list_selector_background)
-                }
-            } else {
-                isLongClickable = true
-                setOnLongClickListener { onEmptyAreaLongPress() }
-            }
-        }
+        val card = FileEntryCard(this, entry, asGrid, iconSizeDp, dark, isSelected, ::onEmptyAreaLongPress)
+        val box = card.container
         val sideDp = if (asGrid) iconSizeDp else 44
         val sidePx = dp(sideDp)
         val isShortcut = ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)
@@ -4346,7 +4370,15 @@ class MainActivity : Activity(), DebugDumpObserver {
         var uncachedShortcutPlaceholder: TextView? = null
         var uncachedShortcutImage: ImageView? = null
 
-        val rawIcon = if (isShortcut && shortcut != null) {
+        val sharedArtwork = isShortcut || AppsUri.isAppUri(entry.uri) || ResourceIconSidecars.find(entry) != null ||
+            ResourceArtworkCache.peek(entry, sidePx) != null
+        val rawIcon = if (sharedArtwork) {
+            TextView(this).apply {
+                text = if (AppsUri.isAppUri(entry.uri)) "📱" else iconFor(effectiveMeta)
+                gravity = Gravity.CENTER
+                setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
+            }
+        } else if (isShortcut && shortcut != null) {
             val targetUri = try { Uri.parse(shortcut.targetUri) } catch (_: Throwable) { null }
             val targetMeta = ResourceMetadata(shortcut.targetPath ?: entry.metadata.name, shortcut.targetMimeType ?: "", null, null, shortcut.targetIsDirectory)
             val targetMimeKey = if (!shortcut.targetIsDirectory && !WebMetadataResolver.isWebUri(shortcut.targetUri)) CustomIconStore.resolveMimeKey(targetMeta) else null
@@ -4437,101 +4469,78 @@ class MainActivity : Activity(), DebugDumpObserver {
         } else {
             buildFileIconView(entry, effectiveMeta, asGrid, box)
         }
-        val iconWidth = if (asGrid) sidePx else dp(52)
-        val iconHeight = sidePx
-        val icon = FrameLayout(this).apply {
-            clipChildren = false
-            clipToPadding = false
-            layoutParams = LinearLayout.LayoutParams(iconWidth, iconHeight).apply {
-                gravity = if (asGrid) Gravity.CENTER_HORIZONTAL else Gravity.CENTER_VERTICAL
-                if (asGrid) bottomMargin = dp(4)
+        val icon = card.attachIcon(rawIcon)
+        // Shared stale-while-refresh artwork; source access stays in the visible-card worker.
+        if (sharedArtwork) {
+            val artworkSize = dp(if (asGrid) iconSizeDp else 44)
+            val artworkGeneration = loadGeneration
+            val cardRender = artworkRenderGeneration
+            var authoritativeApplied = false
+            fun applyArtwork(bitmap: Bitmap) {
+                if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return
+                val image = ImageView(this).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    setImageBitmap(bitmap)
+                }
+                if (icon.childCount > 0) icon.removeViewAt(0)
+                icon.addView(image, 0, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             }
-            if (asGrid) {
-                if (!isSelected) {
-                    setBackgroundResource(android.R.drawable.list_selector_background)
+            ResourceArtworkCache.peek(entry, artworkSize)?.let(::applyArtwork)
+            lateinit var startArtwork: () -> Unit
+            fun retryWhenVisible() {
+                runOnUiThread {
+                    if (artworkGeneration == loadGeneration && cardRender == artworkRenderGeneration && !isDestroyed)
+                        registerVisibleCardProbe(box, artworkGeneration, startArtwork)
                 }
             }
-            addView(rawIcon, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
-            if (entry.metadata.recoveryNote != null) {
-                addView(ImageView(context).apply {
-                    setImageResource(android.R.drawable.ic_menu_delete)
-                    imageTintList = android.content.res.ColorStateList.valueOf(0xFFFFFFFF.toInt())
-                    setPadding(dp(2), dp(2), dp(2), dp(2))
-                    contentDescription = "Deleted file"
-                    background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(if (dark) 0xFF795548.toInt() else 0xFF5D4037.toInt())
+            startArtwork = {
+                val queuedAt = SystemClock.uptimeMillis()
+                ResourceArtworkCache.reads.execute cacheRead@ {
+                    if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return@cacheRead
+                    if (entry.uri !in visibleArtworkUris) { retryWhenVisible(); return@cacheRead }
+                    val readStartedAt = SystemClock.uptimeMillis()
+                    resourceIconResolver.cached(entry, artworkSize)?.bitmap?.let { bitmap ->
+                        val readyAt = SystemClock.uptimeMillis()
+                        runOnUiThread {
+                            if (!authoritativeApplied) {
+                                applyArtwork(bitmap)
+                                val appliedAt = SystemClock.uptimeMillis()
+                                if (appliedAt - queuedAt >= 100) com.infinifolder.storage.DiagnosticLog.record("artwork.cache.display-slow",
+                                    "name=${entry.metadata.name} queueMs=${readStartedAt - queuedAt} readMs=${readyAt - readStartedAt} uiMs=${appliedAt - readyAt}")
+                            }
+                        }
                     }
-                }, FrameLayout.LayoutParams(dp(20), dp(20), Gravity.TOP or Gravity.START))
-            }
-            if (isShortcut || entry.metadata.isSymbolicLink) {
-                val isBroken = entry.metadata.isBrokenLink
-                val linkBadge = TextView(context).apply {
-                    text = if (isBroken) "⊘" else "↗"
-                    textSize = 10f
-                    setTextColor(0xFFFFFFFF.toInt())
-                    gravity = Gravity.CENTER
-                    background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(
-                            if (isBroken) 0xFFD32F2F.toInt()
-                            else if (dark) 0xFF1976D2.toInt()
-                            else 0xFF1565C0.toInt()
-                        )
-                    }
-                    val badgeSize = dp(16)
-                    layoutParams = FrameLayout.LayoutParams(badgeSize, badgeSize).apply {
-                        gravity = Gravity.TOP or Gravity.START
-                    }
-                }
-                addView(linkBadge)
-            }
-            if (!AppsUri.isAppsUri(entry.uri) && (!entry.metadata.canRead || !entry.metadata.canWrite)) {
-                val isNoRead = !entry.metadata.canRead
-                val permBadge = TextView(context).apply {
-                    text = if (isNoRead) "×" else "🔒"
-                    textSize = 9f
-                    setTextColor(0xFFFFFFFF.toInt())
-                    gravity = Gravity.CENTER
-                    includeFontPadding = false
-                    background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(if (isNoRead) 0xFFD32F2F.toInt() else (if (dark) 0xFF546E7A.toInt() else 0xFF455A64.toInt()))
-                    }
-                    val badgeSize = dp(16)
-                    layoutParams = FrameLayout.LayoutParams(badgeSize, badgeSize).apply {
-                        gravity = Gravity.BOTTOM or Gravity.START
+                    // Cache publication is queued before source work can publish a replacement.
+                    val sourceWorker = if (AppsUri.isAppUri(entry.uri)) ResourceArtworkCache.appSources else imageIo
+                    sourceWorker.execute sourceRead@ {
+                        if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return@sourceRead
+                        if (entry.uri !in visibleArtworkUris) { retryWhenVisible(); return@sourceRead }
+                        val resolved = runCatching {
+                            resourceIconResolver.resolve(entry, artworkSize, deferCacheWrite = true)
+                        }.getOrNull()
+                        if (resolved != null) runOnUiThread {
+                            if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return@runOnUiThread
+                            authoritativeApplied = true
+                            if (isShortcut) {
+                                resourceIconResolver.peekShortcut(entry)?.let { shortcutCache.put(entry.uri.toString(), it) }
+                                card.nameView.setFileName("${resolved.label} ↗", resolved.directory)
+                            }
+                            if (resolved.bitmap != null) {
+                                applyArtwork(resolved.bitmap)
+                                resourceIconResolver.cacheDisplayed(entry, artworkSize, resolved)
+                            } else {
+                                if (icon.childCount > 0) icon.removeViewAt(0)
+                                icon.addView(TextView(this).apply {
+                                    text = resolved.fallback
+                                    gravity = Gravity.CENTER
+                                    textSize = (if (asGrid) iconSizeDp else 44) * .72f
+                                }, 0, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+                            }
+                        }
                     }
                 }
-                addView(permBadge)
             }
-            if (isSelected) {
-                // Draw selection in the icon foreground so detailed artwork stays
-                // legible beneath the tint and the outline remains easy to see.
-                addView(View(context).apply {
-                    isClickable = false
-                    isFocusable = false
-                    background = GradientDrawable().apply {
-                        cornerRadius = dp(8).toFloat()
-                        setColor(if (dark) 0x554CAF50 else 0x5581C784)
-                        setStroke(dp(2), if (dark) 0xFF81C784.toInt() else 0xFF2E7D32.toInt())
-                    }
-                }, FrameLayout.LayoutParams(-1, -1))
-                addView(TextView(context).apply {
-                    text = "✓"
-                    textSize = 12f
-                    setTextColor(0xFFFFFFFF.toInt())
-                    gravity = Gravity.CENTER
-                    background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(0xFF2E7D32.toInt())
-                    }
-                    val badgeSize = dp(20)
-                    layoutParams = FrameLayout.LayoutParams(badgeSize, badgeSize).apply {
-                        gravity = Gravity.BOTTOM or Gravity.END
-                    }
-                })
-            }
+            registerVisibleCardProbe(box, artworkGeneration, startArtwork)
         }
 
         if (!isPackagedFormat && detectedMagic == null && FileMagicDetector.isAmbiguousOrUnknown(entry.metadata.name, entry.metadata.mimeType) &&
@@ -4569,17 +4578,6 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
             }
         }
-        val labels = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            if (asGrid) {
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                    gravity = Gravity.CENTER_HORIZONTAL
-                }
-                gravity = Gravity.CENTER_HORIZONTAL
-            } else {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            }
-        }
         val displayName = if (isShortcut && !shortcut?.displayNameOverride.isNullOrBlank()) {
             "${shortcut.displayNameOverride} ↗"
         } else if (isShortcut) {
@@ -4594,45 +4592,12 @@ class MainActivity : Activity(), DebugDumpObserver {
             (actualContainerWidthPx / columns - dp(4)).coerceAtLeast(dp(36))
         } else 0
         val isLogicalDir = if (isShortcut && shortcut != null) shortcut.targetIsDirectory else entry.metadata.isDirectory
-        val nameView = SmartFileNameTextView(this).apply {
-            textSize = 14f
-            setTextColor(fg)
-            maxAllowedWidthPx = gridCellMaxWidthPx
-            setFileName(displayName, isLogicalDir)
-            if (asGrid) {
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                    gravity = Gravity.CENTER_HORIZONTAL
-                }
-                setPadding(dp(4), dp(2), dp(4), dp(2))
-                gravity = Gravity.CENTER
-                textAlignment = View.TEXT_ALIGNMENT_CENTER
-                if (isSelected) {
-                    background = GradientDrawable().apply {
-                        setColor(if (dark) 0x334CAF50.toInt() else 0x3381C784.toInt())
-                        cornerRadius = dp(6).toFloat()
-                        setStroke(dp(1), if (dark) 0xFF4CAF50.toInt() else 0xFF2E7D32.toInt())
-                    }
-                } else {
-                    setBackgroundResource(android.R.drawable.list_selector_background)
-                }
-            } else {
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                gravity = Gravity.START
-                textAlignment = View.TEXT_ALIGNMENT_VIEW_START
-            }
-        }
-        labels.addView(nameView)
-        val metaView = if (!asGrid) {
-            TextView(this).apply {
-                text = metadataLine(entry)
-                textSize = 12f
-                setTextColor(if (dark) 0xFFBFC5BA.toInt() else 0xFF686D65.toInt())
-            }.also { labels.addView(it) }
-        } else null
+        card.addLabels(displayName, isLogicalDir, gridCellMaxWidthPx, if (asGrid) "" else metadataLine(entry))
+        val nameView = card.nameView
+        val metaView = card.metaView
         entryIconViews[entry.uri] = icon
-        box.addView(icon); box.addView(labels)
 
-        if (isShortcut && shortcut == null) {
+        if (isShortcut && shortcut == null && !sharedArtwork) {
             val generation = loadGeneration
             registerVisibleCardProbe(box, generation) {
                 imageIo.execute {
@@ -4712,6 +4677,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                 updateListingStatus()
                 return@OnClickListener
             }
+            if (current == com.infinifolder.storage.PartialDownloadsProvider.ROOT) {
+                openFoundPartialDownload(entry)
+                return@OnClickListener
+            }
             if (entry.metadata.isBrokenLink) {
                 Toast.makeText(this@MainActivity, "Broken link: target does not exist (${entry.metadata.linkTarget ?: ""})", Toast.LENGTH_SHORT).show()
                 return@OnClickListener
@@ -4725,6 +4694,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                 return@OnClickListener
             }
 
+            if (entry.metadata.name.endsWith(".incomplete", true)) {
+                open(entry)
+                return@OnClickListener
+            }
             val cachedMagic = ambiguousMagicCache.get(entry.uri.toString())
             val effectiveMime = com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType, cachedMagic?.mimeType)
             val isPkg = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isPackagedFormat(entry.metadata.name, effectiveMime)
@@ -5232,7 +5205,6 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (cached != null) {
             image.setImageBitmap(cached)
             placeholder.visibility = View.GONE
-            return frame
         }
 
         val generation = loadGeneration
@@ -5336,7 +5308,48 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private val externalCacheLeases = java.util.concurrent.ConcurrentLinkedQueue<java.io.Closeable>()
 
+    private fun openFoundPartialDownload(entry: ResourceEntry) {
+        val catalog = com.infinifolder.storage.StorageRuntime.get(this).partialDownloads
+        val record = catalog.find(entry.ref) ?: return
+        if (record.entry.metadata.name.endsWith(".incomplete", true)) {
+            resumeIncompleteDownload(record.entry.ref)
+            return
+        }
+        dialogBuilder().setTitle(record.entry.metadata.name)
+            .setMessage("${record.kind}\n\nThis file was discovered while browsing or scanning storage. Continuing it requires the original source and compatible resume metadata. Importing this format is not implemented yet.\n\n${record.entry.uri}")
+            .setPositiveButton("Browse location") { _, _ ->
+                io.execute {
+                    val parent = (provider.stat(record.parent) as? ProviderResult.Success)?.value
+                    runOnUiThread {
+                        if (parent != null) navigate(parent.uri, displayName = parent.metadata.name)
+                        else Toast.makeText(this, "Original location is unavailable", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .setNeutralButton("Forget entry") { _, _ -> catalog.forget(entry.ref); current?.let { load(it) } }
+            .setNegativeButton("Close", null).show()
+    }
+
+    private fun resumeIncompleteDownload(ref: ResourceRef) {
+        io.execute {
+            val scheduled = (provider as? RoutingStorageProvider)?.resumePendingTorrentTransfers(ref) ?: 0
+            runOnUiThread {
+                if (scheduled > 0) {
+                    com.infinifolder.ops.OperationService.start(this)
+                    showOperations()
+                } else android.app.AlertDialog.Builder(this)
+                    .setTitle("Incomplete torrent download")
+                    .setMessage("No saved torrent session matches this file. Open the original torrent or magnet link and copy to this download's original folder to resume it.")
+                    .setPositiveButton("OK", null).show()
+            }
+        }
+    }
+
     private fun open(entry: ResourceEntry, externalOnly: Boolean = false) {
+        if (!entry.metadata.isDirectory && entry.metadata.name.endsWith(".incomplete", true) && !externalOnly) {
+            resumeIncompleteDownload(entry.ref)
+            return
+        }
         if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null) {
             val linkNavigationToken = if (!externalOnly &&
                 (ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType) || entry.ref.providerId == containerLinkProvider.id))
@@ -5549,6 +5562,9 @@ class MainActivity : Activity(), DebugDumpObserver {
 
         fun buildStaticTailItems(): List<HomeItem> {
             val tail = mutableListOf<HomeItem>()
+            tail += HomeItem("⬇", "Partial downloads", "Discovered unfinished downloads", {
+                openRoot(com.infinifolder.storage.PartialDownloadsProvider.ROOT, rememberAuthorizedRoot = false)
+            }, treeKey = "partial_downloads", treeUri = com.infinifolder.storage.PartialDownloadsProvider.ROOT)
             tail += HomeItem("🕘", "External link history", "Recently opened storage links", {
                 showExternalLinkHistory()
             }, longAction = {
@@ -5910,6 +5926,9 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
     private fun treeSourceUri(key: String): Uri? = shared.getString("tree_source_$key", null)?.let(Uri::parse)
     private fun renderHomeItems() {
+        artworkRenderGeneration++
+        pendingCardProbes.clear()
+        visibleProbeScheduled = false
         renderedFileLocation = null
         if (homePage == "root") entries = rootContainerLinks.map { it.first }
         content.removeAllViews()
@@ -6174,19 +6193,20 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         return required.coerceAtMost(availableWidth.coerceAtLeast(dp(180)))
     }
-    private fun startEntryDrag(handle: View, icon: View, entry: ResourceEntry): Boolean {
-        val selectedEntries = entries.filter { it.uri in selectedUris }
+    private fun startEntryDrag(handle: View, icon: View, entry: ResourceEntry, createLinks: Boolean = false): Boolean {
+        val selectedEntries = if (createLinks) emptyList() else entries.filter { it.uri in selectedUris }
         val draggedEntries = selectedEntries.ifEmpty { listOf(entry) }
         if (draggedEntries.isEmpty()) return false
-        val canMove = draggedEntries.none {
-            it.metadata.isSymbolicLink || AppsUri.isAppsUri(it.uri) || AppsUri.isCategoryUri(it.uri)
+        val canMove = !createLinks && draggedEntries.all {
+            StorageActionPolicy.action(StorageAction.MOVE, it.metadata, null).mayAttempt
         }
         val payload = BrowserDragPayload(
             entries = draggedEntries,
             canMove = canMove,
             sourceDirectory = if (homeMode) ContainerLinksProvider.ROOT else current,
             sourceScrollY = fileScroll.scrollY,
-            sourceDisplayName = historyNames.lastOrNull()
+            sourceDisplayName = historyNames.lastOrNull(),
+            createLinks = createLinks
         )
         val clip = ClipData.newPlainText("InfiniFolder items", draggedEntries.joinToString(", ") { it.metadata.name })
         val snapshot = captureDragIcon(icon, draggedEntries.size)
@@ -6209,7 +6229,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (!started) clearActiveDragOverlay()
         if (started) {
             val action = if (canMove) "Move or copy" else "Copy"
-            Toast.makeText(this, "Drag to a folder to $action", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, if (createLinks) "Drop in the file area to create a link" else "Drag to a folder to $action", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(this, "Android could not start dragging this item", Toast.LENGTH_SHORT).show()
         }
@@ -6573,7 +6593,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun canDropOnTreeNode(node: TreeNode, payload: BrowserDragPayload?): Boolean =
-        payload != null && node.uri != null && !node.needsAccessBadge &&
+        payload != null && !payload.createLinks && node.uri != null && !node.needsAccessBadge &&
             !isCreateDirectoryNode(node) && !AppsUri.isAppsUri(node.uri) && !AppsUri.isCategoryUri(node.uri)
 
     private fun findTreeNodeByKey(key: String): TreeNode? {
@@ -6695,6 +6715,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun handleTreePanelDrag(target: View, event: android.view.DragEvent): Boolean {
         val payload = event.localState as? BrowserDragPayload
+        if (payload?.createLinks == true) return false
         when (event.action) {
             android.view.DragEvent.ACTION_DRAG_STARTED -> {
                 val accepted = payload != null
@@ -6741,25 +6762,120 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
 
+    private fun dispatchBreadcrumbLinkDrop(view: View, event: android.view.DragEvent): Boolean {
+        val payload = event.localState as? BrowserDragPayload ?: return false
+        if (!payload.createLinks) return false
+        if (activeDragDropHandled) return true
+        val (x, y) = dragEventScreenPosition(view, event)
+        val bounds = android.graphics.Rect()
+        if (!fileScrollContainer.getGlobalVisibleRect(bounds) || !bounds.contains(x.toInt(), y.toInt())) return false
+        val destination = if (homeMode && homePage == "root") ContainerLinksProvider.ROOT
+            else current?.takeUnless { homeMode } ?: return false
+        activeDragDropHandled = true
+        startBatchTransfer(payload.entries, false, destination, createLinks = true,
+            refreshLocationAfterTransfer = destination, restoreScrollYAfterTransfer = fileScroll.scrollY,
+            refreshLocationDisplayName = historyNames.lastOrNull())
+        com.infinifolder.storage.DiagnosticLog.record("browser.drag.breadcrumb-link", "source=${payload.entries.firstOrNull()?.uri} destination=$destination")
+        return true
+    }
+
+    private fun installBreadcrumbDragSource(view: View, destination: Uri, name: String) {
+        val entry = ResourceEntry(resourceRef(destination), ResourceMetadata(name,
+            "vnd.android.document/directory", null, null, true), destination)
+        val slop = ViewConfiguration.get(this).scaledTouchSlop
+        val timeout = ViewConfiguration.getLongPressTimeout().toLong()
+        view.isLongClickable = false
+        view.setOnLongClickListener(null)
+        view.setOnTouchListener(object : View.OnTouchListener {
+            private var downX = 0f
+            private var downY = 0f
+            private var armed = false
+            private var moved = false
+            private var dragging = false
+            private val arm = Runnable {
+                if (!moved && !dragging) {
+                    armed = true
+                    view.isPressed = true
+                    view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                    view.parent?.requestDisallowInterceptTouchEvent(true)
+                }
+            }
+            private fun release() {
+                view.removeCallbacks(arm)
+                view.isPressed = false
+                view.parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            override fun onTouch(target: View, event: MotionEvent): Boolean {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = event.rawX; downY = event.rawY
+                        armed = false; moved = false; dragging = false
+                        view.postDelayed(arm, timeout)
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = event.rawX - downX; val dy = event.rawY - downY
+                        if (dx * dx + dy * dy > slop * slop) {
+                            moved = true
+                            view.removeCallbacks(arm)
+                            if (armed && !dragging) {
+                                dragging = true
+                                startEntryDrag(view, view, entry, createLinks = true)
+                                release()
+                            }
+                        }
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        release()
+                        if (!moved && !dragging) {
+                            if (armed) {
+                                if (!AppsUri.isAppsUri(destination)) showContainerPinMenu(entry, destination)
+                            } else view.performClick()
+                        }
+                    }
+                    MotionEvent.ACTION_CANCEL -> { release(); moved = true }
+                }
+                return true
+            }
+        })
+    }
+
     private fun performBrowserDrop(payload: BrowserDragPayload, destination: Uri, targetName: String) {
         if (wouldDropIntoDraggedFolder(payload.entries, destination)) {
             Toast.makeText(this, "A folder cannot be dropped into itself or one of its subfolders", Toast.LENGTH_LONG).show()
             return
         }
-        val targetDevice = provider.deviceIdentity(resourceRef(destination))
-        val sameDevice = targetDevice != null && payload.entries.all {
-            provider.deviceIdentity(it.ref) == targetDevice
+        io.execute {
+            try {
+                val destinationRef = resourceRef(destination)
+                val alreadyHere = payload.entries.isNotEmpty() && payload.entries.all {
+                    (provider.parent(it.ref) as? ProviderResult.Success)?.value == destinationRef
+                }
+                if (alreadyHere) {
+                    com.infinifolder.storage.DiagnosticLog.record("browser.drag.no-op", "reason=already-in-destination items=${payload.entries.size}")
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) Toast.makeText(this, "Already in this folder", Toast.LENGTH_SHORT).show()
+                    }
+                    return@execute
+                }
+                val move = payload.canMove && StorageActionPolicy.preferMoveForDrop(provider, payload.entries, destinationRef)
+                val assessment = StorageActionPolicy.destination(provider, destinationRef, payload.entries, move)
+                when (assessment) {
+                    is ProviderResult.Success -> assessment.value.decision.requireAllowed()
+                    is ProviderResult.Failure -> throw java.io.IOException(assessment.message, assessment.cause)
+                    is ProviderResult.Unsupported -> throw java.io.IOException("Cannot check destination: ${assessment.capability}")
+                }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    startBatchTransfer(payload.entries, move, destination,
+                        refreshLocationAfterTransfer = payload.sourceDirectory,
+                        restoreScrollYAfterTransfer = payload.sourceScrollY,
+                        refreshLocationDisplayName = payload.sourceDisplayName)
+                    Toast.makeText(this, if (move) "Moving to $targetName" else "Copying to $targetName", Toast.LENGTH_SHORT).show()
+                }
+            } catch (error: Exception) {
+                runOnUiThread { if (!isFinishing && !isDestroyed) Toast.makeText(this, error.message ?: "Cannot drop here", Toast.LENGTH_LONG).show() }
+            }
         }
-        val move = payload.canMove && sameDevice
-        startBatchTransfer(
-            payload.entries,
-            move,
-            destination,
-            refreshLocationAfterTransfer = payload.sourceDirectory,
-            restoreScrollYAfterTransfer = payload.sourceScrollY,
-            refreshLocationDisplayName = payload.sourceDisplayName
-        )
-        Toast.makeText(this, if (move) "Moving to $targetName" else "Copying to $targetName", Toast.LENGTH_SHORT).show()
     }
 
     private fun shortcutContainerDestination(entry: ResourceEntry): Uri? {
@@ -6773,7 +6889,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         shortcutContainerDestination(entry)?.let { return it }
         if (AppsUri.isAppsUri(entry.uri) || AppsUri.isCategoryUri(entry.uri) || entry.metadata.isSymbolicLink) return null
         return when {
-            entry.metadata.isDirectory && entry.metadata.canWrite -> entry.uri
+            entry.metadata.isDirectory -> entry.uri
             !entry.metadata.isDirectory && ArchiveFormats.isArchive(entry.metadata.name, entry.metadata.mimeType) ->
                 ArchiveUri.toArchiveUri(entry.uri)
             else -> null
@@ -6792,6 +6908,27 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun isContainerPinned(destination: Uri): Boolean =
         pinnedContainers.any { sameResourceUri(it.destination, destination) }
+
+    private fun pinEntryToHome(entry: ResourceEntry) {
+        val manager = getSystemService(android.content.pm.ShortcutManager::class.java)
+        if (manager?.isRequestPinShortcutSupported != true) {
+            Toast.makeText(this, "This launcher does not support pinned shortcuts", Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(this, "Preparing home-screen shortcut…", Toast.LENGTH_SHORT).show()
+        io.execute {
+            try {
+                val shortcut = HomeShortcuts.create(applicationContext, entry)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    val accepted = manager.requestPinShortcut(shortcut, null)
+                    Toast.makeText(this, if (accepted) "Shortcut request sent to launcher" else "Could not add shortcut", Toast.LENGTH_SHORT).show()
+                }
+            } catch (error: Exception) {
+                runOnUiThread { Toast.makeText(this, error.message ?: "Cannot create shortcut", Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
 
     private fun pinContainer(entry: ResourceEntry, destination: Uri) {
         if (!isContainerPinned(destination)) {
@@ -6919,7 +7056,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun updateDragContainerHover() {
         val payload = activeBrowserDragPayload
         val position = lastDragScreenPosition
-        val hit = if (payload != null && !activeDragDropHandled && position != null)
+        val hit = if (payload != null && !payload.createLinks && !activeDragDropHandled && position != null)
             dragHoverTargetAtScreen(position.first, position.second) else null
         val destination = hit?.second?.destination
         if (payload == null || hit == null || destination == null || current == destination ||
@@ -6947,6 +7084,26 @@ class MainActivity : Activity(), DebugDumpObserver {
         root.postDelayed(openContainer, 700L)
     }
 
+    private fun dispatchFilePaneDropAtScreen(view: View, event: android.view.DragEvent): Boolean {
+        val payload = event.localState as? BrowserDragPayload ?: return false
+        if (payload.createLinks) return dispatchBreadcrumbLinkDrop(view, event)
+        if (activeDragDropHandled) return true
+        if (isCompactPortrait() && treeVisible) return false
+        val (x, y) = dragEventScreenPosition(view, event)
+        val bounds = android.graphics.Rect()
+        if (!fileScroll.getGlobalVisibleRect(bounds) || !bounds.contains(x.toInt(), y.toInt())) return false
+        // Icon/navigation targets retain priority over the background destination.
+        if (dragNavigationAtScreen(x, y) != null || dragCardAtScreen(x, y) != null) return false
+        val destination = if (homeMode && homePage == "root") ContainerLinksProvider.ROOT
+            else current?.takeUnless { homeMode } ?: return false
+        cancelDragContainerHover()
+        activeDragDropHandled = true
+        com.infinifolder.storage.DiagnosticLog.record("browser.drag.background-drop",
+            "items=${payload.entries.size} destinationProvider=${resourceRef(destination).providerId}")
+        performBrowserDrop(payload, destination, historyNames.lastOrNull() ?: "current folder")
+        return true
+    }
+
     private fun dispatchEntryDropAtScreen(view: View, event: android.view.DragEvent): Boolean {
         val payload = event.localState as? BrowserDragPayload ?: return false
         if (activeDragDropHandled) return true
@@ -6959,20 +7116,43 @@ class MainActivity : Activity(), DebugDumpObserver {
         cancelDragContainerHover()
         if (activeDragDropHandled) return true
         payload.entries.firstOrNull { sameResourceUri(it.uri, entry.uri) }?.let { return queueDragSelfDropMenu(payload, it) }
-        val destination = entryDropDestination(entry) ?: return false
+        val destination = entryDropDestination(entry)
         activeDragDropHandled = true
-        performBrowserDrop(payload, destination, entry.metadata.name)
+        if (destination != null) performBrowserDrop(payload, destination, entry.metadata.name)
+        else io.execute {
+            try {
+                val parentRef = when (val result = provider.parent(entry.ref)) {
+                    is ProviderResult.Success -> result.value ?: throw java.io.IOException("This item has no parent folder to receive a drop")
+                    is ProviderResult.Failure -> throw java.io.IOException(result.message, result.cause)
+                    is ProviderResult.Unsupported -> throw java.io.IOException("This provider cannot identify the item's parent folder")
+                }
+                val parent = when (val result = provider.stat(parentRef)) {
+                    is ProviderResult.Success -> result.value
+                    is ProviderResult.Failure -> throw java.io.IOException(result.message, result.cause)
+                    is ProviderResult.Unsupported -> throw java.io.IOException("This provider cannot open the item's parent folder")
+                }
+                com.infinifolder.storage.DiagnosticLog.record("browser.drag.file-parent-drop",
+                    "items=${payload.entries.size} destinationProvider=${parent.ref.providerId}")
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) performBrowserDrop(payload, parent.uri, parent.metadata.name)
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) dialogBuilder().setTitle("Cannot drop here")
+                        .setMessage(error.message ?: "Cannot determine the destination folder")
+                        .setPositiveButton("OK", null).show()
+                }
+            }
+        }
         return true
     }
 
     private fun installEntryDropTarget(card: View, entry: ResourceEntry, asGrid: Boolean) {
         dragContainerCards[card] = entry
-        val destination = entryDropDestination(entry)
         card.setOnDragListener { view, event ->
             moveActiveDragOverlayFromEvent(view, event)
             val payload = event.localState as? BrowserDragPayload
-            val selfEntry = payload?.entries?.firstOrNull { sameResourceUri(it.uri, entry.uri) }
-            val enabled = payload != null && (destination != null || selfEntry != null)
+            val enabled = payload != null && !payload.createLinks
             when (event.action) {
                 android.view.DragEvent.ACTION_DRAG_STARTED -> enabled
                 android.view.DragEvent.ACTION_DRAG_ENTERED -> {
@@ -7033,18 +7213,11 @@ class MainActivity : Activity(), DebugDumpObserver {
         onNavigate: () -> Unit = { navigate(destination, displayName = name) }) {
         val target = DragNavigationTarget(destination, name, sourceUri, kind, onNavigate)
         dragNavigationTargets[view] = target
-        if (kind == "breadcrumb" && !AppsUri.isAppsUri(destination) && !AppsUri.isCategoryUri(destination)) {
-            view.setOnLongClickListener {
-                val entry = ResourceEntry(resourceRef(destination), ResourceMetadata(name,
-                    "vnd.android.document/directory", null, null, true), destination)
-                showContainerPinMenu(entry, destination)
-                true
-            }
-        }
+        if (kind == "breadcrumb") installBreadcrumbDragSource(view, destination, name)
         view.setOnDragListener { crumb, event ->
             moveActiveDragOverlayFromEvent(crumb, event)
             val payload = event.localState as? BrowserDragPayload
-            val enabled = payload != null
+            val enabled = payload != null && !payload.createLinks
             when (event.action) {
                 android.view.DragEvent.ACTION_DRAG_STARTED -> enabled
                 android.view.DragEvent.ACTION_DRAG_ENTERED -> {
@@ -7655,7 +7828,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 node.onRequestAccess = { requestSharedStorageAccess() }
                                 requestSharedStorageAccess()
                             }
-                        } else if (!ArchiveUri.isArchiveUri(uri) && !AppsUri.isAppsUri(uri) && !SftpUri.isSftpUri(uri) && !FtpUri.isFtpUri(uri) && !SmbUri.isSmbUri(uri) && !WebDavUri.owns(uri) && isAccessFailure(result.message, result.cause)) {
+                        } else if (uri.scheme == "content" && !ArchiveUri.isArchiveUri(uri) && !AppsUri.isAppsUri(uri) && !SftpUri.isSftpUri(uri) && !FtpUri.isFtpUri(uri) && !SmbUri.isSmbUri(uri) && !WebDavUri.owns(uri) && isAccessFailure(result.message, result.cause)) {
                             node.needsAccessBadge = true
                             node.onRequestAccess = { rootPicker(node.uri, "tree_permission_regrant") }
                             node.onRequestAccess?.invoke()
@@ -7911,7 +8084,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         showHomeRoot()
     }
-    private fun browserMenuItems(): List<BrowserMenu.Item> {
+    private fun browserMenuItems(capabilities: Map<ResourceRef, ResourceCapabilities> = emptyMap()): List<BrowserMenu.Item> {
         fun action(label: String, enabled: Boolean = true, work: () -> Unit) = BrowserMenu.Item(label, enabled, action = work)
         fun submenu(label: String, items: List<BrowserMenu.Item>) = BrowserMenu.Item(label, children = items)
         val folder = !homeMode && current != null && !AppsUri.isAppsUri(current!!)
@@ -7920,6 +8093,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val selected = entries.filter { it.uri in selectedUris }
         val hasSelection = selectable && selected.isNotEmpty()
         val single = selected.singleOrNull()
+        fun allowed(action: StorageAction) = hasSelection && StorageActionPolicy.selection(action, selected, capabilities).mayAttempt
         return listOf(
             submenu("File", listOf(
                 submenu("New", listOf(
@@ -7935,9 +8109,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                 action("Virtual root") { showHomeRoot(); setTreeVisible(false) },
                 action("Add container link to Virtual root…") { showRootContainerLinkDialog() },
                 action("Add storage connection…") { showAddConnectionDialog() },
-                action("Copy to…", hasSelection) { showBatchDestinationPicker(selected, false) },
-                action("Move to…", hasSelection && selected.none { it.metadata.isSymbolicLink }) { showBatchDestinationPicker(selected, true) },
-                action("Delete…", hasSelection) { confirmBatchDelete(selected) },
+                action("Copy to…", allowed(StorageAction.COPY)) { showBatchDestinationPicker(selected, false) },
+                action("Move to…", allowed(StorageAction.MOVE)) { showBatchDestinationPicker(selected, true) },
+                action("Delete…", allowed(StorageAction.DELETE)) { confirmBatchDelete(selected) },
                 action("Properties…", hasSelection || folder) {
                     if (hasSelection) showEntriesPropertiesDialog(selected) else current?.let { location ->
                         io.execute {
@@ -7950,8 +8124,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
             )),
             submenu("Edit", listOf(
-                action("Copy file / URI references", hasSelection) { copyEntriesToClipboard(selected) },
-                action("Cut file references", hasSelection && selected.none { it.metadata.isSymbolicLink }) { copyEntriesToClipboard(selected, cut = true) },
+                action("Copy file / URI references", allowed(StorageAction.COPY)) { copyEntriesToClipboard(selected) },
+                action("Cut file references", allowed(StorageAction.MOVE)) { copyEntriesToClipboard(selected, cut = true) },
                 action("Copy contents (text / image)", single != null &&
                     (isTextEntry(single, null) || isImageEntry(single, null))) { single?.let { copyEntryContentsToClipboard(it, ambiguousMagicCache.get(it.uri.toString())) } },
                 action("Copy URI text", hasSelection) {
@@ -8016,6 +8190,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 action("Clear selection", selectable) { selectedUris.clear(); renderCurrentContents(); updateListingStatus() }
             )),
             submenu("Settings", listOf(
+                action("Common locations…") { showCommonLocationsSettings() },
                 action("Copy verification: ${if (shared.getBoolean("verify_copies", true)) "on" else "off"}…") { showCopyVerificationSettings() },
                 action("Disk cache…") { com.infinifolder.viewer.DiskCacheSettings.show(this) },
                 action("Unfinished external edits…") { startActivity(Intent(this, com.infinifolder.viewer.ExternalEditActivity::class.java)) },
@@ -8024,6 +8199,13 @@ class MainActivity : Activity(), DebugDumpObserver {
             ) + if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
                 listOf(action("Offload debug information") { DebugTools.offload(this) }) else emptyList())
         )
+    }
+
+    private fun showCommonLocationsSettings() {
+        CommonLocationsDialog.show(this, dialogContext(), commonLocations) { initial, selected ->
+            showFolderPicker("Choose common location", initial, requireWritable = false, rememberSelection = false,
+                onFolderSelected = selected)
+        }
     }
 
     private fun showCopyVerificationSettings() {
@@ -8106,7 +8288,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
                 dialog.dismiss()
                 val id = operations.submit("Create $name", null, 1,
-                    conflictKeys = setOf(operationTargetKey(resourceRef(parent), name))) { update, cancelled ->
+                    conflictKeys = setOf(operationTargetKey(resourceRef(parent), name)), displayName = name,
+                    destination = parent.toString()) { update, cancelled ->
                     val staged = File.createTempFile("new-document-", ".${template.extension}", cacheDir)
                     try {
                         NewFileTemplates.write(template, staged)
@@ -8166,8 +8349,33 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun showOptions() {
-        val selectionExit = if (selectionMode) listOf(BrowserMenu.Item("Exit selection mode", action = { exitSelectionMode() })) else emptyList()
-        BrowserMenu.show(this, dialogContext(), selectionExit + browserMenuItems())
+        val selected = entries.filter { it.uri in selectedUris }
+        withActionCapabilities(selected) { capabilities ->
+            val selectionExit = if (selectionMode) listOf(BrowserMenu.Item("Exit selection mode", action = { exitSelectionMode() })) else emptyList()
+            BrowserMenu.show(this, dialogContext(), selectionExit + browserMenuItems(capabilities))
+        }
+    }
+
+    private var actionMenuRequest = 0
+    private fun withActionCapabilities(items: List<ResourceEntry>, onReady: (Map<ResourceRef, ResourceCapabilities>) -> Unit) {
+        val request = ++actionMenuRequest
+        val generation = loadGeneration
+        if (items.isEmpty()) { onReady(emptyMap()); return }
+        io.execute {
+            val capabilities = mutableMapOf<ResourceRef, ResourceCapabilities>()
+            var failure: String? = null
+            for (entry in items) {
+                when (val result = provider.capabilities(entry.ref)) {
+                    is ProviderResult.Success -> capabilities[entry.ref] = result.value
+                    is ProviderResult.Failure -> { failure = result.message; break }
+                    is ProviderResult.Unsupported -> Unit // No report: retain unknown support.
+                }
+            }
+            runOnUiThread {
+                if (request != actionMenuRequest || generation != loadGeneration || isFinishing || isDestroyed) return@runOnUiThread
+                if (failure != null) Toast.makeText(this, failure, Toast.LENGTH_LONG).show() else onReady(capabilities)
+            }
+        }
     }
 
     private fun showThemeModeDialog() {
@@ -8206,16 +8414,31 @@ class MainActivity : Activity(), DebugDumpObserver {
             "$mark${it.name}"
         }.toMutableList()
         options.add("📂 Import Winamp (.wsz) Skin…")
+        options.add("Skin image scaling…")
 
         dialogBuilder().setTitle("Interface Theme").setItems(options.toTypedArray()) { _, which ->
             if (which < themes.size) {
                 com.infinifolder.theme.ThemeManager.setTheme(this, themes[which])
                 buildUi()
                 if (homeMode) showHomeRoot() else current?.let { load(it) }
-            } else {
+            } else if (which == themes.size) {
                 promptImportWszSkin()
+            } else {
+                showSkinScalingDialog()
             }
         }.show()
+    }
+
+    private fun showSkinScalingDialog() {
+        val manager = com.infinifolder.theme.ThemeManager
+        dialogBuilder().setTitle("Skin image scaling")
+            .setSingleChoiceItems(arrayOf("Integer scaling (crisp pixels)", "Smooth scaling"),
+                if (manager.smoothSkinScaling) 1 else 0) { dialog, which ->
+                manager.setSmoothSkinScaling(this, which == 1)
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun promptImportWszSkin() {
@@ -8236,18 +8459,33 @@ class MainActivity : Activity(), DebugDumpObserver {
                 val path = input.text.toString().trim()
                 if (path.isNotEmpty()) {
                     val skinUri = if (path.startsWith("/")) Uri.fromFile(java.io.File(path)) else Uri.parse(path)
-                    val imported = com.infinifolder.theme.ThemeManager.importSkin(this, skinUri)
-                    if (imported != null) {
-                        Toast.makeText(this, "Skin '${imported.name}' applied!", Toast.LENGTH_SHORT).show()
-                        buildUi()
-                        if (homeMode) showHomeRoot() else current?.let { load(it) }
-                    } else {
-                        Toast.makeText(this, "Failed to parse skin file", Toast.LENGTH_SHORT).show()
-                    }
+                    importWinampSkin(skinUri)
+                }
+            }
+            .setNeutralButton("Browse…") { _, _ ->
+                try {
+                    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                    }, pickWinampSkinRequest)
+                } catch (error: Exception) {
+                    Toast.makeText(this, "Cannot open file picker: ${error.message}", Toast.LENGTH_LONG).show()
                 }
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun importWinampSkin(uri: Uri) {
+        Toast.makeText(this, "Importing Winamp skin…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val imported = com.infinifolder.theme.ThemeManager.importSkin(applicationContext, uri)
+            runOnUiThread {
+                if (!isDestroyed) Toast.makeText(this,
+                    if (imported != null) "Skin '${imported.name}' applied" else "Could not import a classic Winamp skin from this file",
+                    Toast.LENGTH_LONG).show()
+            }
+        }.start()
     }
 
     private fun showIconThemeDialog() {
@@ -8500,6 +8738,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             operationStatusTickScheduled = false
             if (isFinishing || isDestroyed) return
             val snapshots = operations.snapshots()
+            operationOverview?.update(overviewSnapshots(snapshots))
+            updateOperationVisibilityUi()
             snapshots.firstOrNull { it.id == activeDialogOpId }?.let { updateProgressDialogContent(it, snapshots) }
             if (snapshots.any { it.state == OperationState.RUNNING || it.state == OperationState.QUEUED }) {
                 operationStatusTickScheduled = true
@@ -8509,7 +8749,11 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
     private val operationUiUpdate = Runnable {
         operationUiScheduled.set(false)
-        pendingOperationSnapshots.getAndSet(null)?.let(::applyOperationSnapshots)
+        if (pendingOperationSnapshots.getAndSet(null) != null) {
+            // A worker can deliver a snapshot captured before a history removal.
+            // Render current state rather than resurrecting removed rows.
+            applyOperationSnapshots(operations.snapshots())
+        }
     }
     private val operationsListener: (List<OperationSnapshot>) -> Unit = { snapshots ->
         pendingOperationSnapshots.set(snapshots)
@@ -8519,6 +8763,12 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
     private fun applyOperationSnapshots(snapshots: List<OperationSnapshot>) {
             if (isFinishing || isDestroyed) return
+            operationOverview?.update(overviewSnapshots(snapshots))
+            if (autoHideOperationOverview && snapshots.none { !it.id.startsWith("playback_") &&
+                    (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) }) {
+                operationOverview?.dismiss()
+                autoHideOperationOverview = false
+            }
             refreshedTerminalOperations.retainAll(snapshots.map { it.id }.toSet())
             val activeList = snapshots.filter {
                 (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) &&
@@ -8544,29 +8794,21 @@ class MainActivity : Activity(), DebugDumpObserver {
                     activeDialogOpId = target.id
                     updateProgressDialogContent(target, snapshots)
                 }
-            } else if (!isOperationWindowHidden && activeList.isNotEmpty()) {
-                showProgressDialog(operationWindowQueue.firstOrNull() ?: activeList.first().id)
             } else if (activeList.isEmpty()) {
                 operationWindowQueue.clear()
                 isOperationWindowHidden = false
             }
-            updateOperationVisibilityUi(snapshots)
+            updateOperationVisibilityUi()
     }
 
-    private fun updateOperationVisibilityUi(snapshots: List<OperationSnapshot> = operations.snapshots()) {
-        val activeList = snapshots.filter { !it.id.startsWith("playback_") && (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) }
-        val hasActive = activeList.isNotEmpty()
+    private fun updateOperationVisibilityUi() {
+        val summary = operations.activitySummary()
+        val hasActive = summary.actions > 0
         if (::operationLight.isInitialized) operationLight.setActive(hasActive)
         if (::unhideOperationBar.isInitialized) {
-            val dialogShowing = currentProgressDialog?.isShowing == true
-            if (hasActive && (isOperationWindowHidden || !dialogShowing)) {
-                val currentOp = activeList.firstOrNull { it.state == OperationState.RUNNING } ?: activeList.first()
-                val pct = currentOp.progressPercent
-                val pctText = if (pct >= 0 && currentOp.state == OperationState.RUNNING) " · $pct%" else ""
-                val queuedExtra = (activeList.size - 1).coerceAtLeast(0)
-                val queueSuffix = if (queuedExtra > 0) " (+$queuedExtra queued)" else ""
-                unhideOperationLabel.text = "⚡ ${currentOp.label}$pctText$queueSuffix"
-                unhideOperationButton.text = if (activeList.size > 1) "Unhide (${activeList.size})" else "Unhide"
+            val dialogShowing = currentProgressDialog?.isShowing == true || operationOverview?.isShowing == true
+            if (hasActive && !dialogShowing) {
+                unhideOperationBar.update(summary)
                 unhideOperationBar.visibility = View.VISIBLE
             } else {
                 unhideOperationBar.visibility = View.GONE
@@ -8592,47 +8834,228 @@ class MainActivity : Activity(), DebugDumpObserver {
                 updateProgressDialogContent(shownSnap, snapshots)
             }
         } else if (!isOperationWindowHidden) {
-            showProgressDialog(operationWindowQueue.firstOrNull() ?: opId)
+            showOperations(autoHideWhenIdle = true)
         }
-        updateOperationVisibilityUi(snapshots)
-    }
-
-    private fun unhideOperationWindow() {
-        isOperationWindowHidden = false
-        val targetId = operationWindowQueue.firstOrNull()
-        showProgressDialog(targetId)
         updateOperationVisibilityUi()
     }
 
-    private fun showOperations() {
-        val snapshots = operations.snapshots().filterNot { it.id.startsWith("playback_") }
-        if (snapshots.any { it.state == OperationState.RUNNING || it.state == OperationState.QUEUED }) {
-            unhideOperationWindow()
-        } else {
-            val recent = snapshots.takeLast(30).reversed()
-            dialogBuilder().setTitle("Activity").setItems(
-                recent.map { "${it.label} — ${it.state.name.lowercase()}" +
-                    (if (it.warningCount > 0) " (${it.warningCount} warnings)" else "") }.toTypedArray()
-            ) { _, index ->
-                val op = recent[index]
-                dialogBuilder().setTitle(op.label).setMessage(op.message ?: "${op.state.name.lowercase()}\n${op.itemsProcessed} items · ${android.text.format.Formatter.formatShortFileSize(this, op.bytes)}")
+    private fun unhideOperationWindow() { showOperations() }
+
+    private fun operationDestinationLabel(value: String): String {
+        val uri = runCatching { Uri.parse(value) }.getOrNull() ?: return value
+        return if (SftpUri.isSftpUri(uri) || FtpUri.isFtpUri(uri) || SmbUri.isSmbUri(uri) ||
+            WebDavUri.owns(uri) || localProvider.owns(uri) || uri.scheme == "file") {
+            displayPathFor(uri) ?: value
+        } else value
+    }
+
+    private fun overviewSnapshots(snapshots: List<OperationSnapshot>): List<OperationSnapshot> = snapshots.map { op ->
+        op.destination?.let { op.copy(destination = operationDestinationLabel(it)) } ?: op
+    }
+
+    private fun showOperations(autoHideWhenIdle: Boolean = false) {
+        if (!browserResumed || isFinishing || isDestroyed) return
+        val snapshots = overviewSnapshots(operations.snapshots())
+        operationOverview?.takeIf { it.isShowing }?.let {
+            if (!autoHideWhenIdle) autoHideOperationOverview = false
+            it.update(snapshots); return
+        }
+        autoHideOperationOverview = autoHideWhenIdle
+        currentProgressDialog?.dismiss()
+        isOperationWindowHidden = true
+        operationOverview = OperationOverviewDialog(dialogContext(), dialogBuilder(), setTextColorForTheme(),
+            onSelect = { op ->
+                operationOverview?.dismiss()
+                if (op.state == OperationState.RUNNING || op.state == OperationState.QUEUED ||
+                    (op.state == OperationState.FAILED && op.canRestart)) {
+                    showProgressDialog(op.id)
+                } else {
+                    dialogBuilder().setTitle(op.displayName ?: op.label)
+                        .setMessage(listOfNotNull(op.destination?.let { "To: $it" }, op.message ?: op.displayState,
+                            "${op.itemsProcessed} items · ${android.text.format.Formatter.formatShortFileSize(this, op.bytes)}").joinToString("\n\n"))
+                        .setPositiveButton("Activity") { _, _ -> showOperations() }
+                        .apply {
+                            if (op.canRemoveFromHistory) setNegativeButton("Remove from list") { _, _ ->
+                                confirmOperationAction(op, right = false)
+                            }
+                            if (op.canRestart)
+                                setNeutralButton(op.restartActionLabel) { _, _ -> confirmOperationAction(op, right = true) }
+                        }.show()
+                }
+            }, onClearFinished = {
+                confirmClearFinishedOperations()
+            }, onSwipe = { op, right ->
+                confirmOperationAction(op, right)
+            }, onDismiss = { dismissed ->
+                if (operationOverview === dismissed) {
+                    operationOverview = null
+                    isOperationWindowHidden = true
+                    updateOperationVisibilityUi()
+                }
+            }
+        ).also { it.update(snapshots); it.show() }
+        updateOperationVisibilityUi()
+    }
+
+    private fun refreshOperationOverview() {
+        operationOverview?.takeIf { it.isShowing }?.update(overviewSnapshots(operations.snapshots()))
+    }
+
+    private fun confirmClearFinishedOperations() {
+        val count = operations.snapshots().count { it.canRemoveFromHistory }
+        if (count == 0) return
+        dialogBuilder().setTitle("Remove $count finished entries?")
+            .setMessage("Remove their status records from Activity. Files and saved download progress are kept.")
+            .setNegativeButton("Keep", null).setPositiveButton("Remove") { _, _ ->
+                operations.clearFinished()
+                refreshOperationOverview()
+            }.show().setOnDismissListener { refreshOperationOverview() }
+    }
+
+    private fun confirmOperationAction(previous: OperationSnapshot, right: Boolean) {
+        val op = operations.snapshots().firstOrNull { it.id == previous.id } ?: return
+        val active = op.state == OperationState.RUNNING || op.state == OperationState.QUEUED
+        val action = when {
+            active && !right -> "Cancel"
+            active && op.canFinishLater -> "Pause"
+            active -> {
+                dialogBuilder().setTitle("Pause unavailable")
+                    .setMessage("This operation does not support resuming. Swipe left to cancel it instead.")
                     .setPositiveButton("OK", null).show()
-            }.setNegativeButton("Close", null).apply {
-                if (recent.isEmpty()) setMessage("No recent operations")
-            }.show()
+                return
+            }
+            !right && op.canRemoveFromHistory -> "Remove"
+            right && op.canRestart -> op.restartActionLabel
+            else -> return
+        }
+        val detail = when (action) {
+            "Remove" -> "Remove this status record from Activity? Files and saved download progress are kept."
+            "Pause" -> "Keep the downloaded data and saved progress. Choose Resume when you want to continue."
+            "Cancel" -> if (op.canFinishLater) "Stop this download. Partial files and saved progress are kept for a manual restart."
+                else "Stop this operation. Files already processed are kept; unfinished output follows the operation's normal cleanup."
+            else -> if (op.resumeDestination != null) "Continue using saved download progress."
+                else "Start this transfer again after checking the sources. Completed copies may be copied again with new names; existing destination files are kept."
+        }
+        dialogBuilder().setTitle("$action ${op.displayName ?: op.label}?")
+            .setMessage(detail).setNegativeButton("Keep", null)
+            .setPositiveButton(action) { _, _ ->
+                val currentOp = operations.snapshots().firstOrNull { it.id == op.id } ?: return@setPositiveButton
+                when (action) {
+                    "Remove" -> if (currentOp.canRemoveFromHistory) {
+                        operations.clearFinished(currentOp.id)
+                        if (activeDialogOpId == currentOp.id) {
+                            currentProgressDialog?.dismiss()
+                            showOperations()
+                        } else refreshOperationOverview()
+                    }
+                    "Pause", "Cancel" -> if (currentOp.state in setOf(OperationState.RUNNING, OperationState.QUEUED)) {
+                        if (!stoppingOperations.add(currentOp.id)) return@setPositiveButton
+                        io.execute {
+                            val saved = runCatching {
+                                currentOp.resumeDestination?.let { destination ->
+                                    (provider as? RoutingStorageProvider)?.setTorrentAutoResume(destination, false)
+                                }
+                            }
+                            operations.cancel(currentOp.id, "activity-${action.lowercase()}", pause = action == "Pause")
+                            runOnUiThread {
+                                stoppingOperations.remove(currentOp.id)
+                                if (!isFinishing && !isDestroyed) saved.exceptionOrNull()?.let { error ->
+                                    com.infinifolder.storage.DiagnosticLog.record("torrent.stop.preference.failed", error = error)
+                                    dialogBuilder().setTitle("Automatic resume setting failed")
+                                        .setMessage("The transfer was stopped, but its automatic resume setting could not be saved: ${error.message}")
+                                        .setPositiveButton("OK", null).show()
+                                }
+                            }
+                        }
+                    }
+                    else -> if (currentOp.canRestart) {
+                        if (currentOp.resumeDestination != null) retryTorrentOperation(currentOp)
+                        else restartTransferOperation(currentOp)
+                    }
+                }
+            }.show().setOnDismissListener { refreshOperationOverview() }
+    }
+
+    private fun restartTransferOperation(op: OperationSnapshot) {
+        val request = op.restartTransfer ?: return
+        if (!restartingOperations.add(op.id)) return
+        io.execute {
+            val missing = mutableListOf<String>()
+            val refreshed = runCatching {
+                request.entries.mapNotNull { entry ->
+                    when (val result = provider.stat(entry.ref)) {
+                        is ProviderResult.Success -> result.value
+                        is ProviderResult.Unsupported -> entry
+                        is ProviderResult.Failure -> {
+                            val absent = result.cause?.let { error -> generateSequence(error) { it.cause }.take(8).any {
+                                it is java.io.FileNotFoundException || it is java.nio.file.NoSuchFileException
+                            } } == true
+                            if (absent) { missing += "${entry.metadata.name}: ${result.message}"; null }
+                            else throw java.io.IOException("${entry.metadata.name}: ${result.message}", result.cause)
+                        }
+                    }
+                }
+            }
+            runOnUiThread {
+                restartingOperations.remove(op.id)
+                if (isFinishing || isDestroyed || operations.snapshots().none { it.id == op.id && it.canRestart }) return@runOnUiThread
+                refreshed.fold(onSuccess = { entries ->
+                    if (entries.isEmpty()) {
+                        dialogBuilder().setTitle("Nothing to restart")
+                            .setMessage("The original source entries are no longer available. Already moved files are kept at their destinations.")
+                            .setPositiveButton("OK", null).show()
+                    } else {
+                        val restart = {
+                            currentProgressDialog?.dismiss()
+                            startBatchTransfer(entries, request.move, Uri.parse(request.destination),
+                                createLinks = request.createLinks, partialRecovery = request.partialRecovery)
+                        }
+                        if (missing.isEmpty()) restart()
+                        else dialogBuilder().setTitle("Some sources are no longer available")
+                            .setMessage("These sources are unavailable or may already have moved. They will be skipped:\n\n" +
+                                missing.take(20).joinToString("\n") + "\n\nRestart with ${entries.size} remaining entries?")
+                            .setNegativeButton("Keep", null).setPositiveButton("Restart") { _, _ -> restart() }.show()
+                    }
+                }, onFailure = { error ->
+                    dialogBuilder().setTitle("Cannot restart transfer").setMessage(error.message ?: "Could not check sources")
+                        .setPositiveButton("OK", null).show()
+                })
+            }
+        }
+    }
+
+    private fun retryTorrentOperation(op: OperationSnapshot) {
+        val destination = op.resumeDestination ?: return
+        if (!retryingTorrentDestinations.add(destination)) return
+        progressRetryButton?.isEnabled = false
+        io.execute {
+            val result = runCatching { (provider as? RoutingStorageProvider)?.resumePendingTorrentTransfers(destination) ?: 0 }
+            runOnUiThread {
+                retryingTorrentDestinations.remove(destination)
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                progressRetryButton?.isEnabled = true
+                if (result.getOrDefault(0) > 0) {
+                    com.infinifolder.storage.DiagnosticLog.record("torrent.retry.requested", "previousOperation=${op.id}")
+                    currentProgressDialog?.dismiss()
+                    OperationService.start(this)
+                    showOperations()
+                } else {
+                    Toast.makeText(this, result.exceptionOrNull()?.message ?: "No saved torrent session remains for this file", Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 
     private fun showProgressDialog(targetOpId: String? = null) {
+        if (!browserResumed || isFinishing || isDestroyed) return
         val snapshots = operations.snapshots()
         val activeList = snapshots.filter { it.state == OperationState.RUNNING || it.state == OperationState.QUEUED }
         val active = when {
+            targetOpId != null -> snapshots.firstOrNull { it.id == targetOpId }
             currentProgressDialog?.isShowing == true && activeDialogOpId != null ->
                 snapshots.firstOrNull { it.id == activeDialogOpId }
             operationWindowQueue.isNotEmpty() ->
                 operationWindowQueue.firstNotNullOfOrNull { qId -> snapshots.firstOrNull { it.id == qId } }
-            targetOpId != null ->
-                snapshots.firstOrNull { it.id == targetOpId }
             else ->
                 activeList.firstOrNull() ?: snapshots.lastOrNull()
         }
@@ -8649,7 +9072,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
         if (currentProgressDialog?.isShowing == true) {
             updateProgressDialogContent(active, snapshots)
-            updateOperationVisibilityUi(snapshots)
+            updateOperationVisibilityUi()
             return
         }
 
@@ -8697,11 +9120,10 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         progressStatusView = currentItemView
         // Keep status and filename in separate, fixed areas so progress updates cannot swap them.
-        val currentItemScroll = ScrollView(context).apply {
-            addView(currentItemView, FrameLayout.LayoutParams(-1, -2))
-            layoutParams = LinearLayout.LayoutParams(-1,
-                currentItemView.lineHeight * 3 + currentItemView.compoundPaddingTop + currentItemView.compoundPaddingBottom)
-        }
+        // Let TextView measure its three reserved lines, including font metrics and
+        // padding. A separately calculated ScrollView height can clip the last line.
+        currentItemView.layoutParams = LinearLayout.LayoutParams(-1, -2)
+
 
         val itemNameView = TextView(context).apply {
             text = "Current item: ${active.currentItem ?: "—"}"
@@ -8753,7 +9175,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         progressBar = bar
 
         val statsLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(-1, -2)
             setPadding(0, 0, 0, dp(16))
         }
@@ -8763,19 +9185,19 @@ class MainActivity : Activity(), DebugDumpObserver {
             setLines(1)
             ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(if (dark) 0xFFBFC5BA.toInt() else 0xFF686D65.toInt())
-            layoutParams = LinearLayout.LayoutParams(0, -2, 2f)
+            layoutParams = LinearLayout.LayoutParams(-1, -2)
         }
         progressBytesView = bytesView
 
         val rateView = TextView(context).apply {
-            text = active.formatRate()
+            text = active.formatEta()
             textSize = 12f
-            setLines(1)
+            setLines(2)
             ellipsize = android.text.TextUtils.TruncateAt.END
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             setTextColor(setTextColorForTheme())
-            gravity = Gravity.END
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            gravity = Gravity.START
+            layoutParams = LinearLayout.LayoutParams(-1, -2)
         }
         progressRateView = rateView
 
@@ -8791,67 +9213,72 @@ class MainActivity : Activity(), DebugDumpObserver {
         val hideBtn = Button(context, null, android.R.attr.borderlessButtonStyle).apply {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            val isFinished = active.state in setOf(OperationState.COMPLETE, OperationState.FAILED, OperationState.CANCELLED)
-            text = if (isFinished) "Close" else "Hide"
+            text = "Activity"
             setTextColor(setTextColorForTheme())
-            setOnClickListener {
-                val curId = activeDialogOpId
-                val latestSnapshots = operations.snapshots()
-                val curSnap = latestSnapshots.firstOrNull { it.id == curId }
-                val finishedNow = curSnap == null || curSnap.state in setOf(OperationState.COMPLETE, OperationState.FAILED, OperationState.CANCELLED)
-                if (finishedNow) {
-                    if (curId != null) operationWindowQueue.remove(curId)
-                    val nextId = operationWindowQueue.firstOrNull()
-                    val nextSnap = nextId?.let { id -> latestSnapshots.firstOrNull { it.id == id } }
-                    if (nextSnap != null) {
-                        activeDialogOpId = nextSnap.id
-                        updateProgressDialogContent(nextSnap, latestSnapshots)
-                        updateOperationVisibilityUi(latestSnapshots)
-                    } else {
-                        isOperationWindowHidden = false
-                        currentProgressDialog?.dismiss()
-                        updateOperationVisibilityUi(latestSnapshots)
-                    }
-                } else {
-                    isOperationWindowHidden = true
-                    currentProgressDialog?.dismiss()
-                    updateOperationVisibilityUi(latestSnapshots)
-                }
-            }
+            setOnClickListener { showOperations() }
         }
+
         progressHideButton = hideBtn
 
         val cancelBtn = Button(context, null, android.R.attr.borderlessButtonStyle).apply {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-            text = "Cancel"
+            text = if (active.canRemoveFromHistory) "Remove" else active.stopActionLabel
             setTextColor(0xFFD32F2F.toInt())
-            visibility = if (active.state in setOf(OperationState.COMPLETE, OperationState.FAILED, OperationState.CANCELLED)) View.INVISIBLE else View.VISIBLE
+            visibility = View.VISIBLE
             setOnClickListener {
-                activeDialogOpId?.let { opId ->
-                    operations.cancel(opId, "progress-dialog")
-                    text = "Cancelling…"
-                    isEnabled = false
+                operations.snapshots().firstOrNull { it.id == activeDialogOpId }?.let { op ->
+                    confirmOperationAction(op, right = !op.canRemoveFromHistory && op.canFinishLater)
                 }
             }
         }
         progressCancelButton = cancelBtn
 
         buttonsLayout.addView(hideBtn)
+        progressRetryButton = Button(context, null, android.R.attr.borderlessButtonStyle).apply {
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            text = active.restartActionLabel; setTextColor(setTextColorForTheme())
+            visibility = if (active.canRestart) View.VISIBLE else View.GONE
+            setOnClickListener {
+                operations.snapshots().firstOrNull { it.id == activeDialogOpId }?.let { confirmOperationAction(it, right = true) }
+            }
+            buttonsLayout.addView(this)
+        }
         buttonsLayout.addView(cancelBtn)
 
         body.addView(titleView)
+        progressDestinationView = TextView(context).apply {
+            textSize = 12f; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(setTextColorForTheme())
+            body.addView(this)
+        }
         body.addView(queueView)
         body.addView(statusLabel)
-        body.addView(currentItemScroll)
+        body.addView(currentItemView)
         body.addView(itemNameView)
         body.addView(fileLabel)
         body.addView(fileBar)
         body.addView(overallLabel)
         body.addView(bar)
         body.addView(statsLayout)
+        progressTorrentStatsView = TextView(context).apply {
+            textSize = 12f; setLines(3); setTextColor(setTextColorForTheme())
+            body.addView(this)
+        }
+        progressTorrentWaitCheck = CheckBox(context).apply {
+            text = "Wait indefinitely for peers (all torrents)"
+            setLines(2); setTextColor(setTextColorForTheme())
+            isChecked = torrentTransferPreferences.getBoolean(com.infinifolder.torrent.TorrentTransferPreferences.WAIT_FOREVER, false)
+            setOnCheckedChangeListener { _, checked ->
+                val key = com.infinifolder.torrent.TorrentTransferPreferences.WAIT_FOREVER
+                if (torrentTransferPreferences.getBoolean(key, false) != checked) {
+                    torrentTransferPreferences.edit().putBoolean(key, checked).apply()
+                    com.infinifolder.storage.DiagnosticLog.record("torrent.wait.preference", "indefinite=$checked")
+                }
+            }
+            body.addView(this)
+        }
         progressVerificationCheck = CheckBox(context).apply {
             text = "Verify copied data"; setTextColor(setTextColorForTheme())
             minLines = 2; maxLines = 2
@@ -8873,9 +9300,11 @@ class MainActivity : Activity(), DebugDumpObserver {
 
         dialog.setCanceledOnTouchOutside(true)
         dialog.setOnDismissListener {
+            if (currentProgressDialog !== dialog) return@setOnDismissListener
             currentProgressDialog = null
             activeDialogOpId = null
             progressTitleView = null
+            progressDestinationView = null
             progressQueueView = null
             progressStatusView = null
             progressItemNameView = null
@@ -8885,26 +9314,42 @@ class MainActivity : Activity(), DebugDumpObserver {
             progressBytesView = null
             progressVerificationCheck = null
             progressRateView = null
+            progressTorrentStatsView = null
+            progressTorrentWaitCheck = null
+            progressRetryButton = null
             progressCancelButton = null
             progressHideButton = null
             val latestSnapshots = operations.snapshots()
             if (latestSnapshots.any { it.state == OperationState.RUNNING || it.state == OperationState.QUEUED }) {
                 isOperationWindowHidden = true
             }
-            updateOperationVisibilityUi(latestSnapshots)
+            updateOperationVisibilityUi()
         }
         currentProgressDialog = dialog
         dialog.show()
+        dialog.window?.apply {
+            addFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
+            decorView.setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                    isOperationWindowHidden = true
+                    com.infinifolder.storage.DiagnosticLog.record("operation.dialog.hidden", "reason=outside-touch")
+                    dialog.dismiss()
+                    true
+                } else false
+            }
+        }
         updateProgressDialogContent(active, snapshots)
         val availableWidth = root.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
         dialog.window?.setLayout(minOf(dp(480), (availableWidth - dp(32)).coerceAtLeast(1)),
             ViewGroup.LayoutParams.WRAP_CONTENT)
-        updateOperationVisibilityUi(snapshots)
+        updateOperationVisibilityUi()
     }
 
     private fun updateProgressDialogContent(op: OperationSnapshot, allSnapshots: List<OperationSnapshot> = operations.snapshots()) {
         currentProgressDialog?.window?.let { window ->
-            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
             window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             window.attributes = window.attributes.apply { dimAmount = 0f }
         }
@@ -8913,7 +9358,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             id != op.id && allSnapshots.any { it.id == id && (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) }
         }
         if (waitingAfterCurrent > 0) {
-            progressQueueView?.text = "Queued: $waitingAfterCurrent more operation${if (waitingAfterCurrent == 1) "" else "s"} waiting"
+            progressQueueView?.text = "${activeList.count { it.state == OperationState.RUNNING }} running · ${activeList.count { it.state == OperationState.QUEUED }} waiting"
+            progressQueueView?.setOnClickListener { showOperations() }
             progressQueueView?.visibility = View.VISIBLE
         } else {
             progressQueueView?.visibility = View.INVISIBLE
@@ -8942,8 +9388,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 val nextSnap = nextId?.let { id -> allSnapshots.firstOrNull { it.id == id && (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) } }
                     ?: activeList.firstOrNull { it.id != op.id }
                 if (nextSnap != null) {
-                    activeDialogOpId = nextSnap.id
-                    updateProgressDialogContent(nextSnap, allSnapshots)
+                    currentProgressDialog?.dismiss()
+                    showOperations()
                     return
                 }
                 currentProgressDialog?.dismiss()
@@ -8951,6 +9397,15 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         }
 
+        progressRetryButton?.apply {
+            visibility = if (op.canRestart) View.VISIBLE else View.GONE
+            text = op.restartActionLabel
+            isEnabled = op.resumeDestination !in retryingTorrentDestinations && op.id !in restartingOperations
+        }
+        progressTorrentWaitCheck?.apply {
+            visibility = if (op.canFinishLater || op.resumeDestination != null || op.torrentStats != null) View.VISIBLE else View.GONE
+            isChecked = torrentTransferPreferences.getBoolean(com.infinifolder.torrent.TorrentTransferPreferences.WAIT_FOREVER, false)
+        }
         progressVerificationCheck?.apply {
             val copy = op.label.startsWith("Copy ")
             val required = op.label.startsWith("Move ") || op.label.startsWith("Recover ")
@@ -8959,20 +9414,33 @@ class MainActivity : Activity(), DebugDumpObserver {
             isChecked = required || shared.getBoolean("verify_copies", true)
             text = if (required) "Verification required for moves / recovery" else "Verify copied data (remembered)"
         }
-        progressTitleView?.text = op.label
+        progressTitleView?.text = op.displayName ?: op.label
+        progressDestinationView?.text = op.destination?.let { "To: ${operationDestinationLabel(it)}" }.orEmpty()
+        progressDestinationView?.visibility = if (op.destination == null) View.GONE else View.VISIBLE
+        progressCancelButton?.text = op.stopActionLabel
         progressStatusView?.text = op.message ?: if (op.state == OperationState.QUEUED) "Waiting in queue…" else "Starting…"
         progressItemNameView?.text = "Current item: ${op.currentItem ?: "—"}"
-        val filePct = op.currentItemProgressPercent
+        val checkedPieces = op.torrentPiecesChecked
+        val totalPieces = op.torrentPiecesTotal
+        val checkingPieces = checkedPieces != null && totalPieces != null
+        val filePct = if (checkingPieces && totalPieces!! > 0)
+            (checkedPieces!!.toDouble() / totalPieces * 100).toInt().coerceIn(0, 100)
+        else if (checkingPieces) -1 else op.currentItemProgressPercent
         progressFileBar?.isIndeterminate = filePct < 0
         if (filePct >= 0) progressFileBar?.progress = filePct
         val fileBytes = op.currentItemBytes
-        progressFileLabel?.text = if (fileBytes != null) {
+        val restoringCache = checkingPieces && op.message?.startsWith("Restoring saved progress") == true
+        progressFileBar?.contentDescription = if (restoringCache) "Restoring torrent progress" else if (checkingPieces) "Torrent verification progress" else "Current file progress"
+        progressFileLabel?.text = if (checkingPieces) {
+            "${if (restoringCache) "Resume records" else "Verification"}: $checkedPieces / $totalPieces" + if (filePct >= 0) " ($filePct%)" else ""
+        } else if (fileBytes != null) {
             val done = android.text.format.Formatter.formatShortFileSize(this, fileBytes)
             val total = op.currentItemTotalBytes?.let { android.text.format.Formatter.formatShortFileSize(this, it) }
             "${if (op.message?.startsWith("Verifying") == true) "Verification" else "Current file"}: $done" + (total?.let { " / $it" } ?: "") + (if (filePct >= 0) " ($filePct%)" else "")
-        } else "File progress"
+        } else ""
         val pct = op.overallProgressPercent
-        if (pct >= 0) {
+        val awaitingDownloadTotals = checkingPieces && op.totalBytes == null
+        if (pct >= 0 && !awaitingDownloadTotals) {
             progressBar?.isIndeterminate = false
             progressBar?.progress = pct
         } else {
@@ -8981,14 +9449,34 @@ class MainActivity : Activity(), DebugDumpObserver {
         progressBytesView?.text = formatProgressSnapshot(op)
         val idleSeconds = ((System.currentTimeMillis() - op.lastUpdateMillis) / 1000).coerceAtLeast(0)
         val elapsedSeconds = ((System.currentTimeMillis() - op.startTimeMillis) / 1000).coerceAtLeast(0)
-        progressRateView?.text = listOf(op.formatRate().takeIf { idleSeconds < 3 }.orEmpty(),
-            "Elapsed ${elapsedSeconds / 60}m ${elapsedSeconds % 60}s",
-            if (idleSeconds >= 3 && op.state == OperationState.RUNNING) "Waiting for I/O (${idleSeconds}s since update)" else "")
+        val rateAndEta = listOf(op.formatRate().takeIf { idleSeconds < 3 }.orEmpty(), op.formatEta())
             .filter { it.isNotEmpty() }.joinToString(" · ")
+        val elapsedAndWait = listOf("Elapsed ${elapsedSeconds / 60}m ${elapsedSeconds % 60}s",
+            if (idleSeconds >= 3 && op.state == OperationState.RUNNING) "Waiting for I/O (${idleSeconds}s)" else "")
+            .filter { it.isNotEmpty() }.joinToString(" · ")
+        progressRateView?.text = "$rateAndEta\n$elapsedAndWait"
+        progressTorrentStatsView?.apply {
+            val torrent = op.torrentStats
+            visibility = if (torrent != null || op.canFinishLater) View.VISIBLE else View.GONE
+            if (torrent == null) text = "Connected peers: —\nServing (last 10s): —\nUpload: 0 B/s"
+            else {
+                val uploadRate = if (op.state == OperationState.RUNNING && idleSeconds < 5)
+                    torrent.uploadBytesPerSecond else 0L
+                val rateText = android.text.format.Formatter.formatShortFileSize(this@MainActivity, uploadRate) + "/s"
+                val uploaded = android.text.format.Formatter.formatShortFileSize(this@MainActivity, torrent.uploadedBytes)
+                val serving = if (op.state == OperationState.RUNNING) torrent.servingPeers else 0
+                text = "Connected peers: ${if (op.state == OperationState.RUNNING) torrent.connectedPeers else 0}\n" +
+                    "Serving (last 10s): $serving\nUpload: $rateText · Uploaded: $uploaded"
+            }
+        }
 
         if (op.state in setOf(OperationState.COMPLETE, OperationState.FAILED, OperationState.CANCELLED)) {
-            progressCancelButton?.visibility = View.INVISIBLE
-            progressHideButton?.text = if (waitingAfterCurrent > 0) "Next" else "Close"
+            progressCancelButton?.apply {
+                visibility = View.VISIBLE
+                text = "Remove"
+                isEnabled = op.canRemoveFromHistory
+            }
+            progressHideButton?.text = "Activity"
             when (op.state) {
                 OperationState.COMPLETE -> {
                     progressTitleView?.text = "${op.label} complete"
@@ -8998,7 +9486,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     progressFileBar?.progress = 100
                 }
                 OperationState.CANCELLED -> {
-                    progressTitleView?.text = "${op.label} cancelled"
+                    progressTitleView?.text = "${op.label} ${if (op.pausedByUser) "paused" else "cancelled"}"
                 }
                 OperationState.FAILED -> {
                     progressTitleView?.text = "${op.label} failed"
@@ -9007,9 +9495,6 @@ class MainActivity : Activity(), DebugDumpObserver {
                         maxLines = Int.MAX_VALUE
                         ellipsize = null
                         setTextIsSelectable(true)
-                    }
-                    if (op.message?.contains("mounted", ignoreCase = true) == true) {
-                        notifyMountedPartitionBlocked(op.label, op.message ?: "Partition is mounted")
                     }
                 }
                 else -> Unit
@@ -9021,13 +9506,14 @@ class MainActivity : Activity(), DebugDumpObserver {
                 setTextIsSelectable(false)
             }
             progressCancelButton?.visibility = View.VISIBLE
-            progressCancelButton?.isEnabled = true
-            progressCancelButton?.text = "Cancel"
-            progressHideButton?.text = "Hide"
+            progressCancelButton?.isEnabled = op.id !in stoppingOperations
+            progressCancelButton?.text = if (op.id in stoppingOperations) "Stopping…" else op.stopActionLabel
+            progressHideButton?.text = "Activity"
         }
     }
 
     private fun formatProgressSnapshot(op: OperationSnapshot): String = when {
+        op.torrentPiecesTotal != null && op.totalBytes == null -> "Download progress follows verification"
         (op.totalBytes ?: 0L) > 0 -> {
             val cur = android.text.format.Formatter.formatShortFileSize(this, op.bytes)
             val total = android.text.format.Formatter.formatShortFileSize(this, op.totalBytes ?: 0L)
@@ -9956,7 +10442,6 @@ class MainActivity : Activity(), DebugDumpObserver {
         val location = loadGeneration
         io.execute {
             val capabilities = (provider.capabilities(entry.ref) as? ProviderResult.Success)?.value
-            val archiveWritable = ArchiveUri.isArchiveUri(entry.uri) && archiveProvider.isWritable(entry.uri)
             val shortcut = if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null && !entry.metadata.isSymbolicLink)
                 readShortcutInfo(entry) else null
             val canShowDeleted = entry.metadata.recoveryNote == null && !entry.metadata.isDirectory &&
@@ -9964,13 +10449,13 @@ class MainActivity : Activity(), DebugDumpObserver {
                 runCatching { archiveProvider.supportsFatRecovery(entry.uri) }.getOrDefault(false)
             runOnUiThread {
                 if (request != entryMenuRequest || location != loadGeneration || isFinishing || isDestroyed) return@runOnUiThread
-                showPreparedEntryMenu(entry, capabilities, archiveWritable, shortcut, canShowDeleted)
+                showPreparedEntryMenu(entry, capabilities, shortcut, canShowDeleted)
             }
         }
     }
 
     private fun showPreparedEntryMenu(entry: ResourceEntry, capabilities: ResourceCapabilities?,
-        archiveWritable: Boolean, shortcut: ShortcutInfo?, canShowDeleted: Boolean) {
+        shortcut: ShortcutInfo?, canShowDeleted: Boolean) {
         val isShortcut = com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null
         val inArchive = ArchiveUri.isArchiveUri(entry.uri)
         val isApp = AppsUri.isAppUri(entry.uri)
@@ -10072,9 +10557,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val openGroup = baseOpenGroup + if (canShowDeleted) listOf("Show deleted files") else emptyList()
         val canCopyContents = !entry.metadata.isDirectory && !isApp && !isCategory &&
             (isTextEntry(entry, detectedMagic) || isImageEntry(entry, detectedMagic))
-        val isArchiveEntry = ArchiveUri.isArchiveUri(entry.uri)
-        val isWritableArchiveEntry = isArchiveEntry && archiveWritable
-        val canPaste = entry.metadata.isDirectory && !AppsUri.isAppsUri(entry.uri) && (!isArchiveEntry || isWritableArchiveEntry)
+        val canPaste = StorageActionPolicy.action(StorageAction.CREATE, entry.metadata, capabilities).mayAttempt
 
         val fileOpsGroup: List<String> = when {
             entry.metadata.recoveryNote != null -> listOf("Select", "Undelete…", "Copy to…") +
@@ -10090,16 +10573,6 @@ class MainActivity : Activity(), DebugDumpObserver {
             isShortcut -> if (entry.metadata.isSymbolicLink)
                 listOf("Select", "Copy", "Copy to…", "Link to…", "Rename", "Delete")
                 else listOf("Select", "Copy", "Create archive", "Copy to…", "Move to…", "Link to…", "Rename", "Delete")
-            inArchive -> {
-                val list = mutableListOf("Select", "Copy", "Copy to…")
-                if (canCopyContents) list.add("Copy contents")
-                if (canPaste) list.add("Paste into folder")
-                list.add("Link to…")
-                if (isWritableArchiveEntry) {
-                    list.add("Delete")
-                }
-                list
-            }
             else -> {
                 val list = mutableListOf("Select", "Copy")
                 if (canCopyContents) list.add("Copy contents")
@@ -10121,18 +10594,18 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
 
         val allowedFileOps = fileOpsGroup.filter { action ->
-            val capability = when (action) {
-                "Copy to…", "Create archive" -> ResourceCapability.COPY
-                "Move to…" -> ResourceCapability.MOVE
-                "Rename" -> ResourceCapability.RENAME
-                "Delete" -> ResourceCapability.DELETE
-                "Paste into folder" -> ResourceCapability.CREATE
+            val operation = when (action) {
+                "Copy", "Copy to…", "Create archive" -> StorageAction.COPY
+                "Move to…" -> StorageAction.MOVE
+                "Rename" -> StorageAction.RENAME
+                "Delete" -> StorageAction.DELETE
+                "Paste into folder" -> StorageAction.CREATE
                 else -> null
             }
-            (entry.metadata.isSymbolicLink && action == "Copy to…") ||
-                capability == null || capabilities?.mayAttempt(capability) != false
+            operation == null || StorageActionPolicy.action(operation, entry.metadata, capabilities).mayAttempt
         }.toMutableList()
-        if (entry.metadata.isDirectory && !isApp && !isCategory && capabilities?.mayAttempt(ResourceCapability.CREATE) != false) allowedFileOps.add("Use as debug dump folder")
+        allowedFileOps.add("Add to home screen")
+        if (entry.metadata.isDirectory && !isApp && !isCategory && canPaste) allowedFileOps.add("Use as debug dump folder")
         val linkedConnection = shortcut?.let { info ->
             runCatching { Uri.parse(info.targetUri) }.getOrNull()?.let { target ->
                 ContainerUris.candidates(target, savedConnections()).singleOrNull()
@@ -10209,6 +10682,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
                 "Pin to top" -> entryBrowseDestination(entry)?.let { pinContainer(entry, it) }
                 "Unpin" -> entryBrowseDestination(entry)?.let(::unpinContainer)
+                "Add to home screen" -> pinEntryToHome(entry)
                 "Queue audio" -> enqueueAudio(entry)
                 "Launch", "Launch target app" -> {
                     if (isShortcut) openShortcut(entry)
@@ -10507,12 +10981,25 @@ class MainActivity : Activity(), DebugDumpObserver {
             notifyMountedPartitionBlocked(displayNameFor(destDirUri) ?: "Archive", mountCheck.reason)
             return
         }
-        val isWritableArchive = isArchive && archiveProvider.cachedWritable(destDirUri)
-        val writable = (!isArchive || isWritableArchive) && !AppsUri.isAppsUri(destDirUri)
-        if (!writable) {
-            Toast.makeText(this, "Cannot paste into read-only location.", Toast.LENGTH_SHORT).show()
-            return
+        withWritableDestination(destDirUri) { pasteIntoWritableDestination(destDirUri) }
+    }
+
+    private fun withWritableDestination(destination: Uri, onReady: () -> Unit) {
+        io.execute {
+            val result = StorageActionPolicy.destination(provider, resourceRef(destination))
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val reason = when (result) {
+                    is ProviderResult.Success -> if (result.value.decision.mayAttempt) null else result.value.decision.reason
+                    is ProviderResult.Failure -> result.message
+                    is ProviderResult.Unsupported -> "Cannot check destination: ${result.capability}"
+                }
+                if (reason != null) Toast.makeText(this, reason, Toast.LENGTH_LONG).show() else onReady()
+            }
         }
+    }
+
+    private fun pasteIntoWritableDestination(destDirUri: Uri) {
         val clipboard = getSystemService(ClipboardManager::class.java)
         val clip = clipboard?.primaryClip
         if (clip == null || clip.itemCount == 0) {
@@ -10984,9 +11471,19 @@ class MainActivity : Activity(), DebugDumpObserver {
             exitSelectionMode()
             return
         }
+        withActionCapabilities(selectedEntries) { capabilities -> showPreparedBatchActionMenu(selectedEntries, capabilities) }
+    }
+
+    private fun showPreparedBatchActionMenu(selectedEntries: List<ResourceEntry>, capabilities: Map<ResourceRef, ResourceCapabilities>) {
         val count = selectedEntries.size
-        val fileOpsGroup = listOf("Copy", "Copy to…", "Move to…", "Delete", "Create archive", "Link to…", "Deselect all").filterNot {
-            it == "Move to…" && selectedEntries.any { entry -> entry.metadata.isSymbolicLink }
+        val fileOpsGroup = listOf("Copy", "Copy to…", "Move to…", "Delete", "Create archive", "Link to…", "Deselect all").filter {
+            val operation = when (it) {
+                "Copy", "Copy to…", "Create archive" -> StorageAction.COPY
+                "Move to…" -> StorageAction.MOVE
+                "Delete" -> StorageAction.DELETE
+                else -> null
+            }
+            operation == null || StorageActionPolicy.selection(operation, selectedEntries, capabilities).mayAttempt
         }
         val propertiesGroup = listOf("Properties")
         showGroupedMenuDialog(
@@ -11296,6 +11793,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         initialSelection: Uri?,
         blockedUri: Uri? = null,
         forMove: Boolean = false,
+        requireWritable: Boolean = true,
+        rememberSelection: Boolean = true,
+        transferSources: List<ResourceEntry> = emptyList(),
         onFolderSelected: (Uri, String) -> Unit
     ) {
         val context = dialogContext()
@@ -11303,7 +11803,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             if (a == null || b == null) return false
             return try { sourceIdentity(a) == sourceIdentity(b) } catch (_: Exception) { a == b }
         }
-        val destinationCapabilities = mutableMapOf<Uri, ProviderResult<ResourceCapabilities>>()
+        val destinationCapabilities = mutableMapOf<Uri, ProviderResult<DestinationAssessment>>()
         val pendingChecks = mutableSetOf<Uri>()
         var pickerClosed = false
         var capabilitiesChanged: () -> Unit = {}
@@ -11311,7 +11811,16 @@ class MainActivity : Activity(), DebugDumpObserver {
             if (uri == null || AppsUri.isAppsUri(uri)) return false
             val result = destinationCapabilities[uri]
             if (result == null && pendingChecks.add(uri)) io.execute {
-                val checked = provider.capabilities(resourceRef(uri))
+                val started = android.os.SystemClock.elapsedRealtime()
+                val checked = try {
+                    StorageActionPolicy.destination(provider, resourceRef(uri), transferSources, forMove)
+                } catch (error: Exception) {
+                    ProviderResult.Failure(error.message ?: "Destination check failed", error)
+                }
+                com.infinifolder.storage.DiagnosticLog.record(
+                    "picker.destination.check",
+                    "uri=$uri elapsedMs=${android.os.SystemClock.elapsedRealtime() - started} result=$checked"
+                )
                 runOnUiThread {
                     if (!pickerClosed && !isFinishing && !isDestroyed) {
                         pendingChecks.remove(uri)
@@ -11320,9 +11829,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                     }
                 }
             }
-            val capabilities = (result as? ProviderResult.Success)?.value ?: return false
-            return capabilities[ResourceCapability.CREATE] != Support.UNSUPPORTED &&
-                (!forMove || capabilities[ResourceCapability.ACCEPT_MOVE] != Support.UNSUPPORTED)
+            val assessment = (result as? ProviderResult.Success)?.value ?: return false
+            if (!requireWritable) return assessment.capabilities.mayAttempt(ResourceCapability.LIST)
+            return assessment.decision.mayAttempt
         }
 
         val defaultStart = initialSelection?.takeUnless { AppsUri.isAppsUri(it) }
@@ -11349,6 +11858,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             .setTitle(title)
             .setView(body)
             .setNegativeButton("Cancel", null)
+            .setNeutralButton("Common locations", null)
             .setPositiveButton("Select", null)
             .create()
 
@@ -11360,9 +11870,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                 dest == null -> ""
                 result == null -> "Checking destination capabilities…"
                 result is ProviderResult.Failure -> result.message
-                !writable && forMove && (result as? ProviderResult.Success)?.value?.get(ResourceCapability.ACCEPT_MOVE) == Support.UNSUPPORTED ->
-                    "Use Copy for this container; move metadata preservation is not available yet"
-                !writable -> (result as? ProviderResult.Success)?.notice ?: "Read-only location: creating entries is unsupported here"
+                result is ProviderResult.Unsupported -> "Cannot check destination: ${result.capability}"
+                !writable -> if (requireWritable) (result as? ProviderResult.Success)?.value?.decision?.reason
+                    ?: "This location does not support creating entries" else "This location cannot be listed"
                 else -> ""
             }
             selectedLabel.text = selectedPath + if (detail.isNotBlank()) "\n$detail" else ""
@@ -11422,6 +11932,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                 onSelect = { node ->
                     val destination = node.uri
                     if (destination != null && !AppsUri.isAppsUri(destination)) {
+                        com.infinifolder.storage.DiagnosticLog.record(
+                            "picker.destination.select", "name=${node.name} uri=$destination expandable=${node.canExpand} expanded=${node.expanded}"
+                        )
                         selected = destination
                         val route = findTreeRoute(treeRoots, node).orEmpty().filter { it.uri != null }
                         val display = if (route.isNotEmpty()) route.joinToString(" / ") { it.name } else node.name
@@ -11488,6 +12001,15 @@ class MainActivity : Activity(), DebugDumpObserver {
             scrollSelectedTreeRow()
         }
 
+        fun revealCurrentSelection() {
+            selectedTreeNode(treeRoots)?.let { target ->
+                findTreeRoute(treeRoots, target)?.dropLast(1)?.forEach { it.expanded = true }
+                if (target.canExpand && !target.expanded) toggleTreeNode(target) {
+                    if (dialog.isShowing) renderPickerTree()
+                }
+            }
+        }
+
         capabilitiesChanged = {
             updateSelectButtonState()
             if (dialog.isShowing) renderPickerTree()
@@ -11499,29 +12021,36 @@ class MainActivity : Activity(), DebugDumpObserver {
 
         dialog.setOnShowListener {
             activePickerRerender = { if (dialog.isShowing) renderPickerTree() }
+            dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                val locations = commonLocations.list()
+                if (locations.isEmpty()) {
+                    dialogBuilder().setTitle("Common locations")
+                        .setMessage("No saved folders yet. Choose destinations to remember them, or add folders in Settings → Common locations.")
+                        .setPositiveButton("OK", null).show()
+                } else dialogBuilder().setTitle("Common locations")
+                    .setItems(locations.map { it.label }.toTypedArray()) { _, index ->
+                        val location = locations[index]
+                        selected = Uri.parse(location.uri)
+                        selectedPath = location.label
+                        revealCurrentSelection()
+                        updateSelectButtonState()
+                        renderPickerTree()
+                    }.setNegativeButton("Cancel", null).show()
+            }
             val selectBtn = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
             updateSelectButtonState()
             selectBtn.setOnClickListener {
                 val destination = selected
                 if (destination != null && !isSameUri(destination, blockedUri) && isWritableDestination(destination)) {
-                    shared.edit().putString("last_chosen_destination", destination.toString()).apply()
+                    com.infinifolder.storage.DiagnosticLog.record("picker.destination.confirm", "uri=$destination path=$selectedPath")
+                    if (rememberSelection && requireWritable)
+                        shared.edit().putString("last_chosen_destination", destination.toString()).apply()
+                    if (rememberSelection) commonLocations.remember(destination, selectedPath)
                     dialog.dismiss()
                     onFolderSelected(destination, selectedPath)
                 }
             }
-            fun revealSelection(list: List<TreeNode>): TreeNode? {
-                for (node in list) {
-                    if (isSameUri(node.uri, selected)) return node
-                    revealSelection(node.children)?.let { return it }
-                }
-                return null
-            }
-            revealSelection(treeRoots)?.let { target ->
-                findTreeRoute(treeRoots, target)?.dropLast(1)?.forEach { it.expanded = true }
-                if (target.canExpand && !target.expanded) toggleTreeNode(target) {
-                    if (dialog.isShowing) renderPickerTree()
-                }
-            }
+            revealCurrentSelection()
             renderPickerTree()
         }
         dialog.show()
@@ -11538,10 +12067,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                 return
             }
         }
-        if ((ArchiveUri.isArchiveUri(parentUri) && !archiveProvider.cachedWritable(parentUri)) || AppsUri.isAppsUri(parentUri)) {
-            Toast.makeText(this, "Cannot create directory in a read-only location.", Toast.LENGTH_SHORT).show()
-            return
-        }
+        withWritableDestination(parentUri) { showCreateDirectoryInPicker(parentUri, onCreated) }
+    }
+
+    private fun showCreateDirectoryInPicker(parentUri: Uri, onCreated: (ResourceEntry) -> Unit) {
         val input = EditText(dialogContext()).apply {
             hint = "Directory name"
             setTextColor(setTextColorForTheme())
@@ -11603,17 +12132,18 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun showDestinationPicker(entry: ResourceEntry, move: Boolean, partialRecovery: Boolean = false) {
         showBatchDestinationPicker(listOf(entry), move, partialRecovery)
     }
-    private fun showBatchDestinationPicker(entries: List<ResourceEntry>, move: Boolean, partialRecovery: Boolean = false) {
+    private fun showBatchDestinationPicker(entries: List<ResourceEntry>, move: Boolean, partialRecovery: Boolean = false,
+                                           initialSelection: Uri? = null) {
         val start = if (homeMode && homePage == "root") ContainerLinksProvider.ROOT else current ?: return
         val title = if (entries.size == 1) {
             if (move) "Move ${entries[0].metadata.name} to" else "Copy ${entries[0].metadata.name} to"
         } else {
             if (move) "Move ${entries.size} items to" else "Copy ${entries.size} items to"
         }
-        val defaultStart = lastChosenDestination() ?: if (AppsUri.isAppsUri(start)) {
+        val defaultStart = initialSelection ?: lastChosenDestination() ?: if (AppsUri.isAppsUri(start)) {
             localProvider.rootUri.takeIf { localProvider.hasAccess() }
         } else null
-        showFolderPicker(title, defaultStart, blockedUri = start, forMove = move) { destination, _ ->
+        showFolderPicker(title, defaultStart, blockedUri = start, forMove = move, transferSources = entries) { destination, _ ->
             if (destination != start) {
                 if (entries.size == 1) {
                     startTransfer(entries[0], move, destination, partialRecovery)
@@ -11722,7 +12252,11 @@ class MainActivity : Activity(), DebugDumpObserver {
 
         val verifyCopies = shared.getBoolean("verify_copies", true)
         val id = operations.submit(label, null, count,
-            conflictKeys = transferConflictKeys(entries, destination, createLinks, partialRecovery)) { update, cancelled ->
+            conflictKeys = transferConflictKeys(entries, destination, createLinks, partialRecovery),
+            displayName = entries.singleOrNull()?.metadata?.name ?: "${entries.first().metadata.name} (+${count - 1})",
+            destination = destination.toString(),
+            restartTransfer = com.infinifolder.ops.TransferRestartRequest(entries.toList(), destination.toString(), move, createLinks, partialRecovery)) { update, cancelled ->
+            update(OperationUpdate(destination = displayPathFor(destination) ?: destination.toString()))
             var transferSucceeded = false
             val transferWarnings = mutableListOf<String>()
             var latestTransferUpdate = OperationUpdate()
@@ -11746,9 +12280,17 @@ class MainActivity : Activity(), DebugDumpObserver {
                     },
                     partialRecovery = partialRecovery,
                     verifyCopies = verifyCopies,
-                    copyVerificationEnabled = { shared.getBoolean("verify_copies", true) }
+                    copyVerificationEnabled = { shared.getBoolean("verify_copies", true) },
+                    confirmRandomAccessFallback = { request ->
+                        confirmStagedTransfer(request, cancelled) { suggested ->
+                            showBatchDestinationPicker(entries, move, partialRecovery, initialSelection = suggested)
+                        }
+                    }
                 )
                 transferSucceeded = !cancelled() && transferWarnings.isEmpty()
+                if (!cancelled() && !createLinks) runCatching {
+                    commonLocations.remember(destination, displayPathFor(destination) ?: getPathDisplay(destination))
+                }.onFailure { com.infinifolder.storage.DiagnosticLog.record("common-locations.remember.failed", error = it) }
             } finally {
                 runOnUiThread {
                     if (isDestroyed) return@runOnUiThread
@@ -11792,6 +12334,70 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         }
         enqueueOperationWindow(id)
+    }
+
+    private fun suggestedTransferTargets(excluded: ResourceRef): List<RecommendedTargetsView.Candidate> {
+        val candidates = commonLocations.list()
+            .sortedByDescending { it.randomWriteConfirmedAt > 0 }
+            .map { RecommendedTargetsView.Candidate(Uri.parse(it.uri), it.label, it.randomWriteConfirmedAt) }
+            .toMutableList()
+        if (localProvider.hasAccess()) candidates.add(RecommendedTargetsView.Candidate(localProvider.rootUri, "Internal shared storage"))
+        savedConnections().filter { it.sourceTypeId in setOf("sftp", "smb", "ftp", "webdav") }.forEach { connection ->
+            val path = if (connection.sourceTypeId == "smb" && !connection.options["initialShare"].isNullOrBlank())
+                "/${connection.options["initialShare"].orEmpty().trim('/')}" else connection.options["initialPath"] ?: "/"
+            val uri = Uri.Builder().scheme(connection.sourceTypeId).authority(connection.id).path(path).build()
+            candidates.add(RecommendedTargetsView.Candidate(uri, connection.displayName))
+        }
+        return candidates.distinctBy { provider.refForUri(it.uri)?.toString() ?: it.uri.toString() }
+            .filterNot { provider.refForUri(it.uri) == excluded }.take(10)
+    }
+
+    /** Only the operation worker waits for this choice; browsing and other jobs stay live. */
+    private fun confirmStagedTransfer(request: com.infinifolder.storage.RandomAccessFallbackRequest,
+                                     cancelled: () -> Boolean, chooseAnotherTarget: (Uri?) -> Unit): Boolean {
+        check(android.os.Looper.myLooper() != android.os.Looper.getMainLooper())
+        val answered = java.util.concurrent.CountDownLatch(1)
+        val approved = java.util.concurrent.atomic.AtomicBoolean(false)
+        val dialog = java.util.concurrent.atomic.AtomicReference<android.app.AlertDialog?>()
+        runOnUiThread {
+            if (isDestroyed || isFinishing || cancelled() || answered.count == 0L) {
+                answered.countDown()
+                return@runOnUiThread
+            }
+            val context = dialogContext()
+            val content = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(8))
+                addView(TextView(context).apply { text = request.message; setTextColor(setTextColorForTheme()) })
+                addView(RecommendedTargetsView(context, provider, suggestedTransferTargets(request.destination)) { uri ->
+                    answered.countDown()
+                    dialog.get()?.dismiss()
+                    chooseAnotherTarget(uri)
+                })
+            }
+            dialog.set(dialogBuilder().setTitle("Choose a different target (recommended)")
+                .setView(ScrollView(context).apply { addView(content) })
+                .setPositiveButton("Choose another target") { _, _ ->
+                    answered.countDown()
+                    chooseAnotherTarget(null)
+                }
+                .setNegativeButton("Continue anyway") { _, _ ->
+                    approved.set(true)
+                    answered.countDown()
+                }
+                .setNeutralButton("Cancel") { _, _ -> answered.countDown() }
+                .setOnCancelListener { answered.countDown() }
+                .setOnDismissListener { answered.countDown() }
+                .show())
+        }
+        try {
+            while (!answered.await(250, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                if (cancelled() || isDestroyed || isFinishing) return false
+            }
+            return approved.get() && !cancelled()
+        } finally {
+            answered.countDown()
+            runOnUiThread { dialog.getAndSet(null)?.dismiss() }
+        }
     }
 
     private fun confirmBatchDelete(items: List<ResourceEntry>) {
@@ -11839,7 +12445,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         val count = entries.size
         val label = if (count == 1) "Delete ${entries[0].metadata.name}" else "Delete $count items"
         val id = operations.submit(label, null, count,
-            conflictKeys = entries.flatMapTo(mutableSetOf(), ::operationEntryKeys)) { update, cancelled ->
+            conflictKeys = entries.flatMapTo(mutableSetOf(), ::operationEntryKeys),
+            displayName = entries.singleOrNull()?.metadata?.name ?: "${entries.first().metadata.name} (+${count - 1})") { update, cancelled ->
             try { FileOperations.batchDelete(
                 entries = entries,
                 provider = provider,
@@ -11987,7 +12594,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             conflictKeys = buildSet {
                 entries.forEach { addAll(operationEntryKeys(it)) }
                 add(operationTargetKey(resourceRef(destinationFolderUri), archiveName))
-            }) { update, cancelled ->
+            }, displayName = archiveName, destination = destinationFolderUri.toString()) { update, cancelled ->
             val totalInputBytes = FileOperations.calculateTotalBytes(entries, provider, isCancelled = cancelled).takeIf { it > 0 }
             var destCreatedRef: ResourceRef? = null
             try {
@@ -12149,11 +12756,12 @@ class MainActivity : Activity(), DebugDumpObserver {
         val date = entry.metadata.modifiedAtMillis?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)) } ?: ""
         return if (entry.metadata.isDirectory) "Folder · $date" else "$size · $date"
     }
-    private fun iconFor(m: ResourceMetadata): String = if (m.isDirectory) "📁" else
-        com.infinifolder.mime.MimeRegistry.fallbackIcon(com.infinifolder.mime.MimeRegistry.effective(m.name, m.mimeType))
+    private fun iconFor(m: ResourceMetadata): String = FileIconView.fallback(m)
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        if (forwardingHomeShortcut) return
+        outState.putBoolean("operation_window_hidden", isOperationWindowHidden)
         outState.putString("logical_location_prefix", logicalLocationPrefix)
         outState.putString("current_program_name", currentProgramName)
         outState.putStringArrayList("history", ArrayList(history.map(Uri::toString)))
@@ -12330,6 +12938,21 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
 
+    override fun debugCaptureWindow(): android.view.Window? =
+        currentProgressDialog?.takeIf { it.isShowing }?.window
+
+    override fun debugDumpState(): String = buildString {
+        append("dialogOperation=$activeDialogOpId hidden=$isOperationWindowHidden showing=${currentProgressDialog?.isShowing == true}")
+        append("\nstatus=${progressStatusView?.text}\nfileLabel=${progressFileLabel?.text}\nrateEta=${progressRateView?.text}")
+        append("\nfileBar=${progressFileBar?.progress} indeterminate=${progressFileBar?.isIndeterminate}")
+        append(" overallBar=${progressBar?.progress} indeterminate=${progressBar?.isIndeterminate}")
+        operations.snapshots().takeLast(10).forEach { op ->
+            append("\noperation=${op.id} state=${op.state} message=${op.message} bytes=${op.bytes}/${op.totalBytes}")
+            append(" fileBytes=${op.currentItemBytes}/${op.currentItemTotalBytes} pieces=${op.torrentPiecesChecked}/${op.torrentPiecesTotal}")
+            append(" remaining=${op.remainingBytes} rate=${op.bytesPerSecond} eta=${op.formatEta()}")
+        }
+    }
+
     override fun onDebugDumpFinished() {
         lastDumpRefresh = DebugTools.dumpGeneration
         refreshCurrentLocation()
@@ -12337,14 +12960,16 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     override fun onResume() {
         super.onResume()
+        if (forwardingHomeShortcut) return
+        browserResumed = true
         OperationService.start(this)
         if (lastDumpRefresh != DebugTools.dumpGeneration) onDebugDumpFinished()
         val snapshots = operations.snapshots()
-        val hasActive = snapshots.any { it.state == OperationState.RUNNING || it.state == OperationState.QUEUED }
-        if (hasActive && !isOperationWindowHidden && currentProgressDialog?.isShowing != true) {
-            showProgressDialog()
+        updateOperationVisibilityUi()
+        if (pendingOperationsIntent) {
+            pendingOperationsIntent = false
+            showOperations()
         }
-        updateOperationVisibilityUi(snapshots)
         if (::localProvider.isInitialized) {
             val access = localProvider.hasAccess()
             if (waitingForStorageAccess || access != hadStorageAccess) {
@@ -12361,8 +12986,18 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
 
+    override fun onPause() {
+        browserResumed = false
+        if (!forwardingHomeShortcut) {
+            currentProgressDialog?.dismiss()
+            operationOverview?.dismiss()
+        }
+        super.onPause()
+    }
+
     override fun onStop() {
         super.onStop()
+        if (forwardingHomeShortcut) return
         val hasActive = operations.snapshots().any {
             (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) &&
             !it.id.startsWith("playback_")
@@ -12374,6 +13009,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
+        if (forwardingHomeShortcut) return
         com.infinifolder.theme.ThemeManager.handleConfigurationChanged(this, newConfig)
         updateBrowserPanes()
         renderTree()
@@ -12381,8 +13017,10 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     override fun onDestroy() {
+        if (forwardingHomeShortcut) { super.onDestroy(); return }
         diskUsageExplorer?.close()
         diskUsageExplorer = null
+        operationOverview?.dismiss()
         operationUiHandler.removeCallbacks(operationStatusTick)
         operationUiHandler.removeCallbacks(operationUiUpdate)
         pendingOperationSnapshots.set(null)
@@ -12401,6 +13039,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun dialogBuilder() = android.app.AlertDialog.Builder(dialogContext())
     private fun displayNameFor(treeUri: Uri): String? = try {
         if (treeUri == ContainerLinksProvider.ROOT) "Virtual root" else
+        if (treeUri == com.infinifolder.storage.PartialDownloadsProvider.ROOT) "Partial downloads" else
         if (AppsUri.isAppsUri(treeUri)) {
             when {
                 AppsUri.isAppUri(treeUri) -> {
@@ -12461,6 +13100,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     /** Resolve provider document IDs to user-facing names; never interpret IDs as POSIX paths. */
     private fun displayPathFor(treeUri: Uri): String? = try {
+        if (treeUri == com.infinifolder.storage.PartialDownloadsProvider.ROOT) "Virtual root / Partial downloads" else
         if (AppsUri.isAppsUri(treeUri)) {
             when {
                 AppsUri.isAppUri(treeUri) -> {

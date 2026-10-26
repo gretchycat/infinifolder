@@ -32,7 +32,19 @@ object ThemeManager {
     var activeTheme: ThemeColors = ThemeColors.modern(true)
         private set
 
+    var smoothSkinScaling: Boolean = false
+        private set
+
+    fun setSmoothSkinScaling(context: Context, smooth: Boolean) {
+        smoothSkinScaling = smooth
+        context.getSharedPreferences("browser", Context.MODE_PRIVATE).edit()
+            .putBoolean("skin_smooth_scaling", smooth).apply()
+        synchronized(listeners) { listeners.toList().forEach { it.onThemeChanged(activeTheme) } }
+    }
+
     private var initialized = false
+    private var skinArtwork: Map<String, ByteArray> = emptyMap()
+    private val skinBitmaps = mutableMapOf<String, android.graphics.Bitmap>()
 
     fun isSystemInDarkMode(context: Context): Boolean {
         val uiMode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
@@ -64,6 +76,7 @@ object ThemeManager {
         if (initialized) return
         initialized = true
         val shared = context.getSharedPreferences("browser", Context.MODE_PRIVATE)
+        smoothSkinScaling = shared.getBoolean("skin_smooth_scaling", false)
         val savedThemeId = shared.getString(PREF_ACTIVE_THEME, AppThemeId.MODERN.name)
         val isDark = explicitDark ?: resolveIsDark(context)
         activeTheme = when (savedThemeId) {
@@ -73,7 +86,10 @@ object ThemeManager {
             AppThemeId.CUSTOM_WSZ.name -> {
                 val skinPath = shared.getString(PREF_CUSTOM_SKIN_FILE, null)
                 if (skinPath != null && File(skinPath).exists()) {
-                    WinampSkinParser.parseSkin(context, Uri.fromFile(File(skinPath)))?.themeColors
+                    WinampSkinParser.parseSkin(context, Uri.fromFile(File(skinPath)), shared.getString("custom_skin_name", null))?.let { parsed ->
+                        skinArtwork = parsed.artwork
+                        parsed.themeColors
+                    }
                         ?: ThemeColors.WINAMP_CLASSIC
                 } else {
                     ThemeColors.WINAMP_CLASSIC
@@ -118,13 +134,16 @@ object ThemeManager {
         }
     }
 
-    fun setTheme(context: Context, theme: ThemeColors, skinFile: File? = null) {
+    fun setTheme(context: Context, theme: ThemeColors, skinFile: File? = null, artwork: Map<String, ByteArray> = emptyMap()) {
+        skinArtwork = artwork
+        skinBitmaps.clear()
         activeTheme = theme
         val shared = context.getSharedPreferences("browser", Context.MODE_PRIVATE)
         shared.edit().apply {
             putString(PREF_ACTIVE_THEME, theme.id.name)
             if (skinFile != null) {
                 putString(PREF_CUSTOM_SKIN_FILE, skinFile.absolutePath)
+                putString("custom_skin_name", theme.name)
             } else if (theme.id != AppThemeId.CUSTOM_WSZ) {
                 remove(PREF_CUSTOM_SKIN_FILE)
             }
@@ -150,24 +169,55 @@ object ThemeManager {
         )
     }
 
+    /** Stages and validates one private copy before publishing the new theme. Call from a worker. */
     fun importSkin(context: Context, uri: Uri): ThemeColors? {
-        val parsed = WinampSkinParser.parseSkin(context, uri) ?: return null
         val skinsDir = File(context.filesDir, "wsz_skins").apply { mkdirs() }
-        val destFile = File(skinsDir, "${System.currentTimeMillis()}_${parsed.name.replace("[^a-zA-Z0-9._-]".toRegex(), "_")}.wsz")
-
-        try {
+        val destFile = File.createTempFile("skin-", ".wsz", skinsDir)
+        return try {
             MediaSourceAdapter.openStream(context, uri).use { input ->
                 destFile.outputStream().use { output ->
-                    input.copyTo(output)
+                    val buffer = ByteArray(8192)
+                    var total = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        if (total > 32 * 1024 * 1024) throw java.io.IOException("Skin archive exceeds 32 MiB")
+                        output.write(buffer, 0, count)
+                    }
                 }
             }
-            setTheme(context, parsed.themeColors, destFile)
-            return parsed.themeColors
-        } catch (_: Exception) {
-            setTheme(context, parsed.themeColors)
-            return parsed.themeColors
+            val name = if (uri.scheme == "content") {
+                context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                    if (it.moveToFirst()) it.getString(0) else null
+                }
+            } else uri.lastPathSegment
+            val parsed = destFile.inputStream().use {
+                WinampSkinParser.parseSkinFromStream(it, name?.substringBeforeLast('.') ?: "Winamp Skin")
+            } ?: throw java.io.IOException("No supported classic Winamp skin resources found")
+            android.os.Handler(context.mainLooper).post {
+                setTheme(context, parsed.themeColors, destFile, parsed.artwork)
+            }
+            parsed.themeColors
+        } catch (error: Exception) {
+            destFile.delete()
+            android.util.Log.w("WinampSkin", "Import failed", error)
+            null
         }
     }
+
+    private fun skinBitmap(name: String): android.graphics.Bitmap? {
+        if (activeTheme.id != AppThemeId.CUSTOM_WSZ) return null
+        skinBitmaps[name]?.let { return it }
+        val bytes = skinArtwork[name] ?: return null
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outWidth.toLong() * bounds.outHeight > 2_000_000) return null
+        return android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.also { skinBitmaps[name] = it }
+    }
+
+    fun createFloatingFrameDrawable(theme: ThemeColors, density: Float): android.graphics.drawable.Drawable =
+        WinampChromeDrawable(theme.background, theme.cardStroke, density, skinBitmap("main.bmp"), null, smoothSkinScaling)
 
     fun createCardDrawable(theme: ThemeColors, density: Float): GradientDrawable {
         val dpCorner = (theme.cornerRadiusDp * density)
@@ -196,7 +246,11 @@ object ThemeManager {
         }
     }
 
-    fun createToolbarDrawable(theme: ThemeColors, density: Float): GradientDrawable {
+    fun createToolbarDrawable(theme: ThemeColors, density: Float): android.graphics.drawable.Drawable {
+        val title = skinBitmap("titlebar.bmp")
+        if (title != null && theme.id == AppThemeId.CUSTOM_WSZ) {
+            return WinampChromeDrawable(theme.toolbarBackground, theme.toolbarBorder, density, null, title, smoothSkinScaling)
+        }
         val dpStroke = (1 * density).toInt().coerceAtLeast(1)
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE

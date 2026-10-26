@@ -99,9 +99,9 @@ data class FileSystemInfo(val type: String?, val maxFileSizeBytes: Long?, val ev
     fun requireFileFits(name: String, sizeBytes: Long?) {
         val limit = maxFileSizeBytes ?: return
         if (sizeBytes != null && sizeBytes > limit) {
-            throw IOException("Cannot store '$name' (${java.text.NumberFormat.getIntegerInstance().format(sizeBytes)} bytes): " +
-                "the destination uses $displayName and allows at most $limitDescription. " +
-                "Choose a destination with a larger single-file limit. Original retained.")
+            val maximum = if (limit == FAT_MAX_FILE_SIZE) "4 GiB minus 1 byte" else "about ${StorageMessages.approximateSize(limit)}"
+            throw IOException("'$name' is too large for $displayName: about ${StorageMessages.approximateSize(sizeBytes)}. " +
+                "The maximum file size is $maximum. Original retained.")
         }
     }
     companion object { const val FAT_MAX_FILE_SIZE = 0xffffffffL }

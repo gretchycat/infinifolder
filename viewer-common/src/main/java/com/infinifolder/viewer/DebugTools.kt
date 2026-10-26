@@ -28,6 +28,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Implemented by screens whose listings should update after a dump, including partial exports. */
 interface DebugDumpObserver {
     fun onDebugDumpFinished()
+    fun debugDumpState(): String? = null
+    fun debugCaptureWindow(): android.view.Window? = null
 }
 
 /** User-triggered app-window captures. No system screen-capture permission or background screenshots. */
@@ -35,6 +37,9 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
     private val installed = AtomicBoolean(false)
     private val buttons = Collections.synchronizedMap(WeakHashMap<Activity, View>())
     private val busy = AtomicBoolean(false)
+    private val crashExporter = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+        Thread(task, "InfiniFolderCrashExport").apply { isDaemon = true }
+    }
     var dumpGeneration: Long = 0
         private set
     fun install(application: Application) {
@@ -44,9 +49,32 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
             val previous = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, error ->
                 DiagnosticLog.record("uncaught", "application failure", error)
+                if (application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    runCatching { crashExporter.submit { exportPendingCrash(application) }.get(2500, java.util.concurrent.TimeUnit.MILLISECONDS) }
+                }
                 previous?.uncaughtException(thread, error)
             }
             application.registerActivityLifecycleCallbacks(this)
+            if (application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                crashExporter.execute { exportPendingCrash(application) }
+            }
+        }
+    }
+
+    /** Export fatal traces without requiring an Activity to stay open. Retry on the next launch. */
+    private fun exportPendingCrash(application: Application) {
+        runCatching {
+            val destination = DebugDumpDestination.get(application) ?: return
+            val log = DiagnosticLog.snapshot(application)
+            val marker = log.lineSequence().lastOrNull { it.contains(" uncaught ") } ?: return
+            val preferences = application.getSharedPreferences("diagnostics", Application.MODE_PRIVATE)
+            if (preferences.getString("exported_crash_marker", null) == marker) return
+            val stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS").withZone(java.time.ZoneOffset.UTC).format(Instant.now())
+            val artifacts = listOf(DebugArtifact("infinifolder-crash-$stamp.log", "text/plain", log.toByteArray()))
+            when (DebugDumpWriter.write(StorageRuntime.get(application).provider, destination, artifacts)) {
+                is ProviderResult.Success -> preferences.edit().putString("exported_crash_marker", marker).commit()
+                else -> Unit // Preserve the private trace for another export attempt.
+            }
         }
     }
     override fun onActivityResumed(activity: Activity) {
@@ -83,7 +111,10 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
         if (!busy.compareAndSet(false, true)) return
         val button = buttons[activity]
         button?.visibility = View.INVISIBLE
-        val view = activity.window.decorView
+        val observer = activity as? DebugDumpObserver
+        observer?.debugDumpState()?.let { DiagnosticLog.record("debug.ui.state", it) }
+        val captureWindow = observer?.debugCaptureWindow() ?: activity.window
+        val view = captureWindow.decorView
         view.post {
             val bitmap = runCatching { Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888) }.getOrNull()
             fun write(capture: Bitmap?, method: String) {
@@ -137,7 +168,7 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
             }
             if (bitmap == null) { write(null, "unavailable"); return@post }
             runCatching {
-                PixelCopy.request(activity.window, bitmap, { status ->
+                PixelCopy.request(captureWindow, bitmap, { status ->
                     if (status == PixelCopy.SUCCESS) write(bitmap, "PixelCopy") else {
                         val drawn = runCatching { view.draw(Canvas(bitmap)); bitmap }.getOrNull()
                         if (drawn == null) bitmap.recycle()
