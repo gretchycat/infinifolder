@@ -224,6 +224,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 SmbUri.isSmbUri(uri) -> (smbProvider.openRead(ResourceRef("smb", uri.toString())) as? ProviderResult.Success)?.value
                 WebDavUri.owns(uri) -> (webDavProvider.openRead(ResourceRef("webdav", uri.toString())) as? ProviderResult.Success)?.value
                 uri.scheme == "file" -> uri.path?.let { File(it).inputStream() }
+                ::provider.isInitialized -> provider.refForUri(uri)?.let { (provider.openRead(it) as? ProviderResult.Success)?.value }
                 else -> null
             }
         }
@@ -3965,6 +3966,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                         when (result) {
                             is ProviderResult.Success -> {
                                 entries = result.value
+                                if (!result.isLoading || result.value.isNotEmpty()) {
+                                    cacheDirectoryIconListing(uri, ref, result.value)
+                                }
                                 result.value.forEach { child ->
                                     if (child.uri != uri) knownResourceParents.put(child.uri, uri)
                                 }
@@ -4228,7 +4232,9 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun renderEntries() {
         artworkRenderGeneration++
-        ResourceIconSidecars.observe(entries, current)
+        if ((!listingIsLoading || entries.isNotEmpty()) && listingError == null) {
+            ResourceIconSidecars.observe(entries, current)
+        }
         val renderStartedAt = SystemClock.uptimeMillis()
         if (renderedPinnedIconSize != iconSizeDp) renderPinnedContainers()
         val location = current
@@ -4370,7 +4376,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         var uncachedShortcutPlaceholder: TextView? = null
         var uncachedShortcutImage: ImageView? = null
 
-        val sharedArtwork = isShortcut || AppsUri.isAppUri(entry.uri) || ResourceIconSidecars.find(entry) != null ||
+        val isApk = !entry.metadata.isDirectory &&
+            com.infinifolder.mime.MimeRegistry.effective(effectiveMeta.name, effectiveMeta.mimeType) == "application/vnd.android.package-archive"
+        val sharedArtwork = isShortcut || AppsUri.isAppUri(entry.uri) || isApk || ResourceIconSidecars.find(entry) != null ||
             ResourceArtworkCache.peek(entry, sidePx) != null
         val rawIcon = if (sharedArtwork) {
             TextView(this).apply {
@@ -4466,6 +4474,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         } else if (entry.metadata.isDirectory) {
             directoryPreview(entry, asGrid, box)
+        } else if (isDefaultArchive) {
+            directoryPreview(entry, asGrid, box, buildFileIconView(entry, effectiveMeta, asGrid, box))
         } else {
             buildFileIconView(entry, effectiveMeta, asGrid, box)
         }
@@ -4565,7 +4575,18 @@ class MainActivity : Activity(), DebugDumpObserver {
                         runOnUiThread {
                             if (generation == loadGeneration && !isFinishing && !isDestroyed) {
                                 val updatedMeta = entry.metadata.copy(mimeType = magic.mimeType)
-                                val updatedIcon = buildFileIconView(entry, updatedMeta, asGrid, box)
+                                val magicIsPkg = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isPackagedFormat(updatedMeta.name, updatedMeta.mimeType)
+                                val magicIsArc = !AppsUri.isAppUri(entry.uri) && !magicIsPkg && (
+                                    ArchiveFormats.isArchive(updatedMeta.name, updatedMeta.mimeType) ||
+                                    magic.isArchiveOrDiscImage ||
+                                    ArchiveFormats.isDiscImage(updatedMeta.name, magic.mimeType)
+                                )
+                                val baseIcon = buildFileIconView(entry, updatedMeta, asGrid, box)
+                                val updatedIcon = if (magicIsArc) {
+                                    directoryPreview(entry, asGrid, box, baseIcon)
+                                } else {
+                                    baseIcon
+                                }
                                 if (icon.childCount > 0) {
                                     icon.removeViewAt(0)
                                     icon.addView(updatedIcon, 0, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
@@ -5063,15 +5084,45 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         return frame
     }
+    private fun cacheDirectoryIconListing(dirUri: Uri, dirRef: ResourceRef?, contents: List<ResourceEntry>): Uri? {
+        ResourceIconSidecars.observe(contents, dirUri)
+        val bestUri = DirectoryIconResolver.findBestIcon(contents)?.uri
+        val value = bestUri?.toString() ?: ""
+        dirRef?.let { directoryIconCache.put("${it.providerId}:${it.documentId}", value) }
+        directoryIconCache.put("tree:$dirUri", value)
+        if (ArchiveUri.isArchiveUri(dirUri) && ArchiveUri.getEntryPath(dirUri).isEmpty()) {
+            ArchiveUri.getSourceUri(dirUri)?.let { sourceUri ->
+                directoryIconCache.put("tree:$sourceUri", value)
+                runCatching { resourceRef(sourceUri) }.getOrNull()?.let { sRef ->
+                    directoryIconCache.put("${sRef.providerId}:${sRef.documentId}", value)
+                }
+            }
+        }
+        return bestUri
+    }
+
+    private fun resolveContainerDirectoryUri(entry: ResourceEntry): Pair<Uri, ResourceRef> {
+        if (!entry.metadata.isDirectory && !ArchiveUri.isArchiveUri(entry.uri)) {
+            val archiveUri = ArchiveUri.toArchiveUri(entry.uri)
+            val archiveRef = runCatching { resourceRef(archiveUri) }.getOrElse { ResourceRef("archive", archiveUri.toString()) }
+            return archiveUri to archiveRef
+        }
+        return entry.uri to entry.ref
+    }
+
     private fun findDirectoryIcon(entry: ResourceEntry): Uri? {
-        if (localProvider.owns(entry.uri)) {
+        val (targetUri, targetRef) = resolveContainerDirectoryUri(entry)
+        (resourceIconResolver.sidecar(entry) ?: resourceIconResolver.sidecar(targetUri, entry.metadata.name))?.uri?.let { return it }
+        val known = ResourceIconSidecars.directory(targetUri)
+        if (known != null) return known.entry?.uri
+        if (localProvider.owns(targetUri)) {
             return try {
-                val dir = localProvider.fileFor(entry.uri)
+                val dir = localProvider.fileFor(targetUri)
                 if (!dir.isDirectory) return null
                 val files = dir.listFiles() ?: return null
                 val candidateFiles = files.filter { file ->
                     !file.isDirectory && (
-                        DirectoryIconResolver.isExplicitIconFileName(file.name) ||
+                        DirectoryIconResolver.isDirectoryIconFileName(file.name) ||
                         ImageFormats.extension(file.name) in ImageFormats.decodableExtensions
                     )
                 }
@@ -5081,43 +5132,68 @@ class MainActivity : Activity(), DebugDumpObserver {
             } catch (_: Exception) { null }
         }
         return try {
-            val result = provider.list(entry.ref)
+            val result = provider.list(targetRef)
             if (result is ProviderResult.Success) {
-                DirectoryIconResolver.findBestIcon(result.value)?.uri
+                cacheDirectoryIconListing(targetUri, targetRef, result.value)
             } else null
         } catch (_: Exception) { null }
     }
     private fun findDirectoryIcon(uri: Uri): Uri? {
-        val ref = resourceRef(uri)
-        val entry = ResourceEntry(ref, ResourceMetadata("", "", null, null, true), uri)
+        val boundUri = com.infinifolder.storage.ContainerUris.resolve(
+            uri,
+            com.infinifolder.storage.StorageRuntime.get(this).connections.list()
+        ) ?: uri
+        val isLocalDir = localProvider.owns(boundUri) && runCatching { localProvider.fileFor(boundUri).isDirectory }.getOrDefault(false)
+        val targetUri = if (!isLocalDir && !ArchiveUri.isArchiveUri(boundUri) && !boundUri.path.orEmpty().endsWith('/') &&
+            ArchiveFormats.isDefaultBrowsableArchive(boundUri.lastPathSegment?.substringAfterLast('/').orEmpty(), "")) {
+            ArchiveUri.toArchiveUri(boundUri)
+        } else {
+            boundUri
+        }
+        val ref = try { resourceRef(targetUri) } catch (_: Exception) { return null }
+        val entry = ResourceEntry(ref, ResourceMetadata("", "", null, null, true), targetUri)
         return findDirectoryIcon(entry)
     }
-    private fun directoryPreview(entry: ResourceEntry, asGrid: Boolean, cardView: View? = null): View {
+    private fun directoryPreview(
+        entry: ResourceEntry,
+        asGrid: Boolean,
+        cardView: View? = null,
+        fallbackView: View? = null,
+        probeImmediately: Boolean = false
+    ): View {
         val sideDp = if (asGrid) iconSizeDp else 44
         val sidePx = dp(sideDp)
-        val dirKey = "${entry.ref.providerId}:${entry.ref.documentId}"
+        val (containerUri, containerRef) = resolveContainerDirectoryUri(entry)
+        val dirKey = "${containerRef.providerId}:${containerRef.documentId}"
         val frame = FrameLayout(this).apply {
             clipChildren = false
             clipToPadding = false
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
             foregroundGravity = Gravity.CENTER
         }
-        val themeFolderBmp = if (iconThemeManager.hasActiveTheme()) {
-            iconThemeManager.resolveFolderIcon(entry.metadata.name, sidePx)
-        } else null
-        val placeholder: View = if (themeFolderBmp != null) {
-            ImageView(this).apply {
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                setImageBitmap(themeFolderBmp)
+        val placeholder: View = if (fallbackView != null) {
+            fallbackView.apply {
                 layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
             }
         } else {
-            TextView(this).apply {
-                text = "📁"
-                setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
-                gravity = Gravity.CENTER
-                includeFontPadding = false
-                layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
+            val isArchiveRoot = ArchiveUri.isArchiveUri(containerUri) && ArchiveUri.getEntryPath(containerUri).isEmpty()
+            val themeFolderBmp = if (!isArchiveRoot && iconThemeManager.hasActiveTheme()) {
+                iconThemeManager.resolveFolderIcon(entry.metadata.name, sidePx)
+            } else null
+            if (themeFolderBmp != null) {
+                ImageView(this).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    setImageBitmap(themeFolderBmp)
+                    layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
+                }
+            } else {
+                TextView(this).apply {
+                    text = if (isArchiveRoot) "📦" else "📁"
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
+                    gravity = Gravity.CENTER
+                    includeFontPadding = false
+                    layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
+                }
             }
         }
         val image = ImageView(this).apply {
@@ -5131,13 +5207,13 @@ class MainActivity : Activity(), DebugDumpObserver {
         frame.addView(placeholder)
         frame.addView(image)
 
-        val cachedUriString = directoryIconCache.get(dirKey)
+        val cachedUriString = directoryIconCache.get(dirKey) ?: directoryIconCache.get("tree:$containerUri")
         if (cachedUriString == "") {
             return frame
         }
         if (cachedUriString != null) {
-            val previewKey = "dir-icon:$dirKey:$cachedUriString"
-            val cached = thumbnailCache.get(previewKey)
+            val previewKey = "dir-icon:$dirKey:$cachedUriString:$sidePx"
+            val cached = thumbnailCache.get(previewKey) ?: thumbnailCache.get("dir-icon:$dirKey:$cachedUriString")
             if (cached != null) {
                 image.setImageBitmap(cached)
                 placeholder.visibility = View.GONE
@@ -5147,28 +5223,38 @@ class MainActivity : Activity(), DebugDumpObserver {
 
         val generation = loadGeneration
         val hostView = cardView ?: frame
-        registerVisibleCardProbe(hostView, generation) {
+        val probeAction: () -> Unit = {
             imageIo.execute {
-                if (generation != loadGeneration || isFinishing || isDestroyed) return@execute
+                if ((!probeImmediately && generation != loadGeneration) || isFinishing || isDestroyed) return@execute
                 val iconUri = if (cachedUriString != null) {
                     Uri.parse(cachedUriString)
                 } else {
                     val resolved = findDirectoryIcon(entry)
-                    directoryIconCache.put(dirKey, resolved?.toString() ?: "")
+                    val resolvedStr = resolved?.toString() ?: ""
+                    directoryIconCache.put(dirKey, resolvedStr)
+                    directoryIconCache.put("tree:$containerUri", resolvedStr)
                     resolved
                 }
                 if (iconUri == null) return@execute
 
-                val previewKey = "dir-icon:$dirKey:$iconUri"
-                val bitmap = thumbnailDecoder.decode(iconUri, sidePx)
-                if (bitmap != null) thumbnailCache.put(previewKey, bitmap)
+                val previewKey = "dir-icon:$dirKey:$iconUri:$sidePx"
+                val bitmap = thumbnailCache.get(previewKey) ?: thumbnailDecoder.decode(iconUri, sidePx)
+                if (bitmap != null) {
+                    thumbnailCache.put(previewKey, bitmap)
+                    thumbnailCache.put("dir-icon:$dirKey:$iconUri", bitmap)
+                }
                 runOnUiThread {
-                    if (generation == loadGeneration && image.tag == dirKey && bitmap != null) {
+                    if ((probeImmediately || generation == loadGeneration) && image.tag == dirKey && bitmap != null) {
                         image.setImageBitmap(bitmap)
                         placeholder.visibility = View.GONE
                     }
                 }
             }
+        }
+        if (probeImmediately) {
+            probeAction()
+        } else {
+            registerVisibleCardProbe(hostView, generation, probeAction)
         }
         return frame
     }
@@ -5947,7 +6033,10 @@ class MainActivity : Activity(), DebugDumpObserver {
         artworkRenderGeneration++
         pendingCardProbes.clear()
         visibleProbeScheduled = false
+        entryIconViews.clear()
         renderedFileLocation = null
+        val generation = loadGeneration
+        val page = homePage
         if (homePage == "root") entries = rootContainerLinks.map { it.first }
         content.removeAllViews()
         val visibleItems = if (homePage == "internal_shared") {
@@ -6010,6 +6099,18 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             content.addView(table)
         } else visibleItems.forEach { content.addView(homeItemCard(it, false)) }
+        scheduleVisibleProbe()
+        val listener = object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                if (fileScroll.viewTreeObserver.isAlive)
+                    fileScroll.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                if (!isDestroyed && homeMode && homePage == page && loadGeneration == generation) {
+                    scheduleVisibleProbe()
+                }
+            }
+        }
+        fileScroll.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        fileScroll.requestLayout()
     }
     private fun homeItemCard(item: HomeItem, asGrid: Boolean): View {
         item.linkEntry?.let { entry -> return entryCard(entry, asGrid) }
@@ -6040,18 +6141,62 @@ class MainActivity : Activity(), DebugDumpObserver {
             iconThemeManager.resolvePlaceIcon(key, iconWidth)
         } else null
 
-        if (themePlaceBmp != null) {
-            iconFrame.addView(ImageView(this).apply {
+        val placeholderView: View = if (themePlaceBmp != null) {
+            ImageView(this).apply {
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 setImageBitmap(themePlaceBmp)
-            }, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+            }
         } else {
-            iconFrame.addView(TextView(this).apply {
+            TextView(this).apply {
                 text = item.icon
                 setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
                 gravity = Gravity.CENTER
                 includeFontPadding = false
-            }, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+            }
+        }
+        iconFrame.addView(placeholderView, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+        val targetTreeUri = item.treeUri
+        if (targetTreeUri != null && !item.needsAccessBadge && !AppsUri.isAppsUri(targetTreeUri)) {
+            val dirKey = "tree:$targetTreeUri"
+            val image = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                tag = dirKey
+            }
+            iconFrame.addView(image, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+            val cachedUri = directoryIconCache.get(dirKey)
+            if (cachedUri != null && cachedUri.isNotEmpty()) {
+                val previewKey = "home-dir-icon:$dirKey:$cachedUri:$iconWidth"
+                val cachedBitmap = thumbnailCache.get(previewKey) ?: thumbnailCache.get("dir-icon:$dirKey:$cachedUri")
+                if (cachedBitmap != null) {
+                    image.setImageBitmap(cachedBitmap)
+                    placeholderView.visibility = View.GONE
+                }
+            }
+            if (cachedUri != "" && placeholderView.visibility == View.VISIBLE) {
+                val generation = loadGeneration
+                registerVisibleCardProbe(box, generation) {
+                    imageIo.execute {
+                        if (generation != loadGeneration || isFinishing || isDestroyed) return@execute
+                        val iconUri = if (!cachedUri.isNullOrEmpty()) Uri.parse(cachedUri) else {
+                            findDirectoryIcon(targetTreeUri).also {
+                                directoryIconCache.put(dirKey, it?.toString() ?: "")
+                            }
+                        }
+                        if (iconUri == null) return@execute
+                        val previewKey = "home-dir-icon:$dirKey:$iconUri:$iconWidth"
+                        val bitmap = thumbnailCache.get(previewKey) ?: thumbnailDecoder.decode(iconUri, iconWidth)
+                        if (bitmap != null) {
+                            thumbnailCache.put(previewKey, bitmap)
+                            runOnUiThread {
+                                if (generation == loadGeneration && image.tag == dirKey) {
+                                    image.setImageBitmap(bitmap)
+                                    placeholderView.visibility = View.GONE
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         if (item.needsAccessBadge) {
             iconFrame.addView(accessBadge().apply { setOnClickListener { activateHomeItem(item) } }, FrameLayout.LayoutParams(dp(20), dp(20), Gravity.END or Gravity.TOP))
@@ -6993,7 +7138,20 @@ class MainActivity : Activity(), DebugDumpObserver {
                 tooltipText = pin.entry.metadata.name
             }
             val iconHolder = FrameLayout(this)
-            val icon = buildFileIconView(pin.entry, pin.entry.metadata, false, card).apply {
+            val isPinnedArchive = !AppsUri.isAppUri(pin.entry.uri) &&
+                ArchiveFormats.isDefaultBrowsableArchive(pin.entry.metadata.name, pin.entry.metadata.mimeType)
+            val rawPinIcon = when {
+                pin.entry.metadata.isDirectory -> directoryPreview(pin.entry, false, card, probeImmediately = true)
+                isPinnedArchive -> directoryPreview(
+                    pin.entry,
+                    false,
+                    card,
+                    fallbackView = buildFileIconView(pin.entry, pin.entry.metadata, false, card),
+                    probeImmediately = true
+                )
+                else -> buildFileIconView(pin.entry, pin.entry.metadata, false, card)
+            }
+            val icon = rawPinIcon.apply {
                 pivotX = 0f; pivotY = 0f
                 scaleX = side.toFloat() / normalSide
                 scaleY = side.toFloat() / normalSide
@@ -7794,6 +7952,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                 var expandedChildrenToRefresh = emptyList<TreeNode>()
                 when (result) {
                     is ProviderResult.Success -> {
+                        if (!result.isLoading || result.value.isNotEmpty()) {
+                            cacheDirectoryIconListing(uri, runCatching { resourceRef(uri) }.getOrNull(), result.value)
+                        }
                         val previousChildren = node.children.associateBy { it.key }
                         node.children.clear()
                         val folders = result.value.filter {
@@ -9588,12 +9749,13 @@ class MainActivity : Activity(), DebugDumpObserver {
             (cachedMagicForProps != null && (cachedMagicForProps.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(currentEntry.metadata.name, cachedMagicForProps.mimeType)))
         )
         val inArchive = isSingle && ArchiveUri.isArchiveUri(currentEntry.uri)
+        val inReadOnlyArchive = inArchive && !archiveProvider.cachedWritable(currentEntry.uri)
         val isFile = isSingle && !isShortcut && !currentEntry.metadata.isDirectory && !AppsUri.isAppsUri(currentEntry.uri)
         val fileMimeKey = if (isFile) CustomIconStore.resolveMimeKey(currentEntry.metadata) else null
 
-        val targetFolderUri: Uri? = if (isDirectory && !inArchive && !AppsUri.isAppsUri(currentEntry.uri)) currentEntry.uri else null
+        val targetFolderUri: Uri? = if (isDirectory && !inReadOnlyArchive && !AppsUri.isAppsUri(currentEntry.uri)) currentEntry.uri else null
         val canChangeFolderIcon = targetFolderUri != null
-        val canChangeShortcutIcon = isShortcut && !inArchive
+        val canChangeShortcutIcon = isShortcut && !inReadOnlyArchive
         val canChangeFileMimeIcon = isFile && fileMimeKey != null
         val canChangeIcon = canChangeFolderIcon || canChangeShortcutIcon || canChangeFileMimeIcon
         val canRename = isSingle &&
@@ -9684,12 +9846,51 @@ class MainActivity : Activity(), DebugDumpObserver {
         fun loadHeaderIcon() {
             if (!isSingle) return
             val decodePx = dp(64)
-            if (currentEntry.metadata.name.endsWith(".apk", ignoreCase = true) && localProvider.owns(currentEntry.uri)) {
-                val localFile = localProvider.fileFor(currentEntry.uri)
-                val apkIcon = appsProvider.getApkFileIconBitmap(localFile.absolutePath, decodePx)
-                if (apkIcon != null) {
-                    iconImage.setImageBitmap(apkIcon)
-                    iconPlaceholder.visibility = View.GONE
+            ResourceArtworkCache.peek(currentEntry, decodePx)?.let { cachedBmp ->
+                iconImage.setImageBitmap(cachedBmp)
+                iconPlaceholder.visibility = View.GONE
+                return
+            }
+            if (ResourceIconSidecars.find(currentEntry) != null) {
+                imageIo.execute {
+                    if (isCancelled || isFinishing || isDestroyed) return@execute
+                    val bmp = resourceIconResolver.cached(currentEntry, decodePx)?.bitmap
+                        ?: resourceIconResolver.resolve(currentEntry, decodePx).bitmap
+                    if (bmp != null) {
+                        runOnUiThread {
+                            if (!isCancelled) {
+                                iconImage.setImageBitmap(bmp)
+                                iconPlaceholder.visibility = View.GONE
+                            }
+                        }
+                    }
+                }
+                return
+            }
+            if (currentEntry.metadata.name.endsWith(".apk", ignoreCase = true)) {
+                if (localProvider.owns(currentEntry.uri)) {
+                    val localFile = localProvider.fileFor(currentEntry.uri)
+                    val apkIcon = appsProvider.getApkFileIconBitmap(localFile.absolutePath, decodePx)
+                    if (apkIcon != null) {
+                        iconImage.setImageBitmap(apkIcon)
+                        iconPlaceholder.visibility = View.GONE
+                        return
+                    }
+                } else {
+                    imageIo.execute {
+                        if (isCancelled || isFinishing || isDestroyed) return@execute
+                        val resolved = resourceIconResolver.resolve(currentEntry, decodePx)
+                        val apkIcon = resolved.bitmap
+                        if (apkIcon != null) {
+                            resourceIconResolver.cacheDisplayed(currentEntry, decodePx, resolved)
+                            runOnUiThread {
+                                if (!isCancelled) {
+                                    iconImage.setImageBitmap(apkIcon)
+                                    iconPlaceholder.visibility = View.GONE
+                                }
+                            }
+                        }
+                    }
                     return
                 }
             }
@@ -9724,10 +9925,19 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 if (iconUri != null) bmp = thumbnailDecoder.decode(iconUri, decodePx)
                             }
                             !WebMetadataResolver.isWebUri(info.targetUri) -> {
-                                val targetMeta = ResourceMetadata(info.targetPath ?: currentEntry.metadata.name, info.targetMimeType ?: "", null, null, false)
-                                val mKey = CustomIconStore.resolveMimeKey(targetMeta)
-                                bmp = customIconStore.getMimeIconBitmap(mKey) { f ->
-                                    thumbnailDecoder.decode(Uri.fromFile(f), decodePx)
+                                val targetName = info.targetPath ?: tUri?.lastPathSegment ?: currentEntry.metadata.name
+                                if (tUri != null && !AppsUri.isAppsUri(tUri) &&
+                                    (ArchiveUri.isArchiveUri(tUri) || ArchiveFormats.isDefaultBrowsableArchive(targetName, info.targetMimeType ?: ""))
+                                ) {
+                                    val iconUri = findDirectoryIcon(tUri)
+                                    if (iconUri != null) bmp = thumbnailDecoder.decode(iconUri, decodePx)
+                                }
+                                if (bmp == null) {
+                                    val targetMeta = ResourceMetadata(targetName, info.targetMimeType ?: "", null, null, false)
+                                    val mKey = CustomIconStore.resolveMimeKey(targetMeta)
+                                    bmp = customIconStore.getMimeIconBitmap(mKey) { f ->
+                                        thumbnailDecoder.decode(Uri.fromFile(f), decodePx)
+                                    }
                                 }
                             }
                         }
@@ -9774,12 +9984,15 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
                 return
             }
-            if (isDirectory && !AppsUri.isAppsUri(currentEntry.uri)) {
-                val dirRef = resourceRef(currentEntry.uri)
-                val dirKey = "${dirRef.providerId}:${dirRef.documentId}"
-                val cachedIconUri = directoryIconCache.get(dirKey)?.takeIf { it.isNotEmpty() }
-                if (cachedIconUri != null) {
-                    val cachedBmp = thumbnailCache.get("dir-icon:$dirKey:$cachedIconUri")
+            if ((isDirectory || (isArchive && !isPackagedFormat)) && !AppsUri.isAppsUri(currentEntry.uri)) {
+                val containerUri = if (isDirectory) currentEntry.uri else ArchiveUri.toArchiveUri(currentEntry.uri)
+                val dirRef = runCatching { resourceRef(containerUri) }.getOrNull()
+                val dirKey = dirRef?.let { "${it.providerId}:${it.documentId}" }
+                val cachedIconUri = (dirKey?.let { directoryIconCache.get(it) } ?: directoryIconCache.get("tree:$containerUri"))
+                    ?.takeIf { it.isNotEmpty() }
+                if (cachedIconUri != null && dirKey != null) {
+                    val cachedBmp = thumbnailCache.get("dir-icon:$dirKey:$cachedIconUri:$decodePx")
+                        ?: thumbnailCache.get("dir-icon:$dirKey:$cachedIconUri")
                     if (cachedBmp != null) {
                         iconImage.setImageBitmap(cachedBmp)
                         iconPlaceholder.visibility = View.GONE
@@ -9788,8 +10001,13 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
                 imageIo.execute {
                     if (isCancelled || isFinishing || isDestroyed) return@execute
-                    val iconUri = findDirectoryIcon(currentEntry.uri)
-                    val bmp = if (iconUri != null) thumbnailDecoder.decode(iconUri, decodePx) else null
+                    val iconUri = findDirectoryIcon(containerUri)
+                    var bmp = if (iconUri != null) thumbnailDecoder.decode(iconUri, decodePx) else null
+                    if (bmp == null && !isDirectory && fileMimeKey != null && customIconStore.hasMimeIcon(fileMimeKey)) {
+                        bmp = customIconStore.getMimeIconBitmap(fileMimeKey) { f ->
+                            thumbnailDecoder.decode(Uri.fromFile(f), decodePx)
+                        }
+                    }
                     runOnUiThread {
                         if (!isCancelled) {
                             if (bmp != null) {
@@ -11215,7 +11433,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun promptSelectFolderIcon(folderUri: Uri) {
-        if (ArchiveUri.isArchiveUri(folderUri) || AppsUri.isAppsUri(folderUri)) {
+        if ((ArchiveUri.isArchiveUri(folderUri) && !archiveProvider.cachedWritable(folderUri)) || AppsUri.isAppsUri(folderUri)) {
             Toast.makeText(this, "Cannot change icon for a read-only folder.", Toast.LENGTH_SHORT).show()
             return
         }
@@ -11292,58 +11510,106 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
 
                 val folderRef = resourceRef(folderUri)
-                if (localProvider.owns(folderUri)) {
-                    try {
-                        val dir = localProvider.fileFor(folderUri)
-                        dir.listFiles()
-                            ?.filter { it.isFile && DirectoryIconResolver.isExplicitIconFileName(it.name) }
-                            ?.forEach { it.delete() }
-                    } catch (_: Exception) {}
-                } else {
-                    val listRes = provider.list(folderRef)
-                    if (listRes is ProviderResult.Success) {
-                        listRes.value
-                            .filter { !it.metadata.isDirectory && DirectoryIconResolver.isExplicitIconFileName(it.metadata.name) }
-                            .forEach { existing ->
-                                try { provider.delete(existing.ref) } catch (_: Exception) {}
+                var createdEntry: ResourceEntry? = null
+                if (ArchiveUri.isArchiveUri(folderUri)) {
+                    val batchRes = provider.beginWriteBatch(folderRef) { false }
+                    if (batchRes is ProviderResult.Success) {
+                        val batch = batchRes.value
+                        try {
+                            val listRes = batch.provider.list(folderRef)
+                            if (listRes is ProviderResult.Success) {
+                                listRes.value
+                                    .filter { !it.metadata.isDirectory && DirectoryIconResolver.isExplicitIconFileName(it.metadata.name) }
+                                    .forEach { existing ->
+                                        try { batch.provider.delete(existing.ref) } catch (_: Exception) {}
+                                    }
                             }
+                            val createRes = batch.provider.createFile(folderRef, iconFileName, iconMime)
+                            if (createRes !is ProviderResult.Success) {
+                                val msg = (createRes as? ProviderResult.Failure)?.message ?: "Could not create folder icon file"
+                                runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() }
+                                return@execute
+                            }
+                            val writeRes = batch.provider.openWrite(createRes.value.ref)
+                            if (writeRes !is ProviderResult.Success) {
+                                val msg = (writeRes as? ProviderResult.Failure)?.message ?: "Could not write folder icon file"
+                                runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() }
+                                return@execute
+                            }
+                            writeRes.value.use { output ->
+                                output.write(imageBytes)
+                                output.flush()
+                            }
+                            batch.commit()
+                            createdEntry = createRes.value
+                        } catch (e: Throwable) {
+                            val msg = e.message ?: "Could not commit folder icon file"
+                            runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() }
+                            return@execute
+                        } finally {
+                            try { batch.close() } catch (_: Exception) {}
+                        }
                     }
                 }
-
-                val createRes = provider.createFile(folderRef, iconFileName, iconMime)
-                if (createRes !is ProviderResult.Success) {
-                    val msg = (createRes as? ProviderResult.Failure)?.message ?: "Could not create folder icon file"
-                    runOnUiThread {
-                        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                if (createdEntry == null) {
+                    if (localProvider.owns(folderUri)) {
+                        try {
+                            val dir = localProvider.fileFor(folderUri)
+                            dir.listFiles()
+                                ?.filter { it.isFile && DirectoryIconResolver.isExplicitIconFileName(it.name) }
+                                ?.forEach { it.delete() }
+                        } catch (_: Exception) {}
+                    } else {
+                        val listRes = provider.list(folderRef)
+                        if (listRes is ProviderResult.Success) {
+                            listRes.value
+                                .filter { !it.metadata.isDirectory && DirectoryIconResolver.isExplicitIconFileName(it.metadata.name) }
+                                .forEach { existing ->
+                                    try { provider.delete(existing.ref) } catch (_: Exception) {}
+                                }
+                        }
                     }
-                    return@execute
-                }
 
-                val writeRes = provider.openWrite(createRes.value.ref)
-                if (writeRes !is ProviderResult.Success) {
-                    try { provider.delete(createRes.value.ref) } catch (_: Exception) {}
-                    val msg = (writeRes as? ProviderResult.Failure)?.message ?: "Could not write folder icon file"
-                    runOnUiThread {
-                        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                    val createRes = provider.createFile(folderRef, iconFileName, iconMime)
+                    if (createRes !is ProviderResult.Success) {
+                        val msg = (createRes as? ProviderResult.Failure)?.message ?: "Could not create folder icon file"
+                        runOnUiThread {
+                            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                        }
+                        return@execute
                     }
-                    return@execute
-                }
 
-                writeRes.value.use { output ->
-                    output.write(imageBytes)
-                    output.flush()
+                    val writeRes = provider.openWrite(createRes.value.ref)
+                    if (writeRes !is ProviderResult.Success) {
+                        try { provider.delete(createRes.value.ref) } catch (_: Exception) {}
+                        val msg = (writeRes as? ProviderResult.Failure)?.message ?: "Could not write folder icon file"
+                        runOnUiThread {
+                            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                        }
+                        return@execute
+                    }
+
+                    writeRes.value.use { output ->
+                        output.write(imageBytes)
+                        output.flush()
+                    }
+                    createdEntry = createRes.value
                 }
+                val finalCreatedEntry = createdEntry ?: return@execute
                 val previewBmp = thumbnailDecoder.decode(sourceImageUri, dp(128))
-                    ?: thumbnailDecoder.decode(createRes.value.uri, dp(128))
+                    ?: thumbnailDecoder.decode(finalCreatedEntry.uri, dp(128))
                 val dirKey = "${folderRef.providerId}:${folderRef.documentId}"
-                val createdUriStr = createRes.value.uri.toString()
+                val createdUriStr = finalCreatedEntry.uri.toString()
 
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     directoryIconCache.evictAll()
+                    ResourceIconSidecars.clearDirectories()
+                    ResourceArtworkCache.clearMemory()
                     thumbnailCache.evictAll()
                     failedThumbnails.evictAll()
                     directoryIconCache.put(dirKey, createdUriStr)
+                    directoryIconCache.put("tree:$folderUri", createdUriStr)
                     if (previewBmp != null) {
                         thumbnailCache.put("dir-icon:$dirKey:$createdUriStr", previewBmp)
                     }

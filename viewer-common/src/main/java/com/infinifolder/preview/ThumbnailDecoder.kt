@@ -18,7 +18,10 @@ import com.caverock.androidsvg.PreserveAspectRatio
 import com.caverock.androidsvg.RenderOptions
 import com.caverock.androidsvg.SVG
 import java.io.BufferedInputStream
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.nio.ByteBuffer
 import java.util.zip.GZIPInputStream
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -40,20 +43,55 @@ class ThumbnailDecoder(
 ) {
     private class OversizedImage : Exception()
 
-    private fun openStream(uri: Uri): InputStream? =
-        streamOpener?.invoke(uri) ?: try { resolver.openInputStream(uri) } catch (_: Exception) { null }
+    private fun openStream(uri: Uri, cachedBytes: ByteArray? = null): InputStream? =
+        if (cachedBytes != null) ByteArrayInputStream(cachedBytes)
+        else streamOpener?.invoke(uri) ?: try { resolver.openInputStream(uri) } catch (_: Exception) { null }
+
+    private fun isDirectUri(uri: Uri): Boolean =
+        uri.scheme == "content" ||
+            uri.scheme == "android.resource" ||
+            (uri.scheme == "file" && !uri.path.isNullOrEmpty())
+
+    private fun extensionOf(uri: Uri): String {
+        val rawPath = if (uri.scheme == "archive") {
+            uri.getQueryParameter("path")?.takeIf { it.isNotEmpty() } ?: uri.lastPathSegment
+        } else {
+            uri.lastPathSegment ?: uri.path
+        }
+        val fileName = rawPath?.substringAfterLast('/') ?: return ""
+        return fileName.substringAfterLast('.', "").lowercase()
+    }
+
+    private fun readStreamBytes(uri: Uri): ByteArray? = try {
+        openStream(uri)?.use { input ->
+            val out = ByteArrayOutputStream()
+            val buf = ByteArray(16 * 1024)
+            var total = 0
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                total += n
+                if (total > MAX_STREAM_BYTES) return null
+                out.write(buf, 0, n)
+            }
+            out.toByteArray().takeIf { it.isNotEmpty() }
+        }
+    } catch (_: Exception) {
+        null
+    }
 
     /** Returns a bitmap whose longer side is about [targetPx], or null if the image cannot be previewed. */
     fun decode(uri: Uri, targetPx: Int): Bitmap? = try {
-        val ext = uri.lastPathSegment?.substringAfterLast('.', "")?.lowercase() ?: ""
+        val ext = extensionOf(uri)
+        val cachedBytes = if (!isDirectUri(uri)) readStreamBytes(uri) ?: return null else null
         when (ext) {
-            "svg", "svgz" -> decodeSvg(uri, targetPx)
-            "jxl" -> decodeJxl(uri, targetPx)
-            "tga", "icb", "vda", "vst" -> decodeTga(uri, targetPx)
-            else -> decodePlatform(uri, targetPx)
-                ?: decodeSvg(uri, targetPx)
-                ?: decodeJxl(uri, targetPx)
-                ?: decodeTga(uri, targetPx)
+            "svg", "svgz" -> decodeSvg(uri, targetPx, cachedBytes)
+            "jxl" -> decodeJxl(uri, targetPx, cachedBytes)
+            "tga", "icb", "vda", "vst" -> decodeTga(uri, targetPx, cachedBytes)
+            else -> decodePlatform(uri, targetPx, cachedBytes)
+                ?: decodeSvg(uri, targetPx, cachedBytes)
+                ?: decodeJxl(uri, targetPx, cachedBytes)
+                ?: decodeTga(uri, targetPx, cachedBytes)
         }
     } catch (_: Exception) {
         null
@@ -61,12 +99,17 @@ class ThumbnailDecoder(
         null
     }
 
-    private fun decodePlatform(uri: Uri, targetPx: Int): Bitmap? {
-        val canUseImageDecoder = Build.VERSION.SDK_INT >= 28 && (
-            uri.scheme == "content" ||
-            uri.scheme == "android.resource" ||
-            (uri.scheme == "file" && !uri.path.isNullOrEmpty())
-        )
+    private fun decodePlatform(uri: Uri, targetPx: Int, cachedBytes: ByteArray? = null): Bitmap? {
+        if (cachedBytes != null) {
+            return if (Build.VERSION.SDK_INT >= 28) {
+                try { decodeBytesWithImageDecoder(cachedBytes, targetPx) }
+                catch (oversized: OversizedImage) { throw oversized }
+                catch (_: Exception) { decodeBytesWithBitmapFactory(cachedBytes, targetPx) }
+            } else {
+                decodeBytesWithBitmapFactory(cachedBytes, targetPx)
+            }
+        }
+        val canUseImageDecoder = Build.VERSION.SDK_INT >= 28 && isDirectUri(uri)
         return if (canUseImageDecoder) {
             try { decodeWithImageDecoder(uri, targetPx) }
             catch (oversized: OversizedImage) { throw oversized }
@@ -76,9 +119,9 @@ class ThumbnailDecoder(
         }
     }
 
-    private fun decodeSvg(uri: Uri, targetPx: Int): Bitmap? {
+    private fun decodeSvg(uri: Uri, targetPx: Int, cachedBytes: ByteArray? = null): Bitmap? {
         return try {
-            openStream(uri)?.use { rawStream ->
+            openStream(uri, cachedBytes)?.use { rawStream ->
                 val bis = BufferedInputStream(rawStream)
                 bis.mark(2)
                 val b1 = bis.read()
@@ -127,32 +170,30 @@ class ThumbnailDecoder(
         }
     }
 
-    private fun decodeJxl(uri: Uri, targetPx: Int): Bitmap? {
+    private fun decodeJxl(uri: Uri, targetPx: Int, cachedBytes: ByteArray? = null): Bitmap? {
         return try {
-            openStream(uri)?.use { stream ->
-                val bytes = stream.readBytes()
-                if (!JxlCoder.isJXL(bytes)) return null
-                val size = JxlCoder.getSize(bytes)
-                if (size != null && (size.width <= 0 || size.height <= 0 || !withinLimits(size.width, size.height))) {
-                    return null
-                }
-                JxlCoder.decodeSampled(
-                    byteArray = bytes,
-                    width = targetPx,
-                    height = targetPx,
-                    preferredColorConfig = PreferredColorConfig.RGBA_8888,
-                    scaleMode = ScaleMode.FIT,
-                    jxlResizeFilter = JxlResizeFilter.BILINEAR
-                )
+            val bytes = cachedBytes ?: openStream(uri)?.use { it.readBytes() } ?: return null
+            if (!JxlCoder.isJXL(bytes)) return null
+            val size = JxlCoder.getSize(bytes)
+            if (size != null && (size.width <= 0 || size.height <= 0 || !withinLimits(size.width, size.height))) {
+                return null
             }
+            JxlCoder.decodeSampled(
+                byteArray = bytes,
+                width = targetPx,
+                height = targetPx,
+                preferredColorConfig = PreferredColorConfig.RGBA_8888,
+                scaleMode = ScaleMode.FIT,
+                jxlResizeFilter = JxlResizeFilter.BILINEAR
+            )
         } catch (_: Exception) {
             null
         }
     }
 
-    private fun decodeTga(uri: Uri, targetPx: Int): Bitmap? {
+    private fun decodeTga(uri: Uri, targetPx: Int, cachedBytes: ByteArray? = null): Bitmap? {
         return try {
-            openStream(uri)?.use { stream ->
+            openStream(uri, cachedBytes)?.use { stream ->
                 TgaDecoder.decode(stream, targetPx)
             }
         } catch (_: Exception) {
@@ -170,6 +211,17 @@ class ThumbnailDecoder(
         } else {
             ImageDecoder.createSource(resolver, uri)
         }
+        return decodeSourceWithImageDecoder(source, targetPx)
+    }
+
+    @RequiresApi(28)
+    private fun decodeBytesWithImageDecoder(bytes: ByteArray, targetPx: Int): Bitmap {
+        val source = ImageDecoder.createSource(ByteBuffer.wrap(bytes))
+        return decodeSourceWithImageDecoder(source, targetPx)
+    }
+
+    @RequiresApi(28)
+    private fun decodeSourceWithImageDecoder(source: ImageDecoder.Source, targetPx: Int): Bitmap {
         return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             val width = info.size.width
             val height = info.size.height
@@ -185,6 +237,17 @@ class ThumbnailDecoder(
         }
     }
 
+    private fun decodeBytesWithBitmapFactory(bytes: ByteArray, targetPx: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (!withinLimits(bounds.outWidth, bounds.outHeight)) return null
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= targetPx && bounds.outHeight / (sample * 2) >= targetPx) sample *= 2
+        val options = BitmapFactory.Options().apply { inSampleSize = sample }
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: return null
+        return applyExifOrientationFromStream(ByteArrayInputStream(bytes), bitmap)
+    }
+
     private fun decodeWithBitmapFactory(uri: Uri, targetPx: Int): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         openStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return null
@@ -198,10 +261,13 @@ class ThumbnailDecoder(
 
     /** BitmapFactory ignores EXIF orientation; rotate/flip so camera photos are upright. */
     private fun applyExifOrientation(uri: Uri, bitmap: Bitmap): Bitmap {
+        val stream = openStream(uri) ?: return bitmap
+        return stream.use { applyExifOrientationFromStream(it, bitmap) }
+    }
+
+    private fun applyExifOrientationFromStream(stream: InputStream, bitmap: Bitmap): Bitmap {
         val orientation = runCatching {
-            openStream(uri)?.use {
-                ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-            }
+            ExifInterface(stream).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
         }.getOrNull() ?: return bitmap
         val matrix = Matrix()
         when (orientation) {
@@ -222,5 +288,6 @@ class ThumbnailDecoder(
     private companion object {
         const val MAX_SIDE = 40_000
         const val MAX_PIXELS = 160_000_000L
+        const val MAX_STREAM_BYTES = 32 * 1024 * 1024
     }
 }

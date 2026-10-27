@@ -39,6 +39,7 @@ class FtpClientPool(
         client.defaultTimeout = dataTimeoutMs
         client.controlEncoding = config.encoding
         client.autodetectUTF8 = true
+        client.listHiddenFiles = true
         return client
     }
 

@@ -1,6 +1,6 @@
 # Documentation
 
-Updated 2026-10-26. Start with [project status](project-status.md), [task list](feature-todo.md), [roadmap](roadmap.md) and [architecture](architecture.md).
+Updated 2026-10-27. Start with [project status](project-status.md), [task list](feature-todo.md), [roadmap](roadmap.md) and [architecture](architecture.md).
 
 ## Reference and evidence
 

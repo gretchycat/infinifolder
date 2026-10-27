@@ -86,5 +86,17 @@ object DirectoryIconResolver {
      * Given a list of entries inside a directory, finds the best matching image entry to use as the directory icon.
      */
     fun findBestIcon(entries: List<ResourceEntry>): ResourceEntry? =
-        findBest(entries, { it.metadata.name }, { !it.metadata.isDirectory && ImageFormats.isImage(it.metadata) })
+        findBest(entries, { it.metadata.name }, { isCandidateIconEntry(it) })
+
+    private fun isCandidateIconEntry(entry: ResourceEntry): Boolean {
+        val meta = entry.metadata
+        if (meta.isDirectory) return false
+        if (ImageFormats.isImage(meta)) return true
+        // Remote and archive listings do not run magic byte detection during list(), so extensionless
+        // `.icon` and `cover` files have generic/empty MIME types until decoded.
+        val lower = meta.name.lowercase()
+        val isExtensionlessCandidate = lower == ".icon" || lower == "cover"
+        val hasGenericMime = meta.mimeType.isBlank() || meta.mimeType.equals("application/octet-stream", ignoreCase = true)
+        return isExtensionlessCandidate && hasGenericMime
+    }
 }

@@ -1,5 +1,9 @@
 package com.infinifolder.preview
 
+import android.net.Uri
+import com.infinifolder.model.ResourceEntry
+import com.infinifolder.model.ResourceMetadata
+import com.infinifolder.model.ResourceRef
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -8,6 +12,19 @@ import org.junit.Test
 
 class DirectoryIconResolverTest {
     private data class FileItem(val name: String, val isImage: Boolean)
+
+    private fun entry(name: String, mimeType: String, isDirectory: Boolean = false): ResourceEntry =
+        ResourceEntry(
+            ref = ResourceRef("test", name),
+            uri = Uri.EMPTY,
+            metadata = ResourceMetadata(
+                name = name,
+                mimeType = mimeType,
+                sizeBytes = 128L,
+                modifiedAtMillis = 0L,
+                isDirectory = isDirectory
+            )
+        )
 
     @Test
     fun matchesIconAndCoverNames() {
@@ -67,5 +84,16 @@ class DirectoryIconResolverTest {
         assertEquals(".icon.jpg" to "image/jpeg", DirectoryIconResolver.targetIconFileName("image:1234", "image/jpeg"))
         assertEquals(".icon.svg" to "image/svg+xml", DirectoryIconResolver.targetIconFileName("folder.svg", "image/svg+xml"))
         assertEquals(".icon.png" to "image/png", DirectoryIconResolver.targetIconFileName(null, null))
+    }
+
+    @Test
+    fun findBestIconSupportsExtensionlessRemoteAndArchiveIcons() {
+        val extlessDotIcon = entry(".icon", "application/octet-stream")
+        val extlessCover = entry("cover", "application/octet-stream")
+        val textCover = entry("cover.txt", "text/plain")
+
+        assertEquals(extlessDotIcon, DirectoryIconResolver.findBestIcon(listOf(textCover, extlessCover, extlessDotIcon)))
+        assertEquals(extlessCover, DirectoryIconResolver.findBestIcon(listOf(textCover, extlessCover)))
+        assertNull(DirectoryIconResolver.findBestIcon(listOf(textCover)))
     }
 }

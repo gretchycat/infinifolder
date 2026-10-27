@@ -910,6 +910,21 @@ class ArchiveStorageProvider(
         ProviderResult.Failure(e.message ?: "Failed to write archive entry", e)
     }
 
+    override fun replaceContent(ref: ResourceRef, data: ByteArray): ProviderResult<Unit> =
+        when (val opened = openWrite(ref)) {
+            is ProviderResult.Success -> try {
+                opened.value.use {
+                    it.write(data)
+                    it.flush()
+                }
+                ProviderResult.Success(Unit)
+            } catch (e: Exception) {
+                ProviderResult.Failure(e.message ?: "Failed to replace archive entry", e)
+            }
+            is ProviderResult.Failure -> opened
+            is ProviderResult.Unsupported -> opened
+        }
+
     override fun createDirectory(parent: ResourceRef, name: String): ProviderResult<ResourceEntry> { return try {
         if (ArchiveUri.isDeletedView(Uri.parse(parent.documentId))) throw IOException("Deleted-file recovery views are read-only")
         val source = ArchiveUri.getSourceUri(Uri.parse(parent.documentId))

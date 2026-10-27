@@ -1,8 +1,10 @@
 # Project status
 
-Updated 2026-10-26. This is the current status reference. Checked implementation work is not automatically device acceptance. Dated audits, build counts and dump reports describe the revisions they examined.
+Updated 2026-10-27. This is the current status reference. Checked implementation work is not automatically device acceptance. Dated audits, build counts and dump reports describe the revisions they examined.
 
 ## Confirmed on the handset
+
+- Directory/container artwork (`.icon.<ext>`, `.icon`, `cover.<ext>`, `cover`), arbitrary sibling `.icon-<full filename>.png` icon overrides, and sibling PNG program-icon caching inside remote directories (`sftp://`, `smb://`, `ftp://`, `webdav://`) and archive/disk-image containers (`archive://`) are user-confirmed working (2026-10-27). See [Resource icons](resource-icons.md).
 
 - Opening a Python file through the Termux association is user-reported working
   after the shared working-file fix. Save-back and conflict/interruption cases have
@@ -763,3 +765,24 @@ SFTP working copy and successful save. Other conflict and theme cases remain
 unconfirmed. That dump also contains one SFTP torrent checkpoint read failure
 (“channel is not opened”), followed by continued writes; checkpoint recovery needs
 further investigation. Evidence: `build/infinifolder-debug-20261026-220706-813.log`.
+
+### 2026-10-27 — remote and archive directory images, icon overrides, and sibling icon cache
+
+Extended directory/container artwork discovery (`.icon.<ext>`, `.icon`, `cover.<ext>`,
+`cover`), arbitrary `.icon-<full filename>.png` sibling icon overrides, and generated
+program-icon sibling PNG caching to remote directories (`sftp://`, `smb://`, `ftp://`,
+`webdav://`) and archive/disk-image containers (`archive://`) across the main grid/list,
+Virtual Root links, `.iflnk` shortcuts, tree sidebar, pinned containers bar, properties
+dialog header, floating container overlay, and launcher shortcuts.
+
+`ThumbnailDecoder` now reads non-direct provider streams in a single bounded pass and
+extracts archive entry extensions from the `path` query parameter. `FtpClientPool`
+enables `listHiddenFiles = true` so dotfile icons are visible over FTP.
+`ResourceArtworkCache` supports direct exact-name sibling lookup without parent
+enumeration when a parent listing has not yet been observed (single-target `getMetadata`
+on SFTP/FTP, `stat` on SMB/WebDAV/archive, and outer-container source lookup on archive
+roots), plus archive batch writes (`beginWriteBatch`), `ArchiveStorageProvider.replaceContent`,
+and `ContentReplacement.replace` fallback for sidecar persistence and refresh.
+Remote and archived `.apk` files stage temporarily to extract real package artwork and
+participate in `.icon-<apk>.png` sibling caching. User-confirmed working on the handset.
+See [Resource icons](resource-icons.md).

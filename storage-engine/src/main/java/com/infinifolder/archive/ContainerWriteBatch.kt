@@ -266,13 +266,13 @@ private class ArchiveBatchView(private val base: StorageProvider, private val so
     }
     private fun <T> attempt(block: () -> T): ProviderResult<T> = try { ProviderResult.Success(block()) }
         catch (e: Exception) { ProviderResult.Failure(e.message ?: "Archive batch operation failed", e) }
-    fun additions() = pending.values.filterNot { isRemoved(it.path) }.map { ZipContainerEditor.Addition(it.path, it.directory, it.content) }
+    fun additions() = pending.values.map { ZipContainerEditor.Addition(it.path, it.directory, it.content) }
     fun removals() = removed.toSet()
     fun hasChanges() = additions().isNotEmpty() || removed.isNotEmpty()
-    override fun stat(ref: ResourceRef): ProviderResult<ResourceEntry> = if (owns(ref) && isRemoved(path(ref)))
-        ProviderResult.Failure("Archive entry was removed in this batch")
-    else if (owns(ref) && pending.containsKey(path(ref)))
-        ProviderResult.Success(entry(pending.getValue(path(ref)))) else base.stat(ref)
+    override fun stat(ref: ResourceRef): ProviderResult<ResourceEntry> = if (owns(ref) && pending.containsKey(path(ref)))
+        ProviderResult.Success(entry(pending.getValue(path(ref))))
+    else if (owns(ref) && isRemoved(path(ref)))
+        ProviderResult.Failure("Archive entry was removed in this batch") else base.stat(ref)
     override fun list(parent: ResourceRef): ProviderResult<List<ResourceEntry>> {
         if (!owns(parent)) return base.list(parent)
         return attempt {
@@ -284,7 +284,7 @@ private class ArchiveBatchView(private val base: StorageProvider, private val so
             }
             if (!parentEntry.metadata.isDirectory || parentEntry.metadata.isSymbolicLink) throw IOException("Archive parent is not an ordinary directory")
             val old = if (pending.containsKey(parentPath)) emptyList() else StorageSafety.complete(base.list(parent)).filterNot { isRemoved(path(it.ref)) }
-            old + pending.values.filter { it.path.substringBeforeLast('/', "") == parentPath && !isRemoved(it.path) }.map(::entry)
+            old + pending.values.filter { it.path.substringBeforeLast('/', "") == parentPath }.map(::entry)
         }
     }
     private fun create(parent: ResourceRef, name: String, directory: Boolean, mime: String): ProviderResult<ResourceEntry> = attempt {
