@@ -258,6 +258,26 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
         status.text = error.message ?: "Operation failed. Your working copy is kept."
         progress.visibility = View.GONE
         clearActions()
+        if (session?.let { runCatching { store.hasExternalTool(it) }.getOrDefault(false) } == true) {
+            button("Recover working copy…") {
+                val toolFile = session?.let { runCatching { store.externalToolFile(it) }.getOrNull() }
+                val location = toolFile?.absolutePath ?: "~/.cache/infinifolder-edit/${session?.id}/"
+                val dialog = CacheDialogs.builder(this).setTitle("Recover this session?")
+                    .setMessage("Only continue after the Termux editor has closed. Its working copy is kept at $location. Check it before saving if the editor or transfer failed.")
+                    .setPositiveButton("Editor is closed") { _, _ ->
+                        work("Recovering edit session…") {
+                            session?.let { item ->
+                                if (toolFile != null) store.importExternalToolFile(item, toolFile)
+                                else store.releaseExternalTool(item)
+                            }
+                            runOnUiThread { reviewChanges() }
+                        }
+                    }.setNegativeButton("Cancel", null).create()
+                dialog.show(); CacheDialogs.style(dialog)
+            }
+            button("Keep for later") { finish() }
+            return
+        }
         if (session != null && (error is ExternalSourceConflict || generateSequence(error.cause) { it.cause }.any { it is ExternalSourceConflict })) {
             status.text = "The original file's contents changed at its storage location while you were editing. Your edited copy is kept."
             button("Save with a new name…") { newName() }

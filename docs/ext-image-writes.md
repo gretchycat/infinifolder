@@ -77,6 +77,12 @@ tests passed. The fresh `ext4-metadata-copy-target.img` passed `e2fsck` before u
 Picker diagnostics now record destination selection and capability-check timing;
 an exception in a check is shown as a failure instead of leaving it pending forever.
 
+The native writer now also probes the new directory's index and leaf checksums
+before accepting directory creation. A fault-injected stale buffer reproduced a
+bad checksum without the guard; with the guard, the mutation failed and the
+private batch could not be published. This targeted check is not a full filesystem
+scan. See [container integrity validation](container-integrity-validation.md).
+
 Implemented 2026-10-26; handset acceptance pending. Ext2 has no journal. Ext3 and
 ext4 use an internal journal when the filesystem has one; ext4 without a journal
 uses the non-journal path. This is a supported feature subset, not every ext4

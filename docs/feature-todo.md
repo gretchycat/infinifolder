@@ -2,6 +2,12 @@
 
 Updated: 2026-10-24. [Current confirmations and priorities](project-status.md) distinguish implementation from handset acceptance. Unchecked items below are remaining work, unless explicitly described as historical evidence.
 
+## Cloud storage
+
+- [ ] Evaluate an optional rclone-backed provider for cloud services through the
+  shared storage contract. SSH/SFTP, FTP, WebDAV and Samba have tested well;
+  replacing those existing providers is a lower priority than adding cloud access.
+
 ## Current reliability priorities
 
 - [x] Recent pane swiping is user-confirmed working. Retain icon/label/empty-space and vertical-scroll/hold-drag regressions across orientations.

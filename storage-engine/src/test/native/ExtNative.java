@@ -36,6 +36,15 @@ public class ExtNative {
     }
     public static void main(String[] args) throws Exception {
         try (Device d = new Device(args[1])) {
+            if (args[0].equals("mkdir")) { run(d, 2, "injected-probe", null, null); return; }
+            if (args[0].equals("mkdir-corrupt-rejected")) {
+                try { run(d, 2, "injected-probe", null, null); throw new AssertionError("Corrupt directory was accepted"); }
+                catch (IOException expected) {
+                    require(expected.getMessage().contains("verify new ext directory checksum"), expected.getMessage());
+                    System.out.println("Corrupt new directory rejected: " + expected.getMessage());
+                }
+                return;
+            }
             if (args[0].equals("reject")) { mustFail(d, 0, "", null, null); require(d.writes == 0, "Rejected probe wrote"); return; }
             if (args[0].equals("fault")) {
                 d.failAfter = 4; mustFail(d, 2, "failure-test", null, null);

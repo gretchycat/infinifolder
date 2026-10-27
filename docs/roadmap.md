@@ -21,6 +21,15 @@ Broaden format-specific byte/metadata/edge checks, multipart ZIP/7z, advanced LV
 
 Most-used sorting; torrent device acceptance and seekable piece reads; Downloads organization rules; handset acceptance for floating browser and home-screen shortcuts; later widget. NFS/cloud providers, broader search/recents/trash and portable metadata remain future scope. WebDAV is user-confirmed working.
 
+### Cloud storage through rclone
+
+Investigate an optional rclone-backed provider to add cloud storage services through
+the existing storage, capabilities, transfer and virtual-root contracts. Evaluate
+Android packaging and lifecycle, authentication and credential storage, seekable
+access, supported mutations, progress/cancellation, and error handling before
+choosing an integration. SSH/SFTP, FTP, WebDAV and Samba have tested well; replacing
+those existing providers is not a priority.
+
 ## Foundations already implemented
 
 Local/SAF/network providers, independent viewer libraries/host, MIME/icon/package registry, links, container mounts and supported writes, batching, recovery, transfers/progress/notifications, menus/selection/sorting, pins/drag targets, Virtual root links, disk usage, shared cache and external-edit workflow. These are no longer roadmap proposals; acceptance and limitations remain tracked separately.

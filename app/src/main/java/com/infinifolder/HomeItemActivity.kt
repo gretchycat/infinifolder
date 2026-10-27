@@ -53,6 +53,7 @@ class HomeItemActivity : Activity() {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     try {
                     when {
+                        TermuxCommandLink.owns(target) -> TermuxCommandLink.launch(this, target) { finish() }
                         AppsUri.isAppUri(target) -> {
                             val launch = AppsUri.getPackageName(target)?.let(packageManager::getLaunchIntentForPackage)
                             if (launch != null) startActivity(launch)

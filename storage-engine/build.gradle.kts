@@ -26,6 +26,9 @@ if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
     tasks.named("preBuild").configure { dependsOn(buildExtNative) }
     tasks.withType<Test>().configureEach {
         dependsOn(buildExtNative)
+        // JNI is loaded at runtime, so Gradle cannot infer this test input from
+        // the Java/Kotlin classpath. Re-run tests when the native library changes.
+        inputs.dir(layout.buildDirectory.dir("extNative"))
         jvmArgs("-Djava.library.path=${layout.buildDirectory.dir("extNative/arm64-v8a").get().asFile}")
     }
 }

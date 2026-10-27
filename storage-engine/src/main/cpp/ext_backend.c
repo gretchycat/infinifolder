@@ -75,6 +75,23 @@ static int check_ancestors(char *path) {
     return 0;
 }
 static int exists(const char *path, uint32_t *mode) { return ext4_mode_get(path, mode); }
+/* A newly created directory is empty. Looking up an absent child makes lwext4
+ * verify its directory index and leaf checksums, including an empty indexed
+ * leaf which may otherwise not be visited until after publication. */
+static int verify_new_directory(const char *path) {
+    static const char child[] = "/.infinifolder-integrity-probe";
+    size_t n = strlen(path);
+    if (n > 65536 - sizeof(child)) return ENAMETOOLONG;
+    char *probe = malloc(n + sizeof(child));
+    if (!probe) return ENOMEM;
+    memcpy(probe, path, n);
+    memcpy(probe + n, child, sizeof(child));
+    uint32_t mode = 0;
+    int r = ext4_mode_get(probe, &mode);
+    free(probe);
+    if (ext4_integrity_status()) return EUCLEAN;
+    return r == ENOENT || r == EOK ? EOK : r;
+}
 static int touch_parent(char *path, uint32_t now) {
     char *slash = strrchr(path, '/');
     if (!slash) return EINVAL;
@@ -204,7 +221,10 @@ int ifext_run(struct ifext_io *io, int action, const char *path, const char *tar
         CHECK(ext4_fclose(&f), "close new ext file");
         break;
     }
-    case IFEXT_MKDIR: CHECK(ext4_dir_mk(source_path), "create ext directory"); break;
+    case IFEXT_MKDIR:
+        CHECK(ext4_dir_mk(source_path), "create ext directory");
+        CHECK(verify_new_directory(source_path), "verify new ext directory checksum");
+        break;
     case IFEXT_WRITE: {
         FILE *input = content ? fopen(content, "rb") : NULL;
         if (!input) { step = "open staged file contents"; r = errno ? errno : EINVAL; goto finish; }

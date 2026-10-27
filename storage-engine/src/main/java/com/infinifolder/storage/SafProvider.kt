@@ -57,7 +57,26 @@ class SafProvider(private val resolver: ContentResolver) : StorageProvider {
             ResourceCapability.MOVE to flag(DocumentsContract.Document.FLAG_SUPPORTS_DELETE))
     }
     override fun stat(ref: ResourceRef): ProviderResult<ResourceEntry> = try {
-        ProviderResult.Success(entry(Uri.parse(ref.documentId)))
+        val uri = Uri.parse(ref.documentId)
+        val result = try { entry(uri) } catch (original: Exception) {
+            // Android Open with can supply an ordinary grantable content URI,
+            // rather than a DocumentsProvider URI. Query only its standard
+            // OpenableColumns; actual write access must still be attempted.
+            val cursor = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
+                ?: throw original
+            cursor.use { c ->
+                if (!c.moveToFirst()) throw original
+                val nameIndex = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeIndex = c.getColumnIndex(OpenableColumns.SIZE)
+                val name = if (nameIndex >= 0 && !c.isNull(nameIndex)) c.getString(nameIndex) else uri.lastPathSegment ?: "File"
+                val size = if (sizeIndex >= 0 && !c.isNull(sizeIndex)) c.getLong(sizeIndex) else null
+                val mime = com.infinifolder.mime.MimeRegistry.effective(name, resolver.getType(uri))
+                ResourceEntry(ref, ResourceMetadata(name, mime, size, null, false, canWrite = true,
+                    operationHints = mapOf(ResourceCapability.WRITE to Support.UNKNOWN,
+                        ResourceCapability.RENAME to Support.UNSUPPORTED, ResourceCapability.DELETE to Support.UNSUPPORTED)), uri)
+            }
+        }
+        ProviderResult.Success(result)
     } catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot query document", e) }
 
     override fun openSeekable(ref: ResourceRef, writable: Boolean): ProviderResult<com.infinifolder.archive.BlockDevice> {

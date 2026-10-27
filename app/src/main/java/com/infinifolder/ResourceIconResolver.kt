@@ -102,6 +102,9 @@ class ResourceIconResolver(context: Context) {
             if (custom != null) return base.copy(bitmap = custom, label = label, directory = info.targetIsDirectory,
                 program = AppsUri.isAppUri(Uri.parse(info.targetUri)))
             val target = Uri.parse(info.targetUri)
+            if (TermuxCommandLink.owns(target)) return base.copy(
+                bitmap = runtime.apps.getAppIconBitmap("com.termux", size, useDiskCache = false),
+                fallback = "⌨", label = label, program = true)
             val ref = runtime.provider.refForUri(target)
             val metadata = ResourceMetadata(info.targetPath?.substringAfterLast('/') ?: target.lastPathSegment.orEmpty(),
                 info.targetMimeType.orEmpty(), null, null, info.targetIsDirectory)

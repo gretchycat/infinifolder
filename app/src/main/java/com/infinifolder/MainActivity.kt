@@ -5351,7 +5351,11 @@ class MainActivity : Activity(), DebugDumpObserver {
             return
         }
         if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null) {
+            val sourceLocation = current
+            val cachedTermuxLink = shortcutCache.get(entry.uri.toString())?.targetUri
+                ?.let { runCatching { TermuxCommandLink.owns(Uri.parse(it)) }.getOrDefault(false) } == true
             val linkNavigationToken = if (!externalOnly &&
+                !cachedTermuxLink && !entry.metadata.name.endsWith(TermuxCommandLink.SUFFIX, true) &&
                 (ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType) || entry.ref.providerId == containerLinkProvider.id))
                 showOpeningVirtualDirectory(entry.metadata.name.removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION), preserveBreadcrumbs = true)
             else null
@@ -5377,6 +5381,11 @@ class MainActivity : Activity(), DebugDumpObserver {
                         is ProviderResult.Success -> {
                             val target = resolved.value
                             val targetEntry = target.entry
+                            if (TermuxCommandLink.owns(target.uri)) {
+                                if (linkNavigationToken != null && sourceLocation != null) navigate(sourceLocation, push = false)
+                                TermuxCommandLink.launch(this, target.uri)
+                                return@runOnUiThread
+                            }
                             if (targetEntry == null) launchExternalViewIntent(target.uri, target.mime, target.name)
                             else if (targetEntry.metadata.isDirectory && !externalOnly) navigate(targetEntry.uri, displayName = targetEntry.metadata.name)
                             else open(targetEntry, externalOnly)
@@ -5404,6 +5413,10 @@ class MainActivity : Activity(), DebugDumpObserver {
             if (pkg != null) {
                 launchApp(pkg)
             }
+            return
+        }
+        if (!externalOnly && !entry.metadata.isDirectory && TermuxAssociations(this).find(entry.metadata.name) != null) {
+            startActivity(Intent(this, TermuxEditActivity::class.java).setData(entry.uri))
             return
         }
         val cachedMagic = ambiguousMagicCache.get(entry.uri.toString())
@@ -5479,6 +5492,10 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun launchExternalViewIntent(targetUri: Uri, mimeType: String? = null, displayName: String? = null) {
+        if (TermuxCommandLink.owns(targetUri)) {
+            TermuxCommandLink.launch(this, targetUri)
+            return
+        }
         val scheme = targetUri.scheme?.lowercase()
         if (WebMetadataResolver.isWebUri(targetUri.toString()) || (scheme != null && scheme !in setOf("file", "content"))) {
             val browsableIntent = Intent(Intent.ACTION_VIEW, targetUri).apply {
@@ -8099,6 +8116,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 submenu("New", listOf(
                     action("Folder…", folder) { showCreateDirectoryDialog() },
                     action("Link…", folder || (homeMode && homePage == "root")) { showCreateUriLinkDialog() },
+                    action("Termux command…", folder) { showCreateTermuxCommandLinkDialog() },
                     submenu("Document / image", NewFileTemplates.documents.map { template ->
                         action(template.label + "…", folder) { showNewFileDialog(template) }
                     }),
@@ -8190,6 +8208,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 action("Clear selection", selectable) { selectedUris.clear(); renderCurrentContents(); updateListingStatus() }
             )),
             submenu("Settings", listOf(
+                action("Termux file associations…") { TermuxAssociationSettings.show(this) },
                 action("Common locations…") { showCommonLocationsSettings() },
                 action("Copy verification: ${if (shared.getBoolean("verify_copies", true)) "on" else "off"}…") { showCopyVerificationSettings() },
                 action("Disk cache…") { com.infinifolder.viewer.DiskCacheSettings.show(this) },
@@ -11538,6 +11557,49 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun openShortcut(entry: ResourceEntry) = open(entry)
+
+    private fun showCreateTermuxCommandLinkDialog() {
+        val folder = current ?: return
+        val context = dialogContext()
+        val name = EditText(context).apply { hint = "Name"; setTextColor(setTextColorForTheme()); setSingleLine() }
+        val command = EditText(context).apply {
+            hint = "Command, e.g. htop"
+            setTextColor(setTextColorForTheme())
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines = 2
+        }
+        val cwd = EditText(context).apply {
+            hint = "Working directory (optional, absolute path)"
+            setTextColor(setTextColorForTheme())
+            setSingleLine()
+        }
+        val layout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(4))
+            addView(name); addView(command); addView(cwd)
+        }
+        val dialog = dialogBuilder().setTitle("New Termux command")
+            .setView(layout).setNegativeButton("Cancel", null).setPositiveButton("Create", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val title = name.text.toString().trim()
+                val value = command.text.toString().trim()
+                val directory = cwd.text.toString().trim().takeIf { it.isNotEmpty() }
+                if (title.isEmpty()) { name.error = "Enter a name"; return@setOnClickListener }
+                if (value.isEmpty()) { command.error = "Enter a command"; return@setOnClickListener }
+                if (directory != null && !directory.startsWith('/')) {
+                    cwd.error = "Use an absolute path"; return@setOnClickListener
+                }
+                val uri = TermuxCommandLink.uri(value, directory)
+                val info = ShortcutInfo(targetUri = uri.toString(), displayNameOverride = title,
+                    targetMimeType = "application/vnd.infinifolder.termux-command")
+                val safeName = WebMetadataResolver.sanitizeFileName(title, "Termux command")
+                dialog.dismiss()
+                createShortcutFile(folder, safeName + TermuxCommandLink.SUFFIX, info)
+            }
+        }
+        dialog.show()
+    }
     private fun openShortcutWithExternalApp(entry: ResourceEntry) = open(entry, externalOnly = true)
 
     private fun promptCreateShortcut(entry: ResourceEntry) {

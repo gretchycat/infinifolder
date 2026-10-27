@@ -146,8 +146,51 @@ class ExternalEdits(private val context: Context) {
         phase(session, "editing")
     }
 
+    /** Keep a working copy while a tool edits a separate temporary file. */
+    fun reserveExternalTool(session: Session, workingPath: String? = null) = synchronized(lock(session.id)) {
+        val props = properties(session).apply {
+            setProperty("external_tool_pending", "true")
+            workingPath?.let { setProperty("external_tool_path", it) }
+        }
+        writeProperties(session, props)
+    }
+    fun externalToolFile(session: Session): File? = synchronized(lock(session.id)) {
+        properties(session).getProperty("external_tool_path")?.let(::File)
+    }
+    fun hasExternalTool(session: Session): Boolean = synchronized(lock(session.id)) {
+        properties(session).getProperty("external_tool_pending") == "true"
+    }
+    fun releaseExternalTool(session: Session) = synchronized(lock(session.id)) {
+        val props = properties(session).apply { remove("external_tool_pending"); remove("external_tool_path") }
+        writeProperties(session, props)
+    }
+    /** Import a finished tool's shared file without exposing a partial private working copy. */
+    fun importExternalToolFile(session: Session, external: File) = synchronized(lock(session.id)) {
+        if (!hasExternalTool(session)) throw IOException("This Termux edit session is no longer active")
+        if ((writers[session.id] ?: 0) > 0) throw IOException("The working copy is still open for writing")
+        if (!external.isFile || java.nio.file.Files.isSymbolicLink(external.toPath()))
+            throw IOException("The Termux working file is unavailable")
+        val before = external.inputStream().use(ContentRevision::read)
+        if (before.size > session.directory.usableSpace - 1024 * 1024)
+            throw IOException("Not enough space to preserve the Termux edits. The working file is kept.")
+        val staged = File(session.directory, "termux-import.tmp")
+        try {
+            external.inputStream().use { input -> staged.outputStream().use { output -> input.copyTo(output); output.fd.sync() } }
+            if (staged.inputStream().use(ContentRevision::read) != before ||
+                external.inputStream().use(ContentRevision::read) != before)
+                throw IOException("The Termux working file changed while it was being imported. It has been kept.")
+            java.nio.file.Files.move(staged.toPath(), session.working.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            releaseExternalTool(session)
+        } finally { staged.delete() }
+    }
+    private fun requireExternalToolFinished(session: Session) {
+        if (hasExternalTool(session)) throw IOException("The Termux editor may still be running. Finish it before reviewing this working copy.")
+    }
+
     /** Returning from a read-only viewer needs no edit UI or source/network check. */
     fun reviewChanges(session: Session, progress: (String, Long, Long?) -> Unit): Boolean = synchronized(lock(session.id)) {
+        requireExternalToolFinished(session)
         if (session.id in operations) throw IOException("This edit session is busy")
         val hasWriters = (writers[session.id] ?: 0) > 0
         if (!hasWriters) phase(session, "checking") // Block new writable handles during the check.
@@ -184,6 +227,7 @@ class ExternalEdits(private val context: Context) {
     }
     /** Unchanged local content never overwrites the source, even if the source changed. */
     fun finish(session: Session, overwrite: Boolean, progress: (String, Long, Long?) -> Unit): Boolean {
+        requireExternalToolFinished(session)
         synchronized(lock(session.id)) { if (!operations.add(session.id)) throw IOException("This edit session is busy") }
         try {
             val edited = localRevision(session, progress)
@@ -219,6 +263,7 @@ class ExternalEdits(private val context: Context) {
         } finally { File(session.directory, "publish.bin").delete(); operations.remove(session.id) }
     }
     fun copy(session: Session, destination: Uri, name: String, progress: (String, Long, Long?) -> Unit): Unit {
+        requireExternalToolFinished(session)
         synchronized(lock(session.id)) { if (!operations.add(session.id)) throw IOException("This edit session is busy") }
         var snapshot: File? = null
         try {
@@ -242,6 +287,7 @@ class ExternalEdits(private val context: Context) {
     }
     fun parent(session: Session): Uri? = result(provider.parent(session.ref))?.documentId?.let(Uri::parse)
     fun discard(session: Session) = synchronized(lock(session.id)) {
+        requireExternalToolFinished(session)
         if (session.id in operations) throw IOException("This edit session is busy")
         if ((writers[session.id] ?: 0) > 0) throw IOException("The external program still has this file open for writing")
         phase(session, "closed")

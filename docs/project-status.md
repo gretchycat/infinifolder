@@ -4,6 +4,10 @@ Updated 2026-10-26. This is the current status reference. Checked implementation
 
 ## Confirmed on the handset
 
+- Opening a Python file through the Termux association is user-reported working
+  after the shared working-file fix. Save-back and conflict/interruption cases have
+  not yet been separately confirmed. See [Termux links](termux-command-links.md).
+
 - Cancelling the Ubuntu transfer and then tapping its `.incomplete` file successfully
   resumes it (2026-10-26). The earlier completion report was corrected by the user;
   full completion remains unconfirmed.
