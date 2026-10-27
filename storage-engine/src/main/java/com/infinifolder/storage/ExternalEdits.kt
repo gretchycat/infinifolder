@@ -286,13 +286,34 @@ class ExternalEdits(private val context: Context) {
         } finally { snapshot?.delete(); operations.remove(session.id) }
     }
     fun parent(session: Session): Uri? = result(provider.parent(session.ref))?.documentId?.let(Uri::parse)
+    /** Discard a confirmed abandoned session, including its app-owned Termux copy. */
+    fun discardUnfinished(session: Session) = synchronized(lock(session.id)) {
+        if (session.id in operations) throw IOException("This edit session is busy")
+        if ((writers[session.id] ?: 0) > 0) throw IOException("The external program still has this file open for writing")
+        val toolFile = externalToolFile(session)
+        if (toolFile != null && toolFile.exists()) {
+            val owned = context.externalMediaDirs.any { media ->
+                val root = File(media, ".termux-edits")
+                val folder = File(root, session.id)
+                !java.nio.file.Files.isSymbolicLink(root.toPath()) &&
+                    !java.nio.file.Files.isSymbolicLink(folder.toPath()) &&
+                    folder.canonicalFile.parentFile == root.canonicalFile &&
+                    toolFile.canonicalFile.parentFile == folder.canonicalFile
+            }
+            if (!owned) throw IOException("The Termux working copy is outside the app's edit folder")
+            if (!toolFile.delete()) throw IOException("Could not remove the Termux working copy")
+            toolFile.parentFile?.delete()
+        }
+        if (hasExternalTool(session)) releaseExternalTool(session)
+        discard(session)
+    }
     fun discard(session: Session) = synchronized(lock(session.id)) {
         requireExternalToolFinished(session)
         if (session.id in operations) throw IOException("This edit session is busy")
         if ((writers[session.id] ?: 0) > 0) throw IOException("The external program still has this file open for writing")
         phase(session, "closed")
         context.revokeUriPermission(uri(session), android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        session.directory.deleteRecursively()
+        if (!session.directory.deleteRecursively()) throw IOException("Could not remove the working copy")
         writers.remove(session.id)
     }
     companion object {

@@ -5415,7 +5415,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             return
         }
-        if (!externalOnly && !entry.metadata.isDirectory && TermuxAssociations(this).find(entry.metadata.name) != null) {
+        val termuxRule = if (!externalOnly && !entry.metadata.isDirectory) TermuxAssociations(this).find(entry.metadata.name) else null
+        if (termuxRule != null && TermuxEditorAvailability.state(this, termuxRule.command) == TermuxEditorAvailability.State.AVAILABLE) {
             startActivity(Intent(this, TermuxEditActivity::class.java).setData(entry.uri))
             return
         }
@@ -8116,7 +8117,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 submenu("New", listOf(
                     action("Folder…", folder) { showCreateDirectoryDialog() },
                     action("Link…", folder || (homeMode && homePage == "root")) { showCreateUriLinkDialog() },
-                    action("Termux command…", folder) { showCreateTermuxCommandLinkDialog() },
+                    action("Termux command…", folder && TermuxAvailability.installed(this)) { showCreateTermuxCommandLinkDialog() },
                     submenu("Document / image", NewFileTemplates.documents.map { template ->
                         action(template.label + "…", folder) { showNewFileDialog(template) }
                     }),
@@ -13022,6 +13023,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     override fun onResume() {
         super.onResume()
+        Thread({ TermuxEditorAvailability.probe(applicationContext) }, "TermuxEditorProbe").start()
         if (forwardingHomeShortcut) return
         browserResumed = true
         OperationService.start(this)

@@ -8,6 +8,8 @@ import android.text.InputType
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import com.infinifolder.theme.ThemeChangeListener
 import com.infinifolder.theme.ThemeColors
 import com.infinifolder.theme.ThemeManager
@@ -76,7 +78,7 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
         window.setBackgroundDrawable(android.graphics.drawable.GradientDrawable().apply {
             setColor(theme.surface); cornerRadius = dp(theme.cornerRadiusDp.toInt()).toFloat()
         })
-        column.setBackgroundColor(theme.surface)
+        column.background = null
         fun style(view: View) {
             if (view is TextView) view.setTextColor(if (view is Button) theme.buttonText else if (view === status) theme.textSecondary else theme.textPrimary)
             if (view is Button) view.backgroundTintList = android.content.res.ColorStateList.valueOf(theme.buttonBackground)
@@ -194,6 +196,9 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
         }
     }
     private fun showPending() {
+        session = null
+        pendingReview = false
+        showAfterReview()
         status.text = "Unfinished external edits"
         progress.visibility = android.view.View.GONE
         title.text = "Unfinished external edits"
@@ -201,13 +206,108 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
         work("Loading unfinished edits…") {
             val pending = store.pending()
             runOnUiThread {
-                status.text = if (pending.isEmpty()) "No unfinished external edits." else "Unfinished external edits"
-                pending.forEach { item -> button(item.name + "\n" + item.ref.documentId) {
-                    session = item
-                    reviewChanges()
-                } }
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                status.text = if (pending.isEmpty()) "No unfinished external edits." else "Tap to review, or swipe to discard."
+                if (pending.isNotEmpty()) {
+                    val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+                    val scroll = object : ScrollView(this) {
+                        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                            super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(
+                                minOf(dp(320), (resources.displayMetrics.heightPixels * .45f).toInt()), View.MeasureSpec.AT_MOST))
+                        }
+                    }.apply { addView(list) }
+                    column.addView(scroll)
+                    pending.forEach { item -> list.addView(pendingRow(item)) }
+                    button("Discard all…") { confirmDiscardPending(pending) }
+                }
+                button("Close") { finish() }
             }
         }
+    }
+    private fun pendingRow(item: ExternalEdits.Session): View {
+        val colors = ThemeManager.activeTheme
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(8), dp(4), dp(8))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(colors.background); cornerRadius = dp(8).toFloat()
+            }
+            contentDescription = "Review ${item.name}"
+            isClickable = true
+            setOnClickListener { if (!busy) { session = item; reviewChanges() } }
+        }
+        val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        labels.addView(TextView(this).apply {
+            text = item.name; textSize = 16f; setTextColor(colors.textPrimary)
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        labels.addView(TextView(this).apply {
+            text = item.ref.documentId; textSize = 12f; setTextColor(colors.textSecondary)
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+        })
+        row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(TextView(this).apply {
+            text = "×"; textSize = 24f; gravity = android.view.Gravity.CENTER
+            setTextColor(colors.textPrimary); contentDescription = "Discard ${item.name}"
+            setOnClickListener { if (!busy) confirmDiscardPending(listOf(item)) }
+        }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        val slop = ViewConfiguration.get(this).scaledTouchSlop
+        var startX = 0f; var startY = 0f; var swiping = false
+        row.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { startX = event.rawX; startY = event.rawY; swiping = false; true }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - startX
+                    if (!swiping && kotlin.math.abs(dx) > slop && kotlin.math.abs(dx) > kotlin.math.abs(event.rawY - startY)) {
+                        swiping = true; view.parent.requestDisallowInterceptTouchEvent(true)
+                    }
+                    if (swiping) view.translationX = dx.coerceIn(-dp(100).toFloat(), dp(100).toFloat())
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    val discard = swiping && kotlin.math.abs(event.rawX - startX) >= dp(64)
+                    view.animate().translationX(0f).setDuration(150).start()
+                    if (!busy) { if (discard) confirmDiscardPending(listOf(item)) else if (!swiping) view.performClick() }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> { view.animate().translationX(0f).setDuration(150).start(); true }
+                else -> true
+            }
+        }
+        return row
+    }
+    private fun confirmDiscardPending(items: List<ExternalEdits.Session>) {
+        val label = if (items.size == 1) "Discard ${items[0].name}?" else "Discard ${items.size} unfinished edits?"
+        val dialog = CacheDialogs.builder(this).setTitle(label)
+            .setMessage("Close any external editors first. Unsaved working copies will be deleted; the original files will not be changed.")
+            .setPositiveButton("Discard") { _, _ -> removePending(items) }
+            .setNegativeButton("Keep", null).create()
+        dialog.show(); CacheDialogs.style(dialog)
+    }
+    private fun removePending(items: List<ExternalEdits.Session>) {
+        if (busy) return
+        busy = true; status.text = "Removing working copies…"; clearActions()
+        progress.isIndeterminate = true; progress.visibility = View.VISIBLE
+        Thread({
+            val errors = mutableListOf<String>()
+            items.forEach { item ->
+                try { store.discardUnfinished(item) }
+                catch (error: Exception) { errors.add("${item.name}: ${error.message ?: "could not remove"}") }
+            }
+            runOnUiThread {
+                busy = false
+                if (!isDestroyed && !isFinishing) {
+                    showPending()
+                    if (errors.isNotEmpty()) {
+                        val dialog = CacheDialogs.builder(this).setTitle("Some edits were kept")
+                            .setMessage(errors.joinToString("\n"))
+                            .setPositiveButton("OK", null).create()
+                        dialog.show(); CacheDialogs.style(dialog)
+                    }
+                }
+            }
+        }, "DiscardExternalEdits").start()
     }
     private fun launchEditor() {
         val item = session ?: return

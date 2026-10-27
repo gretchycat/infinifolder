@@ -9,5 +9,6 @@ class InfiniFolderApplication : Application() {
         super.onCreate()
         DebugTools.install(this)
         com.infinifolder.ops.AppOperations.initialize(this)
+        TermuxAvailability.watch(this)
     }
 }

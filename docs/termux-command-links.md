@@ -31,10 +31,36 @@ interruption and provider-coverage checks remain useful.
 **Settings → Termux file associations** manages extension and editor-command
 rules. A new installation starts with `.py → nvim`; rules can be edited or
 removed. The longest matching suffix wins. Matching files opened in InfiniFolder
-use the configured Termux editor. Android's **Open with → Open with Termux** can
+use the configured Termux editor when its executable has been verified. Android's **Open with → Open with Termux** can
 also send a file to InfiniFolder; the receiving activity checks the saved rules
 and explains when none matches. Android still chooses candidates by MIME type,
 and the sender must grant access to the source URI.
+
+InfiniFolder checks whether Termux is installed and asks Termux to run a fixed,
+background `command -v` probe for each configured editor. It never runs the
+configured command during this check. Simple executable names or absolute paths
+followed by arguments are supported; complex shell prefixes are unverified. An
+unverified editor is not used automatically. Settings shows installed, missing or
+unverified and offers **Check editors**. Checking requires the Termux command
+permission and its `allow-external-apps` property. Checks run when InfiniFolder
+resumes and can be repeated after installing an editor.
+
+The Android handler is disabled when Termux is unavailable or no configured editor
+has been verified. Since Android registers handlers by MIME rather than by each
+user-defined suffix, it may still show the generic handler for a file whose own
+rule is not available; InfiniFolder checks that rule again before opening it.
+The check reflects the last probe; Termux packages can change without notifying
+Android, so the executable is checked again when a terminal session starts.
+Android restricts package-install broadcasts while the app is stopped, so open
+InfiniFolder after installing Termux to refresh the handler and editor checks.
+
+X-plore keeps its own file associations. If the handler does not appear, its
+file details provide **Compatible apps** and a MIME type setting; **Open with**
+can also open a file as text. The Android filters accept typed files, file/content
+URIs without a MIME type, and browsable requests. A user reported the handler
+missing in X-plore before those latter filters were added; the exact request from
+X-plore was not captured. The user subsequently confirmed opening through X-plore
+works with the expanded filters; loading feedback received a follow-up fix.
 
 The handoff uses the existing durable external-edit session and its bounded cache,
 source fingerprints, content verification and conflict/recovery workflow. A verified

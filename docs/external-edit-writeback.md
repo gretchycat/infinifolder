@@ -42,6 +42,8 @@ Offer:
 
 Failures, unavailable/deleted sources, read-only destinations and failed verification keep the local working copy. Never upload automatically after a process restart. Access unfinished sessions through **Settings → Unfinished external edits**; startup also offers review. The user can reopen the external program, finish, copy, keep for later, or explicitly discard. Discarding requires confirmation and does not modify the source.
 
+In the unfinished edits dialog, swipe an entry or tap its × to discard it, or choose **Discard all**. Close external editors before confirming: unsaved working copies are deleted. Sessions with a tracked writer or operation in progress are kept. App-owned shared Termux working files are removed with their sessions; older copies in Termux's private cache must be removed from Termux separately.
+
 An inaccessible source produces an ordinary read/save failure; it is not evidence
 that the original content changed. Source checks invalidate archive directory
 listings and bypass reusable decompressed image snapshots and transfer-device reuse.
