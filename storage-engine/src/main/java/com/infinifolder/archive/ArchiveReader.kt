@@ -247,6 +247,35 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
             }
         }
 
+        if (ArchiveFormats.isPlaylist(archiveName)) {
+            val content = openStream().use { it.bufferedReader(Charsets.UTF_8).readText() }
+            val playlist = com.infinifolder.playlist.PlaylistParser.parse(archiveName, content)
+            val entries = mutableListOf<RawEntry>()
+            for ((idx, item) in playlist.withIndex()) {
+                val numPrefix = String.format(java.util.Locale.US, "%02d. ", idx + 1)
+                val targetExt = if (item.pathOrUri.endsWith(".bin", ignoreCase = true)) "cdda" else item.pathOrUri.substringAfterLast('.', "")
+                val cleanTitle = item.title.replace('/', '-').replace('\\', '-').trim()
+                val entryName = if (targetExt.isNotEmpty() && !cleanTitle.endsWith(".$targetExt", ignoreCase = true)) {
+                    "$numPrefix$cleanTitle.$targetExt"
+                } else if (cleanTitle.startsWith(numPrefix)) {
+                    cleanTitle
+                } else {
+                    "$numPrefix$cleanTitle"
+                }
+                entries.add(
+                    RawEntry(
+                        name = entryName,
+                        isDirectory = false,
+                        sizeBytes = if (item.lengthBytes > 0) item.lengthBytes else null,
+                        modifiedAtMillis = System.currentTimeMillis(),
+                        isSymbolicLink = true,
+                        linkTarget = item.pathOrUri
+                    )
+                )
+            }
+            return entries
+        }
+
         if (ext == "zst") {
             var size = 0L
             ZstdCompressorInputStream(BufferedInputStream(openStream())).use { input ->
@@ -434,6 +463,11 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
             val stream = nativeReader.openEntry(nativeVolumes(archiveName, openStream, localFile, device, volumes), normalizePath(entryPath))
             return stream.use { input -> targetFile.outputStream().use { input.copyTo(it) }; targetFile }
         }
+        if (ArchiveFormats.isPlaylist(archiveName)) {
+            val stream = openEntryStream(archiveName, entryPath, openStream, localFile, device, volumes)
+            targetFile.parentFile?.mkdirs()
+            return stream.use { input -> targetFile.outputStream().use { input.copyTo(it) }; targetFile }
+        }
         if (resolveFormat(archiveName, openStream, localFile).first == "zst") {
             if (normalizePath(entryPath) != zstdPayloadName(archiveName)) throw java.io.IOException("Compressed file entry not found")
             val stream = ZstdCompressorInputStream(BufferedInputStream(openStream()))
@@ -558,12 +592,75 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
             val stream = nativeReader.openEntry(nativeVolumes(archiveName, openStream, localFile, device, volumes), normalizePath(entryPath))
             return stream
         }
+        val cleanTarget = normalizePath(entryPath)
+        if (ArchiveFormats.isPlaylist(archiveName)) {
+            val content = openStream().use { it.bufferedReader(Charsets.UTF_8).readText() }
+            val playlist = com.infinifolder.playlist.PlaylistParser.parse(archiveName, content)
+            val matched = playlist.firstOrNull {
+                val cleanTitle = it.title.replace('/', '-').replace('\\', '-').trim()
+                cleanTarget.contains(cleanTitle, ignoreCase = true) || cleanTarget.equals(it.pathOrUri, ignoreCase = true) || cleanTarget.endsWith(it.pathOrUri, ignoreCase = true)
+            }
+            val target = matched?.pathOrUri ?: cleanTarget
+            if (target.contains("://")) {
+                return java.net.URL(target).openStream()
+            }
+            if (localFile != null) {
+                val parentFile = localFile.parentFile
+                var f = File(parentFile, target).canonicalFile
+                if (!f.exists()) {
+                    val sibling = File(parentFile, File(target).name)
+                    if (sibling.exists()) {
+                        f = sibling.canonicalFile
+                    } else {
+                        val parentParent = parentFile?.parentFile
+                        val audioSibling = if (parentParent != null) File(parentParent, "audio/${File(target).name}") else null
+                        if (audioSibling?.exists() == true) {
+                            f = audioSibling.canonicalFile
+                        } else {
+                            val audioSub = File(parentFile, "audio/${File(target).name}")
+                            if (audioSub.exists()) {
+                                f = audioSub.canonicalFile
+                            }
+                        }
+                    }
+                }
+                if (f.exists()) {
+                    val rawStream = f.inputStream()
+                    if (matched != null && (matched.startByte > 0L || matched.lengthBytes > 0L)) {
+                        if (matched.startByte > 0L) {
+                            rawStream.skip(matched.startByte)
+                        }
+                        if (matched.lengthBytes > 0L) {
+                            val limit = matched.lengthBytes
+                            return object : java.io.InputStream() {
+                                private var readCount = 0L
+                                override fun read(): Int {
+                                    if (readCount >= limit) return -1
+                                    val b = rawStream.read()
+                                    if (b != -1) readCount++
+                                    return b
+                                }
+                                override fun read(b: ByteArray, off: Int, len: Int): Int {
+                                    if (readCount >= limit) return -1
+                                    val toRead = minOf(len.toLong(), limit - readCount).toInt()
+                                    val r = rawStream.read(b, off, toRead)
+                                    if (r > 0) readCount += r
+                                    return r
+                                }
+                                override fun close() { rawStream.close() }
+                            }
+                        }
+                    }
+                    return rawStream
+                }
+            }
+            throw java.io.FileNotFoundException("Target media file not found: $target")
+        }
         if (resolveFormat(archiveName, openStream, localFile).first == "zst") {
             if (normalizePath(entryPath) != zstdPayloadName(archiveName)) throw java.io.IOException("Compressed file entry not found")
             val stream = ZstdCompressorInputStream(BufferedInputStream(openStream()))
             return stream
         }
-        val cleanTarget = normalizePath(entryPath)
         val effectiveDev = device ?: localFile?.let { if (it.exists()) FileBlockDevice(java.io.RandomAccessFile(it, "r"), true) else null }
         val (ext, isDisc) = resolveFormat(archiveName, openStream, localFile)
         if (isDisc) {

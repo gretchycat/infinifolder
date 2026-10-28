@@ -1,0 +1,7 @@
+#EXTM3U
+#EXTINF:2,InfiniFolder - Overture (WAV)
+../audio/c_major_piano.wav
+#EXTINF:-1,InfiniFolder - Piano Suite (Sub-Playlist)
+c_major_piano.m3u
+#EXTINF:2,InfiniFolder - Finale Tracker (XM)
+../audio/c_major_piano.xm

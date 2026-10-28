@@ -80,18 +80,57 @@ class ThumbnailDecoder(
         null
     }
 
+    private fun readBytesForCustomDecoder(uri: Uri, cachedBytes: ByteArray?): ByteArray? =
+        cachedBytes ?: readStreamBytes(uri)
+
+    private fun decodeCustomFormat(ext: String, uri: Uri, targetPx: Int, cachedBytes: ByteArray?): Bitmap? {
+        return when (ext) {
+            "svg", "svgz" -> decodeSvg(uri, targetPx, cachedBytes)
+            "jxl" -> decodeJxl(uri, targetPx, cachedBytes)
+            "jp2", "j2k", "jpf", "jpx", "j2c" -> readBytesForCustomDecoder(uri, cachedBytes)?.let { Jpeg2000Decoder.decode(it, targetPx) }
+            "tga", "icb", "vda", "vst" -> decodeTga(uri, targetPx, cachedBytes)
+            "qoi", "ff" -> readBytesForCustomDecoder(uri, cachedBytes)?.let { SimpleLosslessImageDecoder.decode(it, targetPx) }
+            "pbm", "pgm", "ppm", "pnm", "pam", "pfm" -> readBytesForCustomDecoder(uri, cachedBytes)?.let { NetpbmDecoder.decode(it, targetPx) }
+            "xbm", "xpm", "xwd" -> readBytesForCustomDecoder(uri, cachedBytes)?.let { X11ImageDecoder.decode(it, targetPx) }
+            "pcx", "dcx" -> readBytesForCustomDecoder(uri, cachedBytes)?.let { PcxDecoder.decode(it, targetPx) }
+            "ora", "kra", "psd", "psb", "xcf", "ase", "aseprite" -> readBytesForCustomDecoder(uri, cachedBytes)?.let { LayeredImageDecoder.decode(it, targetPx, ext) }
+            "tif", "tiff" -> readBytesForCustomDecoder(uri, cachedBytes)?.let { TiffAndRawImageDecoder.decode(it, targetPx) }
+                ?: decodePlatform(uri, targetPx, cachedBytes)
+            "dng" -> decodePlatform(uri, targetPx, cachedBytes)
+                ?: readBytesForCustomDecoder(uri, cachedBytes)?.let { TiffAndRawImageDecoder.decode(it, targetPx) }
+            "iff", "ilbm", "lbm", "neo", "pi1", "pi2", "pi3", "pc1", "pc2", "pc3",
+            "scr", "kla", "koa", "icns", "pntg", "mac", "pct", "pict",
+            "ras", "sun", "sgi", "rgb", "bw", "rgba", "pdb", "otb", "sixel", "six" ->
+                readBytesForCustomDecoder(uri, cachedBytes)?.let { RetroImageDecoder.decode(it, targetPx, ext) }
+            "hdr", "exr", "dds", "ktx", "fits", "fit", "fts", "dcm", "dicom" ->
+                readBytesForCustomDecoder(uri, cachedBytes)?.let { HdrAndScientificImageDecoder.decode(it, targetPx, ext) }
+            "wmf", "wmz", "ps", "eps", "ept", "ans" ->
+                readBytesForCustomDecoder(uri, cachedBytes)?.let { MetafileAndVectorImageDecoder.decode(it, targetPx, ext) }
+            else -> null
+        }
+    }
+
     /** Returns a bitmap whose longer side is about [targetPx], or null if the image cannot be previewed. */
     fun decode(uri: Uri, targetPx: Int): Bitmap? = try {
         val ext = extensionOf(uri)
         val cachedBytes = if (!isDirectUri(uri)) readStreamBytes(uri) ?: return null else null
-        when (ext) {
-            "svg", "svgz" -> decodeSvg(uri, targetPx, cachedBytes)
-            "jxl" -> decodeJxl(uri, targetPx, cachedBytes)
-            "tga", "icb", "vda", "vst" -> decodeTga(uri, targetPx, cachedBytes)
-            else -> decodePlatform(uri, targetPx, cachedBytes)
-                ?: decodeSvg(uri, targetPx, cachedBytes)
-                ?: decodeJxl(uri, targetPx, cachedBytes)
-                ?: decodeTga(uri, targetPx, cachedBytes)
+        decodeCustomFormat(ext, uri, targetPx, cachedBytes) ?: run {
+            decodePlatform(uri, targetPx, cachedBytes) ?: run {
+                val bytes = readBytesForCustomDecoder(uri, cachedBytes) ?: return@run null
+                decodeSvg(uri, targetPx, bytes)
+                    ?: decodeJxl(uri, targetPx, bytes)
+                    ?: Jpeg2000Decoder.decode(bytes, targetPx)
+                    ?: SimpleLosslessImageDecoder.decode(bytes, targetPx)
+                    ?: NetpbmDecoder.decode(bytes, targetPx)
+                    ?: TiffAndRawImageDecoder.decode(bytes, targetPx)
+                    ?: LayeredImageDecoder.decode(bytes, targetPx, ext)
+                    ?: PcxDecoder.decode(bytes, targetPx)
+                    ?: HdrAndScientificImageDecoder.decode(bytes, targetPx, ext)
+                    ?: X11ImageDecoder.decode(bytes, targetPx)
+                    ?: RetroImageDecoder.decode(bytes, targetPx, ext)
+                    ?: MetafileAndVectorImageDecoder.decode(bytes, targetPx, ext)
+                    ?: decodeTga(uri, targetPx, bytes)
+            }
         }
     } catch (_: Exception) {
         null

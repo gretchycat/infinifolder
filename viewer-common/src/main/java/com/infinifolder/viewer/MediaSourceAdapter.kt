@@ -16,8 +16,34 @@ import java.nio.charset.Charset
 object MediaSourceAdapter {
 
     fun resolveLocalFile(context: Context, uri: Uri): File? {
+        if (uri.scheme == "file") {
+            return uri.path?.let { File(it) }?.takeIf { it.exists() }
+        }
         val local = com.infinifolder.storage.LocalStorageProvider(context.applicationContext)
-        return if (local.owns(uri)) runCatching { local.fileFor(uri) }.getOrNull() else null
+        if (local.owns(uri)) {
+            val f = runCatching { local.fileFor(uri) }.getOrNull()
+            if (f != null && f.exists()) return f
+        }
+        if (uri.scheme == "content") {
+            try {
+                val docId = if (android.provider.DocumentsContract.isDocumentUri(context, uri)) {
+                    android.provider.DocumentsContract.getDocumentId(uri)
+                } else null
+                val candidates = listOfNotNull(
+                    docId,
+                    docId?.let { java.net.URLDecoder.decode(it, "UTF-8") },
+                    uri.lastPathSegment,
+                    uri.lastPathSegment?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+                )
+                for (c in candidates) {
+                    if (c.startsWith("/")) {
+                        val f = File(c)
+                        if (f.exists()) return f
+                    }
+                }
+            } catch (_: Throwable) {}
+        }
+        return null
     }
 
     fun openStream(context: Context, uri: Uri): InputStream {

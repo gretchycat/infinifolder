@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioDeviceInfo
@@ -13,10 +14,13 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -24,22 +28,34 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import com.infinifolder.audio.cast.CastDevice
+import com.infinifolder.audio.cast.CastManager
+import com.infinifolder.audio.cast.CastProtocol
 import com.infinifolder.theme.AppThemeId
 import com.infinifolder.theme.ThemeChangeListener
 import com.infinifolder.theme.ThemeColors
 import com.infinifolder.theme.ThemeManager
 import java.util.Locale
 
-class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeListener {
+class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeListener, DebugDumpObserver, CastManager.Listener {
 
     private lateinit var audioManager: AudioManager
 
     private lateinit var rootLayout: LinearLayout
+    private lateinit var topInsetArea: View
     private lateinit var topBar: LinearLayout
     private lateinit var headerText: TextView
-    private lateinit var themeBtn: Button
-    private lateinit var playlistBtn: Button
-    private lateinit var openExtBtn: Button
+    private lateinit var backBtn: TextView
+    private lateinit var themeBtn: TextView
+    private lateinit var playlistBtn: TextView
+    private lateinit var castBtn: TextView
+    private lateinit var openExtBtn: TextView
+
+    private lateinit var consoleCard: LinearLayout
+    private lateinit var timerLedView: TextView
+    private lateinit var stereoBadge: TextView
+    private lateinit var kbpsBadge: TextView
+    private lateinit var khzBadge: TextView
 
     private lateinit var artCard: FrameLayout
     private lateinit var albumArtView: ImageView
@@ -54,15 +70,71 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     private lateinit var prevBtn: Button
     private lateinit var playPauseBtn: Button
+    private lateinit var stopBtn: Button
     private lateinit var nextBtn: Button
     private lateinit var shuffleBtn: Button
     private lateinit var repeatBtn: Button
     private lateinit var speedBtn: Button
-    private lateinit var outputDeviceBtn: Button
     private lateinit var volumeBar: SeekBar
     private lateinit var loadingIndicator: ProgressBar
 
+    private lateinit var winampMainWindowView: WinampMainWindowView
+    private lateinit var skinContainer: LinearLayout
+    private lateinit var nonSkinScroll: ScrollView
+    private lateinit var nonSkinColumn: LinearLayout
+    private lateinit var dockedSubWindow: LinearLayout
+    private lateinit var dockedSubTitleStrip: LinearLayout
+    private lateinit var dockedTitleBarView: WinampPlaylistTitleView
+    private lateinit var dockedBodyRow: LinearLayout
+    private lateinit var dockedLeftBorder: WinampPlaylistBorderView
+    private lateinit var dockedRightBorder: WinampPlaylistBorderView
+    private lateinit var dockedPlaylistScroll: ScrollView
+    private lateinit var dockedBottomBarView: WinampPlaylistBottomView
+    private lateinit var mainColumn: LinearLayout
+    private lateinit var dockedAlbumArt: ImageView
+    private lateinit var dockedTrackTitle: TextView
+    private lateinit var dockedTrackArtist: TextView
+    private lateinit var dockedTrackDetails: TextView
+    private lateinit var dockedSpeedBtn: Button
+    private lateinit var dockedDiagnosticsBtn: Button
+    private var dockedCastBtn: Button? = null
+    private lateinit var dockedPlaylistHeader: TextView
+    private lateinit var dockedPlaylistFooter: TextView
+    private lateinit var dockedPlaylistItems: LinearLayout
+    private lateinit var progressContainer: LinearLayout
+    private lateinit var controlsRow: LinearLayout
+    private lateinit var secondaryRow: LinearLayout
+    private lateinit var volumeRow: LinearLayout
+    private var visualizerBridge: RealAudioVisualizerBridge? = null
+
     private var isUserSeeking = false
+    private var showRemainingTime = false
+
+    private var systemInsetLeft = 0
+    private var systemInsetTop = 0
+    private var systemInsetRight = 0
+    private var systemInsetBottom = 0
+
+    private fun getStatusBarHeight(): Int {
+        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else dp(24)
+    }
+
+    private fun updateRootPadding() {
+        if (!::rootLayout.isInitialized) return
+        val theme = ThemeManager.getAudioPlayerTheme(this)
+        val isWinamp = (theme.id == AppThemeId.WINAMP_CLASSIC || theme.id == AppThemeId.CUSTOM_WSZ)
+        val padH = if (isWinamp) 0 else (dp(12) + systemInsetLeft)
+        val effectiveTop = if (systemInsetTop > 0) systemInsetTop else getStatusBarHeight()
+        val isSystemDark = ThemeManager.resolveIsDark(this)
+        if (::topInsetArea.isInitialized) {
+            topInsetArea.layoutParams = LinearLayout.LayoutParams(-1, effectiveTop)
+            topInsetArea.setBackgroundColor(if (isSystemDark) Color.BLACK else Color.WHITE)
+        }
+        val padT = if (isWinamp) 0 else dp(6)
+        val padB = (if (isWinamp) 0 else dp(16)) + systemInsetBottom
+        rootLayout.setPadding(padH, padT, padH, padB)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,23 +143,35 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
         setupUI()
-        applyTheme(ThemeManager.activeTheme)
+        val audioTheme = ThemeManager.getAudioPlayerTheme(this)
+        applyTheme(audioTheme)
 
         AudioPlayerService.addListener(this)
         ThemeManager.addListener(this)
+        CastManager.addListener(this)
 
         handleIntent(intent)
     }
 
     override fun onResume() {
         super.onResume()
+        applyTheme(ThemeManager.getAudioPlayerTheme(this))
+        updateCastButtonState()
         AudioPlayerService.currentService?.let {
+            if (it.audioSessionId > 0) {
+                visualizerBridge?.attach(it.audioSessionId)
+            }
             updateUIFromService(it)
             it.cacheFailure?.let { failure ->
                 it.cacheFailure = null
                 CacheFailureUi.offerCopy(this, failure.first, failure.second)
             }
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyTheme(ThemeManager.getAudioPlayerTheme(this))
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -115,26 +199,28 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
         Thread {
             val tracks = mutableListOf<AudioTrack>()
-            val parentUri = intent?.getStringExtra("parentUri")?.let { Uri.parse(it) }
-                ?: intent?.getStringExtra("extra_parent_uri")?.let { Uri.parse(it) }
-                ?: MediaSourceAdapter.getParentDirectory(this, targetUri)
-            if (parentUri != null) {
-                try {
-                    val siblings = MediaSourceAdapter.listFolder(this, parentUri)
-                    val queueMultimedia = intent?.getBooleanExtra("queueMultimedia", false) == true
-                    for (sibling in siblings) {
-                        if (!sibling.metadata.isDirectory) {
-                            val type = MediaTypeDetector.detect(sibling.metadata.name, sibling.metadata.mimeType)
-                            if (type == MediaType.AUDIO || (queueMultimedia && type == MediaType.VIDEO)) {
-                                tracks.add(AudioTrack(sibling.uri, sibling.metadata.name))
-                            }
-                        }
-                    }
-                } catch (_: Exception) {}
+            val isDirectPlaylist = PlaylistExpander.isPlaylist(targetUri, displayName)
+
+            if (isDirectPlaylist) {
+                val playlistTracks = PlaylistExpander.expandPlaylist(this, targetUri)
+                tracks.addAll(playlistTracks)
+            } else {
+                val parentUri = intent?.getStringExtra("parentUri")?.let { Uri.parse(it) }
+                    ?: intent?.getStringExtra("extra_parent_uri")?.let { Uri.parse(it) }
+                    ?: MediaSourceAdapter.getParentDirectory(this, targetUri)
+                if (parentUri != null) {
+                    try {
+                        val siblings = MediaSourceAdapter.listFolder(this, parentUri)
+                        val queueMultimedia = intent?.getBooleanExtra("queueMultimedia", false) == true
+                        tracks.addAll(PlaylistExpander.expandResourceEntries(this, siblings, queueMultimedia = queueMultimedia))
+                    } catch (_: Exception) {}
+                }
             }
 
             if (tracks.none { AudioPlayerService.uriMatches(it.uri, targetUri) }) {
-                tracks.add(0, AudioTrack(targetUri, displayName))
+                if (!isDirectPlaylist) {
+                    tracks.add(0, AudioTrack(targetUri, displayName))
+                }
             }
 
             var startIndex = tracks.indexOfFirst { AudioPlayerService.uriMatches(it.uri, targetUri) }
@@ -165,95 +251,321 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         }.start()
     }
 
+    private var touchDownX = 0f
+    private var touchDownY = 0f
+    private var touchDownTime = 0L
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                touchDownX = ev.rawX
+                touchDownY = ev.rawY
+                touchDownTime = System.currentTimeMillis()
+            }
+            MotionEvent.ACTION_UP -> {
+                val dx = kotlin.math.abs(ev.rawX - touchDownX)
+                val dy = kotlin.math.abs(ev.rawY - touchDownY)
+                val duration = System.currentTimeMillis() - touchDownTime
+                val isTap = dx < dp(15) && dy < dp(15) && duration < 500
+
+                if (isTap) {
+                    val rawX = ev.rawX.toInt()
+                    val rawY = ev.rawY.toInt()
+
+                    if (::topBar.isInitialized && topBar.visibility == View.VISIBLE) {
+                        val topBarRect = Rect()
+                        topBar.getGlobalVisibleRect(topBarRect)
+                        if (!topBarRect.contains(rawX, rawY)) {
+                            // Tapped anywhere else -> hide the Now playing bar!
+                            topBar.visibility = View.GONE
+                        }
+                    } else if (::topBar.isInitialized && topBar.visibility != View.VISIBLE) {
+                        // Tapped while hidden -> reveal if tapped on the top bar region
+                        val topBarThreshold = systemInsetTop + dp(54)
+                        if (rawY <= topBarThreshold) {
+                            topBar.visibility = View.VISIBLE
+                        }
+                    }
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
     private fun setupUI() {
-        val basePadH = dp(12)
-        val basePadT = dp(6)
-        val basePadB = dp(16)
         rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(-1, -1)
-            setOnApplyWindowInsetsListener { view, insets ->
+            setOnApplyWindowInsetsListener { _, insets ->
                 val safe = if (Build.VERSION.SDK_INT >= 30) {
                     insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
                 } else null
-                val left = safe?.left ?: insets.systemWindowInsetLeft
-                val top = safe?.top ?: insets.systemWindowInsetTop
-                val right = safe?.right ?: insets.systemWindowInsetRight
-                val bottom = safe?.bottom ?: insets.systemWindowInsetBottom
-                view.setPadding(basePadH + left, basePadT + top, basePadH + right, basePadB + bottom)
+                systemInsetLeft = safe?.left ?: insets.systemWindowInsetLeft
+                systemInsetTop = safe?.top ?: insets.systemWindowInsetTop
+                systemInsetRight = safe?.right ?: insets.systemWindowInsetRight
+                systemInsetBottom = safe?.bottom ?: insets.systemWindowInsetBottom
+                updateRootPadding()
                 insets
             }
         }
 
-        // Top Bar
+        // Top Bar (Now Playing header bar - hidden by default, tapped to reveal)
         topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            visibility = View.GONE
         }
 
-        val backBtn = Button(this).apply {
+        val selectableRes = android.util.TypedValue().let { tv ->
+            if (theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, tv, true)) tv.resourceId else 0
+        }
+
+        backBtn = TextView(this).apply {
             text = "←"
-            textSize = 20f
+            textSize = 24f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            includeFontPadding = false
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.TRANSPARENT)
+            isClickable = true
+            isFocusable = true
+            if (selectableRes != 0) setBackgroundResource(selectableRes)
             setOnClickListener { onBackPressed() }
         }
-        topBar.addView(backBtn, LinearLayout.LayoutParams(dp(44), dp(44)))
+        topBar.addView(backBtn, LinearLayout.LayoutParams(dp(38), dp(38)))
 
         headerText = TextView(this).apply {
             text = "Now Playing"
-            textSize = 16f
+            textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
+            includeFontPadding = false
+            isClickable = true
+            isFocusable = true
+            if (selectableRes != 0) setBackgroundResource(selectableRes)
+            setOnClickListener {
+                topBar.visibility = View.GONE
+            }
         }
         topBar.addView(headerText, LinearLayout.LayoutParams(0, -2, 1f))
 
         // Theme Switcher Button
-        themeBtn = Button(this).apply {
+        themeBtn = TextView(this).apply {
             text = "🎨"
-            textSize = 16f
-            setBackgroundColor(Color.TRANSPARENT)
+            textSize = 17f
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            isClickable = true
+            isFocusable = true
+            if (selectableRes != 0) setBackgroundResource(selectableRes)
             setOnClickListener { showThemeChooser() }
         }
-        topBar.addView(themeBtn, LinearLayout.LayoutParams(dp(42), dp(42)))
+        topBar.addView(themeBtn, LinearLayout.LayoutParams(dp(38), dp(38)))
 
-        playlistBtn = Button(this).apply {
+        playlistBtn = TextView(this).apply {
             text = "☰"
-            textSize = 18f
-            setBackgroundColor(Color.TRANSPARENT)
+            textSize = 19f
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            isClickable = true
+            isFocusable = true
+            if (selectableRes != 0) setBackgroundResource(selectableRes)
             setOnClickListener { showPlaylistDialog() }
         }
-        topBar.addView(playlistBtn, LinearLayout.LayoutParams(dp(42), dp(42)))
+        topBar.addView(playlistBtn, LinearLayout.LayoutParams(dp(38), dp(38)))
 
-        openExtBtn = Button(this).apply {
+        castBtn = TextView(this).apply {
+            text = "📡"
+            textSize = 17f
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            isClickable = true
+            isFocusable = true
+            if (selectableRes != 0) setBackgroundResource(selectableRes)
+            setOnClickListener { showCastDialog() }
+            setOnLongClickListener {
+                launchAudioOutput()
+                true
+            }
+        }
+        topBar.addView(castBtn, LinearLayout.LayoutParams(dp(38), dp(38)))
+
+        openExtBtn = TextView(this).apply {
             text = "↗"
-            textSize = 16f
-            setBackgroundColor(Color.TRANSPARENT)
+            textSize = 17f
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            isClickable = true
+            isFocusable = true
+            if (selectableRes != 0) setBackgroundResource(selectableRes)
             setOnClickListener { openExternally() }
         }
-        topBar.addView(openExtBtn, LinearLayout.LayoutParams(dp(42), dp(42)))
+        topBar.addView(openExtBtn, LinearLayout.LayoutParams(dp(38), dp(38)))
 
         DebugTools.attachToolbarButton(this, topBar)
+        topInsetArea = View(this).apply {
+            val isDark = ThemeManager.resolveIsDark(this@AudioPlayerActivity)
+            setBackgroundColor(if (isDark) Color.BLACK else Color.WHITE)
+        }
+        rootLayout.addView(topInsetArea, LinearLayout.LayoutParams(-1, 0))
         rootLayout.addView(topBar)
 
-        val scrollContent = ScrollView(this).apply {
+        // 1. Skin Player Container (Main Window docked at top, Playlist Window taking remaining height)
+        skinContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
+        }
+
+        // Main Window (275x116 scaled to full width, fixed at top, not in scrollview)
+        winampMainWindowView = WinampMainWindowView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, -2)
+        }
+        setupWinampMainWindow()
+        skinContainer.addView(winampMainWindowView)
+
+        // Docked Playlist Sub-Window (fills remaining vertical screen space)
+        dockedSubWindow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
+        }
+        setupDockedSubWindow()
+        skinContainer.addView(dockedSubWindow)
+        rootLayout.addView(skinContainer)
+
+        // 2. Non-Skin Fallback Container (Scrollable column for standard Material / AMOLED themes)
+        nonSkinScroll = ScrollView(this).apply {
             isFillViewport = true
             layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
         }
 
-        val mainColumn = LinearLayout(this).apply {
+        nonSkinColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(20), dp(10), dp(20), dp(20))
+            setPadding(dp(16), dp(8), dp(16), dp(16))
+        }
+        mainColumn = nonSkinColumn
+
+        // Winamp Digital Display Console / Screen
+        consoleCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            val lp = LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(10)
+            }
+            layoutParams = lp
         }
 
-        // Album Art Box / Chassis Screen
+        val ledRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(4))
+        }
+
+        timerLedView = TextView(this).apply {
+            text = "00:00"
+            textSize = 26f
+            typeface = Typeface.MONOSPACE
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                showRemainingTime = !showRemainingTime
+                updateTimeDisplay()
+            }
+        }
+        ledRow.addView(timerLedView)
+
+        val spacer = View(this)
+        ledRow.addView(spacer, LinearLayout.LayoutParams(0, 1, 1f))
+
+        val badgesCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END
+        }
+
+        stereoBadge = TextView(this).apply {
+            text = "STEREO"
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+        }
+        badgesCol.addView(stereoBadge)
+
+        val techRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+        }
+
+        kbpsBadge = TextView(this).apply {
+            text = "320 KBPS"
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+        }
+        techRow.addView(kbpsBadge)
+
+        khzBadge = TextView(this).apply {
+            text = "44 KHZ"
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+        }
+        techRow.addView(khzBadge, LinearLayout.LayoutParams(-2, -2).apply {
+            marginStart = dp(6)
+        })
+        badgesCol.addView(techRow)
+        ledRow.addView(badgesCol)
+
+        consoleCard.addView(ledRow)
+
+        // Title, Artist & Marquee
+        trackTitleText = TextView(this).apply {
+            text = "Audio Title"
+            textSize = 15f
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.START
+            maxLines = 1
+            setSingleLine(true)
+            ellipsize = android.text.TextUtils.TruncateAt.MARQUEE
+            isSelected = true
+        }
+        consoleCard.addView(trackTitleText, LinearLayout.LayoutParams(-1, -2))
+
+        trackArtistText = TextView(this).apply {
+            text = "Artist / Album"
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.START
+            setPadding(0, dp(2), 0, dp(2))
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        consoleCard.addView(trackArtistText, LinearLayout.LayoutParams(-1, -2))
+
+        // Animated Spectrum Visualizer (inside display console)
+        visualizerView = VisualizerView(this).apply {
+            val lp = LinearLayout.LayoutParams(-1, dp(38)).apply {
+                topMargin = dp(4)
+                bottomMargin = dp(4)
+            }
+            layoutParams = lp
+        }
+        consoleCard.addView(visualizerView)
+
+        technicalInfoText = TextView(this).apply {
+            text = "44.1 kHz • Stereo • VFS Playback"
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.START
+            setOnClickListener { showDiagnosticsDialog() }
+        }
+        consoleCard.addView(technicalInfoText, LinearLayout.LayoutParams(-1, -2))
+
+        mainColumn.addView(consoleCard)
+
+        // Album Art Box / Cassette Bezel
         artCard = FrameLayout(this).apply {
-            val size = dp(240)
+            val size = dp(200)
             layoutParams = LinearLayout.LayoutParams(size, size).apply {
-                topMargin = dp(8)
-                bottomMargin = dp(16)
+                topMargin = dp(4)
+                bottomMargin = dp(12)
             }
             clipToOutline = true
         }
@@ -274,46 +586,8 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
         mainColumn.addView(artCard)
 
-        // Animated Spectrum Visualizer (for Winamp & WMP themes)
-        visualizerView = VisualizerView(this).apply {
-            val lp = LinearLayout.LayoutParams(-1, dp(40)).apply {
-                bottomMargin = dp(12)
-            }
-            layoutParams = lp
-        }
-        mainColumn.addView(visualizerView)
-
-        // Title, Artist & Technical Inspector
-        trackTitleText = TextView(this).apply {
-            text = "Audio Title"
-            textSize = 18f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            maxLines = 2
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-        mainColumn.addView(trackTitleText, LinearLayout.LayoutParams(-1, -2))
-
-        trackArtistText = TextView(this).apply {
-            text = "Artist / Album"
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setPadding(0, dp(4), 0, dp(4))
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-        mainColumn.addView(trackArtistText, LinearLayout.LayoutParams(-1, -2))
-
-        technicalInfoText = TextView(this).apply {
-            text = "44.1 kHz • Stereo • VFS Playback"
-            textSize = 11f
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, dp(16))
-        }
-        mainColumn.addView(technicalInfoText, LinearLayout.LayoutParams(-1, -2))
-
         // Progress Bar & Timers
-        val progressContainer = LinearLayout(this).apply {
+        progressContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(-1, -2)
         }
@@ -327,6 +601,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                         val dur = AudioPlayerService.currentService?.currentDuration ?: 0
                         val targetMs = (progress / 1000f * dur).toInt()
                         currentTimeText.text = formatTime(targetMs)
+                        timerLedView.text = formatTime(targetMs)
                     }
                 }
                 override fun onStartTrackingTouch(sb: SeekBar?) {
@@ -336,6 +611,9 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                     isUserSeeking = false
                     val dur = AudioPlayerService.currentService?.currentDuration ?: 0
                     val targetMs = (progressBar.progress / 1000f * dur).toInt()
+                    if (CastManager.isCasting) {
+                        CastManager.seek(targetMs.toLong())
+                    }
                     AudioPlayerService.currentService?.seekTo(targetMs)
                 }
             })
@@ -349,6 +627,11 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         currentTimeText = TextView(this).apply {
             text = "00:00"
             textSize = 13f
+            isClickable = true
+            setOnClickListener {
+                showRemainingTime = !showRemainingTime
+                updateTimeDisplay()
+            }
         }
         timeRow.addView(currentTimeText, LinearLayout.LayoutParams(0, -2, 1f))
 
@@ -362,11 +645,11 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
         mainColumn.addView(progressContainer)
 
-        // Main Controls Row (Shuffle, Prev, Play/Pause, Next, Repeat)
-        val controlsRow = LinearLayout(this).apply {
+        // Main Controls Row (Shuffle, Prev, Play/Pause, Stop, Next, Repeat)
+        controlsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, dp(16), 0, dp(14))
+            setPadding(0, dp(12), 0, dp(10))
         }
 
         shuffleBtn = Button(this).apply {
@@ -381,7 +664,9 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                 updateControlsAppearance()
             }
         }
-        controlsRow.addView(shuffleBtn, LinearLayout.LayoutParams(dp(44), dp(44)))
+        controlsRow.addView(shuffleBtn, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+            marginEnd = dp(6)
+        })
 
         prevBtn = Button(this).apply {
             text = "⏮"
@@ -396,12 +681,16 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                 }
             }
         }
-        controlsRow.addView(prevBtn, LinearLayout.LayoutParams(dp(50), dp(50)))
+        controlsRow.addView(prevBtn, LinearLayout.LayoutParams(dp(48), dp(48)))
 
         playPauseBtn = Button(this).apply {
             text = "▶"
-            textSize = 24f
+            textSize = 22f
             setOnClickListener {
+                if (CastManager.isCasting) {
+                    CastManager.togglePlayPause()
+                    return@setOnClickListener
+                }
                 val s = AudioPlayerService.currentService
                 if (s != null && s.playlist.isNotEmpty()) {
                     s.togglePlayPause()
@@ -410,9 +699,32 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                 }
             }
         }
-        controlsRow.addView(playPauseBtn, LinearLayout.LayoutParams(dp(62), dp(62)).apply {
-            marginStart = dp(12)
-            marginEnd = dp(12)
+        controlsRow.addView(playPauseBtn, LinearLayout.LayoutParams(dp(54), dp(54)).apply {
+            marginStart = dp(6)
+            marginEnd = dp(6)
+        })
+
+        stopBtn = Button(this).apply {
+            text = "⏹"
+            textSize = 18f
+            setBackgroundColor(Color.TRANSPARENT)
+            setOnClickListener {
+                if (CastManager.isCasting) {
+                    CastManager.seek(0)
+                    CastManager.pause()
+                }
+                AudioPlayerService.currentService?.let {
+                    it.pause()
+                    it.seekTo(0)
+                }
+                updatePlayPauseButton(false)
+                if (::winampMainWindowView.isInitialized) {
+                    winampMainWindowView.isPlaying = false
+                }
+            }
+        }
+        controlsRow.addView(stopBtn, LinearLayout.LayoutParams(dp(48), dp(48)).apply {
+            marginEnd = dp(6)
         })
 
         nextBtn = Button(this).apply {
@@ -428,7 +740,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                 }
             }
         }
-        controlsRow.addView(nextBtn, LinearLayout.LayoutParams(dp(50), dp(50)))
+        controlsRow.addView(nextBtn, LinearLayout.LayoutParams(dp(48), dp(48)))
 
         repeatBtn = Button(this).apply {
             text = "🔁"
@@ -447,37 +759,29 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                 updateControlsAppearance()
             }
         }
-        controlsRow.addView(repeatBtn, LinearLayout.LayoutParams(dp(44), dp(44)))
+        controlsRow.addView(repeatBtn, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+            marginStart = dp(6)
+        })
 
         mainColumn.addView(controlsRow)
 
         // Secondary Controls (Speed, Audio Routing)
-        val secondaryRow = LinearLayout(this).apply {
+        secondaryRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(0, dp(4), 0, dp(12))
         }
 
         speedBtn = Button(this).apply {
-            text = "1.0x"
-            textSize = 12f
+            formatCompactButton(this, "1.0x", textSizeSp = 12f, padH = 12, padV = 4)
             setOnClickListener { showSpeedPicker() }
         }
-        secondaryRow.addView(speedBtn, LinearLayout.LayoutParams(-2, dp(34)).apply {
-            marginEnd = dp(12)
-        })
-
-        outputDeviceBtn = Button(this).apply {
-            text = "🔊 Speaker"
-            textSize = 12f
-            setOnClickListener { showOutputRoutingDialog() }
-        }
-        secondaryRow.addView(outputDeviceBtn, LinearLayout.LayoutParams(-2, dp(34)))
+        secondaryRow.addView(speedBtn, LinearLayout.LayoutParams(-2, dp(36)))
 
         mainColumn.addView(secondaryRow)
 
         // Volume Bar
-        val volumeRow = LinearLayout(this).apply {
+        volumeRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), dp(4), dp(12), dp(4))
@@ -513,28 +817,502 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         }
         volumeRow.addView(volIconHigh)
 
-        mainColumn.addView(volumeRow, LinearLayout.LayoutParams(-1, -2))
+        nonSkinColumn.addView(volumeRow, LinearLayout.LayoutParams(-1, -2))
 
-        scrollContent.addView(mainColumn)
-        rootLayout.addView(scrollContent)
+        nonSkinScroll.addView(nonSkinColumn)
+        rootLayout.addView(nonSkinScroll)
         setContentView(rootLayout)
     }
 
+    private fun setupWinampMainWindow() {
+        visualizerBridge = RealAudioVisualizerBridge {
+            winampMainWindowView.postInvalidateOnAnimation()
+            val bands = FloatArray(16)
+            val peaks = FloatArray(16)
+            visualizerBridge?.getSpectrum(bands, peaks, AudioPlayerService.currentService?.isPlaying == true)
+            visualizerView.updateData(bands, peaks)
+        }
+        winampMainWindowView.visualizerBridge = visualizerBridge
+
+        winampMainWindowView.callback = object : WinampMainWindowView.Callback {
+            override fun onPlay() {
+                if (CastManager.isCasting) {
+                    CastManager.play()
+                    return
+                }
+                val s = AudioPlayerService.currentService
+                if (s != null && s.playlist.isNotEmpty()) {
+                    s.play()
+                } else {
+                    handleIntent(intent)
+                }
+            }
+            override fun onPause() {
+                if (CastManager.isCasting) {
+                    CastManager.togglePlayPause()
+                    return
+                }
+                val s = AudioPlayerService.currentService
+                if (s != null && s.playlist.isNotEmpty()) {
+                    s.togglePlayPause()
+                }
+            }
+            override fun onStop() {
+                if (CastManager.isCasting) {
+                    CastManager.seek(0)
+                    CastManager.pause()
+                    return
+                }
+                AudioPlayerService.currentService?.let {
+                    it.pause()
+                    it.seekTo(0)
+                }
+            }
+            override fun onPrev() {
+                val s = AudioPlayerService.currentService
+                if (s != null && s.playlist.isNotEmpty()) {
+                    s.playPrevious()
+                } else {
+                    handleIntent(intent)
+                }
+            }
+            override fun onNext() {
+                val s = AudioPlayerService.currentService
+                if (s != null && s.playlist.isNotEmpty()) {
+                    s.playNext()
+                } else {
+                    handleIntent(intent)
+                }
+            }
+            override fun onEject() {
+                openExternally()
+            }
+            override fun onSeek(positionMs: Int) {
+                if (CastManager.isCasting) {
+                    CastManager.seek(positionMs.toLong())
+                }
+                AudioPlayerService.currentService?.seekTo(positionMs)
+            }
+            override fun onVolumeChanged(volume: Float) {
+                AudioPlayerService.currentService?.volume = volume
+            }
+            override fun onBalanceChanged(balance: Float) {
+                AudioPlayerService.currentService?.balance = balance
+            }
+            override fun onToggleShuffle() {
+                AudioPlayerService.currentService?.let {
+                    it.toggleShuffle()
+                    winampMainWindowView.isShuffle = it.isShuffleEnabled
+                    Toast.makeText(this@AudioPlayerActivity, if (it.isShuffleEnabled) "Shuffle: On" else "Shuffle: Off", Toast.LENGTH_SHORT).show()
+                }
+                updateControlsAppearance()
+            }
+            override fun onToggleRepeat() {
+                AudioPlayerService.currentService?.let {
+                    it.cycleRepeatMode()
+                    winampMainWindowView.isRepeat = (it.repeatMode != RepeatMode.NONE)
+                    val label = when (it.repeatMode) {
+                        RepeatMode.NONE -> "Repeat: Off"
+                        RepeatMode.ALL -> "Repeat: All"
+                        RepeatMode.ONE -> "Repeat: One track"
+                    }
+                    Toast.makeText(this@AudioPlayerActivity, label, Toast.LENGTH_SHORT).show()
+                }
+                updateControlsAppearance()
+            }
+            override fun onToggleDockedSubwindow() {
+                dockedSubWindow.visibility = if (dockedSubWindow.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            }
+            override fun onClose() {
+                finish()
+            }
+            override fun onDiagnosticsRequested() {
+                showDiagnosticsDialog()
+            }
+        }
+    }
+
+    private fun setupDockedSubWindow() {
+        // 1. Authentic Playlist Window Titlebar (275x20 scaled to full width)
+        dockedTitleBarView = WinampPlaylistTitleView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, -2)
+            onShadeToggle = {
+                val isHidden = dockedBodyRow.visibility == View.GONE
+                dockedBodyRow.visibility = if (isHidden) View.VISIBLE else View.GONE
+                dockedBottomBarView.visibility = if (isHidden) View.VISIBLE else View.GONE
+            }
+        }
+        dockedSubWindow.addView(dockedTitleBarView)
+
+        // 2. Generic Title Strip (for non-skin fallback)
+        dockedSubTitleStrip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+        }
+        dockedPlaylistHeader = TextView(this).apply {
+            text = "PLAYLIST & DETAILS"
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            setTextColor(Color.GREEN)
+        }
+        dockedSubTitleStrip.addView(dockedPlaylistHeader, LinearLayout.LayoutParams(0, -2, 1f))
+
+        val shadeBtn = TextView(this).apply {
+            text = "▲"
+            textSize = 11f
+            setPadding(dp(6), 0, dp(6), 0)
+            setTextColor(Color.WHITE)
+            setOnClickListener {
+                val isHidden = dockedBodyRow.visibility == View.GONE
+                dockedBodyRow.visibility = if (isHidden) View.VISIBLE else View.GONE
+                dockedBottomBarView.visibility = if (isHidden) View.VISIBLE else View.GONE
+                text = if (isHidden) "▲" else "▼"
+            }
+        }
+        dockedSubTitleStrip.addView(shadeBtn)
+        dockedSubWindow.addView(dockedSubTitleStrip)
+
+        // 3. Middle Body Row (Left Border + Center Column + Right Border)
+        dockedBodyRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
+        }
+
+        dockedLeftBorder = WinampPlaylistBorderView(this, isLeft = true).apply {
+            layoutParams = LinearLayout.LayoutParams(-2, -1)
+        }
+        dockedBodyRow.addView(dockedLeftBorder)
+
+        val dockedCenterCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, -1, 1f)
+        }
+
+        // Static Current Playing Blurb (Album Art & Metadata)
+        val metaRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(6), dp(6), dp(6), dp(4))
+        }
+
+        dockedAlbumArt = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            layoutParams = LinearLayout.LayoutParams(dp(54), dp(54)).apply {
+                marginEnd = dp(8)
+            }
+        }
+        metaRow.addView(dockedAlbumArt)
+
+        val metaCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        dockedTrackTitle = TextView(this).apply {
+            text = "Track Title"
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.MARQUEE
+            isSelected = true
+        }
+        metaCol.addView(dockedTrackTitle)
+
+        dockedTrackArtist = TextView(this).apply {
+            text = "Artist / Album"
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        metaCol.addView(dockedTrackArtist)
+
+        dockedTrackDetails = TextView(this).apply {
+            text = "44.1 kHz • Stereo • VFS"
+            textSize = 9f
+            typeface = Typeface.MONOSPACE
+            setOnClickListener { showDiagnosticsDialog() }
+        }
+        metaCol.addView(dockedTrackDetails)
+        metaRow.addView(metaCol, LinearLayout.LayoutParams(0, -2, 1f))
+        dockedCenterCol.addView(metaRow)
+
+        // Static Secondary Controls Bar in a HorizontalScrollView so buttons never squish or clip
+        val toolScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = false
+            clipToPadding = false
+            setPadding(dp(6), 0, dp(6), dp(4))
+        }
+
+        val toolRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        toolScroll.addView(toolRow, FrameLayout.LayoutParams(-2, -2))
+
+        dockedSpeedBtn = Button(this).apply {
+            formatCompactButton(this, "1.0x", textSizeSp = 11f, padH = 8, padV = 3)
+            setOnClickListener { showSpeedPicker() }
+        }
+        toolRow.addView(dockedSpeedBtn, LinearLayout.LayoutParams(-2, dp(32)).apply {
+            marginEnd = dp(6)
+        })
+
+        dockedDiagnosticsBtn = Button(this).apply {
+            formatCompactButton(this, "🔍 Technical", textSizeSp = 11f, padH = 8, padV = 3)
+            setOnClickListener { showDiagnosticsDialog() }
+        }
+        toolRow.addView(dockedDiagnosticsBtn, LinearLayout.LayoutParams(-2, dp(32)).apply {
+            marginEnd = dp(6)
+        })
+
+        dockedCastBtn = Button(this).apply {
+            formatCompactButton(this, "📡 Cast", textSizeSp = 11f, padH = 8, padV = 3)
+            setOnClickListener { showCastDialog() }
+        }
+        toolRow.addView(dockedCastBtn, LinearLayout.LayoutParams(-2, dp(32)))
+        dockedCenterCol.addView(toolScroll)
+
+        // The ScrollView belongs strictly to JUST the playlist items
+        dockedPlaylistScroll = ScrollView(this).apply {
+            isFillViewport = true
+            layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
+        }
+
+        dockedPlaylistItems = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(2), 0, dp(2))
+        }
+        dockedPlaylistScroll.addView(dockedPlaylistItems)
+        dockedCenterCol.addView(dockedPlaylistScroll)
+
+        // Static Playlist Total Blurb & Footer
+        dockedPlaylistFooter = TextView(this).apply {
+            text = "0 tracks • Total: 00:00"
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.CENTER
+            setPadding(dp(6), dp(4), dp(6), dp(4))
+        }
+        dockedCenterCol.addView(dockedPlaylistFooter)
+
+        dockedBodyRow.addView(dockedCenterCol)
+
+        dockedRightBorder = WinampPlaylistBorderView(this, isLeft = false).apply {
+            layoutParams = LinearLayout.LayoutParams(-2, -1)
+        }
+        dockedBodyRow.addView(dockedRightBorder)
+
+        dockedSubWindow.addView(dockedBodyRow)
+
+        // 4. Authentic Playlist Window Bottom Bar (275x38 scaled to full width)
+        dockedBottomBarView = WinampPlaylistBottomView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, -2)
+        }
+        dockedSubWindow.addView(dockedBottomBarView)
+    }
+
+    private fun updateDockedPlaylist() {
+        if (!::dockedPlaylistItems.isInitialized) return
+        val service = AudioPlayerService.currentService ?: return
+        val theme = ThemeManager.getAudioPlayerTheme(this)
+        val list = synchronized(service.playlist) { ArrayList(service.playlist) }
+        val curIdx = service.currentIndex
+
+        var totalMs = 0L
+        for (track in list) {
+            if (track.durationMs > 0L) totalMs += track.durationMs
+        }
+
+        if (dockedPlaylistItems.childCount == list.size) {
+            for ((index, track) in list.withIndex()) {
+                val row = dockedPlaylistItems.getChildAt(index) as? LinearLayout ?: continue
+                val isCurrent = (index == curIdx)
+                row.setBackgroundColor(if (isCurrent) theme.selectionBackground else Color.TRANSPARENT)
+
+                val numText = row.getChildAt(0) as? TextView
+                numText?.setTextColor(if (isCurrent) theme.selectionText else theme.textSecondary)
+
+                val displayTitle = if (!track.artist.isNullOrBlank() && track.artist != "Unknown Artist") {
+                    "${track.artist} - ${track.title}"
+                } else {
+                    track.title
+                }
+                val titleText = row.getChildAt(1) as? TextView
+                titleText?.text = (if (isCurrent) "▶ " else "") + displayTitle
+                titleText?.setTextColor(if (isCurrent) theme.selectionText else theme.textPrimary)
+
+                val durText = row.getChildAt(2) as? TextView
+                durText?.text = if (track.durationMs > 0) formatTime(track.durationMs.toInt()) else "--:--"
+                durText?.setTextColor(if (isCurrent) theme.selectionText else theme.textSecondary)
+            }
+        } else {
+            dockedPlaylistItems.removeAllViews()
+            for ((index, track) in list.withIndex()) {
+                val isCurrent = (index == curIdx)
+
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(8), dp(4), dp(8), dp(4))
+                    isClickable = true
+                    isFocusable = true
+                    setBackgroundColor(if (isCurrent) theme.selectionBackground else Color.TRANSPARENT)
+                    setOnClickListener {
+                        service.jumpTo(index)
+                    }
+                }
+
+                val numText = TextView(this).apply {
+                    text = String.format("%2d. ", index + 1)
+                    textSize = 11f
+                    typeface = Typeface.MONOSPACE
+                    setTextColor(if (isCurrent) theme.selectionText else theme.textSecondary)
+                }
+                row.addView(numText, LinearLayout.LayoutParams(-2, -2))
+
+                val displayTitle = if (!track.artist.isNullOrBlank() && track.artist != "Unknown Artist") {
+                    "${track.artist} - ${track.title}"
+                } else {
+                    track.title
+                }
+
+                val titleText = TextView(this).apply {
+                    text = (if (isCurrent) "▶ " else "") + displayTitle
+                    textSize = 11f
+                    typeface = Typeface.MONOSPACE
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setTextColor(if (isCurrent) theme.selectionText else theme.textPrimary)
+                }
+                row.addView(titleText, LinearLayout.LayoutParams(0, -2, 1f))
+
+                val durText = TextView(this).apply {
+                    text = if (track.durationMs > 0) formatTime(track.durationMs.toInt()) else "--:--"
+                    textSize = 10f
+                    typeface = Typeface.MONOSPACE
+                    gravity = Gravity.END
+                    setTextColor(if (isCurrent) theme.selectionText else theme.textSecondary)
+                }
+                row.addView(durText, LinearLayout.LayoutParams(-2, -2))
+
+                dockedPlaylistItems.addView(row)
+            }
+        }
+
+        dockedPlaylistHeader.text = "PLAYLIST (${list.size} TRACKS)"
+        dockedPlaylistFooter.text = "${list.size} tracks • Total: ${formatTime(totalMs)}"
+
+        if (::dockedBottomBarView.isInitialized) {
+            dockedBottomBarView.totalDurationMs = totalMs
+            val curTrackMs = if (curIdx in list.indices && list[curIdx].durationMs > 0L) list[curIdx].durationMs else 0L
+            dockedBottomBarView.currentTrackDurationMs = curTrackMs
+            dockedBottomBarView.invalidate()
+        }
+    }
+
     private fun applyTheme(theme: ThemeColors) {
-        window.statusBarColor = theme.background
-        window.navigationBarColor = theme.background
+        val isSystemDark = ThemeManager.resolveIsDark(this)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        window.statusBarColor = if (isSystemDark) Color.BLACK else Color.WHITE
+        window.navigationBarColor = if (isSystemDark) Color.BLACK else Color.WHITE
+        if (Build.VERSION.SDK_INT >= 30) {
+            val controller = window.insetsController
+            if (isSystemDark) {
+                controller?.setSystemBarsAppearance(
+                    0,
+                    android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                )
+            } else {
+                controller?.setSystemBarsAppearance(
+                    android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+                    android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                )
+            }
+        } else if (Build.VERSION.SDK_INT >= 26) {
+            val flags = if (isSystemDark) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            window.decorView.systemUiVisibility = flags
+        } else if (Build.VERSION.SDK_INT >= 23) {
+            val flags = if (isSystemDark) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+            window.decorView.systemUiVisibility = flags
+        }
+
+        if (::topInsetArea.isInitialized) {
+            topInsetArea.setBackgroundColor(if (isSystemDark) Color.BLACK else Color.WHITE)
+        }
 
         val density = resources.displayMetrics.density
         rootLayout.setBackgroundColor(theme.background)
-        topBar.background = ThemeManager.createToolbarDrawable(theme, density)
+
+        val barBg = if (isSystemDark) Color.BLACK else Color.WHITE
+        val barStroke = if (isSystemDark) 0xFF2A2A2A.toInt() else 0xFFE0E0E0.toInt()
+        val barText = if (isSystemDark) Color.WHITE else Color.BLACK
+        val barSubText = if (isSystemDark) 0xFFAAAAAA.toInt() else 0xFF666666.toInt()
+
+        // Clean topBar background - pure black in dark mode, pure white in light mode
+        topBar.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(barBg)
+            setStroke((1 * density).toInt().coerceAtLeast(1), barStroke)
+        }
+        backBtn.setTextColor(barText)
+        headerText.setTextColor(barText)
+        themeBtn.setTextColor(barText)
+        playlistBtn.setTextColor(barText)
+        castBtn.setTextColor(barText)
+        openExtBtn.setTextColor(barSubText)
+
+        val isWinamp = (theme.id == AppThemeId.WINAMP_CLASSIC || theme.id == AppThemeId.CUSTOM_WSZ)
+
+        if (isWinamp) {
+            skinContainer.visibility = View.VISIBLE
+            nonSkinScroll.visibility = View.GONE
+            updateRootPadding()
+            winampMainWindowView.visibility = View.VISIBLE
+            dockedSubWindow.visibility = View.VISIBLE
+            dockedTitleBarView.visibility = View.VISIBLE
+            dockedTitleBarView.invalidate()
+            dockedLeftBorder.invalidate()
+            dockedRightBorder.invalidate()
+            dockedBottomBarView.invalidate()
+            dockedSubTitleStrip.visibility = View.GONE
+            dockedSubWindow.setBackgroundColor(theme.cardBackground)
+            dockedPlaylistScroll.setBackgroundColor(theme.cardBackground)
+            dockedAlbumArt.background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(theme.surface)
+                setStroke((1 * density).toInt().coerceAtLeast(1), theme.cardStroke)
+            }
+            dockedAlbumArt.setPadding(dp(2), dp(2), dp(2), dp(2))
+            dockedTrackTitle.setTextColor(theme.textPrimary)
+            dockedTrackArtist.setTextColor(theme.textSecondary)
+            dockedTrackDetails.setTextColor(theme.textHighlight)
+            dockedPlaylistFooter.setBackgroundColor(theme.cardBackground)
+            dockedPlaylistFooter.setTextColor(theme.textSecondary)
+
+            dockedSpeedBtn.background = ThemeManager.createButtonDrawable(theme, density)
+            dockedSpeedBtn.setTextColor(theme.buttonText)
+            dockedDiagnosticsBtn.background = ThemeManager.createButtonDrawable(theme, density)
+            dockedDiagnosticsBtn.setTextColor(theme.buttonText)
+            dockedCastBtn?.background = ThemeManager.createButtonDrawable(theme, density)
+            dockedCastBtn?.setTextColor(theme.buttonText)
+
+            updateDockedPlaylist()
+        } else {
+            skinContainer.visibility = View.GONE
+            nonSkinScroll.visibility = View.VISIBLE
+            updateRootPadding()
+            consoleCard.visibility = View.VISIBLE
+            artCard.visibility = View.VISIBLE
+            progressContainer.visibility = View.VISIBLE
+            controlsRow.visibility = View.VISIBLE
+            secondaryRow.visibility = View.VISIBLE
+            volumeRow.visibility = View.VISIBLE
+        }
 
         headerText.setTextColor(theme.textPrimary)
-        headerText.text = when (theme.id) {
-            AppThemeId.WINAMP_CLASSIC, AppThemeId.CUSTOM_WSZ -> "WINAMP"
-            AppThemeId.WMP_GLASS -> "Windows Media Player"
-            AppThemeId.FOOBAR2000 -> "foobar2000"
-            else -> "Now Playing"
-        }
+        headerText.text = "Now Playing"
 
         val font = if (theme.fontMonospace) Typeface.MONOSPACE else Typeface.DEFAULT
         val fontBold = if (theme.fontMonospace) Typeface.MONOSPACE else Typeface.DEFAULT_BOLD
@@ -552,49 +1330,209 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         currentTimeText.typeface = fontBold
         currentTimeText.setTextColor(theme.textPrimary)
 
+        timerLedView.typeface = Typeface.MONOSPACE
+        timerLedView.setTextColor(theme.textPrimary)
+        if (isWinamp) {
+            timerLedView.setShadowLayer(8f * density, 0f, 0f, theme.accentGlow)
+        } else {
+            timerLedView.setShadowLayer(0f, 0f, 0f, 0)
+        }
+
+        stereoBadge.typeface = Typeface.MONOSPACE
+        stereoBadge.setTextColor(theme.textPrimary)
+        kbpsBadge.typeface = Typeface.MONOSPACE
+        kbpsBadge.setTextColor(theme.textPrimary)
+        khzBadge.typeface = Typeface.MONOSPACE
+        khzBadge.setTextColor(theme.textPrimary)
+
         totalTimeText.typeface = fontBold
         totalTimeText.setTextColor(theme.textSecondary)
+
+        consoleCard.background = if (isWinamp) {
+            GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 4 * density
+                setColor(0xFF000000.toInt())
+                setStroke((1 * density).toInt().coerceAtLeast(1), 0xFF353545.toInt())
+            }
+        } else {
+            ThemeManager.createCardDrawable(theme, density)
+        }
 
         artCard.background = ThemeManager.createCardDrawable(theme, density)
 
         // Visualizer styling
         visualizerView.applyTheme(theme)
         visualizerView.visibility = when (theme.id) {
-            AppThemeId.FOOBAR2000 -> View.GONE // Minimalist technical disables spectrum
+            AppThemeId.FOOBAR2000 -> View.GONE
             else -> View.VISIBLE
+        }
+
+        // Seekbar thumb
+        val seekThumb = if (isWinamp) ThemeManager.createSeekThumbDrawable() else null
+        if (seekThumb != null) {
+            progressBar.thumb = seekThumb
         }
 
         // Buttons styling
         prevBtn.setTextColor(theme.textPrimary)
+        stopBtn.setTextColor(theme.textPrimary)
         nextBtn.setTextColor(theme.textPrimary)
         themeBtn.setTextColor(theme.textPrimary)
         playlistBtn.setTextColor(theme.textPrimary)
         openExtBtn.setTextColor(theme.textSecondary)
 
-        playPauseBtn.setTextColor(if (theme.id == AppThemeId.WINAMP_CLASSIC || theme.id == AppThemeId.CUSTOM_WSZ) theme.background else Color.WHITE)
-        playPauseBtn.background = ThemeManager.createButtonDrawable(theme, density, isAccent = true)
+        if (isWinamp) {
+            val prevBmp = ThemeManager.createCButtonDrawable(0)
+            val stopBmp = ThemeManager.createCButtonDrawable(3)
+            val nextBmp = ThemeManager.createCButtonDrawable(4)
+            val shufBmp = ThemeManager.createShuffleDrawable()
+            val repBmp = ThemeManager.createRepeatDrawable()
+
+            if (prevBmp != null) {
+                prevBtn.background = prevBmp
+                prevBtn.text = ""
+                prevBtn.layoutParams = LinearLayout.LayoutParams(dp(46), dp(36))
+            } else {
+                prevBtn.text = "⏮"
+                prevBtn.background = ThemeManager.createButtonDrawable(theme, density)
+                prevBtn.layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
+            }
+
+            if (stopBmp != null) {
+                stopBtn.background = stopBmp
+                stopBtn.text = ""
+                stopBtn.layoutParams = LinearLayout.LayoutParams(dp(46), dp(36))
+            } else {
+                stopBtn.text = "⏹"
+                stopBtn.background = ThemeManager.createButtonDrawable(theme, density)
+                stopBtn.layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
+            }
+
+            if (nextBmp != null) {
+                nextBtn.background = nextBmp
+                nextBtn.text = ""
+                nextBtn.layoutParams = LinearLayout.LayoutParams(dp(46), dp(36))
+            } else {
+                nextBtn.text = "⏭"
+                nextBtn.background = ThemeManager.createButtonDrawable(theme, density)
+                nextBtn.layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
+            }
+
+            if (shufBmp != null) {
+                shuffleBtn.background = shufBmp
+                shuffleBtn.text = ""
+                shuffleBtn.layoutParams = LinearLayout.LayoutParams(dp(50), dp(28)).apply { marginEnd = dp(6) }
+            } else {
+                shuffleBtn.text = "🔀"
+                shuffleBtn.layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(6) }
+            }
+
+            if (repBmp != null) {
+                repeatBtn.background = repBmp
+                repeatBtn.text = ""
+                repeatBtn.layoutParams = LinearLayout.LayoutParams(dp(36), dp(28)).apply { marginStart = dp(6) }
+            } else {
+                repeatBtn.text = "🔁"
+                repeatBtn.layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginStart = dp(6) }
+            }
+
+            val isPlaying = AudioPlayerService.currentService?.isPlaying == true
+            updatePlayPauseButton(isPlaying)
+        } else {
+            prevBtn.text = "⏮"
+            prevBtn.background = ThemeManager.createButtonDrawable(theme, density)
+            prevBtn.layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
+
+            stopBtn.text = "⏹"
+            stopBtn.background = ThemeManager.createButtonDrawable(theme, density)
+            stopBtn.layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(6) }
+
+            nextBtn.text = "⏭"
+            nextBtn.background = ThemeManager.createButtonDrawable(theme, density)
+            nextBtn.layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
+
+            shuffleBtn.text = "🔀"
+            shuffleBtn.layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(6) }
+
+            repeatBtn.text = "🔁"
+            repeatBtn.layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginStart = dp(6) }
+
+            playPauseBtn.setTextColor(Color.WHITE)
+            playPauseBtn.background = ThemeManager.createButtonDrawable(theme, density, isAccent = true)
+            playPauseBtn.text = if (AudioPlayerService.currentService?.isPlaying == true) "⏸" else "▶"
+            playPauseBtn.layoutParams = LinearLayout.LayoutParams(dp(54), dp(54)).apply {
+                marginStart = dp(6)
+                marginEnd = dp(6)
+            }
+        }
 
         speedBtn.setTextColor(theme.buttonText)
         speedBtn.background = ThemeManager.createButtonDrawable(theme, density)
 
-        outputDeviceBtn.setTextColor(theme.buttonText)
-        outputDeviceBtn.background = ThemeManager.createButtonDrawable(theme, density)
-
         updateControlsAppearance()
     }
 
-    private fun showThemeChooser() {
-        val themes = ThemeManager.listPresetThemes(isDark = true)
-        val names = themes.map { "  ${it.name}" }.toMutableList()
-        names.add("📂 Import Winamp (.wsz) Skin…")
+    private fun updatePlayPauseButton(isPlaying: Boolean) {
+        val theme = ThemeManager.getAudioPlayerTheme(this)
+        val isWinamp = (theme.id == AppThemeId.WINAMP_CLASSIC || theme.id == AppThemeId.CUSTOM_WSZ)
+        if (isWinamp) {
+            val sprite = ThemeManager.createCButtonDrawable(if (isPlaying) 2 else 1)
+            if (sprite != null) {
+                playPauseBtn.background = sprite
+                playPauseBtn.text = ""
+                playPauseBtn.layoutParams = LinearLayout.LayoutParams(dp(46), dp(36)).apply {
+                    marginStart = dp(6)
+                    marginEnd = dp(6)
+                }
+                return
+            }
+        }
+        playPauseBtn.text = if (isPlaying) "⏸" else "▶"
+    }
 
-        AlertDialog.Builder(this)
+    private fun showThemeChooser() {
+        val bundledSkins = listOf(
+            "Classic 2.91" to "skins/base-2.91.wsz",
+            "Bento Retro" to "skins/Bento_Classified.wsz",
+            "Classified v3" to "skins/Winamp3_Classified_v5.5.wsz",
+            "Classified v5" to "skins/Winamp5_Classified_v5.5.wsz"
+        )
+        val names = mutableListOf<String>()
+        bundledSkins.forEach { (name, _) -> names.add("⚡ $name") }
+        names.add("🎨 Windows Media Player (Aero)")
+        names.add("🎨 foobar2000 (Minimalist)")
+        names.add("🎨 Modern Dark")
+        names.add("📂 Import Skin (.wsz)…")
+
+        ThemeManager.createDialogBuilder(this)
             .setTitle("Select Audio Interface Theme")
             .setItems(names.toTypedArray()) { _, which ->
-                if (which < themes.size) {
-                    ThemeManager.setTheme(this, themes[which])
-                } else {
-                    promptImportWszSkin()
+                when {
+                    which < bundledSkins.size -> {
+                        val (_, assetPath) = bundledSkins[which]
+                        if (assetPath == "skins/base-2.91.wsz") {
+                            ThemeManager.ensureBundledSkinLoaded(this)
+                            val baseTheme = ThemeManager.bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
+                            ThemeManager.setAudioPlayerSkin(this, baseTheme, ThemeManager.bundledSkinArtwork, prefKey = AppThemeId.WINAMP_CLASSIC.name)
+                        } else {
+                            ThemeManager.loadBundledSkin(this, assetPath)?.let { parsed ->
+                                ThemeManager.setAudioPlayerSkin(this, parsed.themeColors, parsed.artwork, prefKey = assetPath)
+                            }
+                        }
+                    }
+                    which == bundledSkins.size -> {
+                        ThemeManager.setAudioPlayerSkin(this, ThemeColors.WMP_GLASS, emptyMap(), prefKey = AppThemeId.WMP_GLASS.name)
+                    }
+                    which == bundledSkins.size + 1 -> {
+                        ThemeManager.setAudioPlayerSkin(this, ThemeColors.FOOBAR2000, emptyMap(), prefKey = AppThemeId.FOOBAR2000.name)
+                    }
+                    which == bundledSkins.size + 2 -> {
+                        ThemeManager.setAudioPlayerSkin(this, ThemeColors.modern(true), emptyMap(), prefKey = AppThemeId.MODERN.name)
+                    }
+                    else -> {
+                        promptImportWszSkin()
+                    }
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -611,9 +1549,9 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             addView(input)
         }
 
-        AlertDialog.Builder(this)
-            .setTitle("Import Winamp (.wsz) Skin")
-            .setMessage("Enter the local path or URI of a Winamp .wsz / .zip skin file:")
+        ThemeManager.createDialogBuilder(this)
+            .setTitle("Import Skin (.wsz)")
+            .setMessage("Enter the local path or URI of a .wsz / .zip skin file:")
             .setView(container)
             .setPositiveButton("Import") { _, _ ->
                 val path = input.text.toString().trim()
@@ -621,6 +1559,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                     val skinUri = if (path.startsWith("/")) Uri.fromFile(java.io.File(path)) else Uri.parse(path)
                     val imported = ThemeManager.importSkin(this, skinUri)
                     if (imported != null) {
+                        ThemeManager.setAudioPlayerSkin(this, imported, ThemeManager.skinArtwork, prefKey = AppThemeId.CUSTOM_WSZ.name)
                         Toast.makeText(this, "Skin '${imported.name}' applied!", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(this, "Failed to parse skin file", Toast.LENGTH_SHORT).show()
@@ -633,22 +1572,99 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     override fun onThemeChanged(theme: ThemeColors) {
         runOnUiThread {
-            applyTheme(theme)
+            val audioTheme = ThemeManager.getAudioPlayerTheme(this)
+            applyTheme(audioTheme)
+            if (::winampMainWindowView.isInitialized) {
+                winampMainWindowView.requestLayout()
+                winampMainWindowView.invalidate()
+            }
+            if (::dockedTitleBarView.isInitialized) {
+                dockedTitleBarView.requestLayout()
+                dockedTitleBarView.invalidate()
+            }
+            if (::dockedLeftBorder.isInitialized) {
+                dockedLeftBorder.requestLayout()
+                dockedLeftBorder.invalidate()
+            }
+            if (::dockedRightBorder.isInitialized) {
+                dockedRightBorder.requestLayout()
+                dockedRightBorder.invalidate()
+            }
+            if (::dockedBottomBarView.isInitialized) {
+                dockedBottomBarView.requestLayout()
+                dockedBottomBarView.invalidate()
+            }
+            updateTrackView(AudioPlayerService.currentService?.currentTrack)
+            updateControlsAppearance()
+            updateDockedPlaylist()
         }
     }
 
     private fun updateUIFromService(service: AudioPlayerService) {
         val track = service.currentTrack
         updateTrackView(track)
-        playPauseBtn.text = if (service.isPlaying) "⏸" else "▶"
+        val isPlaying = if (CastManager.isCasting) CastManager.isRemotePlaying else service.isPlaying
+        updatePlayPauseButton(isPlaying)
         loadingIndicator.visibility = if (service.isLoading) View.VISIBLE else View.GONE
-        visualizerView.isPlaying = service.isPlaying
+        visualizerView.isPlaying = isPlaying
+
+        if (::winampMainWindowView.isInitialized) {
+            winampMainWindowView.isPlaying = isPlaying
+            winampMainWindowView.isPaused = (!isPlaying && (if (CastManager.isCasting) true else service.currentPosition > 0))
+            winampMainWindowView.currentPositionMs = service.currentPosition
+            winampMainWindowView.durationMs = service.currentDuration
+            val cur = service.currentTrack
+            val displayTitle = if (cur != null) {
+                if (!cur.artist.isNullOrBlank() && cur.artist != "Unknown Artist") "${cur.artist} - ${cur.title}" else cur.title
+            } else "Infinifolder Media"
+            winampMainWindowView.trackTitle = displayTitle
+            winampMainWindowView.isShuffle = service.isShuffleEnabled
+            winampMainWindowView.isRepeat = (service.repeatMode != RepeatMode.NONE)
+            winampMainWindowView.volume = service.volume
+            winampMainWindowView.balance = service.balance
+
+            val rep = com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.currentReport
+            val curTrk = service.currentTrack
+            val isBrRel = rep?.isBitrateRelevant ?: (curTrk?.isBitrateRelevant ?: true)
+            val kbps = if (isBrRel) (rep?.bitrateKbps?.takeIf { it > 0 } ?: curTrk?.bitrateKbps) else null
+            val isSrRel = rep?.isSampleRateRelevant ?: true
+            val sampleRate = if (isSrRel) (rep?.sampleRate?.takeIf { it > 0 } ?: curTrk?.sampleRateHz) else null
+            val ch = rep?.channels?.takeIf { it > 0 } ?: curTrk?.channels
+
+            winampMainWindowView.channels = ch
+            winampMainWindowView.khz = sampleRate?.let { (it / 1000f).toInt() }
+            winampMainWindowView.kbps = kbps
+        }
+
         updateControlsAppearance()
+        updateTimeDisplay()
+        updateDockedPlaylist()
+    }
+
+    private fun updateTimeDisplay() {
+        val s = AudioPlayerService.currentService
+        val pos = s?.currentPosition ?: 0
+        val dur = s?.currentDuration ?: 0
+        val text = if (showRemainingTime && dur > 0) {
+            val rem = (dur - pos).coerceAtLeast(0)
+            "-${formatTime(rem)}"
+        } else {
+            formatTime(pos)
+        }
+        currentTimeText.text = text
+        if (::timerLedView.isInitialized) {
+            timerLedView.text = text
+        }
     }
 
     private fun updateTrackView(track: AudioTrack?) {
         if (track == null) return
-        trackTitleText.text = track.title
+        val displayTitle = if (!track.artist.isNullOrBlank() && track.artist != "Unknown Artist") {
+            "${track.artist} - ${track.title}"
+        } else {
+            track.title
+        }
+        trackTitleText.text = displayTitle
         val sub = listOfNotNull(track.artist, track.album).filter { it.isNotBlank() }.joinToString(" • ")
         trackArtistText.text = if (sub.isNotBlank()) sub else "Infinifolder Media"
 
@@ -660,8 +1676,82 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             albumArtView.setBackgroundColor(0xFF2A2A2A.toInt())
         }
 
+        val rep = com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.currentReport
+        val isBrRel = rep?.isBitrateRelevant ?: (track.isBitrateRelevant)
+        val kbps = if (isBrRel) (rep?.bitrateKbps?.takeIf { it > 0 } ?: track.bitrateKbps) else null
+        val isSrRel = rep?.isSampleRateRelevant ?: true
+        val sampleRate = if (isSrRel) (rep?.sampleRate?.takeIf { it > 0 } ?: track.sampleRateHz) else null
+        val ch = rep?.channels?.takeIf { it > 0 } ?: track.channels
+
+        stereoBadge.text = when {
+            ch == 1 -> "MONO"
+            ch != null && ch >= 2 -> "STEREO"
+            else -> "--"
+        }
+        khzBadge.text = if (sampleRate != null && sampleRate > 0) "${(sampleRate / 1000f).toInt()} KHZ" else "--"
+        kbpsBadge.text = if (kbps != null && kbps > 0) "$kbps KBPS" else "--"
+
+        val theme = ThemeManager.getAudioPlayerTheme(this)
+        stereoBadge.setTextColor(if (ch != null && ch > 0) theme.textPrimary else theme.textSecondary)
+        khzBadge.setTextColor(if (sampleRate != null && sampleRate > 0) theme.textPrimary else theme.textSecondary)
+        kbpsBadge.setTextColor(if (kbps != null && kbps > 0) theme.textPrimary else theme.textSecondary)
+
         val durSec = (track.durationMs / 1000).coerceAtLeast(0)
-        technicalInfoText.text = "44.1 kHz • Stereo • ${track.title.substringAfterLast('.', "Audio").uppercase()} • ${durSec}s"
+        val ext = track.title.substringAfterLast('.', "").uppercase()
+        val engine = rep?.engineUsed ?: ext
+        val parts = mutableListOf<String>()
+        if (ext.isNotEmpty()) parts.add(ext)
+        if (sampleRate != null && sampleRate > 0) parts.add("${sampleRate / 1000f} kHz")
+        if (kbps != null && kbps > 0) parts.add("$kbps kbps")
+        if (ch != null && ch > 0) parts.add(if (ch == 1) "Mono" else if (ch == 2) "Stereo" else "${ch}ch")
+        if (engine.isNotBlank() && engine != ext) parts.add(engine)
+        parts.add("${durSec}s")
+        val health = if (rep != null && rep.healthStatus != com.infinifolder.audio.diagnostics.AudioHealthStatus.HEALTHY) " • ${rep.healthStatus}" else ""
+        technicalInfoText.text = parts.joinToString(" • ") + health
+
+        if (track != null) {
+            if (::dockedAlbumArt.isInitialized) {
+                if (track.artwork != null) {
+                    dockedAlbumArt.setImageBitmap(track.artwork)
+                } else {
+                    dockedAlbumArt.setImageResource(android.R.drawable.ic_media_play)
+                }
+            }
+            if (::dockedTrackTitle.isInitialized) {
+                dockedTrackTitle.text = displayTitle
+            }
+            if (::dockedTrackArtist.isInitialized) {
+                dockedTrackArtist.text = track.artist ?: track.album ?: "Infinifolder Media"
+            }
+            if (::dockedTrackDetails.isInitialized) {
+                val khzStr = if (sampleRate != null && sampleRate > 0) "${(sampleRate / 1000f).toInt()} kHz" else "--"
+                val chStr = when {
+                    ch == 1 -> "Mono"
+                    ch != null && ch >= 2 -> "Stereo"
+                    else -> "--"
+                }
+                val brStr = if (kbps != null && kbps > 0) "$kbps kbps" else "--"
+                dockedTrackDetails.text = "$khzStr • $chStr • $brStr • ${rep?.engineUsed ?: "Audio"} • ${durSec}s"
+            }
+            if (::winampMainWindowView.isInitialized) {
+                winampMainWindowView.trackTitle = displayTitle
+                winampMainWindowView.durationMs = track.durationMs.toInt()
+                winampMainWindowView.channels = ch
+                winampMainWindowView.khz = sampleRate?.let { (it / 1000f).toInt() }
+                winampMainWindowView.kbps = kbps
+            }
+        }
+        updateDockedPlaylist()
+    }
+
+    private fun showDiagnosticsDialog() {
+        val rep = com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.currentReport
+        val message = rep?.formattedSummary() ?: "No active audio diagnostics recorded yet."
+        ThemeManager.createDialogBuilder(this)
+            .setTitle("Audio Playback Diagnostics")
+            .setMessage(message)
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     /** Emoji ignore text color, so active state is shown with an accent pill background + full opacity. */
@@ -702,13 +1792,17 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             }
         }
         setToggleState(repeatBtn, s.repeatMode != RepeatMode.NONE)
-        speedBtn.text = String.format(Locale.US, "%.2fx", s.playbackSpeed)
+        val speedStr = String.format(Locale.US, "%.2fx", s.playbackSpeed)
+        speedBtn.text = speedStr
+        if (::dockedSpeedBtn.isInitialized) {
+            dockedSpeedBtn.text = speedStr
+        }
     }
 
     private fun showSpeedPicker() {
         val speeds = arrayOf("0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x")
         val values = floatArrayOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
-        AlertDialog.Builder(this)
+        ThemeManager.createDialogBuilder(this)
             .setTitle("Playback Speed")
             .setItems(speeds) { _, which ->
                 AudioPlayerService.currentService?.setSpeed(values[which])
@@ -733,10 +1827,9 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                 }
             }.toTypedArray()
 
-            AlertDialog.Builder(this)
+            ThemeManager.createDialogBuilder(this)
                 .setTitle("Audio Output Routing")
                 .setItems(names) { _, which ->
-                    outputDeviceBtn.text = "🔊 ${names[which]}"
                     Toast.makeText(this, "Routing to: ${names[which]}", Toast.LENGTH_SHORT).show()
                 }
                 .setPositiveButton("System Sound Settings") { _, _ ->
@@ -749,8 +1842,8 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         } else {
             val isSpeaker = audioManager.isSpeakerphoneOn
             audioManager.isSpeakerphoneOn = !isSpeaker
-            outputDeviceBtn.text = if (!isSpeaker) "🔊 Speaker ON" else "🎧 Headset/Normal"
-            Toast.makeText(this, outputDeviceBtn.text, Toast.LENGTH_SHORT).show()
+            val label = if (!isSpeaker) "🔊 Speaker ON" else "🎧 Headset/Normal"
+            Toast.makeText(this, label, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -759,10 +1852,11 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         val list = synchronized(s.playlist) { ArrayList(s.playlist) }
         val titles = list.mapIndexed { idx, trk ->
             val mark = if (idx == s.currentIndex) "▶ " else "   "
-            "$mark${trk.title}"
+            val displayTitle = if (!trk.artist.isNullOrBlank() && trk.artist != "Unknown Artist") "${trk.artist} - ${trk.title}" else trk.title
+            "$mark${idx + 1}. $displayTitle"
         }.toTypedArray()
 
-        AlertDialog.Builder(this)
+        ThemeManager.createDialogBuilder(this)
             .setTitle("Playlist (${titles.size} tracks)")
             .setItems(titles) { _, which ->
                 s.jumpTo(which)
@@ -785,33 +1879,69 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     }
 
     // AudioPlayerListener Callbacks
+    override fun onAudioSessionIdChanged(audioSessionId: Int) {
+        runOnUiThread {
+            visualizerBridge?.attach(audioSessionId)
+        }
+    }
+
     override fun onTrackChanged(track: AudioTrack?, index: Int, total: Int) {
         runOnUiThread {
             updateTrackView(track)
             updateControlsAppearance()
-            currentTimeText.text = "00:00"
+            updateTimeDisplay()
             totalTimeText.text = formatTime(track?.durationMs?.toInt() ?: 0)
             progressBar.progress = 0
+            if (::winampMainWindowView.isInitialized) {
+                val cur = track ?: AudioPlayerService.currentService?.currentTrack
+                val displayTitle = if (cur != null) {
+                    if (!cur.artist.isNullOrBlank() && cur.artist != "Unknown Artist") "${cur.artist} - ${cur.title}" else cur.title
+                } else "Infinifolder Media"
+                winampMainWindowView.trackTitle = displayTitle
+                winampMainWindowView.durationMs = track?.durationMs?.toInt() ?: 0
+                winampMainWindowView.currentPositionMs = 0
+
+                val rep = com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.currentReport
+                val isBrRel = rep?.isBitrateRelevant ?: (cur?.isBitrateRelevant ?: true)
+                val kbps = if (isBrRel) (rep?.bitrateKbps?.takeIf { it > 0 } ?: cur?.bitrateKbps) else null
+                val isSrRel = rep?.isSampleRateRelevant ?: true
+                val sampleRate = if (isSrRel) (rep?.sampleRate?.takeIf { it > 0 } ?: cur?.sampleRateHz) else null
+                val ch = rep?.channels?.takeIf { it > 0 } ?: cur?.channels
+
+                winampMainWindowView.channels = ch
+                winampMainWindowView.khz = sampleRate?.let { (it / 1000f).toInt() }
+                winampMainWindowView.kbps = kbps
+            }
+            updateDockedPlaylist()
         }
     }
 
     override fun onPlaybackStateChanged(isPlaying: Boolean, isLoading: Boolean) {
         runOnUiThread {
-            playPauseBtn.text = if (isPlaying) "⏸" else "▶"
+            val effectivePlaying = if (CastManager.isCasting) CastManager.isRemotePlaying else isPlaying
+            updatePlayPauseButton(effectivePlaying)
             loadingIndicator.visibility = if (isLoading) View.VISIBLE else View.GONE
-            visualizerView.isPlaying = isPlaying
+            visualizerView.isPlaying = effectivePlaying
+            if (::winampMainWindowView.isInitialized) {
+                winampMainWindowView.isPlaying = effectivePlaying
+                winampMainWindowView.isPaused = (!effectivePlaying && ((AudioPlayerService.currentService?.currentPosition ?: 0) > 0 || CastManager.isCasting))
+            }
         }
     }
 
     override fun onProgressUpdated(currentPositionMs: Int, durationMs: Int) {
         if (isUserSeeking) return
         runOnUiThread {
-            currentTimeText.text = formatTime(currentPositionMs)
+            updateTimeDisplay()
             totalTimeText.text = formatTime(durationMs)
             if (durationMs > 0) {
                 progressBar.progress = ((currentPositionMs.toLong() * 1000) / durationMs).toInt()
             } else {
                 progressBar.progress = 0
+            }
+            if (::winampMainWindowView.isInitialized) {
+                winampMainWindowView.currentPositionMs = currentPositionMs
+                winampMainWindowView.durationMs = durationMs
             }
         }
     }
@@ -819,6 +1949,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     override fun onPlaylistUpdated(playlist: List<AudioTrack>) {
         runOnUiThread {
             updateControlsAppearance()
+            updateDockedPlaylist()
         }
     }
 
@@ -835,21 +1966,252 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     override fun onPlaybackComplete() {
         runOnUiThread {
-            finish()
+            updatePlayPauseButton(false)
+            visualizerView.isPlaying = false
+            progressBar.progress = 1000
+            currentTimeText.text = totalTimeText.text
+            if (::timerLedView.isInitialized) {
+                timerLedView.text = totalTimeText.text
+            }
         }
     }
 
-    private fun formatTime(ms: Int): String {
+    private fun formatTime(ms: Long): String {
         val totalSecs = (ms / 1000).coerceAtLeast(0)
-        val mins = totalSecs / 60
+        val hours = totalSecs / 3600
+        val mins = (totalSecs % 3600) / 60
         val secs = totalSecs % 60
-        return String.format(Locale.US, "%02d:%02d", mins, secs)
+        return if (hours > 0) {
+            String.format(Locale.US, "%d:%02d:%02d", hours, mins, secs)
+        } else {
+            String.format(Locale.US, "%02d:%02d", mins, secs)
+        }
     }
+
+    private fun formatTime(ms: Int): String = formatTime(ms.toLong())
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
+    override fun onDebugDumpFinished() {
+        // Refresh UI state or post status if necessary
+    }
+
+    override fun debugDumpState(): String {
+        val rep = com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.currentReport
+        return rep?.formattedSummary() ?: "No active audio diagnostics recorded"
+    }
+
+    private fun formatCompactButton(
+        btn: Button,
+        title: String,
+        textSizeSp: Float = 11f,
+        padH: Int = 8,
+        padV: Int = 3
+    ) {
+        btn.text = title
+        btn.textSize = textSizeSp
+        btn.minHeight = 0
+        btn.minimumHeight = 0
+        btn.minWidth = 0
+        btn.minimumWidth = 0
+        btn.includeFontPadding = false
+        btn.isAllCaps = false
+        btn.gravity = Gravity.CENTER
+        btn.setPadding(dp(padH), dp(padV), dp(padH), dp(padV))
+    }
+
+    private fun updateCastButtonState() {
+        val casting = CastManager.isCasting
+        val dev = CastManager.activeDevice
+        if (::castBtn.isInitialized) {
+            castBtn.text = if (casting) "📻" else "📡"
+        }
+        dockedCastBtn?.let {
+            it.text = if (casting) "📻 ${dev?.name?.take(10) ?: "Casting"}" else "📡 Cast"
+            it.includeFontPadding = false
+            it.isAllCaps = false
+        }
+    }
+
+    private fun launchAudioOutput() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val panelIntent = Intent("android.settings.panel.action.MEDIA_OUTPUT").apply {
+                putExtra("com.android.settings.panel.extra.PACKAGE_NAME", packageName)
+                val token = AudioPlayerService.currentService?.mediaSession?.sessionToken
+                if (token != null) {
+                    putExtra("key_media_session_token", token)
+                }
+            }
+            if (packageManager.resolveActivity(panelIntent, 0) != null) {
+                try {
+                    startActivity(panelIntent)
+                    return
+                } catch (_: Exception) {}
+            }
+        }
+        showOutputRoutingDialog()
+    }
+
+    private fun showCastDialog() {
+        val items = mutableListOf<String>()
+        val actions = mutableListOf<() -> Unit>()
+
+        // 1. Audio Output (Google Cast speakers, Nest Audio, Bluetooth, Headphones)
+        items.add("📱 Audio Output Switcher (Google Cast & Bluetooth)")
+        actions.add {
+            launchAudioOutput()
+        }
+
+        // 2. Discovered Network Renderers (DLNA / UPnP audio devices)
+        val discovered = CastManager.getDiscoveredDevices()
+        for (dev in discovered) {
+            val isCurrent = (CastManager.activeDevice?.id == dev.id)
+            val check = if (isCurrent) "✓ " else ""
+            items.add("${check}📡 ${dev.name} (${dev.protocol.name})")
+            actions.add {
+                CastManager.connectToDevice(this, dev) { success ->
+                    runOnUiThread {
+                        if (success) {
+                            Toast.makeText(this, "Connected to ${dev.name}", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(this, "Failed to connect to ${dev.name}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. MediaRouter Live Audio Routes
+        val mediaRouter = getSystemService(Context.MEDIA_ROUTER_SERVICE) as? android.media.MediaRouter
+        if (mediaRouter != null) {
+            val routeCount = mediaRouter.routeCount
+            val selectedRoute = try {
+                mediaRouter.getSelectedRoute(android.media.MediaRouter.ROUTE_TYPE_LIVE_AUDIO)
+            } catch (_: Exception) { null }
+            for (i in 0 until routeCount) {
+                val route = mediaRouter.getRouteAt(i) ?: continue
+                val name = route.name?.toString()?.trim() ?: continue
+                if (name.isEmpty()) continue
+                val isSelected = (route == selectedRoute)
+                val check = if (isSelected) "✓ " else ""
+                val cat = route.category?.name?.toString()?.let { " ($it)" } ?: ""
+                items.add("${check}🔊 $name$cat")
+                actions.add {
+                    try {
+                        mediaRouter.selectRoute(route.supportedTypes, route)
+                        Toast.makeText(this, "Routed to $name", Toast.LENGTH_SHORT).show()
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+
+        // 4. Disconnect active cast device if connected
+        if (CastManager.isCasting) {
+            items.add("⏹ Disconnect from ${CastManager.activeDevice?.name ?: "Cast"}")
+            actions.add {
+                CastManager.disconnect()
+                Toast.makeText(this, "Disconnected cast", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // 5. Direct Speaker & Audio Routing
+        items.add("🎧 Output Routing (Speaker / Headphones)")
+        actions.add {
+            showOutputRoutingDialog()
+        }
+
+        // 6. Web Browser & Smart TV Audio Stream
+        items.add("🌐 Web Player & Wi-Fi Audio Stream")
+        actions.add {
+            showWebPlayerDialog()
+        }
+
+        ThemeManager.createDialogBuilder(this)
+            .setTitle("Audio Cast & Streaming")
+            .setItems(items.toTypedArray()) { _, which ->
+                if (which in actions.indices) {
+                    actions[which].invoke()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showWebPlayerDialog() {
+        val server = CastManager.ensureServerStarted(this)
+        val webUrl = server.getWebPlayerUrl()
+        val streamUrl = server.getStreamUrl()
+
+        if (webUrl == null || streamUrl == null) {
+            Toast.makeText(this, "Could not determine local IP address. Ensure Wi-Fi is connected.", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val message = "Open this URL in any web browser, Smart TV, or media player on your Wi-Fi network:\n\n" +
+                "Web Player:\n$webUrl\n\n" +
+                "Direct Stream:\n$streamUrl\n\n" +
+                "(Incompatible audio formats are automatically transcoded to PCM WAV on-the-fly)"
+
+        ThemeManager.createDialogBuilder(this)
+            .setTitle("Network Audio Player")
+            .setMessage(message)
+            .setPositiveButton("Copy Web URL") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("Web Player URL", webUrl))
+                Toast.makeText(this, "Web Player URL copied to clipboard", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Open in Browser") { _, _ ->
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(webUrl)))
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Error opening browser: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Done", null)
+            .show()
+    }
+
+    override fun onCastStateChanged(isCasting: Boolean, device: CastDevice?) {
+        runOnUiThread {
+            updateCastButtonState()
+            val playing = if (isCasting) CastManager.isRemotePlaying else (AudioPlayerService.currentService?.isPlaying == true)
+            updatePlayPauseButton(playing)
+            if (::winampMainWindowView.isInitialized) {
+                winampMainWindowView.isPlaying = playing
+            }
+            if (isCasting && device != null) {
+                Toast.makeText(this, "Connected to ${device.name}", Toast.LENGTH_SHORT).show()
+            } else if (!isCasting) {
+                Toast.makeText(this, "Cast disconnected", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    override fun onDiscoveredDevicesUpdated(devices: List<CastDevice>) {
+        // Background device discovery updated
+    }
+
+    override fun onCastPlaybackStateChanged(isPlaying: Boolean) {
+        runOnUiThread {
+            if (CastManager.isCasting) {
+                updatePlayPauseButton(isPlaying)
+                if (::winampMainWindowView.isInitialized) {
+                    winampMainWindowView.isPlaying = isPlaying
+                }
+                visualizerView.isPlaying = isPlaying
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        returnToFileManager()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        visualizerBridge?.detach()
+        CastManager.removeListener(this)
         AudioPlayerService.removeListener(this)
         ThemeManager.removeListener(this)
         // Back/close only hides the player: the service keeps the track (playing or paused) available

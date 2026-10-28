@@ -22,6 +22,13 @@ object WinampSkinParser {
         val artwork: Map<String, ByteArray> = emptyMap()
     )
 
+    val SUPPORTED_ENTRIES = setOf(
+        "viscolor.txt", "pledit.txt",
+        "main.bmp", "gen.bmp", "cbuttons.bmp", "titlebar.bmp",
+        "posbar.bmp", "volume.bmp", "shufrep.bmp", "text.bmp",
+        "numbers.bmp", "monoster.bmp", "playpaus.bmp", "pledit.bmp"
+    )
+
     fun parseSkin(context: Context, uri: Uri, skinName: String? = null): ParsedSkin? {
         val stream = try {
             MediaSourceAdapter.openStream(context, uri)
@@ -45,7 +52,7 @@ object WinampSkinParser {
                 while (entry != null) {
                     if (++entryCount > 512) return null
                     val entryName = entry.name.replace('\\', '/').substringAfterLast('/').lowercase(Locale.ROOT)
-                    if (!entry.isDirectory && entryName in setOf("viscolor.txt", "pledit.txt", "main.bmp", "gen.bmp", "cbuttons.bmp", "titlebar.bmp")) {
+                    if (!entry.isDirectory && entryName in SUPPORTED_ENTRIES) {
                         val bytes = readEntry(zis)
                         expandedBytes += bytes.size
                         if (expandedBytes > 24 * 1024 * 1024) return null

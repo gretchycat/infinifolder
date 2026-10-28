@@ -2,15 +2,21 @@
     <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">#52644F</item>
-        <item name="android:navigationBarColor">#F5F4EF</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
         <item name="android:windowLightNavigationBar">true</item>
-        <item name="android:statusBarColor">#F5F4EF</item>
+        <item name="android:statusBarColor">#FFFFFF</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:alertDialogTheme">@android:style/Theme.Material.Light.Dialog.Alert</item>
+        <item name="android:dialogTheme">@android:style/Theme.Material.Light.Dialog</item>
     </style>
     <style name="AppTheme.Dark" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">#B8CCAF</item>
-        <item name="android:navigationBarColor">#171A16</item>
-        <item name="android:statusBarColor">#171A16</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:alertDialogTheme">@android:style/Theme.Material.Dialog.Alert</item>
+        <item name="android:dialogTheme">@android:style/Theme.Material.Dialog</item>
     </style>
 </resources>

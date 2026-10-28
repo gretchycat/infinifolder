@@ -245,7 +245,7 @@ object FileOperations {
                 requiresNativeLinkPreservation = true
                 return entry // Relink the containing inode tree; never follow or recreate these links.
             }
-            if (!entry.metadata.canRead && !(partialRecovery && entry.metadata.partialRecoveryAvailable)) {
+            if (!entry.metadata.canRead && !(partialRecovery && entry.metadata.partialRecoveryAvailable) && entry.ref.providerId != "apps") {
                 skipped(entry, entry.metadata.readError ?: "source cannot be read")
                 return null
             }

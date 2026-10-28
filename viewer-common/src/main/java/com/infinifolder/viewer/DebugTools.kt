@@ -219,11 +219,25 @@ open class ViewerActivity : Activity() {
         return super.dispatchKeyEvent(event)
     }
 
+    open fun returnToFileManager() {
+        val intent = android.content.Intent().apply {
+            setClassName(this@ViewerActivity, "com.infinifolder.MainActivity")
+            flags = android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val launched = runCatching {
+            startActivity(intent)
+            true
+        }.getOrDefault(false)
+
+        if (!launched) {
+            finish()
+        }
+    }
+
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        // Pop this viewer; the browser (or independent host) remains underneath.
-        // Editor overrides still handle unsaved changes before reaching here.
-        finish()
+        // Return back to the file manager and background the running viewer
+        returnToFileManager()
     }
 
     override fun onDestroy() {

@@ -1,0 +1,29 @@
+#EXTM3U
+#EXTINF:2,InfiniFolder - C Major Piano Chord (WAV)
+../audio/c_major_piano.wav
+#EXTINF:2,InfiniFolder - C Major Piano Chord (FLAC)
+../audio/c_major_piano.flac
+#EXTINF:2,InfiniFolder - C Major Piano Chord (MP3)
+../audio/c_major_piano.mp3
+#EXTINF:2,InfiniFolder - C Major Piano Chord (OGG)
+../audio/c_major_piano.ogg
+#EXTINF:2,InfiniFolder - C Major Piano Chord (Opus)
+../audio/c_major_piano.opus
+#EXTINF:2,InfiniFolder - C Major Piano Chord (AAC M4A)
+../audio/c_major_piano.m4a
+#EXTINF:2,InfiniFolder - C Major Piano Chord (ALAC)
+../audio/c_major_piano.alac
+#EXTINF:2,InfiniFolder - C Major Piano Chord (MP2)
+../audio/c_major_piano.mp2
+#EXTINF:2,InfiniFolder - C Major Piano Chord (ProTracker MOD)
+../audio/c_major_piano.mod
+#EXTINF:2,InfiniFolder - C Major Piano Chord (ScreamTracker S3M)
+../audio/c_major_piano.s3m
+#EXTINF:2,InfiniFolder - C Major Piano Chord (FastTracker XM)
+../audio/c_major_piano.xm
+#EXTINF:2,InfiniFolder - C Major Piano Chord (ImpulseTracker IT)
+../audio/c_major_piano.it
+#EXTINF:2,InfiniFolder - C Major Piano Chord (MIDI)
+../audio/c_major_piano.mid
+#EXTINF:2,InfiniFolder - C Major Piano Chord (WMA)
+../audio/c_major_piano.wma

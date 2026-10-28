@@ -92,7 +92,7 @@ data class ThemeColors(
         // 2. Winamp Classic / XMMS Theme
         val WINAMP_CLASSIC = ThemeColors(
             id = AppThemeId.WINAMP_CLASSIC,
-            name = "Winamp Classic / XMMS",
+            name = "Classic Retro Skin",
             description = "Brushed metal chassis with neon green & amber LED matrix",
             background = 0xFF1B1B22.toInt(),
             surface = 0xFF262630.toInt(),

@@ -9,3 +9,9 @@ local.properties
 # Python fixture-generator caches
 __pycache__/
 *.py[cod]
+
+# Temporary loose files in repository root
+/*.zip
+/*.ZIP
+/*.bin
+/*.torrent

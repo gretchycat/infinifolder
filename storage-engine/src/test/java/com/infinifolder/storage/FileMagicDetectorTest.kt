@@ -45,6 +45,18 @@ class FileMagicDetectorTest {
         val gifResult = FileMagicDetector.detect(gifFile)
         assertNotNull(gifResult)
         assertEquals("image/gif", gifResult!!.mimeType)
+
+        val qoiFile = tempFolder.newFile("test_qoi.bin")
+        qoiFile.writeBytes("qoif\u0000\u0000\u0000@\u0000\u0000\u0000@\u0004\u0000".toByteArray(StandardCharsets.ISO_8859_1))
+        assertEquals("image/x-qoi", FileMagicDetector.detect(qoiFile)?.mimeType)
+
+        val psdFile = tempFolder.newFile("test_psd.bin")
+        psdFile.writeBytes("8BPS\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000".toByteArray(StandardCharsets.ISO_8859_1))
+        assertEquals("image/vnd.adobe.photoshop", FileMagicDetector.detect(psdFile)?.mimeType)
+
+        val exrFile = tempFolder.newFile("test_exr.bin")
+        exrFile.writeBytes(byteArrayOf(0x76, 0x2F, 0x31, 0x01, 0x02, 0x00, 0x00, 0x00))
+        assertEquals("image/x-exr", FileMagicDetector.detect(exrFile)?.mimeType)
     }
 
     @Test

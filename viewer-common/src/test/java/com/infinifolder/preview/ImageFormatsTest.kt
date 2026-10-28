@@ -19,7 +19,13 @@ class ImageFormatsTest {
     @Test fun genericMimeTypesFallBackToExtension() {
         listOf(
             "a.HEIC", "b.heif", "c.avif", "d.dng", "e.CR2", "f.webp", "g.ico", "h.wbmp", "i.apng",
-            "j.svg", "k.svgz", "l.jxl", "m.tga", "n.icb", "o.vda", "p.vst"
+            "j.svg", "k.svgz", "l.jxl", "m.tga", "n.icb", "o.vda", "p.vst",
+            "q.tif", "r.tiff", "s.jp2", "t.j2k", "u.qoi", "v.ff", "w.ppm", "x.pam", "y.pfm",
+            "z.xbm", "aa.xpm", "ab.xwd", "ac.pcx", "ad.dcx", "ae.psd", "af.psb", "ag.ora", "ah.kra",
+            "ai.xcf", "aj.ase", "ak.aseprite", "al.iff", "am.ilbm", "an.lbm", "ao.neo", "ap.pi1",
+            "aq.scr", "ar.kla", "as.koa", "at.icns", "au.pntg", "av.pct", "aw.pict", "ax.ras",
+            "ay.sgi", "az.pdb", "ba.otb", "bb.sixel", "bc.hdr", "bd.exr", "be.dds", "bf.ktx",
+            "bg.fits", "bh.dcm", "bi.wmf", "bj.wmz", "bk.ps", "bl.eps", "bm.ept", "bn.ans"
         ).forEach {
             assertTrue(it, ImageFormats.isImage(file(it, "application/octet-stream")))
         }

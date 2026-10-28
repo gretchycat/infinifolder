@@ -16,7 +16,7 @@ class DirectoryIconResolverTest {
     private fun entry(name: String, mimeType: String, isDirectory: Boolean = false): ResourceEntry =
         ResourceEntry(
             ref = ResourceRef("test", name),
-            uri = Uri.EMPTY,
+            uri = android.net.TestUri("content://test/$name"),
             metadata = ResourceMetadata(
                 name = name,
                 mimeType = mimeType,

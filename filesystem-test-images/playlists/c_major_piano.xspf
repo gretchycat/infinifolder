@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<playlist version="1" xmlns="http://xspf.org/ns/0/">
+  <title>InfiniFolder Audio Fixtures</title>
+  <trackList>
+    <track>
+      <location>../audio/c_major_piano.wav</location>
+      <title>C Major Piano Chord (WAV)</title>
+    </track>
+    <track>
+      <location>../audio/c_major_piano.flac</location>
+      <title>C Major Piano Chord (FLAC)</title>
+    </track>
+    <track>
+      <location>../audio/c_major_piano.mp3</location>
+      <title>C Major Piano Chord (MP3)</title>
+    </track>
+    <track>
+      <location>../audio/c_major_piano.alac</location>
+      <title>C Major Piano Chord (ALAC)</title>
+    </track>
+    <track>
+      <location>../audio/c_major_piano.mp2</location>
+      <title>C Major Piano Chord (MP2)</title>
+    </track>
+    <track>
+      <location>../audio/c_major_piano.mod</location>
+      <title>C Major Piano Chord (MOD)</title>
+    </track>
+  </trackList>
+</playlist>

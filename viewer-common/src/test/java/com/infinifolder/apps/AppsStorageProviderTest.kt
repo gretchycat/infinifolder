@@ -255,6 +255,8 @@ class AppsStorageProviderTest {
                 ),
                 android.net.TestUri(f.absolutePath)
             )
+            override fun stat(ref: ResourceRef): ProviderResult<ResourceEntry> =
+                ProviderResult.Success(entry(file(ref)))
             override fun list(parent: ResourceRef) = ProviderResult.Success(
                 file(parent).listFiles().orEmpty().map { entry(it) }
             )

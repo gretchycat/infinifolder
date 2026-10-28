@@ -15,6 +15,7 @@ dependencies {
     api(project(":storage-engine"))
     api("com.caverock:androidsvg-aar:1.4")
     api("io.github.awxkee:jxl-coder:2.6.1")
+    api("io.github.michaldvorak-gemalto:jp2-android:1.0.5")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }

@@ -13,9 +13,14 @@ import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.media.MediaMetadata
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.media.PlaybackParams
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -34,7 +39,13 @@ data class AudioTrack(
     val artist: String? = null,
     val album: String? = null,
     val durationMs: Long = 0L,
-    val artwork: Bitmap? = null
+    val artwork: Bitmap? = null,
+    val startByte: Long = 0L,
+    val lengthBytes: Long = -1L,
+    val bitrateKbps: Int? = null,
+    val sampleRateHz: Int? = null,
+    val channels: Int? = null,
+    val isBitrateRelevant: Boolean = true
 )
 
 interface AudioPlayerListener {
@@ -44,6 +55,7 @@ interface AudioPlayerListener {
     fun onPlaylistUpdated(playlist: List<AudioTrack>)
     fun onError(message: String)
     fun onPlaybackComplete()
+    fun onAudioSessionIdChanged(audioSessionId: Int) {}
 }
 
 class AudioPlayerService : Service() {
@@ -89,6 +101,8 @@ class AudioPlayerService : Service() {
     private lateinit var audioManager: AudioManager
     private lateinit var notificationManager: NotificationManager
     private var focusRequest: AudioFocusRequest? = null
+    var mediaSession: MediaSession? = null
+        private set
 
     val playlist = mutableListOf<AudioTrack>()
     private val originalPlaylist = mutableListOf<AudioTrack>()
@@ -100,6 +114,16 @@ class AudioPlayerService : Service() {
         private set
     var playbackSpeed: Float = 1.0f
         private set
+    var volume: Float = 1.0f
+        set(value) {
+            field = value.coerceIn(0f, 1f)
+            applyVolumeAndBalance()
+        }
+    var balance: Float = 0.0f
+        set(value) {
+            field = value.coerceIn(-1f, 1f)
+            applyVolumeAndBalance()
+        }
     @Volatile var isLoading: Boolean = false
         private set
 
@@ -109,8 +133,18 @@ class AudioPlayerService : Service() {
         get() = synchronized(playerLock) { runCatching { mediaPlayer?.currentPosition ?: 0 }.getOrDefault(0) }
     val currentDuration: Int
         get() = synchronized(playerLock) { runCatching { mediaPlayer?.duration ?: 0 }.getOrDefault(0) }
+    val audioSessionId: Int
+        get() = synchronized(playerLock) { runCatching { mediaPlayer?.audioSessionId ?: 0 }.getOrDefault(0) }
     val currentTrack: AudioTrack?
         get() = synchronized(playlist) { if (currentIndex in playlist.indices) playlist[currentIndex] else null }
+
+    fun applyVolumeAndBalance() {
+        val left = volume * (if (balance > 0f) 1f - balance else 1f)
+        val right = volume * (if (balance < 0f) 1f + balance else 1f)
+        synchronized(playerLock) {
+            runCatching { mediaPlayer?.setVolume(left, right) }
+        }
+    }
 
     private var progressThread: Thread? = null
     private var isProgressRunning = false
@@ -128,6 +162,19 @@ class AudioPlayerService : Service() {
         createNotificationChannel()
         loadPlaybackPrefs()
         ensureForegroundService()
+        try {
+            mediaSession = MediaSession(this, "InfiniFolderAudio").apply {
+                setCallback(object : MediaSession.Callback() {
+                    override fun onPlay() { play() }
+                    override fun onPause() { pause() }
+                    override fun onSkipToNext() { playNext() }
+                    override fun onSkipToPrevious() { playPrevious() }
+                    override fun onStop() { stopPlayback() }
+                    override fun onSeekTo(pos: Long) { seekTo(pos.toInt()) }
+                })
+                isActive = true
+            }
+        } catch (_: Exception) {}
         com.infinifolder.ops.AppOperations.coordinator.onCancelExternal = { id ->
             if (id == "playback_audio") stopPlayback()
         }
@@ -178,11 +225,25 @@ class AudioPlayerService : Service() {
     }
 
     fun setPlaylist(tracks: List<AudioTrack>, startIndex: Int = 0) {
+        val targetTrack = tracks.getOrNull(startIndex)
+        val expanded = mutableListOf<AudioTrack>()
+        for (t in tracks) {
+            if (PlaylistExpander.isPlaylist(t.uri, t.title)) {
+                expanded.addAll(PlaylistExpander.expandPlaylist(this, t.uri))
+            } else {
+                expanded.add(t)
+            }
+        }
+        val effectiveIndex = if (targetTrack != null) {
+            val idx = expanded.indexOfFirst { uriMatches(it.uri, targetTrack.uri) }
+            if (idx >= 0) idx else startIndex.coerceIn(0, (expanded.size - 1).coerceAtLeast(0))
+        } else 0
+
         synchronized(playlist) {
-            originalPlaylist.clear(); originalPlaylist.addAll(tracks)
-            playlist.clear(); playlist.addAll(tracks)
+            originalPlaylist.clear(); originalPlaylist.addAll(expanded)
+            playlist.clear(); playlist.addAll(expanded)
             if (isShuffleEnabled) {
-                val initial = tracks.getOrNull(startIndex)
+                val initial = expanded.getOrNull(effectiveIndex)
                 playlist.shuffle()
                 if (initial != null) {
                     playlist.remove(initial)
@@ -190,18 +251,27 @@ class AudioPlayerService : Service() {
                 }
                 currentIndex = 0
             } else {
-                currentIndex = startIndex.coerceIn(0, (tracks.size - 1).coerceAtLeast(0))
+                currentIndex = effectiveIndex.coerceIn(0, (expanded.size - 1).coerceAtLeast(0))
             }
         }
         notifyPlaylistUpdated()
+        startBackgroundMetadataScanner(forceRestart = true)
         if (playlist.isNotEmpty()) loadAndPlayCurrent()
     }
 
     fun updatePlaylistKeepCurrent(tracks: List<AudioTrack>, currentUri: Uri) {
+        val expanded = mutableListOf<AudioTrack>()
+        for (t in tracks) {
+            if (PlaylistExpander.isPlaylist(t.uri, t.title)) {
+                expanded.addAll(PlaylistExpander.expandPlaylist(this, t.uri))
+            } else {
+                expanded.add(t)
+            }
+        }
         synchronized(playlist) {
             val currentEnriched = currentTrack
-            originalPlaylist.clear(); originalPlaylist.addAll(tracks)
-            playlist.clear(); playlist.addAll(tracks)
+            originalPlaylist.clear(); originalPlaylist.addAll(expanded)
+            playlist.clear(); playlist.addAll(expanded)
             val idx = playlist.indexOfFirst { uriMatches(it.uri, currentUri) }
             if (idx >= 0) {
                 currentIndex = idx
@@ -217,9 +287,15 @@ class AudioPlayerService : Service() {
             }
         }
         notifyPlaylistUpdated()
+        startBackgroundMetadataScanner(forceRestart = true)
     }
 
     fun enqueue(track: AudioTrack) {
+        if (PlaylistExpander.isPlaylist(track.uri, track.title)) {
+            val expanded = PlaylistExpander.expandPlaylist(this, track.uri)
+            enqueueAll(expanded)
+            return
+        }
         val wasEmpty = synchronized(playlist) {
             val empty = playlist.isEmpty()
             playlist.add(track)
@@ -227,6 +303,7 @@ class AudioPlayerService : Service() {
             empty
         }
         notifyPlaylistUpdated()
+        startBackgroundMetadataScanner(forceRestart = true)
         if (mediaPlayer == null && wasEmpty) loadAndPlayCurrent()
     }
 
@@ -239,6 +316,7 @@ class AudioPlayerService : Service() {
             empty
         }
         notifyPlaylistUpdated()
+        startBackgroundMetadataScanner(forceRestart = true)
         if (mediaPlayer == null && wasEmpty) loadAndPlayCurrent()
     }
 
@@ -455,13 +533,33 @@ class AudioPlayerService : Service() {
             if (loadCounter.get() != thisLoadId) { source?.close(); return@Thread }
             cleanupStagedFile()
             stagedSource = source
-            val stagedFile = source?.file
+            val rawStagedFile = source?.file
+            val stagedFile = if (rawStagedFile != null && rawStagedFile.exists() && (track.startByte > 0L || track.lengthBytes > 0L)) {
+                sliceTrackFile(rawStagedFile, track.startByte, track.lengthBytes)
+            } else {
+                rawStagedFile
+            }
             stagedTempFile = stagedFile
             if (stagedFile == null || !stagedFile.exists()) {
                 isLoading = false
                 notifyPlaybackState(isPlaying = false, isLoading = false)
                 notifyError("Unable to prepare audio track")
                 return@Thread
+            }
+            val trackMime = try { contentResolver.getType(track.uri) } catch (_: Throwable) { null }
+                ?: com.infinifolder.mime.MimeRegistry.guess(stagedFile.name)
+            val formatInfo = probeAudioFormat(stagedFile, track)
+            com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.startTrack(
+                uri = track.uri,
+                fileName = stagedFile.name,
+                fileSize = stagedFile.length(),
+                mimeType = trackMime
+            ).apply {
+                sampleRate = formatInfo.sampleRate
+                channels = formatInfo.channels
+                bitrateKbps = formatInfo.bitrateKbps
+                isBitrateRelevant = formatInfo.isBitrateRelevant
+                isSampleRateRelevant = formatInfo.isSampleRateRelevant
             }
             val enriched = enrichTrackMetadata(track, stagedFile)
             if (loadCounter.get() != thisLoadId) return@Thread
@@ -486,7 +584,44 @@ class AudioPlayerService : Service() {
                         .build()
                 )
                 var prepared = false
-                if (stagedFile.canRead()) {
+                var usedUniversalFallback = false
+
+                val ext = stagedFile.extension.lowercase()
+                val isAlacM4a = (ext == "m4a" || ext == "alac") && runCatching {
+                    val head = ByteArray(128 * 1024)
+                    val read = stagedFile.inputStream().use { it.read(head) }
+                    com.infinifolder.audio.decoder.AlacAndMpeg2Decoder.canDecode(head.copyOf(read.coerceAtLeast(0)), ext)
+                }.getOrDefault(false)
+
+                val preferDecoder = ext in setOf(
+                    "mp2", "alac", "mod", "s3m", "xm", "it", "mid", "midi", "kar", "rmi",
+                    "sf2", "sfz", "pat", "dro", "imf", "vgm", "vgz", "ym", "nsf", "spc", "sid",
+                    "dsf", "dff", "tta", "wv", "ra", "ac3", "eac3", "mlp", "thd", "wma",
+                    "adx", "g722", "gsm", "caf", "voc", "au", "snd", "8svx", "svx", "16sv", "maud",
+                    "w64", "rf64", "avr", "ircam", "sph", "pvf", "wve", "htk"
+                ) || isAlacM4a
+
+                if (preferDecoder) {
+                    try {
+                        val bytes = stagedFile.readBytes()
+                        val pcm = com.infinifolder.audio.decoder.UniversalAudioDecoder.decode(bytes, ext, stagedFile)
+                        if (pcm != null) {
+                            val tempWav = java.io.File(cacheDir, "decoded_stream_${System.currentTimeMillis()}.wav")
+                            pcm.writeWavFile(tempWav)
+                            fis = java.io.FileInputStream(tempWav)
+                            p.reset()
+                            p.setDataSource(fis.fd, 0, tempWav.length())
+                            p.prepare()
+                            prepared = true
+                            usedUniversalFallback = true
+                            tempWav.deleteOnExit()
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("AudioPlayerService", "PreferDecoder fallback error: ${e.message}")
+                    }
+                }
+
+                if (!prepared && stagedFile.canRead()) {
                     try {
                         fis = java.io.FileInputStream(stagedFile)
                         p.reset()
@@ -524,18 +659,55 @@ class AudioPlayerService : Service() {
                         pfd = null
                     }
                 }
-                if (!prepared) throw java.io.IOException("Unable to init MediaPlayer")
+                if (!prepared) {
+                    try {
+                        val bytes = stagedFile.readBytes()
+                        val pcm = com.infinifolder.audio.decoder.UniversalAudioDecoder.decode(bytes, stagedFile.extension, stagedFile)
+                        if (pcm != null) {
+                            val tempWav = java.io.File(cacheDir, "decoded_stream_${System.currentTimeMillis()}.wav")
+                            pcm.writeWavFile(tempWav)
+                            fis = java.io.FileInputStream(tempWav)
+                            p.reset()
+                            p.setDataSource(fis.fd, 0, tempWav.length())
+                            p.prepare()
+                            prepared = true
+                            usedUniversalFallback = true
+                            tempWav.deleteOnExit()
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("AudioPlayerService", "UniversalAudioDecoder fallback error: ${e.message}")
+                    }
+                }
+                if (!prepared) {
+                    com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.recordPlaybackError("Unable to init MediaPlayer or any fallback decoder")
+                    throw java.io.IOException("Unable to init MediaPlayer")
+                }
+                com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.recordPlaybackStarted(
+                    engine = if (usedUniversalFallback) "UniversalAudioDecoder -> MediaPlayer(WavWrap)" else "MediaPlayer(Native)",
+                    sampleRate = formatInfo.sampleRate,
+                    channels = formatInfo.channels,
+                    bitrateKbps = formatInfo.bitrateKbps,
+                    isBitrateRelevant = formatInfo.isBitrateRelevant,
+                    isSampleRateRelevant = formatInfo.isSampleRateRelevant,
+                    sourceFormat = if (!formatInfo.isBitrateRelevant) stagedFile.extension.uppercase() else if (formatInfo.bitrateKbps > 0) "${formatInfo.bitrateKbps} kbps" else null
+                )
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && playbackSpeed != 1.0f) {
                     p.playbackParams = PlaybackParams().apply { speed = playbackSpeed }
                 }
                 p.setOnCompletionListener { finished ->
                     // Ignore completion events from a player that is no longer current
                     val isCurrent = synchronized(playerLock) { mediaPlayer === finished }
-                    if (isCurrent) onTrackCompleted()
+                    if (isCurrent) {
+                        com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.recordPlaybackCompleted()
+                        onTrackCompleted()
+                    }
                 }
                 p.setOnErrorListener { errored, what, extra ->
                     val isCurrent = synchronized(playerLock) { mediaPlayer === errored }
-                    if (isCurrent) notifyError("Playback error: $what, $extra")
+                    if (isCurrent) {
+                        com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.recordPlaybackError("MediaPlayer Error: what=$what, extra=$extra")
+                        notifyError("Playback error: $what, $extra")
+                    }
                     true
                 }
 
@@ -564,13 +736,32 @@ class AudioPlayerService : Service() {
                     started = runCatching { mediaPlayer?.start(); mediaPlayer?.isPlaying == true }.getOrDefault(false)
                 }
                 if (started) {
+                    val actualDur = (mediaPlayer?.duration ?: 0).coerceAtLeast(0).toLong()
+                    if (actualDur > 0L) {
+                        synchronized(playlist) {
+                            if (currentIndex in playlist.indices && playlist[currentIndex].uri == track.uri) {
+                                val cur = playlist[currentIndex]
+                                if (cur.durationMs != actualDur) {
+                                    val updated = cur.copy(durationMs = actualDur)
+                                    playlist[currentIndex] = updated
+                                    val oi = originalPlaylist.indexOfFirst { it.uri == track.uri }
+                                    if (oi >= 0) originalPlaylist[oi] = updated
+                                    notifyPlaylistUpdated()
+                                }
+                            }
+                        }
+                    }
                     startProgressReporting()
+                    startBackgroundMetadataScanner(forceRestart = false)
                     com.infinifolder.ops.AppOperations.coordinator.registerExternal(
                         id = "playback_audio",
                         label = "Audio: ${enriched.title}",
                         totalBytes = if (enriched.durationMs > 0) enriched.durationMs else null,
                         currentItem = enriched.artist ?: enriched.album ?: "Infinifolder Media"
                     )
+                    applyVolumeAndBalance()
+                    val sid = runCatching { mediaPlayer?.audioSessionId ?: 0 }.getOrDefault(0)
+                    notifyAudioSession(sid)
                     notifyPlaybackState(isPlaying = true, isLoading = false)
                     ensureForegroundService()
                 } else {
@@ -630,39 +821,195 @@ class AudioPlayerService : Service() {
         }
     }
 
-    private fun enrichTrackMetadata(original: AudioTrack, file: File): AudioTrack {
-        if (original.artist != null && original.album != null && original.artwork != null) {
-            return original
+    data class AudioFormatInfo(
+        val sampleRate: Int = 0,
+        val channels: Int = 0,
+        val bitrateKbps: Int = 0,
+        val isBitrateRelevant: Boolean = true,
+        val isSampleRateRelevant: Boolean = true
+    )
+
+    private fun probeAudioFormat(file: File, track: AudioTrack): AudioFormatInfo {
+        val ext = file.extension.lowercase().ifEmpty { track.title.substringAfterLast('.', "").lowercase() }
+
+        val isTracker = ext in setOf(
+            "mod", "s3m", "xm", "it", "med", "okt", "mtm", "669", "far", "amf", "dsm", "ult", "psm", "umx"
+        )
+        val isMidi = ext in setOf("mid", "midi", "kar", "rmi", "smf")
+        val isChiptune = ext in setOf(
+            "sid", "nsf", "spc", "vgm", "vgz", "gym", "ay", "ym", "gbs", "hes", "kss", "dro", "imf"
+        )
+        val isSoundfont = ext in setOf("sf2", "sfz", "pat")
+
+        if (isMidi) {
+            return AudioFormatInfo(
+                sampleRate = 0,
+                channels = 0,
+                bitrateKbps = 0,
+                isBitrateRelevant = false,
+                isSampleRateRelevant = false
+            )
         }
 
+        if (isTracker || isChiptune || isSoundfont) {
+            return AudioFormatInfo(
+                sampleRate = 44100,
+                channels = 2,
+                bitrateKbps = 0,
+                isBitrateRelevant = false,
+                isSampleRateRelevant = true
+            )
+        }
+
+        var sampleRate = 0
+        var channels = 0
+        var bitrateKbps = 0
+
+        // 1. Try MediaMetadataRetriever
+        runCatching {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(file.absolutePath)
+                val brStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
+                if (brStr != null) {
+                    val b = brStr.toIntOrNull() ?: 0
+                    if (b > 0) bitrateKbps = (b / 1000).coerceAtLeast(1)
+                }
+                if (Build.VERSION.SDK_INT >= 29) {
+                    val srStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE)
+                    if (srStr != null) {
+                        val s = srStr.toIntOrNull() ?: 0
+                        if (s > 0) sampleRate = s
+                    }
+                }
+            } finally {
+                retriever.release()
+            }
+        }
+
+        // 2. Try MediaExtractor for accurate sampleRate, channels, and bitrate
+        if (sampleRate == 0 || channels == 0 || bitrateKbps == 0) {
+            runCatching {
+                val extractor = MediaExtractor()
+                try {
+                    extractor.setDataSource(file.absolutePath)
+                    for (i in 0 until extractor.trackCount) {
+                        val format = extractor.getTrackFormat(i)
+                        val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+                        if (mime.startsWith("audio/")) {
+                            if (sampleRate == 0 && format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                                sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                            }
+                            if (channels == 0 && format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                                channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                            }
+                            if (bitrateKbps == 0 && format.containsKey(MediaFormat.KEY_BIT_RATE)) {
+                                val b = format.getInteger(MediaFormat.KEY_BIT_RATE)
+                                if (b > 0) bitrateKbps = (b / 1000).coerceAtLeast(1)
+                            }
+                            break
+                        }
+                    }
+                } finally {
+                    extractor.release()
+                }
+            }
+        }
+
+        // 3. Fallback for WAV / PCM RIFF header
+        if ((sampleRate == 0 || channels == 0 || bitrateKbps == 0) && (ext == "wav" || ext == "wave" || ext == "riff")) {
+            runCatching {
+                file.inputStream().use { stream ->
+                    val header = ByteArray(44)
+                    if (stream.read(header) >= 44 && header[0] == 'R'.code.toByte() && header[1] == 'I'.code.toByte()) {
+                        val ch = (header[22].toInt() and 0xFF) or ((header[23].toInt() and 0xFF) shl 8)
+                        val sr = (header[24].toInt() and 0xFF) or
+                                ((header[25].toInt() and 0xFF) shl 8) or
+                                ((header[26].toInt() and 0xFF) shl 16) or
+                                ((header[27].toInt() and 0xFF) shl 24)
+                        val bps = (header[34].toInt() and 0xFF) or ((header[35].toInt() and 0xFF) shl 8)
+                        if (ch in 1..8) channels = ch
+                        if (sr in 4000..384000) sampleRate = sr
+                        if (sr > 0 && ch > 0 && bps > 0) {
+                            bitrateKbps = ((sr.toLong() * ch * bps) / 1000L).toInt().coerceAtLeast(1)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. If bitrate is still not resolved, compute from file size and duration
+        if (bitrateKbps == 0 && file.length() > 0) {
+            val dur = track.durationMs
+            if (dur > 0) {
+                bitrateKbps = ((file.length() * 8L) / dur).toInt()
+            }
+        }
+
+        if (sampleRate == 0) sampleRate = 44100
+        if (channels == 0) channels = 2
+
+        return AudioFormatInfo(
+            sampleRate = sampleRate,
+            channels = channels,
+            bitrateKbps = bitrateKbps,
+            isBitrateRelevant = true,
+            isSampleRateRelevant = true
+        )
+    }
+
+    private fun enrichTrackMetadata(original: AudioTrack, file: File): AudioTrack {
+        val formatInfo = probeAudioFormat(file, original)
         var title = original.title
         var artist = original.artist
         var album = original.album
         var duration = original.durationMs
         var artwork = original.artwork
 
-        try {
-            val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(file.absolutePath)
-            title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: title
-            artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: artist
-            album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: album
-            val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-            if (durStr != null) duration = durStr.toLongOrNull() ?: duration
+        if (original.artist == null || original.album == null || original.artwork == null || duration <= 0) {
+            try {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(file.absolutePath)
+                title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: title
+                artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: artist
+                album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: album
+                val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                if (durStr != null) duration = durStr.toLongOrNull() ?: duration
 
-            val pic = retriever.embeddedPicture
-            if (pic != null) {
-                artwork = decodeSampledBitmap(pic, 512, 512)
+                val pic = retriever.embeddedPicture
+                if (pic != null) {
+                    artwork = decodeSampledBitmap(pic, 512, 512)
+                }
+                runCatching { retriever.release() }
+            } catch (_: Exception) {}
+
+            if (duration <= 0) {
+                runCatching {
+                    val bytes = file.readBytes()
+                    val pcm = com.infinifolder.audio.decoder.UniversalAudioDecoder.decode(bytes, file.extension, file)
+                    if (pcm != null && pcm.durationMs > 0) {
+                        duration = pcm.durationMs
+                    }
+                }
             }
-            runCatching { retriever.release() }
-        } catch (_: Exception) {}
 
-        // Fallback: Check folder artwork (.icon.* then cover.*)
-        if (artwork == null) {
-            artwork = findFolderArtwork(original.uri)
+            // Fallback: Check folder artwork (.icon.* then cover.*)
+            if (artwork == null) {
+                artwork = findFolderArtwork(original.uri)
+            }
         }
 
-        return AudioTrack(original.uri, title, artist, album, duration, artwork)
+        return original.copy(
+            title = title,
+            artist = artist,
+            album = album,
+            durationMs = duration,
+            artwork = artwork,
+            bitrateKbps = if (formatInfo.isBitrateRelevant && formatInfo.bitrateKbps > 0) formatInfo.bitrateKbps else null,
+            sampleRateHz = if (formatInfo.isSampleRateRelevant && formatInfo.sampleRate > 0) formatInfo.sampleRate else null,
+            channels = formatInfo.channels.takeIf { it > 0 },
+            isBitrateRelevant = formatInfo.isBitrateRelevant
+        )
     }
 
     private fun findFolderArtwork(trackUri: Uri): Bitmap? {
@@ -816,9 +1163,36 @@ class AudioPlayerService : Service() {
     }
 
     private fun cleanupStagedFile() {
+        if (stagedTempFile != null && stagedTempFile != stagedSource?.file) {
+            runCatching { stagedTempFile?.delete() }
+        }
         stagedSource?.close()
         stagedSource = null
         stagedTempFile = null
+    }
+
+    private fun sliceTrackFile(file: File, startByte: Long, lengthBytes: Long): File {
+        val ext = file.extension.ifEmpty { "bin" }
+        val sliceFile = File(cacheDir, "slice_${System.currentTimeMillis()}_${file.nameWithoutExtension}.$ext")
+        val totalLen = file.length()
+        val validStart = startByte.coerceIn(0L, totalLen)
+        val validLen = if (lengthBytes > 0L) minOf(lengthBytes, totalLen - validStart) else (totalLen - validStart)
+
+        java.io.RandomAccessFile(file, "r").use { raf ->
+            raf.seek(validStart)
+            java.io.FileOutputStream(sliceFile).use { fos ->
+                val buf = ByteArray(65536)
+                var remaining = validLen
+                while (remaining > 0) {
+                    val toRead = minOf(buf.size.toLong(), remaining).toInt()
+                    val r = raf.read(buf, 0, toRead)
+                    if (r <= 0) break
+                    fos.write(buf, 0, r)
+                    remaining -= r
+                }
+            }
+        }
+        return sliceFile
     }
 
     private fun scaleBitmapForNotification(src: Bitmap, maxW: Int, maxH: Int): Bitmap? {
@@ -834,16 +1208,58 @@ class AudioPlayerService : Service() {
     private fun notifyTrackChanged(track: AudioTrack?) {
         val idx = currentIndex
         val total = playlist.size
+        updateMediaSession(track, isPlaying)
         val copy = synchronized(listeners) { ArrayList(listeners) }
         copy.forEach { runCatching { it.onTrackChanged(track, idx, total) } }
+        if (com.infinifolder.audio.cast.CastManager.isCasting) {
+            com.infinifolder.audio.cast.CastManager.onTrackChanged(track)
+        }
+    }
+
+    private fun notifyAudioSession(sessionId: Int) {
+        val copy = synchronized(listeners) { ArrayList(listeners) }
+        copy.forEach { runCatching { it.onAudioSessionIdChanged(sessionId) } }
     }
 
     private fun notifyPlaybackState(isPlaying: Boolean, isLoading: Boolean) {
+        updateMediaSession(currentTrack, isPlaying)
         val copy = synchronized(listeners) { ArrayList(listeners) }
         copy.forEach { runCatching { it.onPlaybackStateChanged(isPlaying, isLoading) } }
     }
 
+    private fun updateMediaSession(track: AudioTrack?, isPlaying: Boolean) {
+        val session = mediaSession ?: return
+        try {
+            val state = if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
+            val actions = PlaybackState.ACTION_PLAY or
+                    PlaybackState.ACTION_PAUSE or
+                    PlaybackState.ACTION_PLAY_PAUSE or
+                    PlaybackState.ACTION_SKIP_TO_NEXT or
+                    PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+                    PlaybackState.ACTION_STOP or
+                    PlaybackState.ACTION_SEEK_TO
+
+            val stateBuilder = PlaybackState.Builder()
+                .setActions(actions)
+                .setState(state, currentPosition.toLong(), playbackSpeed)
+            session.setPlaybackState(stateBuilder.build())
+
+            if (track != null) {
+                val metaBuilder = MediaMetadata.Builder()
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, track.title)
+                    .putString(MediaMetadata.METADATA_KEY_ARTIST, track.artist ?: "Unknown Artist")
+                    .putString(MediaMetadata.METADATA_KEY_ALBUM, track.album ?: "")
+                    .putLong(MediaMetadata.METADATA_KEY_DURATION, currentDuration.toLong())
+                track.artwork?.let { art ->
+                    metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, art)
+                }
+                session.setMetadata(metaBuilder.build())
+            }
+        } catch (_: Exception) {}
+    }
+
     private fun notifyProgress(pos: Int, dur: Int) {
+        com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.recordPlaybackProgress(pos, dur)
         com.infinifolder.ops.AppOperations.coordinator.updateExternal(
             id = "playback_audio",
             bytes = pos.toLong(),
@@ -869,9 +1285,246 @@ class AudioPlayerService : Service() {
         copy.forEach { runCatching { it.onPlaybackComplete() } }
     }
 
+    private var metadataScannerThread: Thread? = null
+    private val metadataScannerGeneration = java.util.concurrent.atomic.AtomicLong(0L)
+
+    private fun startBackgroundMetadataScanner(forceRestart: Boolean = false) {
+        if (!forceRestart && metadataScannerThread?.isAlive == true) {
+            return
+        }
+        val gen = metadataScannerGeneration.incrementAndGet()
+        try {
+            metadataScannerThread?.interrupt()
+        } catch (_: Exception) {}
+
+        metadataScannerThread = Thread({
+            // Start scanning quickly so the total length is calculated while playback begins
+            try {
+                Thread.sleep(50)
+            } catch (_: InterruptedException) {
+                return@Thread
+            }
+
+            while (gen == metadataScannerGeneration.get()) {
+                val nextCandidate: Pair<Int, AudioTrack>? = synchronized(playlist) {
+                    if (playlist.isEmpty()) null
+                    else {
+                        val cur = currentIndex
+                        var candidateIdx = -1
+                        // Prioritize scanning from cur + 1 until playlist.size
+                        for (i in (cur + 1) until playlist.size) {
+                            val t = playlist[i]
+                            if (t.durationMs == 0L || PlaylistExpander.isPlaylist(t.uri, t.title)) {
+                                candidateIdx = i
+                                break
+                            }
+                        }
+                        // Then check 0..cur
+                        if (candidateIdx == -1) {
+                            for (i in 0..cur) {
+                                if (i in playlist.indices) {
+                                    val t = playlist[i]
+                                    if (t.durationMs == 0L || PlaylistExpander.isPlaylist(t.uri, t.title)) {
+                                        candidateIdx = i
+                                        break
+                                    }
+                                }
+                            }
+                        }
+                        if (candidateIdx >= 0) candidateIdx to playlist[candidateIdx] else null
+                    }
+                }
+
+                if (nextCandidate == null) break // All parsed!
+
+                val (idx, track) = nextCandidate
+
+                // Check if this candidate is actually a playlist file (e.g. .m3u, .pls, .cue, .xspf)
+                if (PlaylistExpander.isPlaylist(track.uri, track.title)) {
+                    val expanded = runCatching {
+                        PlaylistExpander.expandPlaylist(this@AudioPlayerService, track.uri)
+                    }.getOrNull() ?: emptyList()
+
+                    if (gen != metadataScannerGeneration.get()) break
+
+                    if (expanded.isNotEmpty()) {
+                        synchronized(playlist) {
+                            val pos = playlist.indexOfFirst { uriMatches(it.uri, track.uri) }
+                            if (pos >= 0) {
+                                playlist.removeAt(pos)
+                                playlist.addAll(pos, expanded)
+                            }
+                            val origPos = originalPlaylist.indexOfFirst { uriMatches(it.uri, track.uri) }
+                            if (origPos >= 0) {
+                                originalPlaylist.removeAt(origPos)
+                                originalPlaylist.addAll(origPos, expanded)
+                            }
+                        }
+                        notifyPlaylistUpdated()
+                        continue
+                    }
+                }
+
+                val enriched = resolveTrackMetadataLight(track)
+
+                if (gen != metadataScannerGeneration.get()) break
+
+                if (enriched != null) {
+                    synchronized(playlist) {
+                        if (idx < playlist.size && uriMatches(playlist[idx].uri, track.uri)) {
+                            playlist[idx] = enriched
+                        } else {
+                            val pIdx = playlist.indexOfFirst { uriMatches(it.uri, track.uri) }
+                            if (pIdx >= 0) {
+                                playlist[pIdx] = enriched
+                            }
+                        }
+                        val origIdx = originalPlaylist.indexOfFirst { uriMatches(it.uri, track.uri) }
+                        if (origIdx >= 0) {
+                            originalPlaylist[origIdx] = enriched
+                        }
+                    }
+                    notifyPlaylistUpdated()
+                }
+
+                // Brief pause between songs to ensure 100% smooth audio playback
+                try {
+                    Thread.sleep(25)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+        }, "PlaylistMetadataScanner").apply {
+            priority = Thread.MIN_PRIORITY
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun resolveTrackMetadataLight(track: AudioTrack): AudioTrack? {
+        if (track.durationMs > 0L) return track
+        var title = track.title
+        var artist = track.artist
+        var album = track.album
+        var duration = track.durationMs
+
+        // If this track is the currently playing track in MediaPlayer, query duration directly!
+        if (uriMatches(track.uri, currentTrack?.uri)) {
+            val liveDur = synchronized(playerLock) {
+                runCatching { (mediaPlayer?.duration ?: 0).toLong() }.getOrDefault(0L)
+            }
+            if (liveDur > 0L) {
+                duration = liveDur
+            }
+        }
+
+        val uri = track.uri
+        val file = if (uri.scheme == "file" || uri.scheme == null) {
+            uri.path?.let { File(it) }?.takeIf { it.exists() }
+        } else {
+            MediaSourceAdapter.resolveLocalFile(this, uri)
+        }
+
+        if (duration <= 0L) {
+            var pfd: android.os.ParcelFileDescriptor? = null
+            var retriever: MediaMetadataRetriever? = null
+            try {
+                retriever = MediaMetadataRetriever()
+                if (file != null && file.exists()) {
+                    retriever.setDataSource(file.absolutePath)
+                } else if (uri.scheme == "content") {
+                    pfd = runCatching { contentResolver.openFileDescriptor(uri, "r") }.getOrNull()
+                    if (pfd != null) {
+                        retriever.setDataSource(pfd.fileDescriptor)
+                    } else {
+                        retriever.setDataSource(this, uri)
+                    }
+                } else {
+                    retriever.setDataSource(this, uri)
+                }
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)?.takeIf { it.isNotBlank() }?.let { title = it }
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)?.takeIf { it.isNotBlank() }?.let { artist = it }
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)?.takeIf { it.isNotBlank() }?.let { album = it }
+                val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                if (durStr != null) {
+                    val d = durStr.toLongOrNull() ?: 0L
+                    if (d > 0) duration = d
+                }
+            } catch (_: Exception) {
+            } finally {
+                runCatching { retriever?.release() }
+                runCatching { pfd?.close() }
+            }
+        }
+
+        // Fallback for tracker modules or exotic formats if MediaMetadataRetriever didn't resolve duration
+        if (duration <= 0L) {
+            runCatching {
+                val ext = file?.extension?.lowercase()
+                    ?: track.title.substringAfterLast('.', "").lowercase()
+                val trackerExts = setOf(
+                    "mod", "s3m", "xm", "it", "mid", "midi", "kar", "rmi",
+                    "dsf", "dff", "cdda", "wav", "flac", "mp2", "alac", "wv"
+                )
+                if (ext in trackerExts) {
+                    val bytes = if (file != null && file.exists()) {
+                        file.readBytes()
+                    } else {
+                        MediaSourceAdapter.readAllBytes(this, uri)
+                    }
+                    val pcm = com.infinifolder.audio.decoder.UniversalAudioDecoder.decode(bytes, ext, file)
+                    if (pcm != null && pcm.durationMs > 0) {
+                        duration = pcm.durationMs
+                    }
+                }
+            }
+        }
+
+        // Final fallback: MediaPlayer lightweight probe on local file if available
+        if (duration <= 0L && file != null && file.exists()) {
+            runCatching {
+                val mp = MediaPlayer()
+                try {
+                    mp.setDataSource(file.absolutePath)
+                    mp.prepare()
+                    val d = mp.duration.toLong()
+                    if (d > 0) duration = d
+                } finally {
+                    mp.release()
+                }
+            }
+        }
+
+        val formatInfo = if (file != null && file.exists()) {
+            probeAudioFormat(file, track)
+        } else null
+
+        val finalDur = if (duration > 0) duration else -1L
+        return track.copy(
+            title = title,
+            artist = artist,
+            album = album,
+            durationMs = finalDur,
+            bitrateKbps = if (formatInfo?.isBitrateRelevant == true && formatInfo.bitrateKbps > 0) formatInfo.bitrateKbps else null,
+            sampleRateHz = if (formatInfo?.isSampleRateRelevant == true && formatInfo.sampleRate > 0) formatInfo.sampleRate else null,
+            channels = formatInfo?.channels?.takeIf { it > 0 },
+            isBitrateRelevant = formatInfo?.isBitrateRelevant ?: true
+        )
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         stopPlayback()
+        try {
+            metadataScannerGeneration.incrementAndGet()
+            metadataScannerThread?.interrupt()
+            metadataScannerThread = null
+        } catch (_: Exception) {}
+        try {
+            mediaSession?.isActive = false
+            mediaSession?.release()
+            mediaSession = null
+        } catch (_: Exception) {}
         if (currentService == this) currentService = null
     }
 }

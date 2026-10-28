@@ -104,20 +104,139 @@ class ArchiveStorageProvider(
     } catch (error: Exception) { ProviderResult.Failure(error.message ?: "Cannot preserve transfer metadata", error) } }
 
     override fun resolveLink(ref: ResourceRef): ProviderResult<ResourceRef> = try {
-        val uri = Uri.parse(ref.documentId)
+        val uri = ArchiveUri.uriFactory(ref.documentId)
         val source = ArchiveUri.getSourceUri(uri)
         val path = ArchiveUri.getEntryPath(uri)
         val entry = getArchiveTree(source, directoryPath = path.substringBeforeLast('/', "")).getEntry(path) ?: throw IOException("Archive link not found")
         val target = entry.linkTarget ?: throw IOException("Archive link target is unavailable")
-        val components = mutableListOf<String>()
-        val relative = if (target.startsWith('/')) target else path.substringBeforeLast('/', "") + "/" + target
-        for (part in relative.split('/')) when (part) {
-            "", "." -> Unit
-            ".." -> { if (components.isEmpty()) throw IOException("Link escapes archive root"); components.removeAt(components.lastIndex) }
-            else -> components.add(part)
+        if (ArchiveFormats.isPlaylist(getSourceName(source))) {
+            val targetUri = resolvePlaylistTarget(source, target)
+            val resolvedRef = sourceProvider?.refForUri(targetUri)
+                ?: localProvider?.refForUri(targetUri)
+                ?: ResourceRef(if (targetUri.scheme == "content") "saf" else "local", targetUri.toString())
+            ProviderResult.Success(resolvedRef)
+        } else {
+            val components = mutableListOf<String>()
+            val relative = if (target.startsWith('/')) target else path.substringBeforeLast('/', "") + "/" + target
+            for (part in relative.split('/')) when (part) {
+                "", "." -> Unit
+                ".." -> { if (components.isEmpty()) throw IOException("Link escapes archive root"); components.removeAt(components.lastIndex) }
+                else -> components.add(part)
+            }
+            ProviderResult.Success(ResourceRef(id, ArchiveUri.build(source, components.joinToString("/")).toString()))
         }
-        ProviderResult.Success(ResourceRef(id, ArchiveUri.build(source, components.joinToString("/")).toString()))
     } catch (e: Exception) { ProviderResult.Failure(e.message ?: "Cannot resolve archive link", e) }
+
+    private fun resolvePlaylistTarget(source: Uri, target: String): Uri {
+        if (target.contains("://")) {
+            return ArchiveUri.uriFactory(target)
+        }
+
+        if (target.startsWith('/') && File(target).exists()) {
+            return ArchiveUri.uriFactory("file://$target")
+        }
+
+        if (source.scheme == "file") {
+            val parentFile = File(source.path ?: "").parentFile
+            var targetFile = File(parentFile, target).canonicalFile
+            if (!targetFile.exists()) {
+                val sibling = File(parentFile, File(target).name)
+                if (sibling.exists()) {
+                    targetFile = sibling.canonicalFile
+                } else {
+                    val parentParent = parentFile?.parentFile
+                    val audioSibling = if (parentParent != null) File(parentParent, "audio/${File(target).name}") else null
+                    if (audioSibling?.exists() == true) {
+                        targetFile = audioSibling.canonicalFile
+                    } else {
+                        val audioSub = File(parentFile, "audio/${File(target).name}")
+                        if (audioSub.exists()) {
+                            targetFile = audioSub.canonicalFile
+                        }
+                    }
+                }
+            }
+            return ArchiveUri.uriFactory("file://${targetFile.absolutePath}")
+        }
+
+        if (source.scheme == "content") {
+            try {
+                val authority = source.authority
+                val isTree = (try { DocumentsContract.isTreeUri(source) } catch (_: Throwable) { false }) ||
+                    source.pathSegments.contains("tree")
+                val docId = try {
+                    if (source.pathSegments.firstOrNull() == "document" || source.pathSegments.getOrNull(2) == "document") {
+                        DocumentsContract.getDocumentId(source)
+                    } else if (isTree) {
+                        DocumentsContract.getTreeDocumentId(source)
+                    } else null
+                } catch (_: Throwable) { null } ?: source.lastPathSegment
+
+                if (docId != null) {
+                    val colonIdx = docId.indexOf(':')
+                    val prefix = if (colonIdx >= 0) docId.substring(0, colonIdx + 1) else ""
+                    val docPath = if (colonIdx >= 0) docId.substring(colonIdx + 1) else docId
+                    val parentDocPath = docPath.substringBeforeLast('/', "")
+                    val targetName = target.substringAfterLast('/').substringAfterLast('\\')
+
+                    fun resolveRel(base: String, rel: String): String {
+                        val isAbs = base.startsWith('/')
+                        val segs = base.replace('\\', '/').split('/').filter { it.isNotEmpty() }.toMutableList()
+                        for (p in rel.replace('\\', '/').split('/')) {
+                            when (p) {
+                                "", "." -> Unit
+                                ".." -> if (segs.isNotEmpty()) segs.removeAt(segs.lastIndex)
+                                else -> segs.add(p)
+                            }
+                        }
+                        return (if (isAbs) "/" else "") + segs.joinToString("/")
+                    }
+
+                    val candidatePaths = listOfNotNull(
+                        resolveRel(parentDocPath, target),
+                        resolveRel(parentDocPath, targetName),
+                        if (parentDocPath.contains('/')) resolveRel(parentDocPath.substringBeforeLast('/', ""), "audio/$targetName") else null,
+                        resolveRel(parentDocPath, "audio/$targetName")
+                    ).distinct()
+
+                    for (candidate in candidatePaths) {
+                        val candidateDocId = prefix + candidate
+                        val targetSafUri = try {
+                            if (isTree) {
+                                DocumentsContract.buildDocumentUriUsingTree(source, candidateDocId)
+                            } else if (authority != null) {
+                                DocumentsContract.buildDocumentUri(authority, candidateDocId)
+                            } else null
+                        } catch (_: Throwable) { null }
+
+                        if (targetSafUri != null) {
+                            val canOpen = try {
+                                context.contentResolver.openInputStream(targetSafUri)?.use { true } ?: false
+                            } catch (_: Throwable) { false }
+                            if (canOpen) return targetSafUri
+                        }
+                    }
+
+                    val primaryDocId = prefix + candidatePaths.first()
+                    val primarySafUri = try {
+                        if (isTree) {
+                            DocumentsContract.buildDocumentUriUsingTree(source, primaryDocId)
+                        } else if (authority != null) {
+                            DocumentsContract.buildDocumentUri(authority, primaryDocId)
+                        } else null
+                    } catch (_: Throwable) { null }
+                    if (primarySafUri != null) return primarySafUri
+                }
+            } catch (_: Throwable) {}
+        }
+
+        val sourcePath = source.path ?: ""
+        val parentPath = sourcePath.substringBeforeLast('/', "")
+        val rawResolved = if (parentPath.isEmpty()) "/$target" else "$parentPath/$target"
+        val normalizedPath = runCatching { java.net.URI(rawResolved).normalize().path }.getOrDefault(rawResolved)
+        val resolvedStr = "${source.scheme}://${source.authority ?: ""}$normalizedPath"
+        return ArchiveUri.uriFactory(resolvedStr)
+    }
     override fun stat(ref: ResourceRef): ProviderResult<ResourceEntry> = try {
         val uri = Uri.parse(ref.documentId)
         val source = ArchiveUri.getSourceUri(uri)
@@ -585,13 +704,13 @@ class ArchiveStorageProvider(
     }
 
     override fun list(parent: ResourceRef): ProviderResult<List<ResourceEntry>> = try {
-        val uri = Uri.parse(parent.documentId)
+        val uri = ArchiveUri.uriFactory(parent.documentId)
         val sourceUri = ArchiveUri.getSourceUri(uri)
         val parentPath = ArchiveUri.getEntryPath(uri)
         val tree = getArchiveTree(sourceUri, ArchiveUri.isDeletedView(uri), parentPath)
         val entries = tree.list(parentPath)
 
-        val archiveWritable = try { isWritable(Uri.parse(parent.documentId)) } catch (_: Throwable) { false }
+        val archiveWritable = try { isWritable(uri) } catch (_: Throwable) { false }
         val resourceEntries = entries.map { entry ->
             val entryUri = ArchiveUri.build(sourceUri, entry.path, deleted = ArchiveUri.isDeletedView(uri))
             ResourceEntry(

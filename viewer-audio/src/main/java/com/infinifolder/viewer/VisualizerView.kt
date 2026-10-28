@@ -8,7 +8,6 @@ import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 import com.infinifolder.theme.ThemeColors
-import kotlin.random.Random
 
 /**
  * Lightweight, high-performance spectrum analyzer & oscilloscope visualizer.
@@ -45,6 +44,17 @@ class VisualizerView @JvmOverloads constructor(
             if (value) postInvalidateOnAnimation()
         }
 
+    fun updateData(newBands: FloatArray, newPeaks: FloatArray? = null) {
+        val count = minOf(barCount, newBands.size)
+        for (i in 0 until count) {
+            barTargets[i] = newBands[i]
+            if (newPeaks != null && i < newPeaks.size) {
+                peakHeights[i] = newPeaks[i]
+            }
+        }
+        invalidate()
+    }
+
     fun setSpectrumColors(spectrumColors: IntArray) {
         if (spectrumColors.isNotEmpty()) {
             colors = spectrumColors
@@ -67,18 +77,9 @@ class VisualizerView @JvmOverloads constructor(
 
         // Update animation values
         for (i in 0 until barCount) {
-            if (isPlaying) {
-                // Generate energetic organic frequency response
-                if (Random.nextFloat() > 0.35f) {
-                    val bias = 1.0f - (i.toFloat() / barCount) * 0.35f // Bass slightly higher
-                    barTargets[i] = (Random.nextFloat() * 0.85f + 0.1f) * bias * h
-                }
-            } else {
-                barTargets[i] = 0f
-            }
-
+            val targetH = if (isPlaying) barTargets[i] * h else 0f
             // Smooth interpolation
-            barHeights[i] += (barTargets[i] - barHeights[i]) * 0.25f
+            barHeights[i] += (targetH - barHeights[i]) * 0.35f
 
             // Peak calculation with simulated gravity
             if (barHeights[i] >= peakHeights[i]) {

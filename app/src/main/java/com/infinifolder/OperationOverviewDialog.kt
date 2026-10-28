@@ -64,7 +64,7 @@ internal class OperationOverviewDialog(
 
     fun update(snapshots: List<OperationSnapshot>) {
         latestSnapshots = snapshots
-        val relevant = snapshots.filterNot { it.id.startsWith("playback_") }
+        val relevant = snapshots
         canClearFinished = relevant.any { it.canRemoveFromHistory }
         dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.isEnabled = canClearFinished
         val active = relevant.filter { it.state == OperationState.RUNNING || it.state == OperationState.QUEUED }
@@ -82,27 +82,67 @@ internal class OperationOverviewDialog(
             else if (content.indexOfChild(row.root) != index) {
                 content.removeView(row.root); content.addView(row.root, index)
             }
-            row.name.text = operation.displayName ?: operation.currentItem ?: operation.label
-            row.destination.text = operation.destination?.let { "To: $it" } ?: operation.label
-            val percent = operation.progressPercent
-            row.progress.isIndeterminate = percent < 0 && operation.state == OperationState.RUNNING
-            row.progress.progress = if (operation.state == OperationState.COMPLETE) 100 else percent.coerceAtLeast(0)
-            val liveRate = if (System.currentTimeMillis() - operation.lastUpdateMillis < 5000)
-                operation.formatRate().ifEmpty { "0 B/s" } else "0 B/s"
-            row.status.text = when (operation.state) {
-                OperationState.QUEUED -> operation.message ?: "Waiting"
-                OperationState.RUNNING -> listOfNotNull(operation.message ?: "Running", percent.takeIf { it >= 0 }?.let { "$it%" }).joinToString(" · ")
-                OperationState.FAILED -> "Failed: ${operation.message?.takeIf { it.isNotBlank() } ?: "No failure reason was reported."}"
-                else -> operation.displayState.replaceFirstChar { it.uppercase() }
+            val isPlayback = operation.id.startsWith("playback_")
+            if (isPlayback) {
+                val cleanTitle = operation.label.removePrefix("Audio: ").trim().ifEmpty {
+                    operation.displayName ?: "Music Track"
+                }
+                row.name.text = "♫ $cleanTitle"
+                row.destination.text = operation.currentItem?.takeIf { it.isNotBlank() } ?: "Infinifolder Media"
+                val dur = operation.totalBytes ?: 0L
+                val pos = operation.bytes
+                val percent = if (dur > 0) ((pos * 100) / dur).toInt().coerceIn(0, 100) else -1
+                row.progress.isIndeterminate = percent < 0 && operation.state == OperationState.RUNNING
+                row.progress.progress = percent.coerceAtLeast(0)
+                val formatTime: (Long) -> String = { ms ->
+                    if (ms <= 0L) "0:00"
+                    else {
+                        val totalSec = ms / 1000
+                        val min = totalSec / 60
+                        val sec = totalSec % 60
+                        if (min >= 60) {
+                            val hr = min / 60
+                            val remMin = min % 60
+                            String.format("%d:%02d:%02d", hr, remMin, sec)
+                        } else {
+                            String.format("%d:%02d", min, sec)
+                        }
+                    }
+                }
+                val isPaused = operation.message == "Paused"
+                val stateLabel = if (isPaused) "Paused" else "Playing"
+                val posStr = formatTime(pos)
+                val durStr = if (dur > 0) formatTime(dur) else "--:--"
+                row.status.text = "$stateLabel · $posStr / $durStr" + if (percent >= 0) " ($percent%)" else ""
+                row.rate.text = ""
+                row.rate.visibility = View.GONE
+                row.root.setOnClickListener { onSelect(operation) }
+                row.root.swipeAction = { right -> onSwipe(operation, right) }
+                row.root.canDismiss = false
+                row.hint.text = "Tap to open player · Swipe to stop"
+            } else {
+                row.name.text = operation.displayName ?: operation.currentItem ?: operation.label
+                row.destination.text = operation.destination?.let { "To: $it" } ?: operation.label
+                val percent = operation.progressPercent
+                row.progress.isIndeterminate = percent < 0 && operation.state == OperationState.RUNNING
+                row.progress.progress = if (operation.state == OperationState.COMPLETE) 100 else percent.coerceAtLeast(0)
+                val liveRate = if (System.currentTimeMillis() - operation.lastUpdateMillis < 5000)
+                    operation.formatRate().ifEmpty { "0 B/s" } else "0 B/s"
+                row.status.text = when (operation.state) {
+                    OperationState.QUEUED -> operation.message ?: "Waiting"
+                    OperationState.RUNNING -> listOfNotNull(operation.message ?: "Running", percent.takeIf { it >= 0 }?.let { "$it%" }).joinToString(" · ")
+                    OperationState.FAILED -> "Failed: ${operation.message?.takeIf { it.isNotBlank() } ?: "No failure reason was reported."}"
+                    else -> operation.displayState.replaceFirstChar { it.uppercase() }
+                }
+                row.rate.text = "↓ $liveRate"
+                row.rate.visibility = if (operation.state == OperationState.RUNNING) View.VISIBLE else View.GONE
+                row.root.setOnClickListener { onSelect(operation) }
+                row.root.swipeAction = { right -> onSwipe(operation, right) }
+                row.root.canDismiss = operation.canRemoveFromHistory
+                row.hint.text = if (operation.canRemoveFromHistory) {
+                    "← Remove" + if (operation.canRestart) " · ${operation.restartActionLabel} →" else ""
+                } else "← Cancel" + if (operation.canFinishLater) " · Pause →" else ""
             }
-            row.rate.text = "↓ $liveRate"
-            row.rate.visibility = if (operation.state == OperationState.RUNNING) View.VISIBLE else View.GONE
-            row.root.setOnClickListener { onSelect(operation) }
-            row.root.swipeAction = { right -> onSwipe(operation, right) }
-            row.root.canDismiss = operation.canRemoveFromHistory
-            row.hint.text = if (operation.canRemoveFromHistory) {
-                "← Remove" + if (operation.canRestart) " · ${operation.restartActionLabel} →" else ""
-            } else "← Cancel" + if (operation.canFinishLater) " · Pause →" else ""
         }
         if (finished.size > recentLimit) content.addView(older)
         val running = active.count { it.state == OperationState.RUNNING }

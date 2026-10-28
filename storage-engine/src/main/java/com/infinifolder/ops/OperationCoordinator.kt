@@ -381,8 +381,7 @@ class OperationCoordinator(
     }
 
     @Synchronized fun completeExternal(id: String) {
-        records[id]?.let {
-            records[id] = it.copy(state = OperationState.COMPLETE, estimatedRemainingSeconds = null)
+        records.remove(id)?.let {
             etaEstimators.remove(id)
             notifyListeners()
         }

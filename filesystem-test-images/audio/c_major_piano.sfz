@@ -1,0 +1,5 @@
+// InfiniFolder C Major Piano SFZ
+<region>
+sample=c_major_piano.wav
+lokey=0 hikey=127
+pitch_keycenter=60

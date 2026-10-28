@@ -1,0 +1,11 @@
+# xmcd CD database file
+DISCID=04000102
+DTITLE=InfiniFolder / C Major Piano Chord Suite
+DYEAR=2026
+DGENRE=Classical
+TTITLE0=C Major Attack
+TTITLE1=C Major Sustain & Decay
+EXTD=
+EXTT0=
+EXTT1=
+PLAYORDER=

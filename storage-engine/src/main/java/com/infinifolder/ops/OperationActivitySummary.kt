@@ -4,10 +4,15 @@ package com.infinifolder.ops
 data class OperationActivitySummary(val actions: Int, val itemsProcessed: Long, val knownTotalItems: Long,
     val hasUnknownItems: Boolean, val bytesPerSecond: Long, val percent: Int?,
     val averageBytesPerSecond: Long = 0, val estimatedRemainingSeconds: Long? = null,
-    val etaStatus: String = "estimating…") {
+    val etaStatus: String = "estimating…",
+    val activePlaybackTitle: String? = null,
+    val activePlaybackArtist: String? = null,
+    val playbackPositionMs: Long = 0L,
+    val playbackDurationMs: Long = 0L) {
     fun formatEta(): String = estimatedRemainingSeconds?.let { "ETA ~${formatEtaDuration(it)}" } ?: "ETA $etaStatus"
     companion object {
         fun from(snapshots: List<OperationSnapshot>, now: Long = System.currentTimeMillis()): OperationActivitySummary {
+            val playbackOp = snapshots.firstOrNull { it.id.startsWith("playback_") && (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) }
             val active = snapshots.filter { !it.id.startsWith("playback_") &&
                 (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) }
             val processed = active.sumOf {
@@ -30,8 +35,19 @@ data class OperationActivitySummary(val actions: Int, val itemsProcessed: Long, 
                 active.all { (it.totalBytes ?: 0) <= 0 && it.totalItems > 0 } -> processed.toDouble() / total
                 else -> fractions.filterNotNull().average()
             }
-            return OperationActivitySummary(active.size, processed, total, active.any { it.totalItems <= 0 }, rate,
-                progress?.let { (it * 100).toInt().coerceIn(0, 99) })
+            val totalActions = active.size + (if (playbackOp != null) 1 else 0)
+            return OperationActivitySummary(
+                actions = totalActions,
+                itemsProcessed = processed,
+                knownTotalItems = total,
+                hasUnknownItems = active.any { it.totalItems <= 0 },
+                bytesPerSecond = rate,
+                percent = progress?.let { (it * 100).toInt().coerceIn(0, 99) },
+                activePlaybackTitle = playbackOp?.label?.removePrefix("Audio: ")?.trim(),
+                activePlaybackArtist = playbackOp?.currentItem,
+                playbackPositionMs = playbackOp?.bytes ?: 0L,
+                playbackDurationMs = playbackOp?.totalBytes ?: 0L
+            )
         }
     }
 }

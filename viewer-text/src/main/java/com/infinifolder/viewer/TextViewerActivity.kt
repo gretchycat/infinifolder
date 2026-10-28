@@ -704,7 +704,7 @@ class TextViewerActivity : ViewerActivity() {
             AlertDialog.Builder(this)
                 .setTitle("Discard edits?")
                 .setMessage("You have unsaved changes. Discard them?")
-                .setPositiveButton("Discard") { _, _ -> finish() }
+                .setPositiveButton("Discard") { _, _ -> returnToFileManager() }
                 .setNegativeButton("Keep editing", null)
                 .show()
             return

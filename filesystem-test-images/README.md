@@ -47,6 +47,8 @@ The original `fat*.img`, `ext*.img`, `hfs.img`, `ntfs.img`, and archive files ar
 | `archives/legacy/` | RAR/ARJ single, multipart, missing-volume and damaged cases, with provenance/licenses |
 | `compression/zstandard/` | Standalone compressed-file fixture |
 | `disks/` | Complete MBR, GPT and Apple Partition Map disks and gzip wrappers |
+| `images/` | 80 image format fixtures rendered from the InfiniFolder app icon (`generate-media-fixtures.py`) |
+| `audio/` | 75 audio/sound format fixtures synthesized as a C-major piano chord (`C4`–`E4`–`G4`–`C5`, `generate-media-fixtures.py`) |
 
 The OS groups are organizational labels; these formats can be used by other operating systems. Existing fixture names and bytes were retained during the move. `layout-migration.json` maps old paths to current paths. All generators use the shared layout resolver; `manifest.json` now records relative paths.
 
@@ -193,5 +195,18 @@ CAB build succeeded and the user confirms support working; detailed handset chec
 Regenerate missing fixtures with `python3 filesystem-test-images/generate-fat-recovery.py`. Existing images are preserved. Long press an image → **Show deleted files**, then long press a trash-badged candidate → **Undelete…**. See [scope and remaining checks](../docs/fat-deleted-file-recovery.md).
 
 Recovery safety fixtures are now in `filesystems/windows/recovery/safety/`: allocated and stale allocation, detectable/undetectable fragmentation, overwrite, reused records, excluded deleted directories, active FAT selection, malformed volumes, partitioned disks and compression wrappers. Use `generate-fat-recovery-safety.py` to add missing fixtures. [Expected outcomes](filesystems/windows/recovery/safety/README.md) distinguish blocked candidates from unverified copies that deliberately contain wrong bytes.
+
+## Image and audio format fixtures
+
+`images/` (80 files) and `audio/` (75 files) contain samples covering both currently supported and unimplemented formats documented in [Image formats](../docs/image-formats.md) and [Audio and sound formats](../docs/audio-formats.md):
+
+- **Images (`images/icon.<ext>`)**: Rendered from the InfiniFolder launcher icon (`app/src/main/res/mipmap-xxxhdpi/ic_launcher.png`) via ImageMagick (`magick`) and format-specific binary writers (including standard raster, `HEIC`/`AVIF`/`JXL`, `SVG`/`SVGZ`, `TGA`/`ICB`/`VDA`/`VST`, `TIFF`, `JP2`/`J2K`, `QOI`, `Netpbm`, `XBM`/`XPM`/`XWD`, `PCX`/`DCX`, `PSD`/`PSB`/`ORA`/`KRA`/`XCF`/`ASE`, Amiga `IFF`/`ILBM`/`LBM`, Atari ST `NEO`/`PI1`, ZX Spectrum `SCR`, C64 Koala `KLA`/`KOA`, Apple `ICNS`/`PICT`/`PNTG`/`MAC`, `HDR`/`EXR`/`DDS`/`KTX`/`FITS`/`DCM`/`DNG`, `PS`/`EPS`/`EPT`/`WMF`/`WMZ`, `SIXEL`, and CP437 24-bit `ANS` with `SAUCE00` metadata).
+- **Audio (`audio/c_major_piano.<ext>`)**: Synthesized as a 1.5-second stereo C-major piano chord (`C4`–`E4`–`G4`–`C5` with harmonics, hammer transient, and exponential decay) encoded via `ffmpeg`, `sox`, and binary module/chiptune builders (including `WAV`, `MP3`, `MP2`, `FLAC`, `OGG`/`OGA`, `OPUS`, `M4A`/`M4B`/`M4R`/`AAC`/`ALAC`/`3GA`, `MKA`/`WEBA`, `AMR`/`AWB`, `WMA`, `WV`, `TTA`, `AC3`/`EAC3`/`DTS`/`MLP`/`THD`, `ADX`/`G722`/`RA`/`GSM`, `AIFF`/`AIF`/`AIFC`, `AU`/`SND`, `VOC`, Amiga `8SVX`/`SVX`/`MAUD`, `CAF`, `W64`/`RF64`, `SPH`/`IRCAM`/`AVR`/`WVE`/`PVF`/`HTK`, `MID`/`MIDI`/`RMI`/`KAR`, SoundFont `SF2`/`SFZ` and GUS `PAT`, tracker modules `MOD`/`S3M`/`XM`/`IT`, chiptunes `VGM`/`VGZ`/`DRO`/`IMF`/`YM`/`SID`/`NSF`/`SPC`, 1-bit DSD64 `DSF`/`DFF`, ANSI Music `ANS`, and playlists/cue sheets `M3U`/`M3U8`/`PLS`/`XSPF`/`CUE`).
+
+Regenerate and update `media-fixtures-manifest.json` with:
+
+```sh
+python3 filesystem-test-images/generate-media-fixtures.py
+```
 
 Explicit partial recovery now has `fat16-magic-partial.img` and `fat16-partial-tail.img` fixtures in the recovery safety folder. They exercise retained uncertain bytes, NUL-filled missing/reused ranges and companion byte-range reports with shared magic/MIME hints. The new partial-export handset checks remain pending; see [behavior and evidence](../docs/partial-fat-recovery.md).

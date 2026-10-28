@@ -29,13 +29,22 @@ object ArchiveFormats {
 
     private val COMPOUND_EXTENSIONS = TAR_COMPOUND_EXTENSIONS + DISC_COMPOUND_EXTENSIONS
 
+    val PLAYLIST_EXTENSIONS = setOf(
+        "m3u", "m3u8", "pls", "xspf", "cue"
+    )
+
     private val SIMPLE_EXTENSIONS = setOf(
         "zip", "jar", "war", "ear", "apk", "xapk", "apkm", "aab", "aar", "love", "ipa", "cbz",
         "tar", "tgz", "tbz", "tbz2", "txz", "tzst", "tlz", "taz", "cbt",
         "7z", "cb7", "rar", "cbr", "arj", "cab", "zst",
         "cpio",
         "ar", "deb"
-    ) + DISC_BASE_EXTENSIONS
+    ) + DISC_BASE_EXTENSIONS + PLAYLIST_EXTENSIONS
+
+    fun isPlaylist(name: String, mimeType: String = ""): Boolean {
+        val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        return ext in PLAYLIST_EXTENSIONS
+    }
 
     private val DISC_MIME_TYPES = setOf(
         "application/x-iso9660-image",
@@ -94,7 +103,7 @@ object ArchiveFormats {
         com.infinifolder.mime.MimeRegistry.packageFormat(name, mimeType)?.container ?: archiveExtension(name)
 
     fun isDefaultBrowsableArchive(name: String, mimeType: String = ""): Boolean {
-        return isArchive(name, mimeType) && !isPackagedFormat(name, mimeType)
+        return isArchive(name, mimeType) && !isPackagedFormat(name, mimeType) && !isPlaylist(name, mimeType)
     }
 
     fun isDiscImage(name: String, mimeType: String = ""): Boolean {

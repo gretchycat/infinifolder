@@ -1,0 +1,1 @@
+POSIX ACL and extended attribute test.

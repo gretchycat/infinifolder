@@ -1,5 +1,6 @@
 package com.infinifolder.theme
 
+import android.app.AlertDialog
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Configuration
@@ -24,6 +25,7 @@ object ThemeManager {
 
     private const val PREF_ACTIVE_THEME = "active_system_theme"
     private const val PREF_CUSTOM_SKIN_FILE = "active_custom_skin_file"
+    private const val PREF_SKIN_ASSET_PATH = "active_skin_asset_path"
     const val PREF_THEME_MODE = "theme_mode"
 
     private val listeners = mutableListOf<ThemeChangeListener>()
@@ -43,8 +45,34 @@ object ThemeManager {
     }
 
     private var initialized = false
-    private var skinArtwork: Map<String, ByteArray> = emptyMap()
+    var skinArtwork: Map<String, ByteArray> = emptyMap()
+        private set
+    var bundledSkinArtwork: Map<String, ByteArray> = emptyMap()
+        private set
+    var bundledSkinColors: ThemeColors? = null
+        private set
+    var activeAudioPlayerTheme: ThemeColors? = null
+        private set
     private val skinBitmaps = mutableMapOf<String, android.graphics.Bitmap>()
+    private var cachedPlaylistTitlebar: android.graphics.Bitmap? = null
+    private var cachedPlaylistBottomBar: android.graphics.Bitmap? = null
+    private var cachedPlaylistLeftTile: android.graphics.Bitmap? = null
+    private var cachedPlaylistRightTile: android.graphics.Bitmap? = null
+
+    fun clearSkinBitmaps() {
+        skinBitmaps.values.forEach { it.recycle() }
+        skinBitmaps.clear()
+        cachedPlaylistTitlebar?.recycle()
+        cachedPlaylistTitlebar = null
+        cachedPlaylistBottomBar?.recycle()
+        cachedPlaylistBottomBar = null
+        cachedPlaylistLeftTile?.recycle()
+        cachedPlaylistLeftTile = null
+        cachedPlaylistRightTile?.recycle()
+        cachedPlaylistRightTile = null
+    }
+
+    const val PREF_AUDIO_PLAYER_THEME = "audio_player_theme"
 
     fun isSystemInDarkMode(context: Context): Boolean {
         val uiMode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
@@ -72,31 +100,153 @@ object ThemeManager {
         }
     }
 
+    fun getDialogTheme(context: Context): Int {
+        val isDark = resolveIsDark(context)
+        return if (isDark) {
+            android.R.style.Theme_Material_Dialog_Alert
+        } else {
+            android.R.style.Theme_Material_Light_Dialog_Alert
+        }
+    }
+
+    fun createDialogBuilder(context: Context): AlertDialog.Builder {
+        return AlertDialog.Builder(context, getDialogTheme(context))
+    }
+
     fun init(context: Context, explicitDark: Boolean? = null) {
         if (initialized) return
         initialized = true
         val shared = context.getSharedPreferences("browser", Context.MODE_PRIVATE)
         smoothSkinScaling = shared.getBoolean("skin_smooth_scaling", false)
+        ensureBundledSkinLoaded(context)
         val savedThemeId = shared.getString(PREF_ACTIVE_THEME, AppThemeId.MODERN.name)
         val isDark = explicitDark ?: resolveIsDark(context)
         activeTheme = when (savedThemeId) {
-            AppThemeId.WINAMP_CLASSIC.name -> ThemeColors.WINAMP_CLASSIC
+            AppThemeId.WINAMP_CLASSIC.name -> {
+                skinArtwork = bundledSkinArtwork
+                bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
+            }
             AppThemeId.WMP_GLASS.name -> ThemeColors.WMP_GLASS
             AppThemeId.FOOBAR2000.name -> ThemeColors.FOOBAR2000
+            AppThemeId.CUSTOM_WSZ.name -> {
+                val skinPath = shared.getString(PREF_CUSTOM_SKIN_FILE, null)
+                val skinAsset = shared.getString(PREF_SKIN_ASSET_PATH, null)
+                if (skinPath != null && File(skinPath).exists()) {
+                    WinampSkinParser.parseSkin(context, Uri.fromFile(File(skinPath)), shared.getString("custom_skin_name", null))?.let { parsed ->
+                        skinArtwork = parsed.artwork
+                        parsed.themeColors
+                    } ?: run {
+                        skinArtwork = bundledSkinArtwork
+                        bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
+                    }
+                } else if (!skinAsset.isNullOrEmpty()) {
+                    loadBundledSkin(context, skinAsset)?.let { parsed ->
+                        skinArtwork = parsed.artwork
+                        parsed.themeColors
+                    } ?: run {
+                        skinArtwork = bundledSkinArtwork
+                        bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
+                    }
+                } else {
+                    skinArtwork = bundledSkinArtwork
+                    bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
+                }
+            }
+            else -> ThemeColors.modern(isDark)
+        }
+    }
+
+    fun ensureBundledSkinLoaded(context: Context) {
+        if (bundledSkinArtwork.isEmpty() || bundledSkinColors == null) {
+            try {
+                loadBundledSkin(context, "skins/base-2.91.wsz")?.let {
+                    bundledSkinArtwork = it.artwork
+                    bundledSkinColors = it.themeColors.copy(id = AppThemeId.WINAMP_CLASSIC)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("ThemeManager", "Could not load base-2.91.wsz", e)
+            }
+        }
+    }
+
+    fun loadBundledSkin(context: Context, skinAssetPath: String): WinampSkinParser.ParsedSkin? {
+        val path = if (skinAssetPath.startsWith("skins/")) skinAssetPath else "skins/$skinAssetPath"
+        return try {
+            context.assets.open(path).use { stream ->
+                val displayName = skinAssetPath.substringAfterLast('/').substringBeforeLast('.')
+                    .replace('_', ' ').replace('-', ' ')
+                WinampSkinParser.parseSkinFromStream(stream, displayName)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun getAudioPlayerTheme(context: Context): ThemeColors {
+        activeAudioPlayerTheme?.let { return it }
+        val shared = context.getSharedPreferences("browser", Context.MODE_PRIVATE)
+        val savedThemeId = shared.getString(PREF_AUDIO_PLAYER_THEME, AppThemeId.WINAMP_CLASSIC.name)
+        ensureBundledSkinLoaded(context)
+        val resolved = when (savedThemeId) {
+            AppThemeId.WINAMP_CLASSIC.name -> {
+                skinArtwork = bundledSkinArtwork
+                bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
+            }
             AppThemeId.CUSTOM_WSZ.name -> {
                 val skinPath = shared.getString(PREF_CUSTOM_SKIN_FILE, null)
                 if (skinPath != null && File(skinPath).exists()) {
                     WinampSkinParser.parseSkin(context, Uri.fromFile(File(skinPath)), shared.getString("custom_skin_name", null))?.let { parsed ->
                         skinArtwork = parsed.artwork
                         parsed.themeColors
+                    } ?: run {
+                        skinArtwork = bundledSkinArtwork
+                        bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
                     }
-                        ?: ThemeColors.WINAMP_CLASSIC
                 } else {
-                    ThemeColors.WINAMP_CLASSIC
+                    skinArtwork = bundledSkinArtwork
+                    bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
                 }
             }
-            else -> ThemeColors.modern(isDark)
+            AppThemeId.WMP_GLASS.name -> ThemeColors.WMP_GLASS
+            AppThemeId.FOOBAR2000.name -> ThemeColors.FOOBAR2000
+            AppThemeId.MODERN.name -> ThemeColors.modern(resolveIsDark(context))
+            else -> {
+                val bundled = if (!savedThemeId.isNullOrEmpty()) loadBundledSkin(context, savedThemeId) else null
+                if (bundled != null) {
+                    skinArtwork = bundled.artwork
+                    bundled.themeColors
+                } else {
+                    skinArtwork = bundledSkinArtwork
+                    bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
+                }
+            }
         }
+        activeAudioPlayerTheme = resolved
+        return resolved
+    }
+
+    fun setAudioPlayerSkin(
+        context: Context,
+        theme: ThemeColors,
+        artwork: Map<String, ByteArray>,
+        skinFile: File? = null,
+        prefKey: String? = null
+    ) {
+        val shared = context.getSharedPreferences("browser", Context.MODE_PRIVATE)
+        val key = prefKey ?: (skinFile?.absolutePath ?: theme.id.name)
+        shared.edit().putString(PREF_AUDIO_PLAYER_THEME, key).apply()
+        activeAudioPlayerTheme = theme
+        setTheme(context, theme, skinFile = skinFile, artwork = artwork, assetPath = prefKey?.takeIf { it.startsWith("skins/") })
+    }
+
+    fun setAudioPlayerTheme(context: Context, theme: ThemeColors) {
+        ensureBundledSkinLoaded(context)
+        val (art, resolvedTheme) = when (theme.id) {
+            AppThemeId.WINAMP_CLASSIC -> bundledSkinArtwork to (bundledSkinColors ?: theme)
+            AppThemeId.CUSTOM_WSZ -> skinArtwork to theme
+            else -> emptyMap<String, ByteArray>() to theme
+        }
+        setAudioPlayerSkin(context, resolvedTheme, art, prefKey = theme.id.name)
     }
 
     fun setThemeMode(context: Context, mode: ThemeMode) {
@@ -111,13 +261,13 @@ object ThemeManager {
     }
 
     fun handleConfigurationChanged(context: Context, newConfig: Configuration) {
-        if (getThemeMode(context) == ThemeMode.SYSTEM && activeTheme.id == AppThemeId.MODERN) {
+        if (getThemeMode(context) == ThemeMode.SYSTEM) {
             val isNight = (newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-            if (activeTheme.isDark != isNight) {
+            if (activeTheme.id == AppThemeId.MODERN && activeTheme.isDark != isNight) {
                 activeTheme = ThemeColors.modern(isNight)
-                synchronized(listeners) {
-                    for (l in listeners) l.onThemeChanged(activeTheme)
-                }
+            }
+            synchronized(listeners) {
+                for (l in listeners) l.onThemeChanged(activeTheme)
             }
         }
     }
@@ -134,9 +284,15 @@ object ThemeManager {
         }
     }
 
-    fun setTheme(context: Context, theme: ThemeColors, skinFile: File? = null, artwork: Map<String, ByteArray> = emptyMap()) {
+    fun setTheme(
+        context: Context,
+        theme: ThemeColors,
+        skinFile: File? = null,
+        artwork: Map<String, ByteArray> = emptyMap(),
+        assetPath: String? = null
+    ) {
         skinArtwork = artwork
-        skinBitmaps.clear()
+        clearSkinBitmaps()
         activeTheme = theme
         val shared = context.getSharedPreferences("browser", Context.MODE_PRIVATE)
         shared.edit().apply {
@@ -144,8 +300,13 @@ object ThemeManager {
             if (skinFile != null) {
                 putString(PREF_CUSTOM_SKIN_FILE, skinFile.absolutePath)
                 putString("custom_skin_name", theme.name)
+                remove(PREF_SKIN_ASSET_PATH)
+            } else if (assetPath != null) {
+                putString(PREF_SKIN_ASSET_PATH, assetPath)
+                remove(PREF_CUSTOM_SKIN_FILE)
             } else if (theme.id != AppThemeId.CUSTOM_WSZ) {
                 remove(PREF_CUSTOM_SKIN_FILE)
+                remove(PREF_SKIN_ASSET_PATH)
             }
         }.apply()
 
@@ -193,27 +354,113 @@ object ThemeManager {
                 }
             } else uri.lastPathSegment
             val parsed = destFile.inputStream().use {
-                WinampSkinParser.parseSkinFromStream(it, name?.substringBeforeLast('.') ?: "Winamp Skin")
-            } ?: throw java.io.IOException("No supported classic Winamp skin resources found")
+                WinampSkinParser.parseSkinFromStream(it, name?.substringBeforeLast('.') ?: "Custom Skin")
+            } ?: throw java.io.IOException("No supported skin resources found")
             android.os.Handler(context.mainLooper).post {
                 setTheme(context, parsed.themeColors, destFile, parsed.artwork)
             }
             parsed.themeColors
         } catch (error: Exception) {
             destFile.delete()
-            android.util.Log.w("WinampSkin", "Import failed", error)
+            android.util.Log.w("AudioSkin", "Import failed", error)
             null
         }
     }
 
-    private fun skinBitmap(name: String): android.graphics.Bitmap? {
-        if (activeTheme.id != AppThemeId.CUSTOM_WSZ) return null
-        skinBitmaps[name]?.let { return it }
-        val bytes = skinArtwork[name] ?: return null
+    fun skinBitmap(name: String): android.graphics.Bitmap? {
+        val lower = name.lowercase(Locale.ROOT)
+        skinBitmaps[lower]?.let { return it }
+        val bytes = skinArtwork[lower] ?: bundledSkinArtwork[lower] ?: return null
         val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
         android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outWidth.toLong() * bounds.outHeight > 2_000_000) return null
-        return android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.also { skinBitmaps[name] = it }
+        return android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.also { skinBitmaps[lower] = it }
+    }
+
+    fun getSkinSprite(name: String, src: android.graphics.Rect): android.graphics.Bitmap? {
+        val full = skinBitmap(name) ?: return null
+        val left = src.left.coerceIn(0, full.width)
+        val top = src.top.coerceIn(0, full.height)
+        val right = src.right.coerceIn(left, full.width)
+        val bottom = src.bottom.coerceIn(top, full.height)
+        val w = right - left
+        val h = bottom - top
+        if (w <= 0 || h <= 0) return null
+        return try {
+            android.graphics.Bitmap.createBitmap(full, left, top, w, h)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun createSkinButtonDrawable(
+        bitmapName: String,
+        normalRect: android.graphics.Rect,
+        pressedRect: android.graphics.Rect,
+        activeRect: android.graphics.Rect? = null,
+        activePressedRect: android.graphics.Rect? = null
+    ): android.graphics.drawable.Drawable? {
+        val normalBmp = getSkinSprite(bitmapName, normalRect) ?: return null
+        val pressedBmp = getSkinSprite(bitmapName, pressedRect) ?: normalBmp
+
+        val sld = android.graphics.drawable.StateListDrawable()
+        if (activeRect != null && activePressedRect != null) {
+            val activeBmp = getSkinSprite(bitmapName, activeRect) ?: normalBmp
+            val activePressedBmp = getSkinSprite(bitmapName, activePressedRect) ?: pressedBmp
+            sld.addState(intArrayOf(android.R.attr.state_checked, android.R.attr.state_pressed),
+                android.graphics.drawable.BitmapDrawable(null, activePressedBmp).apply { isFilterBitmap = smoothSkinScaling })
+            sld.addState(intArrayOf(android.R.attr.state_checked),
+                android.graphics.drawable.BitmapDrawable(null, activeBmp).apply { isFilterBitmap = smoothSkinScaling })
+        }
+        sld.addState(intArrayOf(android.R.attr.state_pressed),
+            android.graphics.drawable.BitmapDrawable(null, pressedBmp).apply { isFilterBitmap = smoothSkinScaling })
+        sld.addState(intArrayOf(),
+            android.graphics.drawable.BitmapDrawable(null, normalBmp).apply { isFilterBitmap = smoothSkinScaling })
+        return sld
+    }
+
+    fun createCButtonDrawable(index: Int): android.graphics.drawable.Drawable? {
+        // Prev: 0..23, Play: 23..46, Pause: 46..69, Stop: 69..92, Next: 92..114, Eject: 114..136
+        val (x, w) = when (index) {
+            0 -> 0 to 23
+            1 -> 23 to 23
+            2 -> 46 to 23
+            3 -> 69 to 23
+            4 -> 92 to 22
+            5 -> 114 to 22
+            else -> return null
+        }
+        return createSkinButtonDrawable("cbuttons.bmp",
+            android.graphics.Rect(x, 0, x + w, 18),
+            android.graphics.Rect(x, 18, x + w, 36)
+        )
+    }
+
+    fun createShuffleDrawable(): android.graphics.drawable.Drawable? =
+        createSkinButtonDrawable("shufrep.bmp",
+            android.graphics.Rect(28, 0, 75, 15),
+            android.graphics.Rect(28, 15, 75, 30),
+            android.graphics.Rect(28, 30, 75, 45),
+            android.graphics.Rect(28, 45, 75, 60)
+        )
+
+    fun createRepeatDrawable(): android.graphics.drawable.Drawable? =
+        createSkinButtonDrawable("shufrep.bmp",
+            android.graphics.Rect(0, 0, 28, 15),
+            android.graphics.Rect(0, 15, 28, 30),
+            android.graphics.Rect(0, 30, 28, 45),
+            android.graphics.Rect(0, 45, 28, 60)
+        )
+
+    fun createSeekThumbDrawable(): android.graphics.drawable.Drawable? {
+        val normal = getSkinSprite("posbar.bmp", android.graphics.Rect(248, 0, 277, 10)) ?: return null
+        val pressed = getSkinSprite("posbar.bmp", android.graphics.Rect(278, 0, 307, 10)) ?: normal
+        val sld = android.graphics.drawable.StateListDrawable()
+        sld.addState(intArrayOf(android.R.attr.state_pressed),
+            android.graphics.drawable.BitmapDrawable(null, pressed).apply { isFilterBitmap = smoothSkinScaling })
+        sld.addState(intArrayOf(),
+            android.graphics.drawable.BitmapDrawable(null, normal).apply { isFilterBitmap = smoothSkinScaling })
+        return sld
     }
 
     fun createFloatingFrameDrawable(theme: ThemeColors, density: Float): android.graphics.drawable.Drawable =
@@ -246,10 +493,106 @@ object ThemeManager {
         }
     }
 
-    fun createToolbarDrawable(theme: ThemeColors, density: Float): android.graphics.drawable.Drawable {
-        val title = skinBitmap("titlebar.bmp")
-        if (title != null && theme.id == AppThemeId.CUSTOM_WSZ) {
-            return WinampChromeDrawable(theme.toolbarBackground, theme.toolbarBorder, density, null, title, smoothSkinScaling)
+    fun createToolbarDrawable(theme: ThemeColors, density: Float, isDark: Boolean = theme.isDark): android.graphics.drawable.Drawable {
+        val dpStroke = (1 * density).toInt().coerceAtLeast(1)
+        val bgColor = if (isDark) Color.BLACK else Color.WHITE
+        val strokeColor = if (isDark) 0xFF2A2A2A.toInt() else 0xFFE0E0E0.toInt()
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(bgColor)
+            setStroke(dpStroke, strokeColor)
+        }
+    }
+
+    fun getPlaylistTitlebarBitmap(): android.graphics.Bitmap? {
+        cachedPlaylistTitlebar?.let { return it }
+        val pledit = skinBitmap("pledit.bmp")
+        val gen = skinBitmap("gen.bmp")
+        val bmp = pledit ?: gen ?: return null
+
+        val isPledit = (pledit != null)
+        val yOffset = if (isPledit && bmp.height >= 41) 21 else 0
+        val skinName = if (isPledit) "pledit.bmp" else "gen.bmp"
+
+        val assembled = android.graphics.Bitmap.createBitmap(275, 20, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(assembled)
+        val p = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+
+        // 1. Left corner: (0, yOffset, 25, yOffset + 20)
+        getSkinSprite(skinName, android.graphics.Rect(0, yOffset, 25, yOffset + 20))?.let {
+            c.drawBitmap(it, 0f, 0f, p)
+        }
+
+        // 2. Title piece: (26, yOffset, 126, yOffset + 20) width 100
+        getSkinSprite(skinName, android.graphics.Rect(26, yOffset, 126, yOffset + 20))?.let {
+            c.drawBitmap(it, 25f, 0f, p)
+        }
+
+        // 3. Center filler: (127, yOffset, 152, yOffset + 20) width 25 repeated from x=125 to 250
+        getSkinSprite(skinName, android.graphics.Rect(127, yOffset, 152, yOffset + 20))?.let { fill ->
+            var curX = 125f
+            while (curX < 250f) {
+                c.drawBitmap(fill, curX, 0f, p)
+                curX += 25f
+            }
+        }
+
+        // 4. Right corner: (153, yOffset, 178, yOffset + 20) width 25
+        getSkinSprite(skinName, android.graphics.Rect(153, yOffset, 178, yOffset + 20))?.let {
+            c.drawBitmap(it, 250f, 0f, p)
+        }
+
+        cachedPlaylistTitlebar = assembled
+        return assembled
+    }
+
+    fun getPlaylistBottomBarBitmap(): android.graphics.Bitmap? {
+        cachedPlaylistBottomBar?.let { return it }
+        val pledit = skinBitmap("pledit.bmp") ?: return null
+        if (pledit.height < 110 || pledit.width < 276) return null
+
+        val assembled = android.graphics.Bitmap.createBitmap(275, 38, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(assembled)
+        val p = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+
+        // Left piece: (0, 72, 125, 110) at x=0 (w=125, h=38)
+        getSkinSprite("pledit.bmp", android.graphics.Rect(0, 72, 125, 110))?.let {
+            c.drawBitmap(it, 0f, 0f, p)
+        }
+
+        // Right piece: (126, 72, 276, 110) at x=125 (w=150, h=38)
+        getSkinSprite("pledit.bmp", android.graphics.Rect(126, 72, 276, 110))?.let {
+            c.drawBitmap(it, 125f, 0f, p)
+        }
+
+        cachedPlaylistBottomBar = assembled
+        return assembled
+    }
+
+    fun getPlaylistLeftBorderTile(): android.graphics.Bitmap? {
+        cachedPlaylistLeftTile?.let { return it }
+        val pledit = skinBitmap("pledit.bmp") ?: return null
+        if (pledit.height < 71 || pledit.width < 25) return null
+        val tile = getSkinSprite("pledit.bmp", android.graphics.Rect(0, 42, 25, 71))
+        cachedPlaylistLeftTile = tile
+        return tile
+    }
+
+    fun getPlaylistRightBorderTile(): android.graphics.Bitmap? {
+        cachedPlaylistRightTile?.let { return it }
+        val pledit = skinBitmap("pledit.bmp") ?: return null
+        if (pledit.height < 71 || pledit.width < 51) return null
+        val tile = getSkinSprite("pledit.bmp", android.graphics.Rect(26, 42, 51, 71))
+        cachedPlaylistRightTile = tile
+        return tile
+    }
+
+    fun createPlaylistTitlebarDrawable(theme: ThemeColors, density: Float): android.graphics.drawable.Drawable? {
+        val bmp = getPlaylistTitlebarBitmap()
+        if (bmp != null) {
+            return android.graphics.drawable.BitmapDrawable(null, bmp).apply {
+                isFilterBitmap = smoothSkinScaling
+            }
         }
         val dpStroke = (1 * density).toInt().coerceAtLeast(1)
         return GradientDrawable().apply {

@@ -98,16 +98,7 @@ object TgaDecoder {
             flipped
         }
 
-        val fullBitmap = Bitmap.createBitmap(finalPixels, width, height, Bitmap.Config.ARGB_8888)
-        val maxDim = max(width, height)
-        if (maxDim <= targetPx) return fullBitmap
-
-        val scale = targetPx.toDouble() / maxDim
-        val outW = (width * scale).roundToInt().coerceAtLeast(1)
-        val outH = (height * scale).roundToInt().coerceAtLeast(1)
-        val scaled = Bitmap.createScaledBitmap(fullBitmap, outW, outH, true)
-        if (scaled !== fullBitmap) fullBitmap.recycle()
-        return scaled
+        return ImageDecodeUtils.createScaledBitmap(finalPixels, width, height, targetPx)
     }
 
     private fun readPixel(bytes: ByteArray, ptr: Int, bpp: Int): Int {

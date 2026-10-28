@@ -131,9 +131,18 @@ object FileMagicDetector {
         }
 
         if (detected != null) {
-            synchronized(fileCache) {
-                fileCache.put(cacheKey, detected)
+            val nameLower = file.name.lowercase(Locale.ROOT)
+            val finalDetected = if (detected.mimeType == "text/plain" && nameLower.endsWith(".g722")) {
+                FileMagicResult("audio/x-g722", "G.722 Audio")
+            } else if (nameLower.endsWith(".wma") && detected.mimeType != "audio/x-ms-wma") {
+                FileMagicResult("audio/x-ms-wma", "Windows Media Audio (WMA)")
+            } else {
+                detected
             }
+            synchronized(fileCache) {
+                fileCache.put(cacheKey, finalDetected)
+            }
+            return finalDetected
         }
         return detected
     }
@@ -395,6 +404,65 @@ object FileMagicDetector {
             }
         }
 
+        // RF64 audio
+        if (header.size >= 12 && String(header, 0, 4, StandardCharsets.US_ASCII) == "RF64") {
+            return FileMagicResult("audio/x-rf64", "Broadcast RF64 Audio")
+        }
+
+        // Sony Wave64: "riff" GUID
+        if (header.size >= 16 && String(header, 0, 4, StandardCharsets.US_ASCII) == "riff") {
+            return FileMagicResult("audio/x-wave64", "Sony Wave64 Audio")
+        }
+
+        // IFF FORM (AIFF, 8SVX)
+        if (header.size >= 12 && String(header, 0, 4, StandardCharsets.US_ASCII) == "FORM") {
+            return when (String(header, 8, 4, StandardCharsets.US_ASCII)) {
+                "AIFF", "AIFC" -> FileMagicResult("audio/x-aiff", "AIFF Audio")
+                "8SVX" -> FileMagicResult("audio/x-8svx", "Amiga 8SVX Audio")
+                else -> null
+            }
+        }
+
+        // Sun / NeXT AU: ".snd"
+        if (header.size >= 4 && String(header, 0, 4, StandardCharsets.US_ASCII) == ".snd") {
+            return FileMagicResult("audio/basic", "Sun/NeXT AU Audio")
+        }
+
+        // Creative Voice: "Creative Voice File"
+        if (header.size >= 19 && String(header, 0, 19, StandardCharsets.US_ASCII) == "Creative Voice File") {
+            return FileMagicResult("audio/x-voc", "Creative Voice File")
+        }
+
+        // Apple Core Audio Format: "caff"
+        if (header.size >= 4 && String(header, 0, 4, StandardCharsets.US_ASCII) == "caff") {
+            return FileMagicResult("audio/x-caf", "Core Audio Format")
+        }
+
+        // Standard MIDI: "MThd"
+        if (header.size >= 4 && String(header, 0, 4, StandardCharsets.US_ASCII) == "MThd") {
+            return FileMagicResult("audio/midi", "Standard MIDI")
+        }
+
+        // FastTracker II: "Extended Module: "
+        if (header.size >= 17 && String(header, 0, 16, StandardCharsets.US_ASCII) == "Extended Module:") {
+            return FileMagicResult("audio/x-xm", "FastTracker II Module")
+        }
+
+        // Impulse Tracker: "IMPM"
+        if (header.size >= 4 && String(header, 0, 4, StandardCharsets.US_ASCII) == "IMPM") {
+            return FileMagicResult("audio/x-it", "Impulse Tracker Module")
+        }
+
+        // Scream Tracker 3: "SCRM" at offset 44
+        if (header.size >= 48 && String(header, 44, 4, StandardCharsets.US_ASCII) == "SCRM") {
+            return FileMagicResult("audio/x-s3m", "Scream Tracker 3 Module")
+        }
+
+        // DSD / DSF: "DSD "
+        if (header.size >= 4 && String(header, 0, 4, StandardCharsets.US_ASCII) == "DSD ") {
+            return FileMagicResult("audio/x-dsf", "Direct Stream Digital")
+        }
+
         // BMP: "BM" + reserved 0 at bytes 6..9
         if (header.size >= 14 && header[0] == 'B'.code.toByte() && header[1] == 'M'.code.toByte() &&
             u16le(header, 6) == 0 && u16le(header, 8) == 0
@@ -416,6 +484,21 @@ object FileMagicDetector {
                 String(header, 4, 4, StandardCharsets.US_ASCII) == "JXL ")
         ) {
             return FileMagicResult("image/jxl", "JPEG XL Image")
+        }
+
+        // QOI (Quite OK Image): "qoif"
+        if (header.size >= 4 && String(header, 0, 4, StandardCharsets.US_ASCII) == "qoif") {
+            return FileMagicResult("image/x-qoi", "QOI Image")
+        }
+
+        // PSD: "8BPS"
+        if (header.size >= 4 && String(header, 0, 4, StandardCharsets.US_ASCII) == "8BPS") {
+            return FileMagicResult("image/vnd.adobe.photoshop", "Adobe Photoshop Image")
+        }
+
+        // OpenEXR: 76 2F 31 01
+        if (header.size >= 4 && u8(header, 0) == 0x76 && u8(header, 1) == 0x2F && u8(header, 2) == 0x31 && u8(header, 3) == 0x01) {
+            return FileMagicResult("image/x-exr", "OpenEXR Image")
         }
 
         // 8. Documents & Databases
@@ -468,11 +551,33 @@ object FileMagicDetector {
             return FileMagicResult("audio/ogg", "Ogg Audio")
         }
 
-        // MP3: "ID3" or frame sync FF FB / FF F3 / FF F2
-        if ((header.size >= 3 && String(header, 0, 3, StandardCharsets.US_ASCII) == "ID3") ||
-            (header.size >= 2 && u8(header, 0) == 0xFF && (u8(header, 1) == 0xFB || u8(header, 1) == 0xF3 || u8(header, 1) == 0xF2))
+        // MPEG audio: "ID3" or frame sync (MPEG Layer I/II/III)
+        if (header.size >= 3 && String(header, 0, 3, StandardCharsets.US_ASCII) == "ID3") {
+            return FileMagicResult("audio/mpeg", "MPEG Audio")
+        }
+        if (header.size >= 2 && u8(header, 0) == 0xFF && (u8(header, 1) and 0xE0) == 0xE0) {
+            val layer = (u8(header, 1) shr 1) and 0x03
+            if (layer in 1..3) {
+                val layerName = when (layer) { 3 -> "Layer I"; 2 -> "Layer II"; else -> "MP3" }
+                return FileMagicResult("audio/mpeg", "MPEG $layerName Audio")
+            }
+        }
+
+        // ASF / WMA: 30 26 B2 75 8E 66 CF 11 A6 D9 00 AA 00 62 CE 6C
+        if (header.size >= 16 &&
+            u8(header, 0) == 0x30 && u8(header, 1) == 0x26 && u8(header, 2) == 0xB2 && u8(header, 3) == 0x75 &&
+            u8(header, 4) == 0x8E && u8(header, 5) == 0x66 && u8(header, 6) == 0xCF && u8(header, 7) == 0x11 &&
+            u8(header, 8) == 0xA6 && u8(header, 9) == 0xD9 && u8(header, 10) == 0x00 && u8(header, 11) == 0xAA &&
+            u8(header, 12) == 0x00 && u8(header, 13) == 0x62 && u8(header, 14) == 0xCE && u8(header, 15) == 0x6C
         ) {
-            return FileMagicResult("audio/mpeg", "MP3 Audio")
+            return FileMagicResult("audio/x-ms-wma", "Windows Media Audio (WMA)")
+        }
+
+        // GSM 06.10: 33-byte frames with 0xD0 upper nibble
+        if (header.size >= 33 && (u8(header, 0) and 0xF0) == 0xD0 &&
+            (header.size < 66 || (u8(header, 33) and 0xF0) == 0xD0)
+        ) {
+            return FileMagicResult("audio/x-gsm", "GSM 06.10 Audio")
         }
 
         // MP4 / M4A / MOV ("ftyp" at offset 4)

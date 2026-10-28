@@ -847,12 +847,12 @@ class ImageViewerActivity : ViewerActivity() {
             AlertDialog.Builder(this)
                 .setTitle("Discard edits?")
                 .setMessage("You have unsaved edits. Discard them?")
-                .setPositiveButton("Discard") { _, _ -> finish() }
+                .setPositiveButton("Discard") { _, _ -> returnToFileManager() }
                 .setNegativeButton("Keep editing", null)
                 .show()
             return
         }
-        finish()
+        returnToFileManager()
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()

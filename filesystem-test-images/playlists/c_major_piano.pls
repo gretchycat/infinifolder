@@ -1,0 +1,21 @@
+[playlist]
+File1=../audio/c_major_piano.wav
+Title1=InfiniFolder - C Major Piano Chord (WAV)
+Length1=2
+File2=../audio/c_major_piano.flac
+Title2=InfiniFolder - C Major Piano Chord (FLAC)
+Length2=2
+File3=../audio/c_major_piano.mp3
+Title3=InfiniFolder - C Major Piano Chord (MP3)
+Length3=2
+File4=../audio/c_major_piano.alac
+Title4=InfiniFolder - C Major Piano Chord (ALAC)
+Length4=2
+File5=../audio/c_major_piano.mp2
+Title5=InfiniFolder - C Major Piano Chord (MP2)
+Length5=2
+File6=../audio/c_major_piano.mod
+Title6=InfiniFolder - C Major Piano Chord (MOD)
+Length6=2
+NumberOfEntries=6
+Version=2
