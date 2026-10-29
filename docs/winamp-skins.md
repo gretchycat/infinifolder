@@ -2,15 +2,15 @@
 
 ## Supported resources
 
-Classic `.wsz`/ZIP skins can be imported from Interface Theme → Import Winamp Skin using a path, storage URI, or Browse button. Import reads a private copy on a worker thread, validates it, then publishes the theme on the main thread. The private archive and display name survive app restarts. Failed imports leave the selected theme intact.
+Classic Winamp and XMMS skins in `.wsz`, ZIP, TAR, TAR.GZ/TGZ or TAR.BZ2 archives can be imported from Interface Theme → Import Winamp / XMMS Skin using a path, storage URI, or Browse button. Import reads a private copy on a worker thread, validates it, then publishes the theme on the main thread. The private archive and display name survive app restarts. Failed imports leave the selected theme intact.
 
 - `PLEDIT.TXT`: Normal, Current, NormalBG, SelectedBG and Font. Keys tolerate whitespace and case differences. Arial maps to the platform sans-serif font; monospace/Courier/console names select monospace. Arbitrary Windows font files are not imported.
 - `VISCOLOR.TXT`: background and spectrum/oscilloscope colors, including decimal RGB values with leading zeroes and inline comments.
 - `MAIN.BMP`, `GEN.BMP`, `CBUTTONS.BMP`: bitmap-derived surface, toolbar and button palettes. Black backgrounds receive differentiated fallback surfaces when artwork is missing.
-- `TITLEBAR.BMP`: classic title-bar end caps and a blank texture section, adapted to toolbar width without copying the embedded Winamp title text.
+- `TITLEBAR.BMP`: the audio player displays the original classic title-bar artwork, including any embedded text.
 - Floating-window borders use narrow edge strips from `MAIN.BMP`, excluding playback controls. Bitmap strips are tiled and scaled in whole-number steps without smoothing.
 
-File labels and selection backgrounds now consume the selected theme instead of fixed modern colors. Foreground colors for selected text and toolbar/button text receive contrast correction. The main toolbar and audio viewer share the title-bar drawable; floating windows also use the bitmap frame. Icons still follow the separate icon-theme system.
+File labels and selection backgrounds now consume the selected theme instead of fixed modern colors. Foreground colors for selected text and toolbar/button text receive contrast correction. The file manager toolbar uses theme colors without skin images; floating windows use the bitmap frame. Icons still follow the separate icon-theme system.
 
 ## Findings from project fixtures
 
@@ -26,4 +26,10 @@ Fixture archive contents were inspected directly. APK compilation validates inte
 
 ## Image scaling preference
 
-Interface Theme → Skin image scaling offers Integer scaling (crisp pixels, default) and Smooth scaling (fractional scaling with bitmap filtering). The setting is remembered across application restarts and applies to the shared bitmap toolbar and floating frame.
+Interface Theme → Skin image scaling offers Integer scaling (crisp pixels, default) and Smooth scaling (fractional scaling with bitmap filtering). The setting is remembered across application restarts and applies to the audio player and floating frame.
+
+## Audio player and XMMS
+
+The audio player has its own skin selection and persists its own imported archive, independently of the file manager interface theme. XMMS classic skin archives share the classic bitmap layout; ZIP, WSZ, TAR, gzip-compressed TAR and bzip2-compressed TAR are recognized by content. XMMS-specific extensions and unpacked skin directories are not supported.
+
+The audio visualizer is disabled until the playback subsystem provides reliable analysis data.

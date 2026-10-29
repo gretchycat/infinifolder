@@ -17,15 +17,15 @@ data class ThemeDirectory(
     val threshold: Int = 2
 ) {
     fun matchesSize(targetPx: Int): Boolean = when (type) {
-        DirectoryType.Fixed -> size == targetPx
-        DirectoryType.Scalable -> targetPx in minSize..maxSize
-        DirectoryType.Threshold -> targetPx in (size - threshold)..(size + threshold)
+        DirectoryType.Fixed -> size * scale == targetPx
+        DirectoryType.Scalable -> targetPx in (minSize * scale)..(maxSize * scale)
+        DirectoryType.Threshold -> targetPx in ((size - threshold) * scale)..((size + threshold) * scale)
     }
 
     fun sizeDistance(targetPx: Int): Int = when (type) {
-        DirectoryType.Fixed -> Math.abs(size - targetPx)
-        DirectoryType.Scalable -> if (targetPx in minSize..maxSize) 0 else if (targetPx < minSize) minSize - targetPx else targetPx - maxSize
-        DirectoryType.Threshold -> if (targetPx in (size - threshold)..(size + threshold)) 0 else Math.abs(size - targetPx)
+        DirectoryType.Fixed -> Math.abs(size * scale - targetPx)
+        DirectoryType.Scalable -> if (targetPx in (minSize * scale)..(maxSize * scale)) 0 else if (targetPx < minSize * scale) minSize * scale - targetPx else targetPx - maxSize * scale
+        DirectoryType.Threshold -> if (targetPx in ((size - threshold) * scale)..((size + threshold) * scale)) 0 else if (targetPx < (size - threshold) * scale) (size - threshold) * scale - targetPx else targetPx - (size + threshold) * scale
     }
 }
 
@@ -75,8 +75,8 @@ object FreeDesktopThemeParser {
                     key.equals("Inherits", ignoreCase = true) -> {
                         inherits = value.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
                     }
-                    key.equals("Directories", ignoreCase = true) -> {
-                        directoryNames = value.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                    key.equals("Directories", ignoreCase = true) || key.equals("ScaledDirectories", ignoreCase = true) -> {
+                        directoryNames.addAll(value.split(',').map { it.trim() }.filter { it.isNotEmpty() })
                     }
                 }
             } else if (currentSection.isNotEmpty()) {

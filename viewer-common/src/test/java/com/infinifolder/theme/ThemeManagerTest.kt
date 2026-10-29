@@ -120,4 +120,25 @@ class ThemeManagerTest {
             assertTrue(parsed?.artwork?.containsKey("numbers.bmp") == true)
         }
     }
+    @Test
+    fun testXmmsTarArchivesAndNestedSkinFiles() {
+        val tar = ByteArrayOutputStream()
+        org.apache.commons.compress.archivers.tar.TarArchiveOutputStream(tar).use { out ->
+            val data = "[Options]\nNormal=#00FF66\nNormalBG=#1A1A22\n".toByteArray()
+            val entry = org.apache.commons.compress.archivers.tar.TarArchiveEntry("skin/PLEDIT.TXT")
+            entry.size = data.size.toLong()
+            out.putArchiveEntry(entry)
+            out.write(data)
+            out.closeArchiveEntry()
+        }
+        val raw = tar.toByteArray()
+        val gz = ByteArrayOutputStream().also { bytes -> java.util.zip.GZIPOutputStream(bytes).use { it.write(raw) } }.toByteArray()
+        val bz = ByteArrayOutputStream().also { bytes -> org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream(bytes).use { it.write(raw) } }.toByteArray()
+        for (archive in listOf(raw, gz, bz)) {
+            val parsed = WinampSkinParser.parseSkinFromStream(ByteArrayInputStream(archive), "XMMS")
+            assertNotNull(parsed)
+            assertEquals(0xFF00FF66.toInt(), parsed?.themeColors?.textPrimary)
+        }
+    }
+
 }

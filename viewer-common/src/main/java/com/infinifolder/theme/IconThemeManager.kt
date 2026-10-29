@@ -30,18 +30,35 @@ class IconThemeManager(private val context: Context) {
     private val shared: SharedPreferences = context.getSharedPreferences("browser", Context.MODE_PRIVATE)
     private val importedThemesDir = File(context.filesDir, "icon_themes").apply { mkdirs() }
     private val themeCache = ConcurrentHashMap<String, FreeDesktopIconTheme>()
-    private var activeTheme: FreeDesktopIconTheme? = null
+    @Volatile private var activeTheme: FreeDesktopIconTheme? = null
+
+    @Volatile private var loadedThemeId: String? = null
+    @Volatile private var loadedRevision: Int = shared.getInt("icon_theme_revision", 0)
 
     init {
         val savedThemeId = shared.getString("active_icon_theme", null)
         if (!savedThemeId.isNullOrBlank()) {
             loadTheme(savedThemeId)
+            loadedThemeId = savedThemeId
         }
     }
 
-    fun hasActiveTheme(): Boolean = activeTheme != null
+    private fun refreshActiveTheme() {
+        val saved = shared.getString("active_icon_theme", null)
+        val revision = shared.getInt("icon_theme_revision", 0)
+        if (saved != loadedThemeId || revision != loadedRevision) synchronized(this) {
+            if (saved != loadedThemeId || revision != loadedRevision) {
+                if (revision != loadedRevision) themeCache.clear()
+                if (saved.isNullOrBlank()) activeTheme = null else loadTheme(saved)
+                loadedThemeId = saved
+                loadedRevision = revision
+            }
+        }
+    }
 
-    fun getActiveThemeInfo(): IconThemeInfo? = activeTheme?.info
+    fun hasActiveTheme(): Boolean { refreshActiveTheme(); return activeTheme != null }
+
+    fun getActiveThemeInfo(): IconThemeInfo? { refreshActiveTheme(); return activeTheme?.info }
 
     fun getActiveThemeId(): String? = shared.getString("active_icon_theme", null)
 
@@ -50,9 +67,13 @@ class IconThemeManager(private val context: Context) {
         if (themeId.isNullOrBlank()) {
             shared.edit().remove("active_icon_theme").apply()
             activeTheme = null
+            loadedThemeId = null
         } else {
-            shared.edit().putString("active_icon_theme", themeId).apply()
             loadTheme(themeId)
+            if (activeTheme != null) {
+                shared.edit().putString("active_icon_theme", themeId).apply()
+                loadedThemeId = themeId
+            }
         }
     }
 
@@ -130,6 +151,16 @@ class IconThemeManager(private val context: Context) {
         }
     }
 
+    /** Install the bundled desktop themes once, without replacing user-installed themes. Call off the UI thread. */
+    fun installBundledThemes(progressCallback: ((String) -> Unit)? = null) {
+        val bundled = listOf("Adwaita", "AdwaitaLegacy", "breeze", "breeze-dark", "Papirus")
+        val existing = listAvailableThemes().map { it.id.lowercase(Locale.ROOT) }.toSet()
+        for (id in bundled) {
+            if (id.lowercase(Locale.ROOT) in existing) continue
+            importThemeFromArchive({ context.assets.open("icon-themes/$id.zip") }, "$id.zip", progressCallback)
+        }
+    }
+
     /**
      * Imports an icon theme from a directory (e.g. extracted folder).
      */
@@ -141,15 +172,18 @@ class IconThemeManager(private val context: Context) {
         val parsed = FreeDesktopThemeParser.parse(indexTheme, themeRoot, isSystem = false)
             ?: throw IllegalArgumentException("Invalid index.theme format")
 
-        val targetDir = File(importedThemesDir, parsed.name.replace(Regex("""[^a-zA-Z0-9._-]"""), "_"))
+        val targetDir = File(importedThemesDir, themeRoot.name.replace(Regex("""[^a-zA-Z0-9._-]"""), "_").ifEmpty { "imported_theme" })
         if (targetDir.canonicalPath != themeRoot.canonicalPath) {
             targetDir.deleteRecursively()
             themeRoot.copyRecursively(targetDir, overwrite = true)
         }
 
         val finalIndex = File(targetDir, "index.theme")
-        return FreeDesktopThemeParser.parse(finalIndex, targetDir, isSystem = false)
+        val result = FreeDesktopThemeParser.parse(finalIndex, targetDir, isSystem = false)
             ?: throw IllegalStateException("Failed to parse imported theme")
+        themeCache.clear()
+        shared.edit().putInt("icon_theme_revision", shared.getInt("icon_theme_revision", 0) + 1).apply()
+        return result
     }
 
     /**
@@ -168,23 +202,28 @@ class IconThemeManager(private val context: Context) {
             val indexTheme = findIndexThemeFile(tempExtractDir)
                 ?: throw IllegalArgumentException("No index.theme file found in archive")
 
-            val themeRoot = indexTheme.parentFile ?: tempExtractDir
-            val parsed = FreeDesktopThemeParser.parse(indexTheme, themeRoot, isSystem = false)
+            val indexRoot = indexTheme.parentFile ?: tempExtractDir
+            val parsed = FreeDesktopThemeParser.parse(indexTheme, indexRoot, isSystem = false)
                 ?: throw IllegalArgumentException("Could not parse index.theme in archive")
+            // GNOME source releases keep index.theme beside the named artwork directory.
+            val namedArtwork = File(indexRoot, parsed.name)
+            val themeRoot = if (namedArtwork.isDirectory && !File(namedArtwork, "index.theme").exists()) namedArtwork else indexRoot
 
-            val targetDirName = parsed.name.replace(Regex("""[^a-zA-Z0-9._-]"""), "_").ifEmpty { "imported_theme" }
+            val targetDirName = themeRoot.name.replace(Regex("""[^a-zA-Z0-9._-]"""), "_").ifEmpty { "imported_theme" }
             val targetDir = File(importedThemesDir, targetDirName)
             targetDir.deleteRecursively()
             targetDir.mkdirs()
 
             progressCallback?.invoke("Installing ${parsed.name}...")
             themeRoot.copyRecursively(targetDir, overwrite = true)
+            if (themeRoot != indexRoot) indexTheme.copyTo(File(targetDir, "index.theme"), overwrite = true)
 
             val finalIndex = File(targetDir, "index.theme")
             val result = FreeDesktopThemeParser.parse(finalIndex, targetDir, isSystem = false)
                 ?: throw IllegalStateException("Theme verification failed after install")
 
-            themeCache.remove(result.id)
+            themeCache.clear()
+            shared.edit().putInt("icon_theme_revision", shared.getInt("icon_theme_revision", 0) + 1).apply()
             progressCallback?.invoke("Theme '${result.name}' installed successfully!")
             return result
         } finally {
@@ -199,7 +238,9 @@ class IconThemeManager(private val context: Context) {
             if (activeTheme?.info?.id == themeId) {
                 setActiveTheme(null)
             }
-            return target.deleteRecursively()
+            val deleted = target.deleteRecursively()
+            if (deleted) shared.edit().putInt("icon_theme_revision", shared.getInt("icon_theme_revision", 0) + 1).apply()
+            return deleted
         }
         return false
     }
@@ -242,7 +283,7 @@ class IconThemeManager(private val context: Context) {
         }
 
         val isArchive = name.endsWith(".zip") || name.endsWith(".tar.gz") || name.endsWith(".tgz") ||
-            name.endsWith(".tar.xz") || name.endsWith(".txz") || name.endsWith(".tar.bz2") || name.endsWith(".tar")
+            name.endsWith(".tar.xz") || name.endsWith(".txz") || name.endsWith(".tar.bz2") || name.endsWith(".tbz2") || name.endsWith(".tar")
         if (!isArchive) {
             themeCandidateCache.put(cacheKey, false)
             return false
@@ -275,7 +316,7 @@ class IconThemeManager(private val context: Context) {
                 val tarIn: TarArchiveInputStream = when {
                     name.endsWith(".tar.gz") || name.endsWith(".tgz") -> TarArchiveInputStream(GzipCompressorInputStream(bis))
                     name.endsWith(".tar.xz") || name.endsWith(".txz") -> TarArchiveInputStream(XZCompressorInputStream(bis))
-                    name.endsWith(".tar.bz2") -> TarArchiveInputStream(BZip2CompressorInputStream(bis))
+                    name.endsWith(".tar.bz2") || name.endsWith(".tbz2") -> TarArchiveInputStream(BZip2CompressorInputStream(bis))
                     else -> TarArchiveInputStream(bis)
                 }
                 tarIn.use { input ->
@@ -318,7 +359,7 @@ class IconThemeManager(private val context: Context) {
                     val tarIn: TarArchiveInputStream = when {
                         name.endsWith(".tar.gz") || name.endsWith(".tgz") -> TarArchiveInputStream(GzipCompressorInputStream(bis))
                         name.endsWith(".tar.xz") || name.endsWith(".txz") -> TarArchiveInputStream(XZCompressorInputStream(bis))
-                        name.endsWith(".tar.bz2") -> TarArchiveInputStream(BZip2CompressorInputStream(bis))
+                        name.endsWith(".tar.bz2") || name.endsWith(".tbz2") -> TarArchiveInputStream(BZip2CompressorInputStream(bis))
                         else -> TarArchiveInputStream(bis)
                     }
                     tarIn.use { input ->
@@ -361,12 +402,12 @@ class IconThemeManager(private val context: Context) {
                 extractTar(TarArchiveInputStream(bis), destination, deferredSymlinks)
             }
             lowerName.endsWith(".zip") -> {
-                extractZip(ZipArchiveInputStream(bis), destination)
+                extractZip(ZipArchiveInputStream(bis), destination, deferredSymlinks)
             }
             else -> {
                 // Try zip first, then tar
                 try {
-                    extractZip(ZipArchiveInputStream(bis), destination)
+                    extractZip(ZipArchiveInputStream(bis), destination, deferredSymlinks)
                 } catch (_: Exception) {
                     val retryBis = BufferedInputStream(openStream())
                     extractTar(TarArchiveInputStream(retryBis), destination, deferredSymlinks)
@@ -377,6 +418,8 @@ class IconThemeManager(private val context: Context) {
         // Resolve deferred symbolic links
         for ((linkFile, targetPath) in deferredSymlinks) {
             try {
+                val target = File(linkFile.parentFile, targetPath)
+                if (File(targetPath).isAbsolute || !target.canonicalPath.startsWith(destination.canonicalPath + File.separator)) continue
                 if (android.os.Build.VERSION.SDK_INT >= 26) {
                     Files.createSymbolicLink(linkFile.toPath(), Paths.get(targetPath))
                 } else {
@@ -387,7 +430,7 @@ class IconThemeManager(private val context: Context) {
             } catch (_: Exception) {
                 // If symlink creation fails on filesystem, copy target file directly
                 val target = File(linkFile.parentFile, targetPath)
-                if (target.isFile) {
+                if (!File(targetPath).isAbsolute && target.canonicalPath.startsWith(destination.canonicalPath + File.separator) && target.isFile) {
                     try { target.copyTo(linkFile, overwrite = true) } catch (_: Exception) {}
                 }
             }
@@ -402,7 +445,7 @@ class IconThemeManager(private val context: Context) {
                 if (cleanName.isNotEmpty()) {
                     val destFile = File(destination, cleanName)
                     // Security guard against path traversal
-                    if (destFile.canonicalPath.startsWith(destination.canonicalPath)) {
+                    if (destFile.canonicalPath.startsWith(destination.canonicalPath + File.separator)) {
                         if (entry.isDirectory) {
                             destFile.mkdirs()
                         } else if (entry.isSymbolicLink && entry.linkName != null) {
@@ -421,16 +464,27 @@ class IconThemeManager(private val context: Context) {
         }
     }
 
-    private fun extractZip(zipIn: ZipArchiveInputStream, destination: File) {
+    private fun extractZip(zipIn: ZipArchiveInputStream, destination: File, symlinks: MutableMap<File, String>) {
         zipIn.use { input ->
             var entry = input.nextEntry
             while (entry != null) {
                 val cleanName = entry.name.trimStart('/', '\\')
                 if (cleanName.isNotEmpty()) {
                     val destFile = File(destination, cleanName)
-                    if (destFile.canonicalPath.startsWith(destination.canonicalPath)) {
+                    if (destFile.canonicalPath.startsWith(destination.canonicalPath + File.separator)) {
                         if (entry.isDirectory) {
                             destFile.mkdirs()
+                        } else if (entry.isUnixSymlink) {
+                            destFile.parentFile?.mkdirs()
+                            val target = java.io.ByteArrayOutputStream()
+                            val buffer = ByteArray(1024)
+                            while (true) {
+                                val read = input.read(buffer)
+                                if (read < 0) break
+                                if (target.size() + read > 4096) throw java.io.IOException("Icon theme symlink target is too long")
+                                target.write(buffer, 0, read)
+                            }
+                            symlinks[destFile] = target.toString("UTF-8")
                         } else {
                             destFile.parentFile?.mkdirs()
                             FileOutputStream(destFile).use { out ->
@@ -448,6 +502,7 @@ class IconThemeManager(private val context: Context) {
      * Resolves an icon for a file by examining its MIME type, extension, and generic fallbacks.
      */
     fun resolveFileIcon(meta: ResourceMetadata, targetSizePx: Int): Bitmap? {
+        refreshActiveTheme()
         val theme = activeTheme ?: return null
         val candidates = buildMimeIconCandidates(meta)
         for (candidate in candidates) {
@@ -462,6 +517,7 @@ class IconThemeManager(private val context: Context) {
      * and generic folder fallbacks.
      */
     fun resolveFolderIcon(folderName: String, targetSizePx: Int): Bitmap? {
+        refreshActiveTheme()
         val theme = activeTheme ?: return null
         val candidates = buildFolderIconCandidates(folderName)
         for (candidate in candidates) {
@@ -475,6 +531,7 @@ class IconThemeManager(private val context: Context) {
      * Resolves a place icon (e.g. internal storage, application public, home, trash).
      */
     fun resolvePlaceIcon(placeId: String, targetSizePx: Int): Bitmap? {
+        refreshActiveTheme()
         val theme = activeTheme ?: return null
         val lower = placeId.lowercase(Locale.ROOT)
         val candidates = when {

@@ -34,18 +34,18 @@ object UniversalAudioDecoder {
                 CddaDecoder.canDecode(bytes, ext)
     }
 
-    fun decode(bytes: ByteArray, extension: String? = null, file: File? = null): AudioPcmData? {
+    fun decode(bytes: ByteArray, extension: String? = null, file: File? = null, reportDiagnostics: Boolean = true): AudioPcmData? {
         val ext = extension?.lowercase() ?: file?.extension?.lowercase() ?: ""
 
         fun attempt(name: String, sourceFormat: String? = null, block: () -> AudioPcmData?): AudioPcmData? {
             return try {
                 val res = block()
                 if (res != null) {
-                    AudioPlaybackDiagnostics.recordDecoderResult(name, res, sourceFormat = sourceFormat)
+                    if (reportDiagnostics) AudioPlaybackDiagnostics.recordDecoderResult(name, res, sourceFormat = sourceFormat)
                     res
                 } else null
             } catch (e: Throwable) {
-                AudioPlaybackDiagnostics.recordParserWarning("Decoder $name failed: ${e.message}", e)
+                if (reportDiagnostics) AudioPlaybackDiagnostics.recordParserWarning("Decoder $name failed: ${e.message}", e)
                 null
             }
         }
@@ -174,7 +174,7 @@ object UniversalAudioDecoder {
             }?.let { return it }
         }
 
-        AudioPlaybackDiagnostics.recordDecoderResult("UniversalAudioDecoder", null)
+        if (reportDiagnostics) AudioPlaybackDiagnostics.recordDecoderResult("UniversalAudioDecoder", null)
         return null
     }
 

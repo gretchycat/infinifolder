@@ -45,7 +45,8 @@ class WinampPlaylistBorderView @JvmOverloads constructor(
         val widthMode = MeasureSpec.getMode(widthMeasureSpec)
         val widthSize = MeasureSpec.getSize(widthMeasureSpec)
         val screenW = resources.displayMetrics.widthPixels
-        val parentW = (parent as? View)?.width.takeIf { it != null && it > 0 } ?: screenW
+        val parentW = if (widthMode == MeasureSpec.AT_MOST && widthSize > 0) widthSize
+            else (parent as? View)?.width.takeIf { it != null && it > 0 } ?: screenW
 
         val borderW = if (widthMode == MeasureSpec.EXACTLY && widthSize > 0) {
             widthSize
@@ -58,6 +59,7 @@ class WinampPlaylistBorderView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        smoothPaint.isFilterBitmap = ThemeManager.smoothSkinScaling
         val w = width
         val h = height
         if (w <= 0 || h <= 0) return

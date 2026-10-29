@@ -38,6 +38,8 @@ class PlaylistExpanderTest {
 
         assertTrue("Expected multiple tracks from playlist, got ${tracks.size}", tracks.size >= 10)
         assertEquals("InfiniFolder - C Major Piano Chord (WAV)", tracks[0].title)
+        assertEquals("c_major_piano.wav", tracks[0].fileName)
+        assertEquals("c_major_piano.wav", tracks[0].copy(title = "Renamed by metadata").fileName)
 
         // Verify each track resolves to an existing audio file on disk
         for (track in tracks) {

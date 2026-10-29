@@ -42,6 +42,7 @@ class WinampMainWindowView @JvmOverloads constructor(
         fun onToggleRepeat()
         fun onToggleDockedSubwindow()
         fun onClose()
+        fun onVisualizerRequested()
         fun onDiagnosticsRequested()
     }
 
@@ -166,7 +167,6 @@ class WinampMainWindowView @JvmOverloads constructor(
         typeface = Typeface.MONOSPACE
         textSize = 8.5f
         isAntiAlias = false
-        color = 0xFF00FF00.toInt()
     }
     private val visBarPaint = Paint().apply {
         isAntiAlias = false
@@ -194,9 +194,86 @@ class WinampMainWindowView @JvmOverloads constructor(
         TITLE_CLOSE, TITLE_SHADE
     }
 
+    private val accessibleControls = listOf(
+        Control.PREV to android.graphics.Rect(16, 87, 39, 107),
+        Control.PLAY to android.graphics.Rect(39, 87, 62, 107),
+        Control.PAUSE to android.graphics.Rect(62, 87, 85, 107),
+        Control.STOP to android.graphics.Rect(85, 87, 108, 107),
+        Control.NEXT to android.graphics.Rect(108, 87, 131, 107),
+        Control.EJECT to android.graphics.Rect(136, 88, 158, 106),
+        Control.SHUFFLE to android.graphics.Rect(164, 88, 210, 105),
+        Control.REPEAT to android.graphics.Rect(211, 88, 238, 105),
+        Control.SEEK to android.graphics.Rect(16, 71, 264, 83),
+        Control.VOLUME to android.graphics.Rect(107, 56, 175, 71),
+        Control.BALANCE to android.graphics.Rect(177, 56, 215, 71),
+        Control.TIMER to android.graphics.Rect(24, 25, 102, 40),
+        Control.EQ_BTN to android.graphics.Rect(219, 57, 242, 71),
+        Control.PL_BTN to android.graphics.Rect(242, 57, 265, 71),
+        Control.TITLE_CLOSE to android.graphics.Rect(264, 2, 274, 13)
+    )
+    private val accessibility = object : androidx.customview.widget.ExploreByTouchHelper(this) {
+        override fun getVirtualViewAt(x: Float, y: Float): Int {
+            if (width == 0 || height == 0) return INVALID_ID
+            val control = hitTest(x * NATIVE_WIDTH / width, y * NATIVE_HEIGHT / height)
+            return accessibleControls.indexOfFirst { it.first == control }.takeIf { it >= 0 } ?: INVALID_ID
+        }
+        override fun getVisibleVirtualViews(ids: MutableList<Int>) {
+            accessibleControls.indices.forEach { ids.add(it) }
+        }
+        override fun onPopulateNodeForVirtualView(id: Int, node: androidx.core.view.accessibility.AccessibilityNodeInfoCompat) {
+            val (control, bounds) = accessibleControls[id]
+            node.contentDescription = when (control) {
+                Control.PREV -> "Previous track"; Control.PLAY -> "Play"; Control.PAUSE -> "Pause"
+                Control.STOP -> "Stop"; Control.NEXT -> "Next track"; Control.EJECT -> "Open audio"
+                Control.SHUFFLE -> if (isShuffle) "Shuffle on" else "Shuffle off"
+                Control.REPEAT -> if (isRepeat) "Repeat on" else "Repeat off"
+                Control.SEEK -> "Seek"; Control.VOLUME -> "Volume"; Control.BALANCE -> "Balance"
+                Control.TIMER -> "Toggle remaining time"; Control.EQ_BTN -> "Audio diagnostics"
+                Control.PL_BTN -> "Toggle playlist"; Control.TITLE_CLOSE -> "Close player"
+                else -> "Control"
+            }
+            node.setBoundsInParent(android.graphics.Rect(bounds.left * width / NATIVE_WIDTH, bounds.top * height / NATIVE_HEIGHT,
+                bounds.right * width / NATIVE_WIDTH, bounds.bottom * height / NATIVE_HEIGHT))
+            if (control == Control.SEEK || control == Control.VOLUME || control == Control.BALANCE) {
+                node.className = "android.widget.SeekBar"
+                node.addAction(androidx.core.view.accessibility.AccessibilityNodeInfoCompat.ACTION_SCROLL_FORWARD)
+                node.addAction(androidx.core.view.accessibility.AccessibilityNodeInfoCompat.ACTION_SCROLL_BACKWARD)
+            } else {
+                node.className = "android.widget.Button"
+                node.isClickable = true
+                node.addAction(androidx.core.view.accessibility.AccessibilityNodeInfoCompat.ACTION_CLICK)
+            }
+        }
+        override fun onPerformActionForVirtualView(id: Int, action: Int, args: android.os.Bundle?): Boolean {
+            val control = accessibleControls.getOrNull(id)?.first ?: return false
+            if (action == androidx.core.view.accessibility.AccessibilityNodeInfoCompat.ACTION_CLICK) {
+                performControlAction(control); return true
+            }
+            val step = when (action) {
+                androidx.core.view.accessibility.AccessibilityNodeInfoCompat.ACTION_SCROLL_FORWARD -> 1
+                androidx.core.view.accessibility.AccessibilityNodeInfoCompat.ACTION_SCROLL_BACKWARD -> -1
+                else -> return false
+            }
+            when (control) {
+                Control.SEEK -> callback?.onSeek((currentPositionMs + step * (durationMs / 20).coerceAtLeast(1000)).coerceIn(0, durationMs.coerceAtLeast(0)))
+                Control.VOLUME -> { volume = (volume + step * 0.05f).coerceIn(0f, 1f); callback?.onVolumeChanged(volume) }
+                Control.BALANCE -> { balance = (balance + step * 0.1f).coerceIn(-1f, 1f); callback?.onBalanceChanged(balance) }
+                else -> return false
+            }
+            invalidate(); invalidateVirtualView(id); return true
+        }
+    }
+
+    override fun dispatchHoverEvent(event: android.view.MotionEvent): Boolean =
+        accessibility.dispatchHoverEvent(event) || super.dispatchHoverEvent(event)
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
+        accessibility.dispatchKeyEvent(event) || super.dispatchKeyEvent(event)
+
     init {
         isClickable = true
         isFocusable = true
+        androidx.core.view.ViewCompat.setAccessibilityDelegate(this, accessibility)
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -210,6 +287,7 @@ class WinampMainWindowView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        smoothPaint.isFilterBitmap = ThemeManager.smoothSkinScaling
         val w = width
         val h = height
         if (w <= 0 || h <= 0) return
@@ -276,7 +354,7 @@ class WinampMainWindowView @JvmOverloads constructor(
             canvas.drawBitmap(mainBmp, srcRect, dstRect, bitmapPaint)
         } else {
             // High fidelity fallback faceplate
-            canvas.drawColor(0xFF262738.toInt())
+            canvas.drawColor(ThemeManager.getAudioPlayerTheme(context).surface)
         }
     }
 
@@ -516,7 +594,7 @@ class WinampMainWindowView @JvmOverloads constructor(
         }
 
         val theme = ThemeManager.getAudioPlayerTheme(context)
-        val spectrumPalette = theme.spectrumColors
+        val spectrumPalette = theme.spectrumColors.takeIf { it.isNotEmpty() } ?: intArrayOf(theme.textPrimary)
 
         when (visualizerMode) {
             0 -> {
@@ -542,7 +620,7 @@ class WinampMainWindowView @JvmOverloads constructor(
                     val peak = peakBands[i].coerceIn(0f, 1f)
                     val peakY = visBottom - peak * (visH - 1f)
                     if (peakY < visBottom - 2f) {
-                        visPeakPaint.color = 0xFFFFFFFF.toInt()
+                        visPeakPaint.color = theme.textHighlight
                         canvas.drawRect(barX, peakY - 1f, barX + barW - 1f, peakY, visPeakPaint)
                     }
                 }
@@ -562,7 +640,7 @@ class WinampMainWindowView @JvmOverloads constructor(
                 }
             }
             2 -> {
-                // Real Stereo VU Meter
+                // PCM analysis supplies independent levels when the source is stereo.
                 val vuL = vuLevels[0].coerceIn(0f, 1f)
                 val vuR = vuLevels[1].coerceIn(0f, 1f)
                 val pL = vuLevels[2].coerceIn(0f, 1f)
@@ -574,9 +652,9 @@ class WinampMainWindowView @JvmOverloads constructor(
                     while (curX < visLeft + 2f + w) {
                         val ratio = (curX - (visLeft + 2f)) / (visW - 4f)
                         vuPaint.color = when {
-                            ratio > 0.85f -> 0xFFFF2222.toInt()
-                            ratio > 0.65f -> 0xFFFFCC00.toInt()
-                            else -> 0xFF00FF22.toInt()
+                            ratio > 0.85f -> spectrumPalette.firstOrNull() ?: theme.textPrimary
+                            ratio > 0.65f -> spectrumPalette.getOrNull(spectrumPalette.size / 2) ?: theme.textPrimary
+                            else -> spectrumPalette.lastOrNull() ?: theme.textPrimary
                         }
                         canvas.drawRect(curX, topY, curX + 2f, topY + 5f, vuPaint)
                         curX += 3f
@@ -584,13 +662,17 @@ class WinampMainWindowView @JvmOverloads constructor(
                     // Peak indicator
                     val peakX = visLeft + 2f + peak * (visW - 4f)
                     if (peakX > visLeft + 3f) {
-                        vuPaint.color = 0xFFFFFFFF.toInt()
+                        vuPaint.color = theme.textHighlight
                         canvas.drawRect(peakX - 1f, topY, peakX + 1f, topY + 5f, vuPaint)
                     }
                 }
 
-                drawVuChannel(visTop + 2f, vuL, pL)
-                drawVuChannel(visTop + 9f, vuR, pR)
+                if (bridge?.hasStereoVu == true) {
+                    drawVuChannel(visTop + 2f, vuL, pL)
+                    drawVuChannel(visTop + 9f, vuR, pR)
+                } else {
+                    drawVuChannel(visTop + 5f, vuL, pL)
+                }
             }
         }
 
@@ -618,11 +700,12 @@ class WinampMainWindowView @JvmOverloads constructor(
 
     private fun drawBalance(canvas: Canvas) {
         val balBmp = ThemeManager.skinBitmap("balance.bmp")
-        if (balBmp != null && balBmp.height >= 433) {
+        if (balBmp != null && balBmp.width >= 47 && balBmp.height >= 433) {
             val norm = (balance + 1f) / 2f
             val frame = (norm * 27).toInt().coerceIn(0, 27)
             val srcY = frame * 15
-            srcRect.set(0, srcY, 38, srcY + 13)
+            // The first nine columns are skin-editor markers, not slider artwork.
+            srcRect.set(9, srcY, 47, srcY + 13)
             dstRect.set(177, 57, 215, 70)
             canvas.drawBitmap(balBmp, srcRect, dstRect, bitmapPaint)
 
@@ -850,10 +933,7 @@ class WinampMainWindowView @JvmOverloads constructor(
                 showRemainingTime = !showRemainingTime
                 invalidate()
             }
-            Control.VISUALIZER -> {
-                visualizerMode = (visualizerMode + 1) % 3
-                invalidate()
-            }
+            Control.VISUALIZER -> { visualizerMode = (visualizerMode + 1) % 3; callback?.onVisualizerRequested(); invalidate() }
             Control.EQ_BTN -> callback?.onDiagnosticsRequested()
             Control.PL_BTN, Control.TITLE_SHADE -> callback?.onToggleDockedSubwindow()
             Control.TITLE_CLOSE -> callback?.onClose()

@@ -37,6 +37,27 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
     private val installed = AtomicBoolean(false)
     private val buttons = Collections.synchronizedMap(WeakHashMap<Activity, View>())
     private val busy = AtomicBoolean(false)
+    private val startupReady = AtomicBoolean(false)
+    private const val STARTUP_RECOVERY_PREFS = "startup_recovery"
+    private const val STARTUP_ERROR = "pending_error"
+
+    fun startupError(context: android.content.Context): String? =
+        context.getSharedPreferences(STARTUP_RECOVERY_PREFS, android.content.Context.MODE_PRIVATE)
+            .getString(STARTUP_ERROR, null)
+
+    fun saveStartupError(context: android.content.Context, thread: Thread, error: Throwable): String {
+        val report = DiagnosticLog.sanitize("Thread: ${thread.name}\n" + android.util.Log.getStackTraceString(error)).take(64 * 1024)
+        context.getSharedPreferences(STARTUP_RECOVERY_PREFS, android.content.Context.MODE_PRIVATE)
+            .edit().putString(STARTUP_ERROR, report).commit()
+        return report
+    }
+
+    fun prepareStartupRetry() { startupReady.set(false) }
+
+    fun clearStartupError(context: android.content.Context) {
+        context.getSharedPreferences(STARTUP_RECOVERY_PREFS, android.content.Context.MODE_PRIVATE)
+            .edit().remove(STARTUP_ERROR).apply()
+    }
     private val crashExporter = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
         Thread(task, "InfiniFolderCrashExport").apply { isDaemon = true }
     }
@@ -49,6 +70,11 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
             val previous = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, error ->
                 DiagnosticLog.record("uncaught", "application failure", error)
+                if (!startupReady.get()) {
+                    runCatching {
+                        saveStartupError(application, thread, error)
+                    }
+                }
                 if (application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
                     runCatching { crashExporter.submit { exportPendingCrash(application) }.get(2500, java.util.concurrent.TimeUnit.MILLISECONDS) }
                 }
@@ -78,6 +104,7 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
         }
     }
     override fun onActivityResumed(activity: Activity) {
+        startupReady.set(true)
         UiResponsivenessMonitor.resumed(activity)
     }
 

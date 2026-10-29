@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <application>
+        <meta-data android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.infinifolder.audio.cast.StandardCastOptions" />
+        <receiver android:name="androidx.mediarouter.media.MediaTransferReceiver" android:exported="true" />
+        <activity android:name="com.infinifolder.audio.cast.CastRouteActivity"
+            android:exported="false" android:theme="@style/CastRouteTheme" />
         <activity
             android:name="com.infinifolder.viewer.AudioPlayerActivity"
             android:exported="false"

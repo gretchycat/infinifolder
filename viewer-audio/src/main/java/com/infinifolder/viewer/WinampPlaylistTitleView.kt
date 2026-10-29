@@ -64,6 +64,7 @@ class WinampPlaylistTitleView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        smoothPaint.isFilterBitmap = ThemeManager.smoothSkinScaling
         val w = width
         val h = height
         if (w <= 0 || h <= 0) return

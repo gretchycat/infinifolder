@@ -37,7 +37,8 @@ object AudioTranscoder {
         val ext = (name ?: uri.lastPathSegment ?: "").substringAfterLast('.', "").lowercase(Locale.ROOT)
         return when (ext) {
             "mp3" -> "audio/mpeg"
-            "m4a", "aac" -> "audio/mp4"
+            "m4a" -> "audio/mp4"
+            "aac" -> "audio/aac"
             "flac" -> "audio/flac"
             "ogg", "oga" -> "audio/ogg"
             "wav" -> "audio/wav"

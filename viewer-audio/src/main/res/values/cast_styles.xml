@@ -1,0 +1,3 @@
+<resources>
+    <style name="CastRouteTheme" parent="Theme.AppCompat.DayNight.NoActionBar" />
+</resources>

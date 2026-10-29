@@ -53,6 +53,7 @@ object ThemeManager {
         private set
     var activeAudioPlayerTheme: ThemeColors? = null
         private set
+    private var audioArtwork: Map<String, ByteArray> = emptyMap()
     private val skinBitmaps = mutableMapOf<String, android.graphics.Bitmap>()
     private var cachedPlaylistTitlebar: android.graphics.Bitmap? = null
     private var cachedPlaylistBottomBar: android.graphics.Bitmap? = null
@@ -60,15 +61,10 @@ object ThemeManager {
     private var cachedPlaylistRightTile: android.graphics.Bitmap? = null
 
     fun clearSkinBitmaps() {
-        skinBitmaps.values.forEach { it.recycle() }
         skinBitmaps.clear()
-        cachedPlaylistTitlebar?.recycle()
         cachedPlaylistTitlebar = null
-        cachedPlaylistBottomBar?.recycle()
         cachedPlaylistBottomBar = null
-        cachedPlaylistLeftTile?.recycle()
         cachedPlaylistLeftTile = null
-        cachedPlaylistRightTile?.recycle()
         cachedPlaylistRightTile = null
     }
 
@@ -189,21 +185,21 @@ object ThemeManager {
         ensureBundledSkinLoaded(context)
         val resolved = when (savedThemeId) {
             AppThemeId.WINAMP_CLASSIC.name -> {
-                skinArtwork = bundledSkinArtwork
+                audioArtwork = bundledSkinArtwork
                 bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
             }
             AppThemeId.CUSTOM_WSZ.name -> {
-                val skinPath = shared.getString(PREF_CUSTOM_SKIN_FILE, null)
+                val skinPath = shared.getString("audio_custom_skin_file", null) ?: shared.getString(PREF_CUSTOM_SKIN_FILE, null)
                 if (skinPath != null && File(skinPath).exists()) {
-                    WinampSkinParser.parseSkin(context, Uri.fromFile(File(skinPath)), shared.getString("custom_skin_name", null))?.let { parsed ->
-                        skinArtwork = parsed.artwork
+                    WinampSkinParser.parseSkin(context, Uri.fromFile(File(skinPath)), shared.getString("audio_custom_skin_name", null) ?: shared.getString("custom_skin_name", null))?.let { parsed ->
+                        audioArtwork = parsed.artwork
                         parsed.themeColors
                     } ?: run {
-                        skinArtwork = bundledSkinArtwork
+                        audioArtwork = bundledSkinArtwork
                         bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
                     }
                 } else {
-                    skinArtwork = bundledSkinArtwork
+                    audioArtwork = bundledSkinArtwork
                     bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
                 }
             }
@@ -213,10 +209,10 @@ object ThemeManager {
             else -> {
                 val bundled = if (!savedThemeId.isNullOrEmpty()) loadBundledSkin(context, savedThemeId) else null
                 if (bundled != null) {
-                    skinArtwork = bundled.artwork
+                    audioArtwork = bundled.artwork
                     bundled.themeColors
                 } else {
-                    skinArtwork = bundledSkinArtwork
+                    audioArtwork = bundledSkinArtwork
                     bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
                 }
             }
@@ -233,17 +229,21 @@ object ThemeManager {
         prefKey: String? = null
     ) {
         val shared = context.getSharedPreferences("browser", Context.MODE_PRIVATE)
-        val key = prefKey ?: (skinFile?.absolutePath ?: theme.id.name)
+        val key = prefKey ?: theme.id.name
         shared.edit().putString(PREF_AUDIO_PLAYER_THEME, key).apply()
+        if (skinFile != null) shared.edit().putString("audio_custom_skin_file", skinFile.absolutePath)
+            .putString("audio_custom_skin_name", theme.name).apply()
+        audioArtwork = artwork
+        clearSkinBitmaps()
         activeAudioPlayerTheme = theme
-        setTheme(context, theme, skinFile = skinFile, artwork = artwork, assetPath = prefKey?.takeIf { it.startsWith("skins/") })
+        synchronized(listeners) { listeners.toList().forEach { it.onThemeChanged(activeTheme) } }
     }
 
     fun setAudioPlayerTheme(context: Context, theme: ThemeColors) {
         ensureBundledSkinLoaded(context)
         val (art, resolvedTheme) = when (theme.id) {
             AppThemeId.WINAMP_CLASSIC -> bundledSkinArtwork to (bundledSkinColors ?: theme)
-            AppThemeId.CUSTOM_WSZ -> skinArtwork to theme
+            AppThemeId.CUSTOM_WSZ -> audioArtwork to theme
             else -> emptyMap<String, ByteArray>() to theme
         }
         setAudioPlayerSkin(context, resolvedTheme, art, prefKey = theme.id.name)
@@ -291,8 +291,7 @@ object ThemeManager {
         artwork: Map<String, ByteArray> = emptyMap(),
         assetPath: String? = null
     ) {
-        skinArtwork = artwork
-        clearSkinBitmaps()
+        skinArtwork = if (theme.id == AppThemeId.WINAMP_CLASSIC && artwork.isEmpty()) bundledSkinArtwork else artwork
         activeTheme = theme
         val shared = context.getSharedPreferences("browser", Context.MODE_PRIVATE)
         shared.edit().apply {
@@ -331,7 +330,7 @@ object ThemeManager {
     }
 
     /** Stages and validates one private copy before publishing the new theme. Call from a worker. */
-    fun importSkin(context: Context, uri: Uri): ThemeColors? {
+    fun importSkin(context: Context, uri: Uri, audio: Boolean = false): ThemeColors? {
         val skinsDir = File(context.filesDir, "wsz_skins").apply { mkdirs() }
         val destFile = File.createTempFile("skin-", ".wsz", skinsDir)
         return try {
@@ -357,7 +356,8 @@ object ThemeManager {
                 WinampSkinParser.parseSkinFromStream(it, name?.substringBeforeLast('.') ?: "Custom Skin")
             } ?: throw java.io.IOException("No supported skin resources found")
             android.os.Handler(context.mainLooper).post {
-                setTheme(context, parsed.themeColors, destFile, parsed.artwork)
+                if (audio) setAudioPlayerSkin(context, parsed.themeColors, parsed.artwork, destFile)
+                else setTheme(context, parsed.themeColors, destFile, parsed.artwork)
             }
             parsed.themeColors
         } catch (error: Exception) {
@@ -370,7 +370,7 @@ object ThemeManager {
     fun skinBitmap(name: String): android.graphics.Bitmap? {
         val lower = name.lowercase(Locale.ROOT)
         skinBitmaps[lower]?.let { return it }
-        val bytes = skinArtwork[lower] ?: bundledSkinArtwork[lower] ?: return null
+        val bytes = audioArtwork[lower] ?: bundledSkinArtwork[lower] ?: return null
         val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
         android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outWidth.toLong() * bounds.outHeight > 2_000_000) return null
@@ -464,7 +464,7 @@ object ThemeManager {
     }
 
     fun createFloatingFrameDrawable(theme: ThemeColors, density: Float): android.graphics.drawable.Drawable =
-        WinampChromeDrawable(theme.background, theme.cardStroke, density, skinBitmap("main.bmp"), null, smoothSkinScaling)
+        WinampChromeDrawable(theme.background, theme.cardStroke, density, interfaceBitmap("main.bmp"), null, smoothSkinScaling)
 
     fun createCardDrawable(theme: ThemeColors, density: Float): GradientDrawable {
         val dpCorner = (theme.cornerRadiusDp * density)
@@ -493,14 +493,19 @@ object ThemeManager {
         }
     }
 
+    private fun interfaceBitmap(name: String): android.graphics.Bitmap? {
+        val bytes = skinArtwork[name] ?: return null
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outWidth.toLong() * bounds.outHeight > 2_000_000) return null
+        return android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }
+
     fun createToolbarDrawable(theme: ThemeColors, density: Float, isDark: Boolean = theme.isDark): android.graphics.drawable.Drawable {
-        val dpStroke = (1 * density).toInt().coerceAtLeast(1)
-        val bgColor = if (isDark) Color.BLACK else Color.WHITE
-        val strokeColor = if (isDark) 0xFF2A2A2A.toInt() else 0xFFE0E0E0.toInt()
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            setColor(bgColor)
-            setStroke(dpStroke, strokeColor)
+            setColor(theme.toolbarBackground)
+            setStroke((density).toInt().coerceAtLeast(1), theme.toolbarBorder)
         }
     }
 

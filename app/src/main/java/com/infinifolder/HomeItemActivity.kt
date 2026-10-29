@@ -18,7 +18,13 @@ import com.infinifolder.overlay.FloatingContainerService
 class HomeItemActivity : Activity() {
     private var pendingContainer: Uri? = null
     override fun onCreate(savedInstanceState: Bundle?) {
+        val startupError = if (intent.data == null) com.infinifolder.viewer.DebugTools.startupError(this) else null
+        if (startupError != null) setTheme(R.style.AppTheme)
         super.onCreate(savedInstanceState)
+        if (startupError != null) {
+            showStartupRecovery(startupError)
+            return
+        }
         com.infinifolder.theme.ThemeManager.init(applicationContext)
         DiagnosticLog.record("home.dispatch.created", "action=${intent.action} task=$taskId root=$isTaskRoot restored=${savedInstanceState != null}")
         pendingContainer = savedInstanceState?.getString("container")?.let(Uri::parse)
@@ -86,6 +92,59 @@ class HomeItemActivity : Activity() {
                 }
             }
         }.start()
+    }
+
+    private fun showStartupRecovery(report: String) {
+        val density = resources.displayMetrics.density
+        val pad = (20 * density).toInt()
+        val layout = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, pad)
+        }
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(layout) { view, insets ->
+            val bars = insets.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars() or
+                    androidx.core.view.WindowInsetsCompat.Type.displayCutout()
+            )
+            view.setPadding(pad + bars.left, pad + bars.top, pad + bars.right, pad + bars.bottom)
+            insets
+        }
+        layout.addView(android.widget.TextView(this).apply {
+            text = "InfiniFolder couldn't start"
+            textSize = 22f
+        })
+        layout.addView(android.widget.TextView(this).apply {
+            text = "The previous startup failed. Copy this report to help diagnose the problem."
+            textSize = 15f
+        })
+        val details = android.widget.TextView(this).apply { text = report; textSize = 12f; setTextIsSelectable(true) }
+        layout.addView(android.widget.ScrollView(this).apply { addView(details) },
+            android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
+        layout.addView(android.widget.Button(this).apply {
+            text = "Copy crash report"
+            setOnClickListener {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("InfiniFolder startup crash", report))
+                Toast.makeText(this@HomeItemActivity, "Crash report copied", Toast.LENGTH_SHORT).show()
+            }
+        })
+        layout.addView(android.widget.Button(this).apply {
+            text = "Try opening InfiniFolder"
+            setOnClickListener {
+                try {
+                    com.infinifolder.viewer.DebugTools.prepareStartupRetry()
+                    (application as InfiniFolderApplication).initializeNormal()
+                    com.infinifolder.viewer.DebugTools.clearStartupError(this@HomeItemActivity)
+                    startActivity(Intent(this@HomeItemActivity, MainActivity::class.java).setAction(Intent.ACTION_MAIN))
+                    finish()
+                } catch (error: Exception) {
+                    val nextReport = com.infinifolder.viewer.DebugTools.saveStartupError(this@HomeItemActivity, Thread.currentThread(), error)
+                    showStartupRecovery(nextReport)
+                }
+            }
+        })
+        setContentView(layout)
+        androidx.core.view.ViewCompat.requestApplyInsets(layout)
     }
 
     private fun openContainer(uri: Uri) {

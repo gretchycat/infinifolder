@@ -106,4 +106,80 @@ class FreeDesktopThemeTest {
         )
         assertTrue(candidates.contains("application-pdf"))
     }
+    @Test
+    fun missingIconsAndCyclicInheritanceFallBackWithoutCrashing() {
+        val base = createTempDir(prefix = "icon-cycle-")
+        try {
+            val aDir = File(base, "a").apply { mkdirs() }
+            val bDir = File(base, "b").apply { mkdirs() }
+            lateinit var a: FreeDesktopIconTheme
+            lateinit var b: FreeDesktopIconTheme
+            a = FreeDesktopIconTheme(IconThemeInfo("a", "A", rootDir = aDir, inherits = listOf("b"))) { if (it == "b") b else null }
+            b = FreeDesktopIconTheme(IconThemeInfo("b", "B", rootDir = bDir, inherits = listOf("a"))) { if (it == "a") a else null }
+            assertEquals(null, a.findIconFile("missing", 32))
+            assertEquals(null, a.findIconFile("missing", 32))
+            File(bDir, "folder.svg").writeText("<svg/>")
+            assertEquals("folder.svg", a.findIconFile("folder", 32)?.name)
+        } finally { base.deleteRecursively() }
+    }
+
+    @Test
+    fun scaledDirectoriesAreParsedAndRankedByPixelSize() {
+        val dir = createTempDir(prefix = "icon-scale-")
+        try {
+            val index = File(dir, "index.theme")
+            index.writeText("""
+                [Icon Theme]
+                Name=Scaled
+                Directories=16x16/places
+                ScaledDirectories=16x16@2/places
+                [16x16/places]
+                Size=16
+                Type=Fixed
+                [16x16@2/places]
+                Size=16
+                Scale=2
+                Type=Fixed
+            """.trimIndent())
+            val info = FreeDesktopThemeParser.parse(index, dir)!!
+            assertEquals(2, info.directories.size)
+            assertEquals(0, info.directories.last().sizeDistance(32))
+            assertEquals(16, info.directories.first().sizeDistance(32))
+            for (d in info.directories) File(dir, d.name).apply { mkdirs(); File(this, "folder.png").writeBytes(byteArrayOf(1)) }
+            assertEquals(File(dir, "16x16@2/places/folder.png"), FreeDesktopIconTheme(info).findIconFile("folder", 32))
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test
+    fun bundledDesktopThemesContainUsableFoldersAndMimeIcons() {
+        val assets = File("../app/src/main/assets/icon-themes")
+        for (id in listOf("Adwaita", "AdwaitaLegacy", "breeze", "breeze-dark", "Papirus")) {
+            val archive = File(assets, "$id.zip")
+            assertTrue("Missing bundled theme: $id", archive.isFile)
+            java.util.zip.ZipFile(archive).use { zip ->
+                assertNotNull("Missing index: $id", zip.getEntry("$id/index.theme"))
+                val names = zip.entries().asSequence().map { it.name }.toList()
+                assertTrue("Missing folder icon: $id", names.any { it.endsWith("/folder.svg") || it.endsWith("/folder.png") })
+                assertTrue("Missing generic text icon: $id", names.any { it.endsWith("/text-x-generic.svg") || it.endsWith("/text-x-generic.png") })
+                val temp = createTempDir(prefix = "bundled-theme-")
+                try {
+                    for (entry in zip.entries().asSequence()) {
+                        if (entry.name == "$id/index.theme" || entry.name.endsWith("/folder.svg") ||
+                            entry.name.endsWith("/folder.png") || entry.name.endsWith("/text-x-generic.svg") ||
+                            entry.name.endsWith("/text-x-generic.png")) {
+                            val target = File(temp, entry.name)
+                            target.parentFile?.mkdirs()
+                            zip.getInputStream(entry).use { input -> target.outputStream().use { input.copyTo(it) } }
+                        }
+                    }
+                    val root = File(temp, id)
+                    val info = FreeDesktopThemeParser.parse(File(root, "index.theme"), root)!!
+                    val theme = FreeDesktopIconTheme(info)
+                    assertNotNull("Folder not resolvable for $id", theme.findIconFile("folder", 48))
+                    assertNotNull("Text icon not resolvable for $id", theme.findIconFile("text-x-generic", 48))
+                } finally { temp.deleteRecursively() }
+            }
+        }
+    }
+
 }

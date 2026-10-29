@@ -18,11 +18,19 @@ class FreeDesktopIconTheme(
     private val bitmapCache = object : LruCache<String, Bitmap>(300) {}
 
     // File path lookup cache: key is "$iconName:$targetPx"
-    private val pathCache = ConcurrentHashMap<String, File?>()
+    private val pathCache = ConcurrentHashMap<String, File>()
+    private val missingPaths = ConcurrentHashMap.newKeySet<String>()
 
     fun findIconFile(iconName: String, targetSizePx: Int): File? {
+        return findIconFile(iconName, targetSizePx, mutableSetOf())
+    }
+
+    private fun findIconFile(iconName: String, targetSizePx: Int, visited: MutableSet<String>): File? {
+        val topLevel = visited.isEmpty()
+        if (!visited.add(info.rootDir.absolutePath)) return null
         val cacheKey = "$iconName:$targetSizePx"
         pathCache[cacheKey]?.let { return it }
+        if (topLevel && cacheKey in missingPaths) return null
 
         // 1. Search within this theme's directories sorted by best matching size
         val sortedDirs = info.directories.sortedWith(
@@ -47,16 +55,14 @@ class FreeDesktopIconTheme(
             }
         }
 
-        // 2. Loose fallback search across any subdirectory in rootDir if not found in registered directories
-        val looseSvg = searchLoose(info.rootDir, "$iconName.svg")
-        if (looseSvg != null) {
-            pathCache[cacheKey] = looseSvg
-            return looseSvg
-        }
-        val loosePng = searchLoose(info.rootDir, "$iconName.png")
-        if (loosePng != null) {
-            pathCache[cacheKey] = loosePng
-            return loosePng
+        // Themes without a directory list occur in hand-built packs; avoid a full
+        // recursive walk on every missing icon for standard themes.
+        if (info.directories.isEmpty()) {
+            val loose = searchLoose(info.rootDir, "$iconName.svg") ?: searchLoose(info.rootDir, "$iconName.png")
+            if (loose != null) {
+                pathCache[cacheKey] = loose
+                return loose
+            }
         }
 
         // 3. Fallback to inherited themes
@@ -64,7 +70,7 @@ class FreeDesktopIconTheme(
             for (inheritName in info.inherits) {
                 val fallback = fallbackResolver.invoke(inheritName)
                 if (fallback != null && fallback != this) {
-                    val inheritedFile = fallback.findIconFile(iconName, targetSizePx)
+                    val inheritedFile = fallback.findIconFile(iconName, targetSizePx, visited)
                     if (inheritedFile != null) {
                         pathCache[cacheKey] = inheritedFile
                         return inheritedFile
@@ -73,7 +79,7 @@ class FreeDesktopIconTheme(
             }
         }
 
-        pathCache[cacheKey] = null
+        if (topLevel) missingPaths.add(cacheKey)
         return null
     }
 
@@ -118,6 +124,7 @@ class FreeDesktopIconTheme(
             bitmapCache.evictAll()
         }
         pathCache.clear()
+        missingPaths.clear()
     }
 
     companion object {

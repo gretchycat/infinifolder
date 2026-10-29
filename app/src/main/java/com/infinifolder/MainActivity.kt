@@ -744,6 +744,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         window.statusBarColor = if (isSystemDark) Color.BLACK else Color.WHITE
         window.navigationBarColor = if (isSystemDark) Color.BLACK else Color.WHITE
         if (android.os.Build.VERSION.SDK_INT >= 30) {
+            // Accessing the decor creates it before PhoneWindow queries its controller.
+            window.decorView
             val controller = window.insetsController
             if (isSystemDark) {
                 controller?.setSystemBarsAppearance(
@@ -2350,7 +2352,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             else -> "🔗"
         }
         return HomeItem(icon, shortcut.displayNameOverride ?: entry.metadata.name.removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION),
-            shortcut.targetPath ?: shortcut.targetUri, { openContainerLinkUri(target, shortcut.displayNameOverride, true, LinkNavigationOrigin.VIRTUAL_ROOT) },
+            shortcut.targetPath ?: shortcut.targetUri, { openContainerLinkUri(target, shortcut.displayNameOverride, true, LinkNavigationOrigin.VIRTUAL_ROOT, knownDirectory = shortcut.targetIsDirectory) },
             { showEntryMenu(entry) }, "root_link_${entry.uri}", target.takeIf { browsable }, browsable,
             linkEntry = entry)
     }
@@ -2359,7 +2361,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         uri: Uri,
         name: String? = null,
         requireContainer: Boolean = false,
-        origin: LinkNavigationOrigin = LinkNavigationOrigin.VIRTUAL_ROOT
+        origin: LinkNavigationOrigin = LinkNavigationOrigin.VIRTUAL_ROOT,
+        knownDirectory: Boolean = false
     ) {
         val title = name ?: (if (uri.isHierarchical) uri.lastPathSegment else null) ?: "Container"
         if (uri.scheme.equals("magnet", true) || uri.scheme.equals("torrent", true)) {
@@ -2392,6 +2395,16 @@ class MainActivity : Activity(), DebugDumpObserver {
             if (ref == null) {
                 dialogBuilder().setTitle(title).setMessage("No browsable storage provider is installed for ${uri.scheme} URIs yet. The link can remain on Virtual root until that provider is available.")
                     .setPositiveButton("OK", null).show()
+                return@bindContainerUri
+            }
+            if (knownDirectory && ContainerUris.networkType(canonical) != null && !ArchiveUri.isArchiveUri(target)) {
+                // The saved link already identifies a directory. Navigate immediately
+                // and let the listing show connection progress or an actionable error.
+                logicalLocationPrefix = null
+                currentProgramName = null
+                history.clear(); historyNames.clear(); current = null
+                setTreeVisible(false)
+                navigate(target, push = false, displayName = title)
                 return@bindContainerUri
             }
             val generation = ++browserNavigationGeneration
@@ -5285,6 +5298,11 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         }
 
+        // Remote listings share the provider's metadata channel. Do not enumerate
+        // every visible subdirectory for artwork ahead of an explicit navigation.
+        // Already observed or cached icons can still be displayed above.
+        if (cachedUriString == null && ContainerUris.networkType(containerUri) != null) return frame
+
         val generation = loadGeneration
         val hostView = cardView ?: frame
         val probeAction: () -> Unit = {
@@ -5519,7 +5537,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         if (!isDestroyed && (linkNavigationToken == null || browserNavigationGeneration == linkNavigationToken))
                             openContainerLinkUri(linkedUri, info.displayNameOverride,
                                 info.targetIsDirectory || entry.ref.providerId == containerLinkProvider.id,
-                                LinkNavigationOrigin.DIRECTORY_LINK)
+                                LinkNavigationOrigin.DIRECTORY_LINK, knownDirectory = info.targetIsDirectory)
                     }
                     return@execute
                 }
@@ -5716,6 +5734,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
     private fun showHomeRoot() {
         if (selectionMode) exitSelectionMode()
+        ++browserNavigationGeneration
         ++loadGeneration
         val generation = ++homeSourcesGeneration
         accessRequestGeneration++
@@ -6224,7 +6243,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         iconFrame.addView(placeholderView, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
         val targetTreeUri = item.treeUri
-        if (targetTreeUri != null && !item.needsAccessBadge && !AppsUri.isAppsUri(targetTreeUri)) {
+        if (targetTreeUri != null && !item.needsAccessBadge && !AppsUri.isAppsUri(targetTreeUri) &&
+            ContainerUris.networkType(targetTreeUri) == null) {
             val dirKey = "tree:$targetTreeUri"
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.FIT_CENTER
@@ -8664,7 +8684,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             val mark = if (it.id == activeTheme.id) "● " else "○ "
             "$mark${it.name}"
         }.toMutableList()
-        options.add("📂 Import Skin (.wsz)…")
+        options.add("📂 Import Winamp / XMMS Skin…")
         options.add("Skin image scaling…")
 
         dialogBuilder().setTitle("Interface Theme").setItems(options.toTypedArray()) { _, which ->
@@ -8707,8 +8727,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
 
         dialogBuilder()
-            .setTitle("Import Skin (.wsz)")
-            .setMessage("Enter the local path or URI of a .wsz / .zip skin file:")
+            .setTitle("Import Winamp / XMMS Skin")
+            .setMessage("Enter the local path or URI of a skin archive (WSZ, ZIP, TAR, TAR.GZ or TAR.BZ2):")
             .setView(container)
             .setPositiveButton("Import") { _, _ ->
                 val path = input.text.toString().trim()
@@ -8743,7 +8763,37 @@ class MainActivity : Activity(), DebugDumpObserver {
         }.start()
     }
 
+    private var bundledIconThemesReady = false
+    private var installingBundledIconThemes = false
+
     private fun showIconThemeDialog() {
+        if (!bundledIconThemesReady) {
+            if (installingBundledIconThemes) return
+            installingBundledIconThemes = true
+            val progress = ProgressDialog(this).apply {
+                setMessage("Preparing icon themes…")
+                setCancelable(false)
+                show()
+            }
+            imageIo.execute {
+                val result = runCatching { iconThemeManager.installBundledThemes() }
+                runOnUiThread {
+                    installingBundledIconThemes = false
+                    if (!isDestroyed) {
+                        progress.dismiss()
+                        bundledIconThemesReady = result.isSuccess
+                        if (result.isSuccess) showIconThemeDialog()
+                        else {
+                            Toast.makeText(this, "Could not prepare bundled themes: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                            // Imported and system themes remain usable even if a bundled theme fails.
+                            bundledIconThemesReady = true
+                            showIconThemeDialog()
+                        }
+                    }
+                }
+            }
+            return
+        }
         val availableThemes = iconThemeManager.listAvailableThemes()
         val activeId = iconThemeManager.getActiveThemeId()
 
@@ -8831,11 +8881,10 @@ class MainActivity : Activity(), DebugDumpObserver {
             show()
         }
         val fileName = try {
-            val docId = DocumentsContract.getDocumentId(uri)
-            docId.substringAfterLast('/')
-        } catch (_: Exception) {
-            uri.lastPathSegment ?: "theme.tar.gz"
-        }
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        } catch (_: Exception) { null } ?: uri.lastPathSegment ?: "theme.zip"
 
         imageIo.execute {
             try {
@@ -13334,6 +13383,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     override fun onBackPressed() {
         com.infinifolder.storage.DiagnosticLog.record("browser.back.request", "home=$homeMode homePage=$homePage location=$current selecting=$selectionMode operationDialog=${currentProgressDialog?.isShowing == true}")
         when {
+            !homeMode && current == null -> showHomeRoot()
             !homeMode -> navigateUp()
             selectionMode -> exitSelectionMode()
             homeMode && homePage != "root" -> showHomeRoot()

@@ -6,8 +6,9 @@ import android.graphics.BitmapFactory
 import java.util.Locale
 import android.net.Uri
 import com.infinifolder.viewer.MediaSourceAdapter
-import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
-import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream
+import org.apache.commons.compress.archivers.ArchiveStreamFactory
+import org.apache.commons.compress.compressors.CompressorStreamFactory
+import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
@@ -26,7 +27,7 @@ object WinampSkinParser {
         "viscolor.txt", "pledit.txt",
         "main.bmp", "gen.bmp", "cbuttons.bmp", "titlebar.bmp",
         "posbar.bmp", "volume.bmp", "shufrep.bmp", "text.bmp",
-        "numbers.bmp", "monoster.bmp", "playpaus.bmp", "pledit.bmp"
+        "numbers.bmp", "monoster.bmp", "playpaus.bmp", "pledit.bmp", "balance.bmp"
     )
 
     fun parseSkin(context: Context, uri: Uri, skinName: String? = null): ParsedSkin? {
@@ -47,8 +48,16 @@ object WinampSkinParser {
         var expandedBytes = 0
 
         try {
-            ZipArchiveInputStream(inputStream).use { zis ->
-                var entry: ZipArchiveEntry? = zis.nextZipEntry
+            val buffered = BufferedInputStream(inputStream)
+            buffered.mark(16)
+            val header = ByteArray(3)
+            val headerSize = buffered.read(header)
+            buffered.reset()
+            val compressed = headerSize >= 2 && ((header[0].toInt() and 255 == 0x1f && header[1].toInt() and 255 == 0x8b) ||
+                (headerSize >= 3 && header[0] == 0x42.toByte() && header[1] == 0x5a.toByte() && header[2] == 0x68.toByte()))
+            val archiveInput = if (compressed) BufferedInputStream(CompressorStreamFactory().createCompressorInputStream(buffered)) else buffered
+            ArchiveStreamFactory().createArchiveInputStream<org.apache.commons.compress.archivers.ArchiveInputStream<*>>(archiveInput).use { zis ->
+                var entry = zis.nextEntry
                 while (entry != null) {
                     if (++entryCount > 512) return null
                     val entryName = entry.name.replace('\\', '/').substringAfterLast('/').lowercase(Locale.ROOT)
@@ -62,7 +71,7 @@ object WinampSkinParser {
                             else -> artwork[entryName] = bytes
                         }
                     }
-                    entry = zis.nextZipEntry
+                    entry = zis.nextEntry
                 }
             }
         } catch (_: Exception) {
@@ -74,7 +83,7 @@ object WinampSkinParser {
         return ParsedSkin(skinName, colors, artwork = artwork)
     }
 
-    private fun readEntry(zis: ZipArchiveInputStream): ByteArray {
+    private fun readEntry(zis: InputStream): ByteArray {
         val baos = ByteArrayOutputStream()
         val buf = ByteArray(4096)
         var r: Int

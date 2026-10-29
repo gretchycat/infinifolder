@@ -200,6 +200,7 @@ object PlaylistExpander {
                         AudioTrack(
                             uri = itemUri,
                             title = title,
+                            fileName = itemName,
                             artist = entry.performer.ifBlank { null },
                             durationMs = durationMs,
                             startByte = entry.startByte,

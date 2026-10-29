@@ -39,17 +39,17 @@ internal class WinampChromeDrawable(
             }
             canvas.restoreToCount(checkpoint)
         }
-        if (title != null && title.width >= 275 && title.height >= 14) {
+        if (title != null && title.width >= 302 && title.height >= 14) {
             val scale = if (smooth) (bounds.height() / 14f).coerceAtLeast(1f)
                 else kotlin.math.round(bounds.height() / 14f).coerceAtLeast(1f)
             val cap = minOf(25 * scale, bounds.width() / 3f)
             val y = top + (bounds.height() - 14 * scale) / 2f
             // Filtering and scale policy follow the saved interface-theme preference.
-            tile(title, Rect(28, 0, 54, 14), RectF(left + cap, top, right - cap, bottom), scale)
+            tile(title, Rect(54, 0, 80, 14), RectF(left + cap, top, right - cap, bottom), scale)
             val checkpoint = canvas.save()
             canvas.clipRect(bounds)
-            strip(title, Rect(0, 0, 25, 14), RectF(left, y, left + 25 * scale, y + 14 * scale))
-            strip(title, Rect(250, 0, 275, 14), RectF(right - 25 * scale, y, right, y + 14 * scale))
+            strip(title, Rect(27, 0, 52, 14), RectF(left, y, left + 25 * scale, y + 14 * scale))
+            strip(title, Rect(277, 0, 302, 14), RectF(right - 25 * scale, y, right, y + 14 * scale))
             canvas.restoreToCount(checkpoint)
         } else if (frame != null && frame.width >= 275 && frame.height >= 116) {
             tile(frame, Rect(0, 14, 3, 100), RectF(left, top, left + edge, bottom), pixelScale)

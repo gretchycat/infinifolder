@@ -159,6 +159,14 @@ class ResourceIconResolver(context: Context) {
                 modifiedAtMillis = null,
                 isDirectory = effectiveIsDir
             )
+            // A saved server link is a local shortcut. Drawing it must not connect
+            // to the server or enumerate its contents before the user opens it.
+            if (ContainerUris.networkType(rawTarget) != null) {
+                val themed = if (effectiveIsDir && !isArchiveTarget) theme.resolveFolderIcon(targetName, size)
+                    else theme.resolveFileIcon(metadata, size)
+                return base.copy(bitmap = themed, fallback = if (isArchiveTarget) "📦" else FileIconView.fallback(metadata),
+                    label = label, directory = effectiveIsDir)
+            }
             val targetEntry = ref?.let { ResourceEntry(it, metadata, target) }
             val resolved = targetEntry?.let { resolve(it, size, seen) }
                 ?: base.copy(fallback = if (isArchiveTarget) "📦" else FileIconView.fallback(metadata), directory = effectiveIsDir)

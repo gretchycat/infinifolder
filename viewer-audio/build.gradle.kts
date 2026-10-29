@@ -30,6 +30,10 @@ if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
 }
 
 dependencies {
+    implementation("com.google.android.gms:play-services-cast-framework:22.3.1")
+    implementation("androidx.mediarouter:mediarouter:1.7.0")
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.customview:customview:1.1.0")
     api("androidx.core:core:1.15.0")
     api("javazoom:jlayer:1.0.1")
     api(project(":viewer-common"))

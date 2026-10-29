@@ -49,7 +49,7 @@ class WinampPlaylistBottomView @JvmOverloads constructor(
     private val timeTextPaint = Paint().apply {
         isAntiAlias = false
         typeface = Typeface.MONOSPACE
-        textAlign = Paint.Align.CENTER
+        textAlign = Paint.Align.RIGHT
     }
 
     private val srcRect = Rect()
@@ -78,6 +78,7 @@ class WinampPlaylistBottomView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        smoothPaint.isFilterBitmap = ThemeManager.smoothSkinScaling
         val w = width
         val h = height
         if (w <= 0 || h <= 0) return
@@ -107,8 +108,13 @@ class WinampPlaylistBottomView @JvmOverloads constructor(
                     val totalStr = formatMinSec(totalDurationMs)
                     timeTextPaint.textSize = 7f * k
                     val fontMetrics = timeTextPaint.fontMetrics
-                    val baseline = (25.5f * k) - (fontMetrics.ascent + fontMetrics.descent) / 2f
-                    pixelScaledCanvas?.drawText(totalStr, 235.5f * k, baseline, timeTextPaint)
+                    val baseline = (13.5f * k) - (fontMetrics.ascent + fontMetrics.descent) / 2f
+                    pixelScaledCanvas?.let { textCanvas ->
+                        val checkpoint = textCanvas.save()
+                        textCanvas.clipRect(132f * k, 9f * k, 217f * k, 19f * k)
+                        textCanvas.drawText(totalStr, 217f * k, baseline, timeTextPaint)
+                        textCanvas.restoreToCount(checkpoint)
+                    }
                 }
 
                 dstRect.set(0, 0, w, h)
@@ -124,8 +130,11 @@ class WinampPlaylistBottomView @JvmOverloads constructor(
                     val scaleY = h.toFloat() / NATIVE_HEIGHT.toFloat()
                     timeTextPaint.textSize = 7f * scaleY
                     val fontMetrics = timeTextPaint.fontMetrics
-                    val baseline = (25.5f * scaleY) - (fontMetrics.ascent + fontMetrics.descent) / 2f
-                    canvas.drawText(totalStr, 235.5f * scaleX, baseline, timeTextPaint)
+                    val baseline = (13.5f * scaleY) - (fontMetrics.ascent + fontMetrics.descent) / 2f
+                    val checkpoint = canvas.save()
+                    canvas.clipRect(132f * scaleX, 9f * scaleY, 217f * scaleX, 19f * scaleY)
+                    canvas.drawText(totalStr, 217f * scaleX, baseline, timeTextPaint)
+                    canvas.restoreToCount(checkpoint)
                 }
             }
         } else {

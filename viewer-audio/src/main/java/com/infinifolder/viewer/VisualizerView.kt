@@ -33,10 +33,8 @@ class VisualizerView @JvmOverloads constructor(
         style = Paint.Style.FILL
     }
 
-    private var colors: IntArray = intArrayOf(
-        0xFFFF0033.toInt(), 0xFFFF6600.toInt(), 0xFFFFCC00.toInt(),
-        0xFF00FF00.toInt(), 0xFF00FFFF.toInt(), 0xFF0066FF.toInt()
-    )
+    private var colors: IntArray = intArrayOf(Color.WHITE)
+    private var peakColor: Int = Color.WHITE
 
     var isPlaying: Boolean = false
         set(value) {
@@ -49,7 +47,7 @@ class VisualizerView @JvmOverloads constructor(
         for (i in 0 until count) {
             barTargets[i] = newBands[i]
             if (newPeaks != null && i < newPeaks.size) {
-                peakHeights[i] = newPeaks[i]
+                peakHeights[i] = newPeaks[i] * height
             }
         }
         invalidate()
@@ -64,6 +62,7 @@ class VisualizerView @JvmOverloads constructor(
 
     fun applyTheme(theme: ThemeColors) {
         setSpectrumColors(theme.spectrumColors)
+        peakColor = theme.textHighlight
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -115,7 +114,7 @@ class VisualizerView @JvmOverloads constructor(
             // Draw floating peak dot
             val peakY = h - peakHeights[i]
             if (peakY < h - 4f) {
-                peakPaint.color = 0xFFFFFFFF.toInt()
+                peakPaint.color = peakColor
                 canvas.drawRect(left, peakY - 3f, right, peakY, peakPaint)
             }
         }
