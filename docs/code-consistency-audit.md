@@ -1,8 +1,6 @@
 # Code consistency audit and future task list
 
-## Architecture authority and migration status
-
-[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
 Historical evidence: pending statements and test totals are revision-specific. The [current status](project-status.md) and [task list](feature-todo.md) supersede older acceptance labels. Reviewed 2026-10-24.
 
@@ -47,7 +45,7 @@ The tasks below address inconsistencies in those foundations rather than assumin
 | Installed applications | Read-only virtual listing / APK reads | No dedicated adapter | Launch, extraction, and uninstall are application-specific semantics. |
 | NFS / WebDAV / cloud catalog entries | No registered implementation | None | Listed as source types, not equivalent working backends. |
 
-Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/storage/StorageProvider.kt), [routing](../storage-engine/src/main/java/com/infinifolder/storage/RoutingStorageProvider.kt), [registry](../storage-engine/src/main/java/com/infinifolder/storage/ProviderRegistry.kt), [initialization](../app/src/main/java/com/infinifolder/MainActivity.kt#L331), [seekable resolver](../storage-engine/src/main/java/com/infinifolder/archive/SeekableSourceResolver.kt), [apps provider](../storage-engine/src/main/java/com/infinifolder/apps/AppsStorageProvider.kt).
+Evidence: [provider contract](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/storage/StorageProvider.kt), [routing](../storage-engine/src/main/java/com/infinifolder/storage/RoutingStorageProvider.kt), [registry](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/storage/ProviderRegistry.kt), [initialization](../app/src/main/java/com/infinifolder/MainActivity.kt#L331), [seekable resolver](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/SeekableSourceResolver.kt), [apps provider](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/apps/AppsStorageProvider.kt).
 
 ## P0 tasks: protect resource identity and data
 
@@ -55,7 +53,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [x] Keep a link's own resource identity distinct from its resolved target.
 
-**Evidence:** [LocalStorageProvider.kt](../storage-engine/src/main/java/com/infinifolder/storage/LocalStorageProvider.kt#L106): `fileFor()` returns canonical files; `uriFor()` also canonicalizes before `entry()` constructs its reference. `entry()` can therefore describe the original link while its URI identifies the target. `rename()` and `delete()` resolve that URI. SFTP `delete()` starts with target-following `stat()` before deciding whether to recurse ([SftpStorageProvider.kt](../storage-engine/src/main/java/com/infinifolder/sftp/SftpStorageProvider.kt#L281)).
+**Evidence:** [LocalStorageProvider.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/storage/LocalStorageProvider.kt#L106): `fileFor()` returns canonical files; `uriFor()` also canonicalizes before `entry()` constructs its reference. `entry()` can therefore describe the original link while its URI identifies the target. `rename()` and `delete()` resolve that URI. SFTP `delete()` starts with target-following `stat()` before deciding whether to recurse ([SftpStorageProvider.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/sftp/SftpStorageProvider.kt#L281)).
 
 **Impact:** A local link's rename/delete can act on the target. SFTP deletion of a link to a directory can enter the target directory traversal path.
 
@@ -65,7 +63,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [x] Require successful, complete listings throughout recursive copy/move and inspect deletion results.
 
-**Evidence:** [FileOperations.kt](../storage-engine/src/main/java/com/infinifolder/ops/FileOperations.kt): `copyTreeRecursively()` and `copyAppCategoryAsLinks()` proceed when a listing is a failure/unsupported result; success results ignore `isLoading` and `notice`. `batchTransfer()` subsequently calls `provider.delete(entry.ref)` for moves without checking its result. SAF's own recursive copy has stronger completeness guards in [SafProvider.kt](../storage-engine/src/main/java/com/infinifolder/storage/SafProvider.kt#L180), but the batch path bypasses them.
+**Evidence:** [FileOperations.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/ops/FileOperations.kt): `copyTreeRecursively()` and `copyAppCategoryAsLinks()` proceed when a listing is a failure/unsupported result; success results ignore `isLoading` and `notice`. `batchTransfer()` subsequently calls `provider.delete(entry.ref)` for moves without checking its result. SAF's own recursive copy has stronger completeness guards in [SafProvider.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/storage/SafProvider.kt#L180), but the batch path bypasses them.
 
 **Impact:** A failed or partial source listing can become an apparently successful copy followed by source deletion. Failed deletion can be reported as a completed move.
 
@@ -77,7 +75,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 **Policy:** `createFile` and `createDirectory` are create-new operations and must fail on an existing exact name. Batch copies and links choose a collision-free suffixed name; a race after listing fails safely without retrying into an existing object. Overwrite is available only through the explicit revision-checked, recovery-backed replacement path. Rename uses backend no-replace behavior where available; SAF rename and FTP semantics are provider/server controlled, and FTP rename is disabled. Skip is not currently offered. Temporary container edits publish as a verified batch; stream replacement preserves a recoverable original.
 
-**Evidence:** [FileOperations.kt](../storage-engine/src/main/java/com/infinifolder/ops/FileOperations.kt) prelists and reserves collision-free names, then cleans up only the reference returned by a successful create. Provider create-new methods use exclusive local/SMB operations, SFTP hardlink reservation, FTP STOU, container-specific create-new logic, and SAF `DocumentsContract.createDocument` after a collision check. Browser and direct provider `copy()`/`move()` route through `StorageTransfers` and the same batch implementation. Explicit replacement uses [ContentReplacement.kt](../storage-engine/src/main/java/com/infinifolder/storage/ContentReplacement.kt).
+**Evidence:** [FileOperations.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/ops/FileOperations.kt) prelists and reserves collision-free names, then cleans up only the reference returned by a successful create. Provider create-new methods use exclusive local/SMB operations, SFTP hardlink reservation, FTP STOU, container-specific create-new logic, and SAF `DocumentsContract.createDocument` after a collision check. Browser and direct provider `copy()`/`move()` route through `StorageTransfers` and the same batch implementation. Explicit replacement uses [ContentReplacement.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/storage/ContentReplacement.kt).
 
 **Remaining limitation:** SAF create and rename atomicity, plus FTP create-new behavior, ultimately depend on the document provider/server. The app requests a new document and verifies collision state first, but cannot force an uncooperative provider to honor that contract. These backend guarantees remain subject to live-provider validation; the original broad claim that local creation could return an existing file was stale after the storage-engine migration.
 
@@ -85,7 +83,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [x] Use a writable channel for writes/truncation and report only demonstrated descriptor capabilities.
 
-**Evidence:** [BlockDevice.kt](../storage-engine/src/main/java/com/infinifolder/archive/BlockDevice.kt#L216): `ContentUriBlockDevice.channel` comes from `FileInputStream`; `writeAt()` and `truncate()` use that channel even though a separate `FileOutputStream` exists. Capabilities unconditionally include SEEK, and include WRITE/TRUNCATE/FLUSH when `isReadOnly` is false. Size errors fall back to zero. [SeekableSourceResolver.kt](../storage-engine/src/main/java/com/infinifolder/archive/SeekableSourceResolver.kt) wraps a content descriptor without probing it.
+**Evidence:** [BlockDevice.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/archive/BlockDevice.kt#L216): `ContentUriBlockDevice.channel` comes from `FileInputStream`; `writeAt()` and `truncate()` use that channel even though a separate `FileOutputStream` exists. Capabilities unconditionally include SEEK, and include WRITE/TRUNCATE/FLUSH when `isReadOnly` is false. Size errors fall back to zero. [SeekableSourceResolver.kt](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/SeekableSourceResolver.kt) wraps a content descriptor without probing it.
 
 **Impact:** Writable SAF mounts advertise operations through a read channel. Pipe-backed or unknown-size document descriptors can appear seekable or empty.
 
@@ -103,7 +101,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [x] Separate read-only extracted snapshots from writable resources with a complete outer-container commit chain.
 
-**Evidence:** [ContainerWriteBatch.kt](../storage-engine/src/main/java/com/infinifolder/archive/ContainerWriteBatch.kt) refuses nested container batches before edits can be published, while [ArchiveStorageProvider.kt](../storage-engine/src/main/java/com/infinifolder/archive/ArchiveStorageProvider.kt) only grants writable snapshots for supported outer containers. The containing archive's MIME/metadata update chain is not implemented, so nested writable mounts are not advertised.
+**Evidence:** [ContainerWriteBatch.kt](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/ContainerWriteBatch.kt) refuses nested container batches before edits can be published, while [ArchiveStorageProvider.kt](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/ArchiveStorageProvider.kt) only grants writable snapshots for supported outer containers. The containing archive's MIME/metadata update chain is not implemented, so nested writable mounts are not advertised.
 
 **Impact:** Nested container editing is unavailable until every enclosing layer can publish verified bytes and metadata.
 
@@ -115,7 +113,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [x] Add common stat, parent/child resolution, write, seek, and operation capability APIs.
 
-**Evidence:** [StorageProvider.kt](../storage-engine/src/main/java/com/infinifolder/storage/StorageProvider.kt) has streams and mutations but no stat, parent lookup, seekable open, or capability query. [Resources.kt](../storage-engine/src/main/java/com/infinifolder/model/Resources.kt) lacks WRITE/SEEK/TRUNCATE capabilities; `canWrite` cannot represent rename-only, create-only, or stored-entry-only behavior. Backend-specific `getMetadata()` methods return partial pairs rather than common metadata. SAF flags are reduced to booleans and synthetic permission modes.
+**Evidence:** [StorageProvider.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/storage/StorageProvider.kt) has streams and mutations but no stat, parent lookup, seekable open, or capability query. [Resources.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/model/Resources.kt) lacks WRITE/SEEK/TRUNCATE capabilities; `canWrite` cannot represent rename-only, create-only, or stored-entry-only behavior. Backend-specific `getMetadata()` methods return partial pairs rather than common metadata. SAF flags are reduced to booleans and synthetic permission modes.
 
 **Done when:** Menus, editors, operations, and mounts consume one per-resource capability result, including unknown/unsupported states and read-only versus writable random access. Protocol/filesystem limitations remain visible rather than being treated as parity bugs.
 
@@ -123,7 +121,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [x] Replace the concrete-backend switch in `SeekableSourceResolver` with provider-owned seekable access and a shared fallback policy.
 
-**Evidence:** [SeekableSourceResolver.kt](../storage-engine/src/main/java/com/infinifolder/archive/SeekableSourceResolver.kt) accepts separate local/SFTP/FTP/SMB/archive providers, accesses client pools, and decodes each URI family. [MainActivity.kt](../app/src/main/java/com/infinifolder/MainActivity.kt#L374) assembles the resolver. `RoutingStorageProvider` cannot dispatch random access.
+**Evidence:** [SeekableSourceResolver.kt](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/SeekableSourceResolver.kt) accepts separate local/SFTP/FTP/SMB/archive providers, accesses client pools, and decodes each URI family. [MainActivity.kt](../app/src/main/java/com/infinifolder/MainActivity.kt#L374) assembles the resolver. `RoutingStorageProvider` cannot dispatch random access.
 
 **Done when:** Registering a backend supplies stream and optional seekable hooks without changing viewers or mount code. Cancellation, fallback, size discovery, and write denial use common results. FTP read ranges are advertised only when the connection supports restart semantics; unknown metadata does not silently become a zero-length file.
 
@@ -131,7 +129,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [x] Specify whether the destination is a directory or a complete new resource and implement that consistently.
 
-**Evidence:** [SftpStorageProvider.kt](../storage-engine/src/main/java/com/infinifolder/sftp/SftpStorageProvider.kt#L315) writes/renames directly to the destination remote path and returns that reference. [SmbStorageProvider.kt](../storage-engine/src/main/java/com/infinifolder/smb/SmbStorageProvider.kt#L271), local, and SAF treat the destination as a directory and append/select a child name. SFTP direct copy rejects directories; FTP direct copy is unsupported. The router rejects cross-provider copy/move while `FileOperations` implements a separate stream-based transfer route.
+**Evidence:** [SftpStorageProvider.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/sftp/SftpStorageProvider.kt#L315) writes/renames directly to the destination remote path and returns that reference. [SmbStorageProvider.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/smb/SmbStorageProvider.kt#L271), local, and SAF treat the destination as a directory and append/select a child name. SFTP direct copy rejects directories; FTP direct copy is unsupported. The router rejects cross-provider copy/move while `FileOperations` implements a separate stream-based transfer route.
 
 **Done when:** One documented transfer service provides equivalent directory and cross-connection behavior, using backend acceleration where available. Every successful result identifies the actual created resource.
 
@@ -139,7 +137,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [ ] Compute archive entry capabilities from the correct mounted resource and operation.
 
-**Evidence:** [ArchiveStorageProvider.kt](../storage-engine/src/main/java/com/infinifolder/archive/ArchiveStorageProvider.kt#L302) calls `isWritable(sourceUri)`, although `isWritable()` expects an `archive://` URI. Ordinary top-level sources therefore yield false listing permissions. [ArchiveReader.kt](../storage-engine/src/main/java/com/infinifolder/archive/ArchiveReader.kt#L54) permits some existing ZIP entries to be modified while creation/deletion use disc-image paths; archive rename/copy/move are unsupported.
+**Evidence:** [ArchiveStorageProvider.kt](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/ArchiveStorageProvider.kt#L302) calls `isWritable(sourceUri)`, although `isWritable()` expects an `archive://` URI. Ordinary top-level sources therefore yield false listing permissions. [ArchiveReader.kt](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/ArchiveReader.kt#L54) permits some existing ZIP entries to be modified while creation/deletion use disc-image paths; archive rename/copy/move are unsupported.
 
 **Done when:** Writable FAT entries and modifiable ZIP entries advertise their actual capabilities, with create/delete/rename distinguished. Read-only ISO/ext/etc. support is reported accurately instead of inferring writes from the source file alone.
 
@@ -147,7 +145,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [ ] Key caches by original resource identity and revision, and invalidate all affected layers after mutations.
 
-**Evidence:** [ArchiveStorageProvider.kt](../storage-engine/src/main/java/com/infinifolder/archive/ArchiveStorageProvider.kt#L175) caches trees under `URI:size:modified`, but mutation paths remove only `sourceUri.toString()`. `extractToCache()` reuses an existing file based only on expected size and a display-path-derived location. [MainActivity.kt](../app/src/main/java/com/infinifolder/MainActivity.kt#L4246) stages external remote opens under connection plus basename, omitting the full remote resource path.
+**Evidence:** [ArchiveStorageProvider.kt](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/ArchiveStorageProvider.kt#L175) caches trees under `URI:size:modified`, but mutation paths remove only `sourceUri.toString()`. `extractToCache()` reuses an existing file based only on expected size and a display-path-derived location. [MainActivity.kt](../app/src/main/java/com/infinifolder/MainActivity.kt#L4246) stages external remote opens under connection plus basename, omitting the full remote resource path.
 
 **Impact:** Same-size changes can reuse stale bytes; unchanged/unknown timestamps retain old trees; same-name remote files can share an external staging location.
 
@@ -157,7 +155,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [ ] Route external opening through a common staging session with revision tracking and explicit commit/conflict behavior.
 
-**Evidence:** [MainActivity.kt](../app/src/main/java/com/infinifolder/MainActivity.kt#L4207) extracts/downloads archive and remote files and grants external apps write permission on the cache URI. [StagingRepository.kt](../storage-engine/src/main/java/com/infinifolder/staging/StagingRepository.kt) defines an identity/edit-state schema but has no callers implementing sessions or write-back.
+**Evidence:** [MainActivity.kt](../app/src/main/java/com/infinifolder/MainActivity.kt#L4207) extracts/downloads archive and remote files and grants external apps write permission on the cache URI. [StagingRepository.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/staging/StagingRepository.kt) defines an identity/edit-state schema but has no callers implementing sessions or write-back.
 
 **Done when:** Edits are associated with their original resource, changes are detected, commits honor provider/mount capabilities, conflicts are surfaced, and read-only snapshots are presented as copies. Cache-file writes alone are never presented as original-resource saves.
 
@@ -181,7 +179,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [x] Represent link kind, target identity, target type, and resolution status through one model and action policy.
 
-**Evidence:** [Resources.kt](../storage-engine/src/main/java/com/infinifolder/model/Resources.kt) models symbolic links, while [ShortcutFile.kt](../storage-engine/src/main/java/com/infinifolder/shortcut/ShortcutFile.kt) models separate JSON shortcut records. [MainActivity.kt](../app/src/main/java/com/infinifolder/MainActivity.kt#L7141) gives shortcut files their own menu branch; symbolic links otherwise enter ordinary folder/file branches. FTP listing ignores available link classification; ZIP listing omits link attributes, while TAR retains link information ([ArchiveReader.kt](../storage-engine/src/main/java/com/infinifolder/archive/ArchiveReader.kt#L258)).
+**Evidence:** [Resources.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/model/Resources.kt) models symbolic links, while [ShortcutFile.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/shortcut/ShortcutFile.kt) models separate JSON shortcut records. [MainActivity.kt](../app/src/main/java/com/infinifolder/MainActivity.kt#L7141) gives shortcut files their own menu branch; symbolic links otherwise enter ordinary folder/file branches. FTP listing ignores available link classification; ZIP listing omits link attributes, while TAR retains link information ([ArchiveReader.kt](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/ArchiveReader.kt#L258)).
 
 **Done when:** Links share target/open/properties/broken-link presentation while preserving native versus file-backed semantics. Copy supports an explicit preserve-link/follow-target policy; recursive traversal detects cycles. Relative targets resolve within the proper provider or container. Unsupported link metadata is reported as unknown.
 
@@ -189,7 +187,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [x] Detect supported shortcut encodings explicitly and assign their MIME identity accordingly.
 
-**Evidence:** [ShortcutFile.kt](../storage-engine/src/main/java/com/infinifolder/shortcut/ShortcutFile.kt) writes JSON using `.lnk` and `application/x-ms-shortcut`; detection accepts every `.lnk`, but reading only calls `fromJson()`. A genuine binary Windows shortcut is routed into a parser that cannot read it.
+**Evidence:** [ShortcutFile.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/shortcut/ShortcutFile.kt) writes JSON using `.lnk` and `application/x-ms-shortcut`; detection accepts every `.lnk`, but reading only calls `fromJson()`. A genuine binary Windows shortcut is routed into a parser that cannot read it.
 
 **Done when:** The custom shortcut format has an unambiguous identity, legacy custom files remain readable, and genuine Windows LNK/other link files are parsed if supported or reported as unsupported without being mislabeled as broken custom JSON.
 
@@ -197,7 +195,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [x] Produce one normalized classification used by providers, icons, previews, menus, properties, and open dispatch.
 
-**Evidence:** Independent tables exist in local `MimeTypeMap` handling, SAF supplied MIME, SFTP/FTP/SMB `guessMimeType()`, [ArchiveMimeTypes](../storage-engine/src/main/java/com/infinifolder/archive/ArchiveEntry.kt), [MediaTypeDetector](../viewer-common/src/main/java/com/infinifolder/viewer/MediaTypeDetector.kt), and browser `resolveMimeType()`. SFTP/SMB label JSON/XML/Markdown as `text/plain`; archive CSV/TSV/Markdown also use `text/plain`; compressed archive MIME mappings differ. Magic detection can change classification independently of package identity.
+**Evidence:** Independent tables exist in local `MimeTypeMap` handling, SAF supplied MIME, SFTP/FTP/SMB `guessMimeType()`, [ArchiveMimeTypes](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/ArchiveEntry.kt), [MediaTypeDetector](../viewer-common/src/main/java/com/infinifolder/viewer/MediaTypeDetector.kt), and browser `resolveMimeType()`. SFTP/SMB label JSON/XML/Markdown as `text/plain`; archive CSV/TSV/Markdown also use `text/plain`; compressed archive MIME mappings differ. Magic detection can change classification independently of package identity.
 
 **Done when:** Identical content has the same effective MIME and actions on every backend. Classification retains supplied MIME, normalized aliases, filename evidence, detected content, application type, and container type with a documented precedence policy. Remote detection uses bounded provider reads rather than local-only shortcuts.
 
@@ -213,7 +211,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [x] Register application MIME and underlying container separately, beyond the existing package extension whitelist.
 
-**Evidence:** [ArchiveFormats.kt](../storage-engine/src/main/java/com/infinifolder/archive/ArchiveFormats.kt) lists APK/XAPK/APKM/AAB/JAR/WAR/EAR/AAR/LÖVE/IPA as packages, but omits EPUB, OOXML, OpenDocument, and other container-based documents. [MainActivity.open()](../app/src/main/java/com/infinifolder/MainActivity.kt#L4180) mounts an archive before viewer selection. An EPUB supplied/detected as ZIP can therefore mount instead of reaching its reader; correctly typed EPUB/Office files have no guaranteed Browse action. Package MIME mapping also groups AAB/XAPK/APKM under APK and WAR/EAR/AAR under JAR without distinguishing application handler compatibility.
+**Evidence:** [ArchiveFormats.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/archive/ArchiveFormats.kt) lists APK/XAPK/APKM/AAB/JAR/WAR/EAR/AAR/LÖVE/IPA as packages, but omits EPUB, OOXML, OpenDocument, and other container-based documents. [MainActivity.open()](../app/src/main/java/com/infinifolder/MainActivity.kt#L4180) mounts an archive before viewer selection. An EPUB supplied/detected as ZIP can therefore mount instead of reaching its reader; correctly typed EPUB/Office files have no guaranteed Browse action. Package MIME mapping also groups AAB/XAPK/APKM under APK and WAR/EAR/AAR under JAR without distinguishing application handler compatibility.
 
 **Done when:** Supported container-based documents/packages keep their application identity for opening and have a Browse action for their underlying format. The actual package MIME selects compatible handlers; no-handler behavior is explicit. Include APK, LÖVE, EPUB, DOCX/XLSX/PPTX, and ODT/ODS/ODP cases across local, SAF, remote, and nested resources.
 
@@ -221,7 +219,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [x] Select container readers and mutation support from detected/registered container type rather than repeated extension lists.
 
-**Evidence:** [ArchiveReader.kt](../storage-engine/src/main/java/com/infinifolder/archive/ArchiveReader.kt#L87) gives the ZIP seekable/slice path only to ZIP/JAR/APK/AAR/CBZ. LÖVE/WAR/EAR/XAPK/APKM/AAB/IPA fall through different detection/stream paths despite being registered as packages. Existing-entry ZIP writes use yet another, smaller, case-sensitive extension list at lines 54–81.
+**Evidence:** [ArchiveReader.kt](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/ArchiveReader.kt#L87) gives the ZIP seekable/slice path only to ZIP/JAR/APK/AAR/CBZ. LÖVE/WAR/EAR/XAPK/APKM/AAB/IPA fall through different detection/stream paths despite being registered as packages. Existing-entry ZIP writes use yet another, smaller, case-sensitive extension list at lines 54–81.
 
 **Done when:** Equivalent ZIP-based packages use the same indexed read and nested-slice capabilities, regardless of suffix or case. Mutability is separately constrained by container integrity/signing requirements and writer support, with accurate read-only reporting.
 
@@ -239,7 +237,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [ ] Give mount/read sessions explicit device ownership, close propagation, cancellation, and cleanup.
 
-**Evidence:** [ArchiveStorageProvider.kt](../storage-engine/src/main/java/com/infinifolder/archive/ArchiveStorageProvider.kt) repeatedly resolves devices for tree reads, extraction, and capability probes without a matching session lifetime. [BlockDevice.kt](../storage-engine/src/main/java/com/infinifolder/archive/BlockDevice.kt#L420) channel wrappers deliberately do not close their device; `BlockDeviceInputStream` likewise has no device-closing override. Slices also intentionally retain their parent. [MediaSourceAdapter.kt](../viewer-common/src/main/java/com/infinifolder/viewer/MediaSourceAdapter.kt#L130) relies on `deleteOnExit()` and does not clean partial staging files for every failure.
+**Evidence:** [ArchiveStorageProvider.kt](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/ArchiveStorageProvider.kt) repeatedly resolves devices for tree reads, extraction, and capability probes without a matching session lifetime. [BlockDevice.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/archive/BlockDevice.kt#L420) channel wrappers deliberately do not close their device; `BlockDeviceInputStream` likewise has no device-closing override. Slices also intentionally retain their parent. [MediaSourceAdapter.kt](../viewer-common/src/main/java/com/infinifolder/viewer/MediaSourceAdapter.kt#L130) relies on `deleteOnExit()` and does not clean partial staging files for every failure.
 
 **Done when:** Ownership is explicit for borrowed and owned devices; closing the last mount/session releases descriptors and caches without invalidating active siblings. Cancellation and failed staging remove partial files; cleanup works after process restart.
 
@@ -247,7 +245,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [ ] Let viewers request seekable handles and stage only when their consumer requires it.
 
-**Evidence:** [PdfViewerActivity.kt](../viewer-pdf/src/main/java/com/infinifolder/viewer/PdfViewerActivity.kt#L222), [EpubViewerActivity.kt](../viewer-epub/src/main/java/com/infinifolder/viewer/EpubViewerActivity.kt#L323), audio, and video call `stageToTempFile()`. This bypasses the mount range-access system for nonlocal sources and defaults to a 500 MiB staging limit. `MediaSourceAdapter.readAllBytes()` is unbounded; [ArchiveReader.openEntryStream()](../storage-engine/src/main/java/com/infinifolder/archive/ArchiveReader.kt#L413) allocates entire 7z entry contents in memory.
+**Evidence:** [PdfViewerActivity.kt](../viewer-pdf/src/main/java/com/infinifolder/viewer/PdfViewerActivity.kt#L222), [EpubViewerActivity.kt](../viewer-epub/src/main/java/com/infinifolder/viewer/EpubViewerActivity.kt#L323), audio, and video call `stageToTempFile()`. This bypasses the mount range-access system for nonlocal sources and defaults to a 500 MiB staging limit. `MediaSourceAdapter.readAllBytes()` is unbounded; [ArchiveReader.openEntryStream()](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/ArchiveReader.kt#L413) allocates entire 7z entry contents in memory.
 
 **Done when:** Suitable consumers use native seekable access or an adapter; required full copies have explicit size/disk limits, progress, cancellation, and lifecycle cleanup. Large remote media and nested documents do not fail merely because unrelated mount and viewer paths use different policies.
 
@@ -255,7 +253,7 @@ Evidence: [provider contract](../storage-engine/src/main/java/com/infinifolder/s
 
 - [ ] Carry inner filesystem lookup policy and link metadata through the virtual resource model.
 
-**Evidence:** [ArchiveTree](../storage-engine/src/main/java/com/infinifolder/archive/ArchiveEntry.kt) falls back to case-insensitive lookup for every container; several reader entry lookups also ignore case. ZIP listing omits symbolic-link metadata, and the disc-to-archive mapping at [ArchiveReader.kt](../storage-engine/src/main/java/com/infinifolder/archive/ArchiveReader.kt#L147) copies basic fields only.
+**Evidence:** [ArchiveTree](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/ArchiveEntry.kt) falls back to case-insensitive lookup for every container; several reader entry lookups also ignore case. ZIP listing omits symbolic-link metadata, and the disc-to-archive mapping at [ArchiveReader.kt](../libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/ArchiveReader.kt#L147) copies basic fields only.
 
 **Done when:** Case-sensitive archives/filesystems preserve distinct names such as `A.txt` and `a.txt`; case-insensitive filesystems use their own lookup rules. Link resolution, broken targets, and root containment remain correct inside mounted resources.
 

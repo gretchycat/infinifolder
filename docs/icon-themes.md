@@ -1,8 +1,6 @@
 # Desktop icon themes
 
-## Architecture authority and migration status
-
-[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
 The icon theme chooser prepares the bundled themes on first use, off the UI thread. Select **Icon theme…** in the file manager menu, choose a theme, and apply it. Imported themes can still be selected or installed from a ZIP or TAR archive. File previews and explicit custom icons take precedence where applicable.
 

@@ -1,8 +1,6 @@
 # Image formats
 
-## Architecture authority and migration status
-
-[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
 Updated 2026-10-27. This document tracks image format support across thumbnail generation (`ThumbnailDecoder`), container/directory icon discovery (`DirectoryIconResolver`), MIME/magic classification (`ImageFormats`, `MimeRegistry`, `FileMagicDetector`), and the standalone/integrated image viewer (`:viewer-image` / `ImageViewerActivity`), along with difficulty ratings and prerequisites for implementing viewers/decoders and creators/encoders for currently unsupported formats.
 

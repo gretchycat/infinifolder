@@ -1,8 +1,6 @@
 # Audio and sound formats
 
-## Architecture authority and migration status
-
-[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
 Updated 2026-10-30. This document tracks audio and sound format support across MIME/magic classification (`MediaTypeDetector`, `MimeRegistry`, `FileMagicDetector`) and the modular audio playback engine (`:viewer-audio` / `AudioPlayerActivity`, `AudioPlayerService`, `PcmAudioEngine`, and `UniversalAudioDecoder`). Parsing, codec adapters, metadata probing and analysis now live in the external `libinfinisound` library (`audio-api` / `audio-core` / Android `audio-processing`); see [audio library boundaries](audio-processing-library.md). Playback/output remains in `:viewer-audio`.
 
@@ -12,9 +10,9 @@ Updated 2026-10-30. This document tracks audio and sound format support across M
 
 ## Implemented Architecture & Decoders
 
-The InfiniFolder audio engine provides seamless playback through a two-tiered architecture:
-1. **Hardware / MediaPlayer Pipeline**: Supported formats (`.mp3`, `.flac`, `.wav`, `.ogg`, `.opus`, `.m4a`, `.aac`) are streamed or staged directly into Android's `MediaPlayer`.
-2. **Modular Synthesizer & PCM Engine Fallback**: For tracker, synthesizer, chiptune, workstation, and niche audiophile formats, `UniversalAudioDecoder` parses the streams, performs arbitrary-rate resampling or synthesis, and either feeds `MediaPlayer` via memory WAV streaming or drives `PcmAudioEngine` via an Android `AudioTrack` 16-bit 44.1 kHz stereo pipeline.
+All local parsing/decoding is selected inside libinfinisound. Its Android MediaExtractor/MediaCodec backend and portable MP3/AAC/FLAC/WAVE plus existing composite codecs share library contracts. InfiniStream compatibility wraps encoded positional sources and actual typed PCM outputs. AudioPlayerService prepares a canonical PCM WAVE file through the library before handing it to MediaPlayer, including preload; it does not pass original compressed sources directly to MediaPlayer. Output surfaces, routing, Cast and queue lifetimes remain Android host responsibilities. Existing composite render limits and supported formats are preserved.
+
+PCM file preparation bounds memory but uses disk and can add startup/preload latency; the RIFF output limit is 4 GiB. A future streaming output adapter can consume PCM directly without rewriting codecs.
 
 All formats integrate with `AudioPlayerService` background playback, lock screen media notifications, audio focus management, the segmented 16-band animated spectrum visualizer (`VisualizerView`), and playlist navigation.
 

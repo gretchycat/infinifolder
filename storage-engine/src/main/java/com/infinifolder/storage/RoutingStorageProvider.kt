@@ -224,7 +224,7 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
             is ProviderResult.Unsupported -> return@track ProviderResult.Unsupported(targetResult.capability)
         }
         completedCheckpointCleanup.remove(destination)
-        val checkpoint = if (destination.providerId != "archive") SiblingTransferCheckpointStore(targetProvider, destination) else null
+        val checkpoint = if (destination.providerId != "archive") siblingTransferCheckpointStore(targetProvider, destination) else null
         var result: ProviderResult<Long> = try {
             producer.transferTo(source, destination, target, isCancelled, onBytesWritten, onPieceVerification,
                 checkpoint, onBytesRemaining, onResumeStatus, onTorrentStats)

@@ -48,3 +48,6 @@ if (System.getenv("ANDROID_HOME").isNullOrBlank() &&
 includeBuild(soundLibrary)
 
 includeBuild("libraries/libinfinistream")
+
+includeBuild("libraries/libinfinistore")
+includeBuild("libraries/libinfinivault")

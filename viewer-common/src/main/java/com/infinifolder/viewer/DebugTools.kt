@@ -65,6 +65,7 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
         private set
     fun install(application: Application) {
         if (installed.compareAndSet(false, true)) {
+            DiagnosticLog.providerResolver = { com.infinifolder.storage.StorageRuntime.get(it).provider }
             DiagnosticLog.init(application)
             UiResponsivenessMonitor.install()
             val previous = Thread.getDefaultUncaughtExceptionHandler()

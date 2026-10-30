@@ -40,6 +40,7 @@ class StorageRuntime private constructor(context: Context) {
     val provider = RoutingStorageProvider(local, archives, apps, sftp, ftp, smb, webdav, torrents, containerLinks, partialDownloads, SafProvider(app.contentResolver),
         uriResolver = { uri -> if (ContainerUris.networkType(uri) == null) uri else ContainerUris.resolve(uri, connections.list()) })
     init {
+        DiagnosticLog.providerResolver = { provider }
         DiagnosticLog.init(app)
         provider.onEntriesObserved = partialDownloads::observe
         provider.onResourceRemoved = partialDownloads::forget

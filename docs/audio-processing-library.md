@@ -1,8 +1,6 @@
 # Audio parsing and processing library
 
-## Architecture authority and migration status
-
-[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
 Updated 2026-10-30. The independent [libinfinisound repository](https://github.com/gretchycat/libinfinisound) is pinned at `libraries/libinfinisound` and imported as a Gradle composite build. Both library-owned portable codecs and Android's codec adapter are selected inside the library.
 
@@ -28,7 +26,7 @@ git submodule update --init --recursive
 gradle :app:assembleDebug
 ```
 
-InfiniFolder requests `io.github.gretchycat.libinfinisound:audio-api:0.2.0` for storage playlists and `io.github.gretchycat.libinfinisound:audio-processing:0.2.0` for audio. Gradle substitutes the pinned source; no Maven publication is required. The host shares its SDK setting with the included build when no SDK is configured globally.
+InfiniFolder requests `io.github.gretchycat.libinfinisound:audio-api:0.2.0` for Store playlists and `io.github.gretchycat.libinfinisound:audio-processing:0.2.0` for audio. Gradle substitutes the pinned source; no Maven publication is required. The host shares its SDK setting with the included build when no SDK is configured globally.
 
 From the library checkout, portable builds need a JDK/Gradle and no Android SDK:
 
@@ -62,3 +60,7 @@ These checks do not constitute device playback verification. Existing compiler d
 ## Portable/native increment validation
 
 The new source boundary passed 66 core/viewer/storage checks and built both debug APKs. A DEX harness also ran the built library code under the device's Android runtime: 12 portable-only/platform-first decode cases, including native MediaCodec and precision-preserving portable FLAC fallback. MP3/MP4 timing matched and FLAC samples were identical between selected paths. See [detailed validation](../libraries/libinfinisound/docs/validation.md). Audible output and gapless handoff were not exercised by that decoding harness.
+
+## InfiniStream migration
+
+Sound now shares `stream-core:0.1.0`. StreamAudioInput wraps known-length positional sources without implicit spooling; PcmStreamHandle and AudioStreamProcessor expose actual typed output metadata and declared ports. FileAudioInput retains legacy file hints while reading through the shared source. Store/Vault sources can be passed to the same adapter; Android output and queue lifetimes are unchanged. Standalone builds require the sibling Stream checkout pinned by the workspace (or -PinfiniLibrariesDir).
