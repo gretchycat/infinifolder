@@ -1,5 +1,9 @@
 # Torrent checkpoint safety checks
 
+## Architecture authority and migration status
+
+[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+
 ## Failed finalization follow-up (2026-10-26 21:18 UTC dump)
 
 The operation history records all 6,482,409,472 bytes received and zero remaining,

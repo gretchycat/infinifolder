@@ -1,5 +1,9 @@
 # WebDAV provider
 
+## Architecture authority and migration status
+
+[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+
 Updated 2026-10-24. WebDAV support is implemented in `storage-engine` and available through the protocol-specific **New → Link** setup. The user confirmed WebDAV working. A saved connection appears on Virtual root as a container link and in the navigation tree. Credentials use a separate encrypted vault; passwords in a URL are rejected.
 
 ## Implemented

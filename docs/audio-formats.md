@@ -1,5 +1,9 @@
 # Audio and sound formats
 
+## Architecture authority and migration status
+
+[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+
 Updated 2026-10-30. This document tracks audio and sound format support across MIME/magic classification (`MediaTypeDetector`, `MimeRegistry`, `FileMagicDetector`) and the modular audio playback engine (`:viewer-audio` / `AudioPlayerActivity`, `AudioPlayerService`, `PcmAudioEngine`, and `UniversalAudioDecoder`). Parsing, codec adapters, metadata probing and analysis now live in the external `libinfinisound` library (`audio-api` / `audio-core` / Android `audio-processing`); see [audio library boundaries](audio-processing-library.md). Playback/output remains in `:viewer-audio`.
 
 > Text-based musical notation and terminal sound sequences—such as **ANSI music** (`ESC[...M` / `ESC[...N` / QBasic `PLAY` macro strings embedded in `.ans`/`.asc` streams) and ABC music notation—belong to the text renderers and are documented in [Text, markup, document, and text-based media formats](text-and-document-formats.md).

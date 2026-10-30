@@ -1,5 +1,9 @@
 # File operation feedback
 
+## Architecture authority and migration status
+
+[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+
 Updated 2026-10-24. See [current status](project-status.md).
 
 Successful/cancelled operation dialogs dismiss automatically; warnings and failures retain review details. Queues reuse the progress window. Tap the toolbar light to restore active progress or recent operation history. Background completion uses a separate notification channel from foreground-service progress; viewing an internal viewer counts as foreground. Notification permissions/channel settings still apply and failures are logged without failing the transfer.

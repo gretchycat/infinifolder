@@ -1,5 +1,9 @@
 # Text, markup, document, and text-based media formats
 
+## Architecture authority and migration status
+
+[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+
 Updated 2026-10-27. This document tracks plain text, source code, markup, paginated document, eBook, spreadsheet, and **text-based media** (such as ANSI art and ANSI music) across the six text/document viewer modules, along with difficulty ratings and prerequisites for implementing viewers/players and creators/editors for currently unsupported formats:
 
 1. **Plain Text & Code Viewer (`:viewer-text` / `TextViewerActivity`)**

@@ -1,5 +1,20 @@
 # Architecture
 
+## Architecture authority and migration status
+
+[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+
+## Target library graph
+
+```text
+InfiniFolder / viewer host (composition, Android UI)
+  -> Store adapters -> Stream
+  -> Vault adapters -> Store contracts + Stream
+  -> Sound / Canvas / Video / Scribe -> Stream
+```
+
+Ordinary sources do not pass through Vault. Stream contracts describe optional positional I/O, ownership, immutable input/output metadata and negotiated processing; they never depend on Android. Existing Kotlin/Java codec and storage implementations are preserved behind compatibility adapters. Repository extraction and consumer migration are separate checkpoints; the current module list below describes the baseline, not the finished target. See [ownership and verification](infinistream-migration.md).
+
 ## Build modules and ownership
 
 - `:app`: browser Activity, navigation, menus, Android integrations, operation foreground service.

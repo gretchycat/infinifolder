@@ -1,5 +1,7 @@
 # InfiniFolder
 
+Architecture: [InfiniStream implementation design](docs/infinistream_architecture_codex.md), with [ownership and tested migration checkpoints](docs/infinistream-migration.md). Existing working features and data-safety guarantees remain requirements at every stage.
+
 An Android file browser with interchangeable storage providers, browsable archives/disk images, and independent viewer/editor modules. Android SAF identities remain opaque; source permissions and format limits are checked through shared provider contracts.
 
 ## Current functionality

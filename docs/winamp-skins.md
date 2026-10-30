@@ -1,5 +1,9 @@
 # Winamp skin integration
 
+## Architecture authority and migration status
+
+[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+
 ## Supported resources
 
 Classic Winamp and XMMS skins in `.wsz`, ZIP, TAR, TAR.GZ/TGZ or TAR.BZ2 archives can be imported from Interface Theme → Import Winamp / XMMS Skin using a path, storage URI, or Browse button. Import reads a private copy on a worker thread, validates it, then publishes the theme on the main thread. The private archive and display name survive app restarts. Failed imports leave the selected theme intact.

@@ -1,5 +1,9 @@
 # Private Partial downloads collection
 
+## Architecture authority and migration status
+
+[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+
 Virtual root → Partial downloads is backed by the app-private `files/partial-download-links/` directory. Each discovered unfinished download gets an actual `.iflink` record there. A stable hashed link filename avoids collisions between identically named downloads on different sources; its saved display name remains the original download name.
 
 ## Discovery

@@ -1,6 +1,22 @@
 # Roadmap
 
+## Architecture authority and migration status
+
+[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+
 Updated 2026-10-24. See [current status](project-status.md) for confirmed behavior and [detailed tasks](feature-todo.md) for acceptance work.
+
+## Active: InfiniStream library migration
+
+1. Align documentation and record baseline regressions and source ownership.
+2. Create the justified library repositories, reusing libinfinisound.
+3. Establish independently tested Stream source/sink, positional access, metadata and processor contracts.
+4. Adapt existing opens and consumers before removing legacy contracts.
+5. Extract Store/Vault and media/document implementations in verified commits with pinned submodules.
+6. Add bounded content detection and pull planning; negotiate push/backpressure explicitly.
+7. Recheck full and standalone builds and existing runtime acceptance after every migration. Preserve storage publication/recovery, audio gapless/seek and every current format.
+
+Current progress and known pre-existing failures belong in [migration checkpoints](infinistream-migration.md). The remaining product/safety work below continues alongside this architecture work; no language port is included.
 
 ## Next: accept the new safety paths
 

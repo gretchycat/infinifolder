@@ -1,5 +1,9 @@
 # Partial FAT recovery and byte-range reports
 
+## Architecture authority and migration status
+
+[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+
 Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
 
 Implemented after the original safety-fixture handset acceptance. This addition has automated coverage. The 02:40 UTC handset dump confirms a successful drag-initiated FAT16 partial export; direct inspection verifies the saved NUL/surviving ranges, report digest and unchanged source hash. Other new UI and fixture cases remain below.

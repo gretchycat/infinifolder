@@ -1,10 +1,14 @@
 # Library separation audit
 
+## Architecture authority and migration status
+
+[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+
 Original audit reviewed 2026-10-29. The assessment and migration plan describe the architecture before extraction; implemented progress is recorded below. The plan builds on `architecture.md` and `viewer-modules.md` and preserves their existing storage and data-safety requirements.
 
 ## Audio extraction status — 2026-10-30
 
-The first audio increment is implemented in `audio-api` and `audio-processing`, now hosted in the independent `libinfinisound` repository and imported as a pinned submodule/composite build; see [the library boundary and usage](audio-processing-library.md). Parsing, codec adapters, metadata probing and signal analysis have moved out of `viewer-audio`. Playback/output, source staging, queue lifetimes and Cast remain in the viewer. Storage shares the playlist parser through the small API without linking the processing implementations. The assessment below records the pre-extraction architecture and remains the broader migration plan.
+The first audio increment is implemented in `audio-api` and `audio-processing`, now hosted in the independent `libinfinisound` repository and imported as a pinned submodule/composite build; see [the library boundary and usage](audio-processing-library.md). Parsing, codec adapters, metadata probing and signal analysis have moved out of `viewer-audio`. Playback/output, source staging, queue lifetimes and Cast remain in the viewer. Storage shares the playlist parser through the small API without linking the processing implementations. The assessment below records the pre-extraction architecture. The InfiniStream assignment supersedes its proposed boundaries and sequence.
 
 ## Assessment
 
@@ -26,7 +30,7 @@ A smaller core and independently reusable libraries are achievable without immed
 
 ## Proposed boundaries
 
-Names below are illustrative; introduce only the modules needed at each step. Arrows point from consumer to contract or implementation it chooses to include. Implementations must not depend back on the app or a particular viewer.
+The original illustrative boundaries below are historical. The authoritative repository names are libinfinistream, libinfinistore, libinfinivault, libinfinisound, libinfinicanvas, libinfinivideo and libinfiniscribe; see the migration mapping. Arrows point from consumer to contract or implementation it chooses to include. Implementations must not depend back on the app or a particular viewer.
 
 | Boundary | Responsibility | Depends on |
 | --- | --- | --- |
@@ -43,7 +47,7 @@ Names below are illustrative; introduce only the modules needed at each step. Ar
 
 The core should not enumerate SFTP, ZIP, audio codecs, or viewer Activities. The Android app's composition root can register concrete providers, container handlers and viewers explicitly. A standalone viewer host can register a smaller set. Registration needs deterministic detection/priority, unavailable-format handling, and clear ownership of providers and open handles. Start with compile-time composition; discoverable or downloadable plugins can be assessed later if actually needed.
 
-Android URI grants and intent behavior are real platform requirements. First extract a small Android-compatible contract and move URI conversion to a bridge where practical. If a truly portable Kotlin/JVM or multiplatform library is desired later, define a platform-neutral identity and byte-source API and adapt Android `Uri`, file descriptors, and bitmap/audio output at its boundary. This is a separate compatibility effort, not something Gradle module renaming provides.
+Android URI grants and intent behavior are real platform requirements. First extract a small Android-compatible contract and move URI conversion to a bridge where practical. If a truly portable Kotlin/JVM or multiplatform library is desired later, define a platform-neutral identity and byte-source API and adapt Android `Uri`, file descriptors, and bitmap/audio output at its boundary. This compatibility effort is now required by the InfiniStream assignment; Gradle module renaming alone does not provide it.
 
 ## High-risk seams and behavior to preserve
 

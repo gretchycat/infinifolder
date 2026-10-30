@@ -1,5 +1,9 @@
 # Storage API consistency
 
+## Architecture authority and migration status
+
+[InfiniStream architecture](infinistream_architecture_codex.md) defines the target design and takes precedence over earlier extraction proposals. [Migration checkpoints](infinistream-migration.md) records actual ownership, tested revisions and remaining work. Stream is the platform-neutral foundation; Store opens resources; Vault interprets containers only when needed; Sound, Canvas, Video and Scribe consume stream contracts. Android presentation, permissions and application composition remain adapters. Existing safety and format limits below remain requirements throughout migration. Dated evidence and old source paths describe their original revision; they are not claims that every planned extraction is complete.
+
 Updated 2026-10-26. This pass implements shared capability and random-access rules.
 Internal ZIP moves and FAT32 native file moves are user-confirmed, supported by
 the 18:57 and 19:24 UTC handset dumps. FAT directory moves and other contract checks
