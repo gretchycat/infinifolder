@@ -2,6 +2,8 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
+Current ownership: resource/provider and stream/block compatibility adapters are in libinfinistore; archives/image interpretation and mounts are in libinfinivault. The host composes both without a Store-to-Vault dependency. Legacy archive-package I/O names remain compatibility names and do not imply container parsing is required for ordinary files. All capability, publication, verification and recovery rules below remain enforced.
+
 Updated 2026-10-26. This pass implements shared capability and random-access rules.
 Internal ZIP moves and FAT32 native file moves are user-confirmed, supported by
 the 18:57 and 19:24 UTC handset dumps. FAT directory moves and other contract checks

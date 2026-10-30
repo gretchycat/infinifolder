@@ -56,6 +56,8 @@ class VideoPlayerActivity : ViewerActivity() {
     enum class VideoRepeatMode { NONE, ALL, ONE }
     private var repeatMode = VideoRepeatMode.NONE
 
+    private var videoInputMetadata = io.github.gretchycat.infinistream.StreamMetadata()
+    private var videoOutputMetadata = io.github.gretchycat.infinistream.StreamMetadata()
     private var mediaPlayerRef: MediaPlayer? = null
     private var isUserSeeking = false
     private var isControlsVisible = true
@@ -165,6 +167,7 @@ class VideoPlayerActivity : ViewerActivity() {
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
             setOnPreparedListener { mp ->
                 mediaPlayerRef = mp
+                videoOutputMetadata = io.github.gretchycat.infinivideo.AndroidVideoBackend.negotiated(videoInputMetadata, mp)
                 loadingIndicator.visibility = View.GONE
                 mp.isLooping = false
                 applySpeed()
@@ -501,7 +504,7 @@ class VideoPlayerActivity : ViewerActivity() {
 
             runOnUiThread {
                 if (file != null && file.exists()) {
-                    videoView.setVideoPath(file.absolutePath)
+                    videoInputMetadata = io.github.gretchycat.infinivideo.AndroidVideoBackend.bind(videoView, file)
                 } else {
                     loadingIndicator.visibility = View.GONE
                     val error = loadError
@@ -706,17 +709,7 @@ class VideoPlayerActivity : ViewerActivity() {
         stagedFile = null
     }
 
-    private fun formatTime(ms: Int): String {
-        val totalSecs = (ms / 1000).coerceAtLeast(0)
-        val hours = totalSecs / 3600
-        val mins = (totalSecs % 3600) / 60
-        val secs = totalSecs % 60
-        return if (hours > 0) {
-            String.format(Locale.US, "%d:%02d:%02d", hours, mins, secs)
-        } else {
-            String.format(Locale.US, "%02d:%02d", mins, secs)
-        }
-    }
+    private fun formatTime(ms: Int): String = io.github.gretchycat.infinivideo.VideoMetadata.formatTime(ms)
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 

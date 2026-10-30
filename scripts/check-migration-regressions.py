@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare existing JUnit cases to the recorded pre-migration baseline.
+"""Compare existing JUnit cases to the recorded checkpoint baseline.
 
 Supply current test-result directories explicitly. No missing baseline case or new
 failure is allowed. Existing known failures remain visible and do not count as a
@@ -12,7 +12,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--baseline', type=Path, default=Path('docs/validation/infinistream-baseline.json'))
+parser.add_argument('--baseline', type=Path, default=Path('docs/validation/infinistream-checkpoint.json'))
 parser.add_argument('results', nargs='+', type=Path)
 args = parser.parse_args()
 baseline = json.loads(args.baseline.read_text())['cases']

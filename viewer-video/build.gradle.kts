@@ -11,6 +11,7 @@ android {
     testOptions { unitTests.isReturnDefaultValues = true }
 }
 dependencies {
+    api("io.github.gretchycat.libinfinivideo:video-android:0.1.0")
     api("androidx.core:core:1.15.0")
     api(project(":viewer-common"))
     testImplementation("junit:junit:4.13.2")

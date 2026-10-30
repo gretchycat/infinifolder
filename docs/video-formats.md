@@ -2,6 +2,8 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
+Current implementation ownership: libinfinivideo/video-android wraps the existing VideoView/MediaPlayer input binding, with typed input/output surface metadata and timing utilities in video-api. VideoPlayerActivity retains controls, surface/listeners and staged-source ownership. The backend and supported platform codecs are unchanged; this checkout has no libVLC backend to replace.
+
 Updated 2026-10-27. This document tracks video format support across MIME/magic classification (`MediaTypeDetector`, `MimeRegistry`, `FileMagicDetector`) and the standalone/integrated video player (`:viewer-video` / `VideoPlayerActivity`), along with difficulty ratings and prerequisites for implementing players and creators/muxers for currently unsupported formats.
 
 ## Implemented

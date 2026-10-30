@@ -11,11 +11,10 @@ android {
     testOptions { unitTests.isReturnDefaultValues = true }
 }
 dependencies {
+    api("io.github.gretchycat.libinfinicanvas:canvas-android:0.1.0")
+    api("io.github.gretchycat.libinfiniscribe:scribe-core:0.1.0")
     api("androidx.core:core:1.15.0")
     api(project(":storage-engine"))
-    api("com.caverock:androidsvg-aar:1.4")
-    api("io.github.awxkee:jxl-coder:2.6.1")
-    api("io.github.michaldvorak-gemalto:jp2-android:1.0.5")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }

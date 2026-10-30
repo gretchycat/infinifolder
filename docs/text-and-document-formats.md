@@ -2,6 +2,8 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
+Current implementation ownership: libinfiniscribe/scribe-core owns the existing MarkdownRenderer and bounded charset/text decoding. Text, Markdown, HTML and CSV viewers consume it through MediaSourceAdapter while retaining original complete bytes for revision checks. Android WebView, editing UI and guarded save/recovery remain host adapters. Input and actual text-output metadata distinguish encoding, completeness and warnings.
+
 Updated 2026-10-27. This document tracks plain text, source code, markup, paginated document, eBook, spreadsheet, and **text-based media** (such as ANSI art and ANSI music) across the six text/document viewer modules, along with difficulty ratings and prerequisites for implementing viewers/players and creators/editors for currently unsupported formats:
 
 1. **Plain Text & Code Viewer (`:viewer-text` / `TextViewerActivity`)**

@@ -42,3 +42,7 @@ In debug builds, choose a dump folder in Debug dump settings under Settings, or 
 Android storage permissions still apply. Magnet links now have read-only torrent browsing and selected-file copying; live device acceptance, in-progress download feedback and seekable piece reads remain open. NFS/cloud providers are not implemented. Operation queues are process-local. Nested write chains, complete metadata fidelity and several filesystem subsets remain limited. Compressed writes rebuild; they are not in-place compressed random edits. Live VM reads are not snapshots. Cache/external-editor changes still need focused handset acceptance.
 
 Start with the [documentation index](docs/README.md), [architecture](docs/architecture.md), [format coverage](docs/file-formats.md), and [task list](docs/feature-todo.md). Historical audit/test evidence is retained with its revision.
+
+## Reusable library sources
+
+The pinned submodules under libraries/ are Stream (shared contracts), Store (resource access), Vault (containers/images), Sound, Canvas (images), Scribe (text/documents) and Video. See [ownership and checkpoint verification](docs/infinistream-migration.md). Clone with --recurse-submodules, or run git submodule update --init --recursive before building. Each repository has a standalone source build and explicit dependencies; the Android app composes the implementations without changing the UI. Native iOS and fully minimal standalone hosts remain follow-up work.

@@ -2,6 +2,8 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
+Current implementation ownership: image decoders and ThumbnailDecoder now live in the pinned libinfinicanvas/canvas-android module. ImageFormats and icon-selection policy stay in the host. BitmapFrame exposes actual decoded dimensions/pixel format/color space; source-backed decoding uses Stream adapters and retains existing memory/format limits. Desktop/iOS codec portability remains incremental.
+
 Updated 2026-10-27. This document tracks image format support across thumbnail generation (`ThumbnailDecoder`), container/directory icon discovery (`DirectoryIconResolver`), MIME/magic classification (`ImageFormats`, `MimeRegistry`, `FileMagicDetector`), and the standalone/integrated image viewer (`:viewer-image` / `ImageViewerActivity`), along with difficulty ratings and prerequisites for implementing viewers/decoders and creators/encoders for currently unsupported formats.
 
 > Text-based visual media—such as ANSI art (`.ans`, `.idf`, `.xb`, `.pcb`, `.tnd`), ASCII/NFO art (`.asc`, `.nfo`, `.diz`), and PETSCII/ATASCII screens—are categorized under the text renderers in [Text, markup, document, and text-based media formats](text-and-document-formats.md).

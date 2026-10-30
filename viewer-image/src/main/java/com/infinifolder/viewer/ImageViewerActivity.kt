@@ -16,6 +16,7 @@ import com.infinifolder.viewer.common.R
 import com.infinifolder.model.ProviderResult
 import com.infinifolder.model.ResourceEntry
 import com.infinifolder.preview.ThumbnailDecoder
+import com.infinifolder.preview.decodeFrame
 import java.io.ByteArrayOutputStream
 import kotlin.math.roundToInt
 
@@ -615,7 +616,7 @@ class ImageViewerActivity : ViewerActivity() {
                     MediaSourceAdapter.openStream(this, u)
                 }
                 // Decode at high screen resolution (up to 2560px max side) without unbounded RAM exhaustion
-                decoder.decode(uri, 2560) ?: run {
+                decoder.decodeFrame(uri, 2560)?.bitmap ?: run {
                     MediaSourceAdapter.openStream(this, uri).use { inStream ->
                         val options = BitmapFactory.Options().apply {
                             inJustDecodeBounds = true

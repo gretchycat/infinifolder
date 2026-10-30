@@ -20,7 +20,10 @@ Ordinary sources do not pass through Vault. Stream contracts describe optional p
 - `libinfinistream`: JVM sources/sinks, optional positional I/O, capabilities, metadata, probing and processor contracts.
 - `libinfinistore` / `store-android`: existing resource/provider, protocol, transfer, link, cache, publication/recovery and Android access implementations. It depends on Stream and the small Sound playlist API.
 - `libinfinivault` / `vault-android`: existing archive/image interpreters, mounts, mutation batches and ext/lwext4 native build; depends on Store and Stream. Store never depends back on Vault.
-- `:viewer-common`: viewer launch/document contracts, themes/icons/previews, staging adapter, recovery UI, diagnostics UI, and screenshot export.
+- `:viewer-common`: Android viewer launch/document contracts, themes/icon policy, source/staging adapters, recovery/diagnostics UI and screenshot export. Codec implementations now come from Canvas; bounded text and Markdown processing come from Scribe.
+- `libinfinicanvas` / `canvas-android`: existing platform/custom image codecs and thumbnails with actual BitmapFrame output metadata.
+- `libinfiniscribe` / `scribe-core`: JVM Markdown renderer and bounded charset/text decoding, retaining original bytes for guarded edits.
+- `libinfinivideo` / `video-api`, `video-android`: typed surface metadata, timing and the existing Android VideoView input adapter. The viewer retains its controls, surface, listeners and staging lease.
 - `libinfinisound` (Git submodule and Gradle composite build): external `audio-api`, `audio-core` and Android `audio-processing` libraries for audio parsing, codec adapters, metadata and analysis, with playback/output owned by the audio viewer. See [audio library boundaries](audio-processing-library.md).
 - `:viewer-image`, `:viewer-text`, `:viewer-markdown`, `:viewer-html`, `:viewer-pdf`, `:viewer-csv`, `:viewer-epub`, `:viewer-audio`, `:viewer-video`: independent Android libraries containing format-specific viewers and applicable editors.
 - `:viewer-host`: standalone application including all viewers or one selected with `-Pviewer=<kind>`. It does not depend on the browser application.

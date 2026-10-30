@@ -73,33 +73,16 @@ object MediaSourceAdapter {
 
     fun readDocument(context: Context, uri: Uri, maxBytes: Int = 4 * 1024 * 1024, charset: Charset = Charsets.UTF_8): LoadedText {
         openStream(context, uri).use { input ->
-            val output = java.io.ByteArrayOutputStream()
-            val buffer = ByteArray(64 * 1024)
-            while (output.size() < maxBytes) {
-                val n = input.read(buffer, 0, minOf(buffer.size, maxBytes - output.size()))
-                if (n < 0) break
-                output.write(buffer, 0, n)
-            }
-            val bytes = output.toByteArray()
-            val hasMore = input.read() != -1
-            return LoadedText(String(bytes, charset), hasMore,
-                if (hasMore) null else com.infinifolder.storage.ContentRevision.of(bytes))
+            val document = io.github.gretchycat.infiniscribe.TextDocuments.read(InputStreamSource(input, ownsInput = false), maxBytes, charset)
+            return LoadedText(document.text, document.hasMore,
+                if (document.hasMore) null else com.infinifolder.storage.ContentRevision.of(document.bytes))
         }
     }
 
     fun readText(context: Context, uri: Uri, maxBytes: Int = 4 * 1024 * 1024, charset: Charset = Charsets.UTF_8): Pair<String, Boolean> {
-        val input = openStream(context, uri)
-        input.use { s ->
-            val buf = ByteArray(maxBytes)
-            var total = 0
-            while (total < maxBytes) {
-                val r = s.read(buf, total, maxBytes - total)
-                if (r <= 0) break
-                total += r
-            }
-            val hasMore = s.read() != -1
-            val text = String(buf, 0, total, charset)
-            return text to hasMore
+        openStream(context, uri).use { input ->
+            val document = io.github.gretchycat.infiniscribe.TextDocuments.read(InputStreamSource(input, ownsInput = false), maxBytes, charset)
+            return document.text to document.hasMore
         }
     }
 

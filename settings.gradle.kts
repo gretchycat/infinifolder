@@ -51,3 +51,7 @@ includeBuild("libraries/libinfinistream")
 
 includeBuild("libraries/libinfinistore")
 includeBuild("libraries/libinfinivault")
+
+includeBuild("libraries/libinfinicanvas")
+includeBuild("libraries/libinfiniscribe")
+includeBuild("libraries/libinfinivideo")

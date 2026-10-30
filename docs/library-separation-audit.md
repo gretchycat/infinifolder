@@ -4,6 +4,10 @@
 
 Original audit reviewed 2026-10-29. The assessment and migration plan describe the architecture before extraction; implemented progress is recorded below. The plan builds on `architecture.md` and `viewer-modules.md` and preserves their existing storage and data-safety requirements.
 
+## Current InfiniStream checkpoint
+
+Stream, Store, Vault, Sound, Canvas, Scribe and Video now have pinned independent source repositories and standalone builds. The host consumes compatibility adapters while retaining Android UI/composition and existing write/output lifetimes. See [the tested ownership mapping](infinistream-migration.md). The assessment and proposed sequence below are historical; the supplied architecture is authoritative.
+
 ## Audio extraction status — 2026-10-30
 
 The first audio increment is implemented in `audio-api` and `audio-processing`, now hosted in the independent `libinfinisound` repository and imported as a pinned submodule/composite build; see [the library boundary and usage](audio-processing-library.md). Parsing, codec adapters, metadata probing and signal analysis have moved out of `viewer-audio`. Playback/output, source staging, queue lifetimes and Cast remain in the viewer. Storage shares the playlist parser through the small API without linking the processing implementations. The assessment below records the pre-extraction architecture. The InfiniStream assignment supersedes its proposed boundaries and sequence.
@@ -16,7 +20,7 @@ The most useful distinction is between **what can be done** and **where or how i
 
 A smaller core and independently reusable libraries are achievable without immediately making everything Android-independent. Smaller installed APKs require additionally excluding unused modules and dependencies from a particular build; a library split alone does not do that. Downloadable runtime plugins or dynamic features would be a separate product decision.
 
-## What exists today
+## Historical baseline layout
 
 - `StorageProvider` and the resource model express opaque references, capabilities, stream access, seekable access, batching, and error distinctions. This is a substantial foundation. The provider API currently exposes Android `Uri` and `File` and returns `archive.BlockDevice`; even ordinary local or network providers therefore depend on a type placed in the archive package.
 - `StorageRuntime` creates local, archive, app, network, torrent, and virtual providers in one singleton and connects them to `RoutingStorageProvider`. The registry exists, but the runtime and router still name concrete implementations. Shared preferences, diagnostics, common locations, archive resolution, and virtual-root policy are also assembled there.
@@ -26,7 +30,7 @@ A smaller core and independently reusable libraries are achievable without immed
 - Image codecs and thumbnail handling live mostly in `viewer-common`, while the image viewer is thin. Many codecs use Android bitmaps. Audio decoders, playlist handling, analysis, Android playback service, Cast, and themed UI live together in `viewer-audio`. `CastManager` depends on `AudioPlayerService`; the service and Activity are also tightly coupled. `MainActivity` is about 13,700 lines and combines browser UI with orchestration, making it another significant extraction target.
 - The main app currently links all viewers and the single storage engine. These are ordinary compile-time Gradle libraries, not independently installed runtime extensions.
 
-## Proposed boundaries
+## Historical proposed boundaries
 
 The original illustrative boundaries below are historical. The authoritative repository names are libinfinistream, libinfinistore, libinfinivault, libinfinisound, libinfinicanvas, libinfinivideo and libinfiniscribe; see the migration mapping. Arrows point from consumer to contract or implementation it chooses to include. Implementations must not depend back on the app or a particular viewer.
 
@@ -56,7 +60,7 @@ Android URI grants and intent behavior are real platform requirements. First ext
 - **Images and documents:** Move codec dispatch and thumbnails to image services; keep Android bitmap and URI adapters explicit. Verify detection, orientation, large-image memory limits, and existing formats. Editors need revision-checked save and recovery services, not just read streams. Shared themes and viewer launch/debug helpers should not require the browser or image codecs.
 - **Android packaging:** JNI libraries, load names, ABI coverage, manifests, permissions, services, resources, minification rules and intent filters must follow the module that owns them. Termux native builds and standard Android/NDK builds both need verification. Audit third-party/native license obligations before distributing extracted libraries. Runtime and APK-size reductions must be measured on actual variants; dependency graph reduction alone is not an APK size measurement.
 
-## Migration sequence
+## Historical migration sequence
 
 1. **Baseline and guardrails.** Record dependency graphs and APK sizes for the app and single-viewer hosts; identify current device-tested cases. Add focused contract/integration checks for safety-sensitive storage, viewer launch/edit, audio queue and staging lifetimes. Preserve existing tests and the user's confirmed gapless behavior. Exercise representative local, SAF, SSH, archive and nested sources on devices.
 2. **Extract contracts and inject the runtime.** Move general resource and block-device types below archive/provider implementations. Introduce a narrow source/staging interface and a host-owned composition root, with a compatibility adapter to the current runtime. Keep behavior and the existing provider graph unchanged first. Replace hardcoded browser/debug callbacks and viewer lookup with host-supplied capabilities.
