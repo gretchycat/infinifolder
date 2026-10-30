@@ -2,6 +2,7 @@ package com.infinifolder.viewer
 
 import android.content.Context
 import android.net.Uri
+import io.github.gretchycat.infinistream.*
 import com.infinifolder.model.ProviderResult
 import com.infinifolder.model.ResourceEntry
 import java.io.File
@@ -50,15 +51,11 @@ object MediaSourceAdapter {
         val provider = com.infinifolder.storage.StorageRuntime.get(context).provider
         val ref = provider?.refForUri(uri)
         if (provider != null && ref != null) {
-            return when (val result = provider.openRead(ref)) {
-                is ProviderResult.Success -> result.value
-                is ProviderResult.Failure -> throw IOException(result.message, result.cause)
-                is ProviderResult.Unsupported -> throw IOException("Reading this resource is unsupported")
-            }
+            return com.infinifolder.storage.ProviderStreams.openRead(provider, ref).asInputStream()
         }
-        if (uri.scheme == "content") return context.contentResolver.openInputStream(uri)
-            ?: throw IOException("Cannot open content stream: $uri")
-        if (uri.scheme == "file") return File(uri.path ?: throw IOException("Missing path")).inputStream()
+        if (uri.scheme == "content") return InputStreamSource(context.contentResolver.openInputStream(uri)
+            ?: throw IOException("Cannot open content stream: $uri")).asInputStream()
+        if (uri.scheme == "file") return FileSourceResource(File(uri.path ?: throw IOException("Missing path"))).open().asInputStream()
         throw IOException("No provider owns $uri")
     }
 

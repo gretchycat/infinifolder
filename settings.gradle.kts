@@ -46,3 +46,5 @@ if (System.getenv("ANDROID_HOME").isNullOrBlank() &&
     if (!localSdk.isNullOrBlank()) System.setProperty("android.home", file(localSdk).absolutePath)
 }
 includeBuild(soundLibrary)
+
+includeBuild("libraries/libinfinistream")

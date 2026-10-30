@@ -1,3 +1,21 @@
 [submodule "libraries/libinfinisound"]
 	path = libraries/libinfinisound
 	url = https://github.com/gretchycat/libinfinisound.git
+[submodule "libraries/libinfinistream"]
+	path = libraries/libinfinistream
+	url = https://github.com/gretchycat/libinfinistream.git
+[submodule "libraries/libinfinistore"]
+	path = libraries/libinfinistore
+	url = https://github.com/gretchycat/libinfinistore.git
+[submodule "libraries/libinfinivault"]
+	path = libraries/libinfinivault
+	url = https://github.com/gretchycat/libinfinivault.git
+[submodule "libraries/libinfinicanvas"]
+	path = libraries/libinfinicanvas
+	url = https://github.com/gretchycat/libinfinicanvas.git
+[submodule "libraries/libinfiniscribe"]
+	path = libraries/libinfiniscribe
+	url = https://github.com/gretchycat/libinfiniscribe.git
+[submodule "libraries/libinfinivideo"]
+	path = libraries/libinfinivideo
+	url = https://github.com/gretchycat/libinfinivideo.git
