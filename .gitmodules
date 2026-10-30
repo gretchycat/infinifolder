@@ -1,0 +1,3 @@
+[submodule "libraries/libinfinisound"]
+	path = libraries/libinfinisound
+	url = https://github.com/gretchycat/libinfinisound.git

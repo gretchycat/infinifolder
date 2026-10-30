@@ -1,6 +1,10 @@
 # Library separation audit
 
-Reviewed 2026-10-29. This is a proposed architecture and migration plan, not an implemented refactor. It builds on `architecture.md` and `viewer-modules.md` and preserves their existing storage and data-safety requirements.
+Original audit reviewed 2026-10-29. The assessment and migration plan describe the architecture before extraction; implemented progress is recorded below. The plan builds on `architecture.md` and `viewer-modules.md` and preserves their existing storage and data-safety requirements.
+
+## Audio extraction status — 2026-10-30
+
+The first audio increment is implemented in `audio-api` and `audio-processing`, now hosted in the independent `libinfinisound` repository and imported as a pinned submodule/composite build; see [the library boundary and usage](audio-processing-library.md). Parsing, codec adapters, metadata probing and signal analysis have moved out of `viewer-audio`. Playback/output, source staging, queue lifetimes and Cast remain in the viewer. Storage shares the playlist parser through the small API without linking the processing implementations. The assessment below records the pre-extraction architecture and remains the broader migration plan.
 
 ## Assessment
 

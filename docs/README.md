@@ -25,6 +25,8 @@ Updated 2026-10-27. Start with [project status](project-status.md), [task list](
 - [File formats and resource types](file-formats.md)
 - [Image formats](image-formats.md)
 - [Audio and sound formats](audio-formats.md)
+- [Audio parsing and processing library](audio-processing-library.md)
+- [Library separation audit](library-separation-audit.md)
 - [Video formats](video-formats.md)
 - [Text, markup, document, and text-based media formats](text-and-document-formats.md)
 - [HFS image support](hfs-support.md)

@@ -16,4 +16,6 @@ Replace `pdf` with `image`, `text`, `markdown`, `html`, `csv`, `epub`, `audio`, 
 
 Text, Markdown, HTML, and CSV include editing subject to complete load and source revision checks. Image edits export PNG copies. PDF/EPUB/audio/video currently expose viewing/playback. ACTION_EDIT is rejected for unsupported formats. A missing viewer library produces an explanatory message.
 
-Shared UI/resources, codecs, network backends, and themes currently remain common dependencies. Further size reduction can split those dependencies without bringing back a browser dependency. Document access and retained URI permissions still depend on the supplying Android provider. Standalone runtime use and editing require device acceptance checks in addition to build validation.
+Audio parsing/processing is provided by the external `libinfinisound` build (`audio-api`, portable `audio-core` and Android `audio-processing`); the audio viewer retains playback/output, queue and Cast integration. See [audio library boundaries](audio-processing-library.md).
+
+Shared UI/resources, image codecs, network backends, and themes currently remain common dependencies. Further size reduction can split those dependencies without bringing back a browser dependency. Document access and retained URI permissions still depend on the supplying Android provider. Standalone runtime use and editing require device acceptance checks in addition to build validation.

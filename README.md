@@ -27,6 +27,10 @@ bash build.sh
 
 The script configures native AAPT2 on Termux, assembles the debug APK and invokes `xdg-open` after success. Output: `app/build/outputs/apk/debug/app-debug.apk`. Elsewhere use `gradle :app:assembleDebug`; on ARM Termux the native AAPT2 override may be required. Independent applications are documented in [viewer modules](docs/viewer-modules.md).
 
+### Audio library checkout
+
+Audio parsing and processing come from [libinfinisound](https://github.com/gretchycat/libinfinisound), pinned as a submodule. Clone with `--recurse-submodules`, or run `git submodule update --init --recursive` before building an existing checkout. See [audio library integration](docs/audio-processing-library.md).
+
 ## Diagnostics
 
 In debug builds, choose a dump folder in Debug dump settings under Settings, or use a folder's **Use as debug dump folder** action. The toolbar insect button offloads a screenshot, log and JSON to that folder and refreshes the listing. ADB is unnecessary. Logs/screenshots can contain filenames and visible content.
@@ -35,4 +39,4 @@ In debug builds, choose a dump folder in Debug dump settings under Settings, or 
 
 Android storage permissions still apply. Magnet links now have read-only torrent browsing and selected-file copying; live device acceptance, in-progress download feedback and seekable piece reads remain open. NFS/cloud providers are not implemented. Operation queues are process-local. Nested write chains, complete metadata fidelity and several filesystem subsets remain limited. Compressed writes rebuild; they are not in-place compressed random edits. Live VM reads are not snapshots. Cache/external-editor changes still need focused handset acceptance.
 
-Start with the [documentation index](docs/README.md), [architecture](docs/architecture.md), [format coverage](docs/file-formats.md), and [task list](docs/feature-todo.md). Historical audit/test evidence is retained with its revision; no new tests or APK build were run for the documentation update.
+Start with the [documentation index](docs/README.md), [architecture](docs/architecture.md), [format coverage](docs/file-formats.md), and [task list](docs/feature-todo.md). Historical audit/test evidence is retained with its revision.

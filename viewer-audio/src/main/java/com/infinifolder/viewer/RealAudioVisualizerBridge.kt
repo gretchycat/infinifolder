@@ -3,7 +3,8 @@ package com.infinifolder.viewer
 import android.os.Handler
 import android.os.Looper
 import com.infinifolder.audio.analysis.AudioSignalAnalysis
-import com.infinifolder.audio.analysis.PlaybackPcmAnalyzer
+import com.infinifolder.audio.AudioAnalysisSession
+import com.infinifolder.audio.AudioProcessing
 import kotlin.math.max
 import kotlin.math.min
 
@@ -11,7 +12,7 @@ import kotlin.math.min
 class RealAudioVisualizerBridge(
     private val onUpdate: (() -> Unit)? = null
 ) {
-    private var analyzer: PlaybackPcmAnalyzer? = null
+    private var analyzer: AudioAnalysisSession? = null
     private var sourceId: Long = -1
     private var generation = 0L
     @Volatile var hasStereoVu: Boolean = false
@@ -40,9 +41,11 @@ class RealAudioVisualizerBridge(
         detach()
         sourceId = source.id
         val thisGeneration = generation
-        val next = PlaybackPcmAnalyzer(source.path, playback) { samples, channels, rate ->
+        val next = AudioProcessing.createAnalyzer(source.path, playback, onFailure = { message, error ->
+            com.infinifolder.storage.DiagnosticLog.record("audio.visualizer.failure", message, error)
+        }) { samples, channels, rate ->
             synchronized(this) {
-                if (generation != thisGeneration) return@PlaybackPcmAnalyzer
+                if (generation != thisGeneration) return@createAnalyzer
                 val levels = AudioSignalAnalysis.pcm(samples, channels, rate, waveformPoints, rawBands)
                 hasStereoVu = levels.stereo
                 vuLeft = (levels.left.rms * 1.8f).coerceIn(0f, 1f)

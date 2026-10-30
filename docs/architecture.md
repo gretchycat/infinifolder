@@ -5,6 +5,7 @@
 - `:app`: browser Activity, navigation, menus, Android integrations, operation foreground service.
 - `:storage-engine`: resource models, provider registry/router, local/SAF/SMB/SFTP/FTP/app backends, archive/disc mounts, transfers, connection repository, MIME/link policy, diagnostics, and local-file sharing provider.
 - `:viewer-common`: viewer launch/document contracts, themes/icons/previews, staging adapter, recovery UI, diagnostics UI, and screenshot export.
+- `libinfinisound` (Git submodule and Gradle composite build): external `audio-api`, `audio-core` and Android `audio-processing` libraries for audio parsing, codec adapters, metadata and analysis, with playback/output owned by the audio viewer. See [audio library boundaries](audio-processing-library.md).
 - `:viewer-image`, `:viewer-text`, `:viewer-markdown`, `:viewer-html`, `:viewer-pdf`, `:viewer-csv`, `:viewer-epub`, `:viewer-audio`, `:viewer-video`: independent Android libraries containing format-specific viewers and applicable editors.
 - `:viewer-host`: standalone application including all viewers or one selected with `-Pviewer=<kind>`. It does not depend on the browser application.
 

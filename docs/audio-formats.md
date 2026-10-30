@@ -1,6 +1,6 @@
 # Audio and sound formats
 
-Updated 2026-10-27. This document tracks audio and sound format support across MIME/magic classification (`MediaTypeDetector`, `MimeRegistry`, `FileMagicDetector`) and the modular audio playback engine (`:viewer-audio` / `AudioPlayerActivity`, `AudioPlayerService`, `PcmAudioEngine`, and `UniversalAudioDecoder`).
+Updated 2026-10-30. This document tracks audio and sound format support across MIME/magic classification (`MediaTypeDetector`, `MimeRegistry`, `FileMagicDetector`) and the modular audio playback engine (`:viewer-audio` / `AudioPlayerActivity`, `AudioPlayerService`, `PcmAudioEngine`, and `UniversalAudioDecoder`). Parsing, codec adapters, metadata probing and analysis now live in the external `libinfinisound` library (`audio-api` / `audio-core` / Android `audio-processing`); see [audio library boundaries](audio-processing-library.md). Playback/output remains in `:viewer-audio`.
 
 > Text-based musical notation and terminal sound sequences—such as **ANSI music** (`ESC[...M` / `ESC[...N` / QBasic `PLAY` macro strings embedded in `.ans`/`.asc` streams) and ABC music notation—belong to the text renderers and are documented in [Text, markup, document, and text-based media formats](text-and-document-formats.md).
 

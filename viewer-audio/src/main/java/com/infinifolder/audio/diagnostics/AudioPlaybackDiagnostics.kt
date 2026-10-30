@@ -5,37 +5,6 @@ import android.util.Log
 import com.infinifolder.audio.model.AudioPcmData
 import java.io.File
 import java.util.concurrent.ConcurrentLinkedDeque
-import kotlin.math.log10
-import kotlin.math.sqrt
-
-enum class AudioHealthStatus {
-    HEALTHY,
-    SILENT,
-    CLIPPING,
-    DC_OFFSET,
-    SUSPICIOUS_SHORT,
-    DECODE_FAILED,
-    PLAYBACK_ERROR
-}
-
-data class AudioSignalMetrics(
-    val sampleRate: Int,
-    val channels: Int,
-    val durationMs: Long,
-    val totalFrames: Int,
-    val minSample: Short,
-    val maxSample: Short,
-    val peakAmplitude: Float,
-    val rmsDb: Float,
-    val dcOffset: Float,
-    val isSilent: Boolean,
-    val isClipping: Boolean,
-    val health: AudioHealthStatus
-) {
-    override fun toString(): String {
-        return "AudioSignalMetrics(sr=${sampleRate}Hz, ch=$channels, dur=${durationMs}ms, peak=${"%.2f".format(peakAmplitude)}, rms=${"%.1f".format(rmsDb)}dB, silent=$isSilent, clip=$isClipping, health=$health)"
-    }
-}
 
 data class AudioPlaybackReport(
     val uri: String,
@@ -103,85 +72,8 @@ object AudioPlaybackDiagnostics {
     /**
      * Inspects decoded PCM samples to extract peak amplitude, RMS energy, clipping, and silence metrics.
      */
-    fun analyzePcm(pcm: AudioPcmData): AudioSignalMetrics {
-        val samples = pcm.samples
-        val channels = pcm.channels.coerceAtLeast(1)
-        val sampleRate = pcm.sampleRate.coerceAtLeast(1)
-        val totalFrames = samples.size / channels
-        val durationMs = pcm.durationMs
-
-        if (samples.isEmpty() || totalFrames == 0) {
-            return AudioSignalMetrics(
-                sampleRate = sampleRate,
-                channels = channels,
-                durationMs = 0L,
-                totalFrames = 0,
-                minSample = 0,
-                maxSample = 0,
-                peakAmplitude = 0f,
-                rmsDb = -100f,
-                dcOffset = 0f,
-                isSilent = true,
-                isClipping = false,
-                health = AudioHealthStatus.SILENT
-            )
-        }
-
-        var min = 0
-        var max = 0
-        var sumSquares = 0.0
-        var sumSamples = 0.0
-        var clipCount = 0
-
-        for (s in samples) {
-            val v = s.toInt()
-            if (v < min) min = v
-            if (v > max) max = v
-            sumSquares += (v * v).toDouble()
-            sumSamples += v.toDouble()
-            if (v <= -32760 || v >= 32760) {
-                clipCount++
-            }
-        }
-
-        val peakInt = Math.max(Math.abs(min), Math.abs(max))
-        val peakAmplitude = (peakInt / 32768.0f).coerceIn(0f, 1f)
-
-        val meanSquare = sumSquares / samples.size
-        val rms = sqrt(meanSquare)
-        val rmsDb = if (rms > 0.001) {
-            (20.0 * log10(rms / 32768.0)).toFloat().coerceIn(-100f, 0f)
-        } else {
-            -100f
-        }
-
-        val dcOffset = (sumSamples / (samples.size * 32768.0)).toFloat()
-        val isSilent = peakAmplitude < 0.005f || rmsDb < -60f
-        val isClipping = (clipCount.toFloat() / samples.size) > 0.01f // more than 1% clipping
-
-        val health = when {
-            isSilent -> AudioHealthStatus.SILENT
-            isClipping -> AudioHealthStatus.CLIPPING
-            Math.abs(dcOffset) > 0.15f -> AudioHealthStatus.DC_OFFSET
-            durationMs < 100L -> AudioHealthStatus.SUSPICIOUS_SHORT
-            else -> AudioHealthStatus.HEALTHY
-        }
-
-        return AudioSignalMetrics(
-            sampleRate = sampleRate,
-            channels = channels,
-            durationMs = durationMs,
-            totalFrames = totalFrames,
-            minSample = min.toShort(),
-            maxSample = max.toShort(),
-            peakAmplitude = peakAmplitude,
-            rmsDb = rmsDb,
-            dcOffset = dcOffset,
-            isSilent = isSilent,
-            isClipping = isClipping,
-            health = health
-        )
-    }
+    fun analyzePcm(pcm: AudioPcmData): AudioSignalMetrics =
+        com.infinifolder.audio.analysis.AudioPcmHealth.analyze(pcm)
 
     fun startTrack(
         uri: Uri,
@@ -233,33 +125,7 @@ object AudioPlaybackDiagnostics {
             rep.sourceFormat = sourceFormat
         }
         if (pcm != null) {
-            rep.sampleRate = pcm.sampleRate
-            rep.channels = pcm.channels
-            rep.bitsPerSample = pcm.bitsPerSample
-            rep.durationMs = pcm.durationMs
-            val metrics = analyzePcm(pcm)
-            rep.signalMetrics = metrics
-            rep.healthStatus = metrics.health
-
-            Log.i(TAG, "DECODE_SUCCESS [${rep.fileName}]: Engine=$engineUsed, Rate=${pcm.sampleRate}Hz, Ch=${pcm.channels}, Dur=${pcm.durationMs}ms, Health=${metrics.health}, Peak=${"%.2f".format(metrics.peakAmplitude)}, RMS=${"%.1f".format(metrics.rmsDb)}dB")
-            com.infinifolder.storage.DiagnosticLog.record(
-                "audio.decode.success",
-                "file=${rep.fileName} engine=$engineUsed sr=${pcm.sampleRate} ch=${pcm.channels} dur=${pcm.durationMs}ms health=${metrics.health} peak=${metrics.peakAmplitude} rms=${metrics.rmsDb}dB"
-            )
-            if (metrics.isSilent) {
-                Log.w(TAG, "DECODE_WARNING [${rep.fileName}]: Audio is SILENT (RMS < -60dB or zero waveform)!")
-                com.infinifolder.storage.DiagnosticLog.record(
-                    "audio.decode.silent",
-                    "file=${rep.fileName} rms=${metrics.rmsDb}dB"
-                )
-            }
-            if (metrics.isClipping) {
-                Log.w(TAG, "DECODE_WARNING [${rep.fileName}]: Audio waveform is CLIPPING!")
-                com.infinifolder.storage.DiagnosticLog.record(
-                    "audio.decode.clipping",
-                    "file=${rep.fileName} peak=${metrics.peakAmplitude}"
-                )
-            }
+            recordSignalResult(engineUsed, analyzePcm(pcm), sourceFormat, pcm.bitsPerSample)
         } else {
             rep.healthStatus = AudioHealthStatus.DECODE_FAILED
             val errStr = error?.message ?: "Decoder returned null PCM data"
@@ -269,6 +135,42 @@ object AudioPlaybackDiagnostics {
                 "audio.decode.failed",
                 "file=${rep.fileName} engine=$engineUsed error=$errStr",
                 error
+            )
+        }
+    }
+
+    fun recordPreparationResult(result: com.infinifolder.audio.AudioPreparation) {
+        result.signalMetrics?.let { recordSignalResult(result.decoder, it, result.sourceFormat, result.format.bitsPerSample) }
+    }
+
+    private fun recordSignalResult(engineUsed: String, metrics: AudioSignalMetrics, sourceFormat: String?, bitsPerSample: Int) {
+        val rep = currentReport ?: return
+        rep.engineUsed = engineUsed
+        if (sourceFormat != null) rep.sourceFormat = sourceFormat
+        rep.sampleRate = metrics.sampleRate
+        rep.channels = metrics.channels
+        rep.bitsPerSample = bitsPerSample
+        rep.durationMs = metrics.durationMs
+        rep.signalMetrics = metrics
+        rep.healthStatus = metrics.health
+
+        Log.i(TAG, "DECODE_SUCCESS [${rep.fileName}]: Engine=$engineUsed, Rate=${metrics.sampleRate}Hz, Ch=${metrics.channels}, Dur=${metrics.durationMs}ms, Health=${metrics.health}, Peak=${"%.2f".format(metrics.peakAmplitude)}, RMS=${"%.1f".format(metrics.rmsDb)}dB")
+        com.infinifolder.storage.DiagnosticLog.record(
+            "audio.decode.success",
+            "file=${rep.fileName} engine=$engineUsed sr=${metrics.sampleRate} ch=${metrics.channels} dur=${metrics.durationMs}ms health=${metrics.health} peak=${metrics.peakAmplitude} rms=${metrics.rmsDb}dB"
+        )
+        if (metrics.isSilent) {
+            Log.w(TAG, "DECODE_WARNING [${rep.fileName}]: Audio is SILENT (RMS < -60dB or zero waveform)!")
+            com.infinifolder.storage.DiagnosticLog.record(
+                "audio.decode.silent",
+                "file=${rep.fileName} rms=${metrics.rmsDb}dB"
+            )
+        }
+        if (metrics.isClipping) {
+            Log.w(TAG, "DECODE_WARNING [${rep.fileName}]: Audio waveform is CLIPPING!")
+            com.infinifolder.storage.DiagnosticLog.record(
+                "audio.decode.clipping",
+                "file=${rep.fileName} peak=${metrics.peakAmplitude}"
             )
         }
     }

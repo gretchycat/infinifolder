@@ -33,6 +33,7 @@ if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
     }
 }
 dependencies {
+    api("io.github.gretchycat.libinfinisound:audio-api:0.2.0")
     api("androidx.core:core:1.15.0")
     api("org.apache.commons:commons-compress:1.27.1")
     api("org.tukaani:xz:1.10")
