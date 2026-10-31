@@ -3,6 +3,7 @@ package com.infinifolder.viewer
 import android.content.Context
 import android.net.Uri
 import com.infinifolder.archive.ArchiveFormats
+import com.infinifolder.archive.ArchiveUri
 import com.infinifolder.model.ResourceEntry
 import com.infinifolder.playlist.PlaylistParser
 import java.io.File
@@ -16,7 +17,8 @@ object PlaylistExpander {
     }
 
     fun isPlaylist(uri: Uri, name: String? = null, mimeType: String? = null): Boolean {
-        val checkName = name ?: uri.lastPathSegment ?: ""
+        val checkName = name ?: if (ArchiveUri.isArchiveUri(uri)) ArchiveUri.getEntryPath(uri).substringAfterLast('/')
+            else uri.lastPathSegment ?: ""
         return isPlaylist(checkName, mimeType ?: "")
     }
 
@@ -36,6 +38,14 @@ object PlaylistExpander {
     fun resolveEntryUri(context: Context?, playlistUri: Uri, pathOrUri: String): Uri {
         if (pathOrUri.contains("://")) {
             return uriFactory(pathOrUri)
+        }
+
+        if (ArchiveUri.isArchiveUri(playlistUri)) {
+            val entry = ArchiveUri.getEntryPath(playlistUri)
+            val relative = pathOrUri.replace('\\', '/')
+            val resolved = resolveRelativePath(if (relative.startsWith('/')) "" else entry.substringBeforeLast('/', ""), relative)
+            return ArchiveUri.build(ArchiveUri.getSourceUri(playlistUri), resolved,
+                deleted = ArchiveUri.isDeletedView(playlistUri))
         }
 
         if (pathOrUri.startsWith('/') && File(pathOrUri).exists()) {
@@ -172,7 +182,8 @@ object PlaylistExpander {
 
         val tracks = mutableListOf<AudioTrack>()
         try {
-            val name = playlistUri.lastPathSegment ?: "playlist.m3u"
+            val name = if (ArchiveUri.isArchiveUri(playlistUri)) ArchiveUri.getEntryPath(playlistUri).substringAfterLast('/')
+                else playlistUri.lastPathSegment ?: "playlist.m3u"
             val localFile = if (playlistUri.scheme == "file") {
                 playlistUri.path?.let { File(it) }
             } else {

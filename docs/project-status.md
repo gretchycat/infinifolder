@@ -68,6 +68,14 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Implemented; focused acceptance still needed
 
+Checkpoint 27 addresses owner-reported missing CDDA/DFF/MLP/SF2/THD timing,
+the NSF chord's untimed cap, and ZIP playback resetting lengths. Sound adds
+portable timing/audition inspection and optional appended NSF timing metadata;
+the NSF fixture declares 1.5 seconds. The host fixes empty-path archive URI
+aliasing, archive-relative M3U resolution, and known-duration retention through
+refresh, metadata merges and gapless promotion. Listening/queue acceptance remains
+pending; automated tests were not run for these corrections.
+
 Checkpoint 26 follows the owner's confirmation that skin installation works and
 MIDI loading is improved, plus reports of missing playlist lengths and incorrect
 game-music playback. Native timing inspection now includes legacy containers and

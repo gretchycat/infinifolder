@@ -1,0 +1,53 @@
+{
+  "recorded": "2026-10-31",
+  "scope": "Source and fixture corrections following owner feedback; compilation only, without a new runtime/listening or automated test run.",
+  "builds": {
+    "fullDebugApk": {
+      "sha256": "3f82368b5b940d3d12577167f378c469005ce2474d52e0c9b6893f5849e33cec"
+    },
+    "audioHostDebugApk": {
+      "sha256": "354b393f8761a59ab0e5e14f812bf2befa495548561cc0c7bc2de043f58ecf45"
+    },
+    "result": "BUILD SUCCESSFUL in 2m 27s; 412 actionable tasks"
+  },
+  "soundRevision": "925f388cd4e832a616c14f225bb855d2ce6166f6",
+  "reportedArchive": "filesystem-test-images/audio/99-fluidr3-and-skip.zip",
+  "sourceFindings": [
+    "Archive URIs encode source and entry path in query parameters; the old empty URI path suffix check aliased distinct entries.",
+    "Skipping intentionally invalid ZIP entries could therefore mark other rows unreadable and clear their durations.",
+    "Archive-relative playlist resolution changed the URI path while retaining the old entry query parameter.",
+    "Queue discovery retained unreadable state but dropped other known metadata; gapless promotion omitted the decoded duration fallback."
+  ],
+  "corrections": [
+    "Compare archive entry path, deleted-view state and source identity; reject empty ordinary path aliases.",
+    "Resolve relative playlist references using ArchiveUri.build and inspect the entry filename for playlist type.",
+    "Retain known metadata across queue refresh and metadata merges; propagate actual successful timing to duplicate references and gapless promotion.",
+    "Use native archive slices for metadata when available, with existing explicit staging for unsupported sources.",
+    "Inspect CDDA byte counts, the supported stereo DSD64 DFF layout, and raw MLP/TrueHD access units without decoding PCM.",
+    "Share the existing 2500 ms SoundFont audition policy with metadata.",
+    "Give fallback metadata inspection its own bounded read budget.",
+    "Parse optional appended NSF time/fade chunks and apply them to both metadata and PCM endpoints."
+  ],
+  "nsfFixture": {
+    "size_bytes": 212,
+    "sha256": "9f25734341c74dbf989c836cc36cb21c10118659affefeab40b102b61f81ee86"
+  },
+  "declaredNsfPlayMs": 1500,
+  "declaredNsfFadeMs": 0,
+  "instrumentPreviewMs": 2500,
+  "archiveFixtureModified": false,
+  "automatedTestsRun": false,
+  "runtimeDiagnosticsRun": false,
+  "handsetAcceptance": "Pending playlist timing/retention in the reported ZIP, the listed standalone formats and the updated NSF fixture.",
+  "limits": [
+    "Truly untimed NSF still uses the explicit 150-second plus eight-second fade policy; no length is invented from its filename.",
+    "Appended metadata parsing does not implement additional NSF2 CPU/IRQ features.",
+    "MLP/TrueHD header inspection is bounded; unsupported/interleaved or changing-rate streams can remain unknown.",
+    "DSDIFF timing matches the current portable stereo DSD64 conversion policy."
+  ],
+  "parserReferences": [
+    "https://www.nesdev.org/wiki/NSF2",
+    "https://www.nesdev.org/wiki/NSFe",
+    "https://github.com/FFmpeg/FFmpeg/blob/master/libavcodec/mlp_parse.c"
+  ]
+}

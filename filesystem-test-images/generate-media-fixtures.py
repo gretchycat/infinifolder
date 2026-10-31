@@ -1147,9 +1147,13 @@ def write_chiptune_formats():
         0x60, 0x60  # RTS for init & play
     ])
     # Point to the final standalone RTS, not an operand inside initialization.
-    # NSF v1 carries no song length: this is an intentionally sustained chord.
+    # NSF v1 can carry optional NSFe metadata after the declared program length.
     struct.pack_into("<H", nsf_hdr, 12, 0x8000 + len(nsf_code) - 1)
-    (AUDIO_DIR / "c_major_piano.nsf").write_bytes(bytes(nsf_hdr) + nsf_code)
+    nsf_hdr[125:128] = len(nsf_code).to_bytes(3, "little")
+    nsf_metadata = (struct.pack("<I4si", 4, b"time", 1500) +
+                    struct.pack("<I4si", 4, b"fade", 0) +
+                    struct.pack("<I4s", 0, b"NEND"))
+    (AUDIO_DIR / "c_major_piano.nsf").write_bytes(bytes(nsf_hdr) + nsf_code + nsf_metadata)
 
     # 6. Super Nintendo SPC700 (.spc) 66048-byte snapshot with BRR piano sample and S-DSP voices 0..2 playing C4, E4, G4
     spc = bytearray(66048)

@@ -81,11 +81,24 @@ class AudioPlayerService : Service() {
         fun uriMatches(u1: Uri?, u2: Uri?): Boolean {
             if (u1 == null || u2 == null) return false
             if (u1 == u2 || u1.toString() == u2.toString()) return true
+            val a1 = com.infinifolder.archive.ArchiveUri.isArchiveUri(u1)
+            val a2 = com.infinifolder.archive.ArchiveUri.isArchiveUri(u2)
+            if (a1 || a2) {
+                if (!a1 || !a2) return false
+                // Archive identity lives in source/path query parameters. Its
+                // empty URI path must never alias every other archive entry.
+                return runCatching {
+                    com.infinifolder.archive.ArchiveUri.getEntryPath(u1) == com.infinifolder.archive.ArchiveUri.getEntryPath(u2) &&
+                        com.infinifolder.archive.ArchiveUri.isDeletedView(u1) == com.infinifolder.archive.ArchiveUri.isDeletedView(u2) &&
+                        uriMatches(com.infinifolder.archive.ArchiveUri.getSourceUri(u1), com.infinifolder.archive.ArchiveUri.getSourceUri(u2))
+                }.getOrDefault(false)
+            }
             val p1 = u1.path?.let { Uri.decode(it) }?.trimEnd('/')
             val p2 = u2.path?.let { Uri.decode(it) }?.trimEnd('/')
             if (p1 != null && p2 != null) {
                 val sub1 = p1.removePrefix("/shared").removePrefix("/root")
                 val sub2 = p2.removePrefix("/shared").removePrefix("/root")
+                if (sub1.isEmpty() || sub2.isEmpty()) return false
                 if (sub1.isNotEmpty() && sub1 == sub2) return true
                 if (p1.endsWith(sub2) || p2.endsWith(sub1)) return true
             }
@@ -321,7 +334,11 @@ class AudioPlayerService : Service() {
             } else playlist.indexOfFirst { uriMatches(it.uri, currentUri) }
             if (idx >= 0) {
                 currentIndex = idx
-                if (active != null && sameTrack(playlist[idx], active)) playlist[idx] = active
+                if (active != null && sameTrack(playlist[idx], active)) {
+                    playlist[idx] = active
+                    val originalIndex = originalPlaylist.indexOfFirst { sameTrack(it, active) }
+                    if (originalIndex >= 0) originalPlaylist[originalIndex] = active
+                }
             } else if (active != null) {
                 playlist.add(active); originalPlaylist.add(active); currentIndex = playlist.lastIndex
             } else {
@@ -1050,11 +1067,13 @@ class AudioPlayerService : Service() {
                 val duration = runCatching { next.player.duration.toLong() }.getOrDefault(0L)
                 val current = playlist[currentIndex]
                 playlist[currentIndex] = current.copy(
-                    durationMs = if (duration > 0) duration else current.durationMs,
+                    durationMs = duration.takeIf { it > 0 } ?: next.track.durationMs.takeIf { it > 0 } ?: current.durationMs,
                     sampleRateHz = current.sampleRateHz ?: next.track.sampleRateHz,
                     channels = current.channels ?: next.track.channels
                 )
                 track = playlist[currentIndex]
+                restoreReadableState(playlist, track, track.durationMs)
+                restoreReadableState(originalPlaylist, track, track.durationMs)
                 analysisSource = AnalysisSource(loadCounter.incrementAndGet(), next.playbackFile.absolutePath, next.pcmSource.borrowedResource())
             }
         }

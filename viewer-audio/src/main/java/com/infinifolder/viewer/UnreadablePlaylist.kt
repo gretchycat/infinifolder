@@ -21,10 +21,23 @@ internal fun unreadableTrack(track: AudioTrack): AudioTrack = track.copy(duratio
 private data class QueueSourceKey(val uri: String, val start: Long, val length: Long)
 private fun sourceKey(track: AudioTrack) = QueueSourceKey(track.uri.toString(), track.startByte, track.lengthBytes)
 
-/** Folder discovery may arrive after a failed track has already been skipped. */
+/** Folder discovery may arrive after playback/probing has enriched or rejected a source. */
 internal fun retainUnreadableState(previous: List<AudioTrack>, incoming: List<AudioTrack>): List<AudioTrack> {
-    val failed = previous.filter { it.isUnreadable }.mapTo(mutableSetOf(), ::sourceKey)
-    return incoming.map { if (it.isUnreadable || sourceKey(it) in failed) unreadableTrack(it) else it }
+    val known = previous.associateBy(::sourceKey)
+    return incoming.map { track ->
+        val old = known[sourceKey(track)]
+        if (track.isUnreadable || old?.isUnreadable == true) unreadableTrack(track)
+        else if (old == null) track
+        else track.copy(
+            durationMs = track.durationMs.takeIf { it > 0 } ?: old.durationMs,
+            title = if (track.title == track.fileName) old.title else track.title,
+            artist = track.artist ?: old.artist, album = track.album ?: old.album,
+            artwork = track.artwork ?: old.artwork,
+            bitrateKbps = track.bitrateKbps ?: old.bitrateKbps,
+            sampleRateHz = track.sampleRateHz ?: old.sampleRateHz,
+            channels = track.channels ?: old.channels
+        )
+    }
 }
 
 /** An actual successful retry also restores duplicate references to the same source slice. */
@@ -32,8 +45,9 @@ internal fun restoreReadableState(tracks: MutableList<AudioTrack>, played: Audio
     val key = sourceKey(played)
     for (index in tracks.indices) {
         val track = tracks[index]
-        if (track.isUnreadable && sourceKey(track) == key) {
-            tracks[index] = track.copy(isUnreadable = false, durationMs = durationMs.coerceAtLeast(0))
+        if (sourceKey(track) == key) {
+            tracks[index] = track.copy(isUnreadable = false,
+                durationMs = durationMs.takeIf { it > 0 } ?: track.durationMs.coerceAtLeast(0))
         }
     }
 }

@@ -146,3 +146,10 @@ fail decoding. Native duration inspection also covers portable legacy containers
 and stream timing; an optional host format probe cannot discard successful tags.
 The consumer's malformed game-music fixtures are corrected separately. Successful
 builds do not establish their audible correctness; handset acceptance is pending.
+
+Checkpoint 27 supplies portable timing inspection for the owner's remaining
+CDDA/DFF/MLP/THD files and the explicit 2.5-second SF2 preview. Optional NSF timing
+chunks are parsed in the core and applied by the native adapter's common PCM
+stream. The updated chord fixture carries a 1.5-second endpoint. Archive identity,
+relative playlists, known-duration retention and gapless promotion are corrected
+in the host; those queue policies remain outside Sound.

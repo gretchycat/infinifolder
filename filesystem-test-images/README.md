@@ -215,11 +215,19 @@ VGM/VGZ now prefix every PSG write with its command byte; NSF calls a standalone
 play routine and keeps the pulse length counters enabled; SPC explicitly keys on
 its voices, uses C4/E4/G4 pitches and unambiguous ID666 timing. Expected finite
 timelines are 1.5 seconds for VGM/VGZ and 2 seconds plus 500 ms fade for SPC.
-NSF v1 has no duration metadata: its sustained chord uses the player's declared
-untimed-loop cap (150 seconds plus eight-second fade). These chip formats use
+The NSF chord now appends standard optional NSFe `time`/`fade` metadata to its
+version-1 program, declaring 1.5 seconds with zero fade. Older copies without that
+metadata use the untimed-loop cap (150 seconds plus eight-second fade). These chip formats use
 their actual hardware voices, so they do not have the encoded piano's timbre.
 Replace any older copies before checking these corrections. Audible acceptance
 of the corrected files remains pending.
+
+CDDA and DFF timing is inspected from their supported sample layouts. Raw MLP and
+THD timing is counted from encoded access-unit headers. SF2 uses the existing
+2.5-second instrument preview policy, rather than a song length intrinsic to the
+bank. The `99-fluidr3-and-skip.zip` check should retain lengths for readable entries
+after playback/skip transitions; only the deliberately unreadable WMA/RA rows
+should remain `--`.
 
 Explicit partial recovery now has `fat16-magic-partial.img` and `fat16-partial-tail.img` fixtures in the recovery safety folder. They exercise retained uncertain bytes, NUL-filled missing/reused ranges and companion byte-range reports with shared magic/MIME hints. The new partial-export handset checks remain pending; see [behavior and evidence](../docs/partial-fat-recovery.md).
 

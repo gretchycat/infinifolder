@@ -23,7 +23,8 @@ internal class PlaylistMetadataWork {
             title = if (segmented || current.title != before.title) current.title else result.title,
             artist = if (current.artist != before.artist) current.artist else result.artist,
             album = if (current.album != before.album) current.album else result.album,
-            durationMs = if (current.isUnreadable) 0 else if (current.durationMs != before.durationMs || (segmented && current.durationMs > 0)) current.durationMs else result.durationMs,
+            durationMs = if (current.isUnreadable) 0 else if (current.durationMs != before.durationMs ||
+                ((segmented || result.durationMs <= 0) && current.durationMs > 0)) current.durationMs else result.durationMs,
             bitrateKbps = current.bitrateKbps ?: result.bitrateKbps,
             sampleRateHz = current.sampleRateHz ?: result.sampleRateHz,
             channels = current.channels ?: result.channels,

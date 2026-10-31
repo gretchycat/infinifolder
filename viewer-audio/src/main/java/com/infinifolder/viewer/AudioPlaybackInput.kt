@@ -73,7 +73,8 @@ class AudioPlaybackInput private constructor(
             val stage = { MediaSourceAdapter.stage(context, uri, name) }
             if (requiresFile || MediaSourceAdapter.resolveLocalFile(context, uri)?.canRead() == true)
                 return AudioPlaybackInput(null, stage(), stage)
-            val source = MediaSourceAdapter.openPositionalSource(context, uri)
+            val source = (if (metadataOnly) MediaSourceAdapter.openStreamingPositionalSource(context, uri)
+                else MediaSourceAdapter.openPositionalSource(context, uri))
                 ?: return AudioPlaybackInput(null, stage(), stage)
             return select(source, stage, if (metadataOnly) { { false } } else AudioProcessing::requiresLocalFileForPlayback, name)
         }

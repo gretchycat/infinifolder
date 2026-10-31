@@ -11,7 +11,7 @@ All remote main hashes were checked against the local tested heads. Sound's exis
 | [libinfinistream](https://github.com/gretchycat/libinfinistream) | Created | [`e86167f`](https://github.com/gretchycat/libinfinistream/commit/e86167f2fd0c2c19d24140f05478099fdb1a693b) |
 | [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | [`d49e57c`](https://github.com/gretchycat/libinfinistore/commit/d49e57c4a4520d7f559da3080d48759f3e92afb0) |
 | [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`14a7908`](https://github.com/gretchycat/libinfinivault/commit/14a7908ffb8cd1af7d9a5400621d91ea1626f4f0) |
-| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`876533a`](https://github.com/gretchycat/libinfinisound/commit/876533a0f3c7bb676667d278ed7d83a23f21bc0c) |
+| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`925f388`](https://github.com/gretchycat/libinfinisound/commit/925f388cd4e832a616c14f225bb855d2ce6166f6) |
 | [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`0fcedae`](https://github.com/gretchycat/libinfinicanvas/commit/0fcedae408385fa95ef816247ba4861108c933ff) |
 | [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`084e9de`](https://github.com/gretchycat/libinfiniscribe/commit/084e9de5ab5335c79ae88fdf2c297314cfd664e3) |
 | [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`091e10a`](https://github.com/gretchycat/libinfinivideo/commit/091e10a6c06b73fb1828ba75348d09338ac89116) |
@@ -798,6 +798,42 @@ playlist timing remain handset acceptance checks. The prior full regression
 baseline is historical, and no claim of complete format conformance is added.
 [Build and correction record](validation/audio-timing-and-fixtures-checkpoint26.json).
 
+## Checkpoint 27: Portable durations and archive track identity
+
+The owner identifies CDDA, DFF, MLP, SF2 and THD as still lacking automatic timing,
+confirms the NSF chord now plays but lasts 2:38, and reports missing/reset lengths
+while playing `filesystem-test-images/audio/99-fluidr3-and-skip.zip` through Termux.
+
+The archive reset has a concrete identity defect: archive filenames are encoded
+in query parameters, but the player compared empty URI paths as suffixes. Distinct
+entries could match, allowing the intentionally invalid WMA/RA fixtures to mark
+readable rows unreadable and clear their durations. Archive comparison now checks
+entry path, deleted-view state and container identity. Empty ordinary paths cannot
+alias each other. Archive-relative M3U references are built with the correct source
+and entry query parameters; playlist format detection uses the archive filename.
+
+Queue refresh retains known timing/tags, unknown metadata cannot overwrite a known
+length, successful decoding updates duplicate references, and gapless promotion
+uses the decoded source duration when MediaPlayer reports zero. Metadata inspection
+can use native archive slices before the existing explicit staging fallback.
+
+Sound adds portable timing inspection for raw CDDA, supported stereo DSD64 DFF
+and MLP/TrueHD access-unit headers. SF2 metadata shares the existing 2.5-second
+instrument audition policy with rendering. These inspections do not synthesize a
+whole track. A failed platform probe no longer exhausts the fallback read budget.
+
+The NSF fixture now includes standard optional appended NSFe `time`/`fade` chunks
+on its version-1 program: 1.5 seconds and zero fade. Sound parses those chunks and
+uses their timing for metadata and playback. Truly untimed music retains the
+existing declared cap; NSF2 CPU/IRQ features are not newly implemented. The fixture
+and manifest are updated, and the reported ZIP's existing contents are preserved.
+
+Full app and audio-host APKs build. No automated tests or new runtime/listening
+diagnostics were run. Handset acceptance remains: check automatic lengths for the
+listed formats; play/skip through the reported ZIP and retain readable lengths
+while only the two invalid rows show `--`; reopen the updated short NSF fixture.
+[Build and source correction record](validation/archive-audio-timing-checkpoint27.json).
+
 ## Final verification and reproducibility
 
 Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 885-case checkpoint.
@@ -827,4 +863,4 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. The requested libVLC backend adds a pinned published native AAR with source/override details; no native binary is committed and no language port is introduced.
 
-Final full debug APK SHA-256: `595eb55de7b7858ae34e61ea6a67254221de36f2e15a27a997794067efc4603b`.
+Final full debug APK SHA-256: `3f82368b5b940d3d12577167f378c469005ce2474d52e0c9b6893f5849e33cec`.

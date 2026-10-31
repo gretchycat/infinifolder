@@ -89,6 +89,15 @@ The generated VGM/VGZ, NSF and SPC files were also corrected; see the
 [fixture notes](../filesystem-test-images/README.md#image-and-audio-format-fixtures).
 The corrected audio and broader playlist scanning await handset acceptance.
 
+Checkpoint 27 adds portable timing for CDDA, supported stereo DSD64 DFF, raw
+MLP/TrueHD access units and the fixed SF2 audition policy. No full PCM render is
+used for those probes. Appended NSF `time`/`fade` metadata now controls both
+inspection and playback; the chord fixture declares 1.5 seconds and zero fade.
+Archive playlist entries are identified by container plus entry path, preserving
+isolation of unreadable rows. Relative archive playlists resolve within that
+container. Queue refresh, metadata merging and gapless promotion retain known
+durations, including decoded timing when MediaPlayer supplies zero.
+
 ## Implemented Architecture & Decoders
 
 All local parsing/decoding is selected inside libinfinisound. Its Android MediaExtractor/MediaCodec backend and portable MP3/AAC/FLAC/WAVE plus existing composite codecs share library contracts. InfiniStream compatibility wraps encoded positional sources and actual typed PCM outputs. AudioPlayerService opens a canonical PCM WAVE source through the library for MediaPlayer to pull, including preload; it does not pass original compressed sources directly to MediaPlayer. Output surfaces, routing, Cast and queue lifetimes remain Android host responsibilities. Existing composite render limits remain; only actual decoder implementations may produce PCM.
