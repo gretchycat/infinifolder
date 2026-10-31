@@ -9,9 +9,9 @@ All remote main hashes were checked against the local tested heads. Sound's exis
 | Repository | Status | Pinned commit |
 | --- | --- | --- |
 | [libinfinistream](https://github.com/gretchycat/libinfinistream) | Created | [`e86167f`](https://github.com/gretchycat/libinfinistream/commit/e86167f2fd0c2c19d24140f05478099fdb1a693b) |
-| [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | [`d309273`](https://github.com/gretchycat/libinfinistore/commit/d30927346d3a4d68d26405ff4ac1c6b09edabfc8) |
+| [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | [`d49e57c`](https://github.com/gretchycat/libinfinistore/commit/d49e57c4a4520d7f559da3080d48759f3e92afb0) |
 | [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`14a7908`](https://github.com/gretchycat/libinfinivault/commit/14a7908ffb8cd1af7d9a5400621d91ea1626f4f0) |
-| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`4aa00e6`](https://github.com/gretchycat/libinfinisound/commit/4aa00e6f087b7a8c1d96eef6d8e642fa9b80ed81) |
+| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`e948748`](https://github.com/gretchycat/libinfinisound/commit/e94874869a7addec1095884722058483bb2e7181) |
 | [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`0fcedae`](https://github.com/gretchycat/libinfinicanvas/commit/0fcedae408385fa95ef816247ba4861108c933ff) |
 | [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`084e9de`](https://github.com/gretchycat/libinfiniscribe/commit/084e9de5ab5335c79ae88fdf2c297314cfd664e3) |
 | [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`091e10a`](https://github.com/gretchycat/libinfinivideo/commit/091e10a6c06b73fb1828ba75348d09338ac89116) |
@@ -713,6 +713,61 @@ Audible instruments, live providers and player UI remain handset checks. Native
 CMake/NDK source is supplied; this environment exercises the Termux arm64 bridge,
 not Linux/Windows/macOS/iOS backend execution.
 
+## Checkpoint 25: Audio loading and shared skin actions
+
+The owner reports NSF preparation stalls, minutes-long ambient MIDI startup and
+stalled playlist duration scanning. Sound now parses SMF 0/1/RMID timing in the
+portable core and pulls FluidLite PCM lazily through its existing output source.
+A native resident owner retains one SoundFont sample bank; simultaneous streams
+borrow it with separate voices and synchronized sample-reference bookkeeping.
+MIDI release tails are explicitly two seconds. Actual GME emulation uses the
+selected/default track playback length or a 150-second untimed loop window,
+followed by eight seconds of fade. Its finite policy permits lazy PCM publication.
+Other unsupported looping formats fail rather than starting endless preparation.
+
+For additional codecs, Sound optionally pulls frames directly through the FFmpeg
+C API already exported by the same libVLC binary, explicitly sending EOF and
+draining delayed frames. Public headers and original LGPL notices are retained;
+an exact header-ABI/symbol guard selects the existing libVLC callback fallback
+when unavailable. No new codec binary, player clock or audio output is introduced.
+Unknown exact totals retain full PCM spooling; the direct path prepares it without
+presentation pacing. Portable MPEG/FLAC selection and positioned output remain.
+
+Duration scanning now uses common-source tags/timing and bounded inspection,
+without an unbounded full-song render. Tiny untimed native sources have explicit
+64 KiB, ten-second-PCM and 250 ms counting limits. Unavailable timing stays unknown.
+The host scanner yields during foreground loading, avoids extra legacy staging
+for positional metadata, preserves source slices and interrupts obsolete loaders.
+
+The player theme chooser now applies the same ThemeColors/artwork through the
+application's shared setter and persists imported-file/bundled-asset provenance.
+Theme brightness is saved with the choice so dialogs and system-bar styling agree. Tapping a `.wsz` skin installs and
+applies it to the player and application; long press offers **Open as archive**.
+Store classifies WSZ as a ZIP package even when a provider supplies TAR MIME.
+Vault's existing container mapping therefore selects its ZIP reader. Nested skins
+use the existing nested-archive extraction/browsing path. Themes remain host UI
+policy, separately from Sound's processing contracts.
+
+Full app and audio-host APKs build. Focused packaged-APK diagnostics open the
+owner's three ambient MIDI files in 25–416 ms and prepare their players in
+61–68 ms in the recorded run. They inspect the 271,984 ms rendered timelines in
+25–28 ms, keep about 148 KiB of initial PCM cached, and retain one loaded bank
+across repeated and overlapping streams. NSF opens in 62 ms and prepares in
+55 ms. A generated two-minute WMA fully prepares its actual PCM source in 380 ms;
+WMA and RA retain the prior independent reference sample counts. RA timing now
+populates through the bounded native probe. These are local observations, not
+network-latency or audible-acceptance guarantees.
+
+[Checkpoint evidence](validation/audio-loading-and-skins-checkpoint25.json)
+records the exact APK hash, library heads and loading observations. The compiled
+Store mapping selects ZIP for WSZ with a supplied TAR MIME. Full/audio-host native
+libraries match and all new engine notices are packaged. The 885-case frozen
+checkpoint is retained; the full automated regression suite was **not rerun** for
+this correction and its earlier 855 passes/30 known failures are historical.
+Handset acceptance: retry NSF followed by repeated ambient MIDI opens, watch
+playlist durations, apply built-in/imported themes and return to the manager,
+restart to check persistence, and compare WSZ tap with long-press archive browsing.
+
 ## Final verification and reproducibility
 
 Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 885-case checkpoint.
@@ -742,4 +797,4 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. The requested libVLC backend adds a pinned published native AAR with source/override details; no native binary is committed and no language port is introduced.
 
-Final full debug APK SHA-256: `07a5629ceff58cd6943107ae250c26126e7a0c94eb1e18c079d7efd737b79d4f`.
+Final full debug APK SHA-256: `2f578708e8ba309cc69bd5eef581f266a28cbf475d234d4c28ab782d08a3eea9`.

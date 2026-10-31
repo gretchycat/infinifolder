@@ -1,0 +1,203 @@
+{
+  "recorded": "2026-10-31",
+  "scope": "Focused loading diagnostics against the packaged APK using Android app_process and MediaPlayer.prepare, without audible output or UI acceptance. This is not a new full regression-suite run.",
+  "apkSha256": "2f578708e8ba309cc69bd5eef581f266a28cbf475d234d4c28ab782d08a3eea9",
+  "libraryRevisions": {
+    "libinfinicanvas": "0fcedae408385fa95ef816247ba4861108c933ff",
+    "libinfiniscribe": "084e9de5ab5335c79ae88fdf2c297314cfd664e3",
+    "libinfinisound": "e94874869a7addec1095884722058483bb2e7181",
+    "libinfinistore": "d49e57c4a4520d7f559da3080d48759f3e92afb0",
+    "libinfinistream": "e86167f2fd0c2c19d24140f05478099fdb1a693b",
+    "libinfinivault": "14a7908ffb8cd1af7d9a5400621d91ea1626f4f0",
+    "libinfinivideo": "091e10a6c06b73fb1828ba75348d09338ac89116"
+  },
+  "loadingObservations": {
+    "ambient_swell_test.mid": {
+      "duration": {
+        "durationMs": "271984",
+        "inspectMs": "28"
+      },
+      "opened": {
+        "openMs": "416",
+        "decoder": "libVLC.FluidLite(FluidR3_GM)",
+        "progressive": "true",
+        "cached": "16428",
+        "total": "47978084"
+      },
+      "prepared": {
+        "prepareMs": "62",
+        "playerDuration": "271984",
+        "cached": "147920"
+      }
+    },
+    "ambient_swell_soft_attack.mid": {
+      "duration": {
+        "durationMs": "271984",
+        "inspectMs": "27"
+      },
+      "opened": {
+        "openMs": "25",
+        "decoder": "libVLC.FluidLite(FluidR3_GM)",
+        "progressive": "true",
+        "cached": "16428",
+        "total": "47978084"
+      },
+      "prepared": {
+        "prepareMs": "61",
+        "playerDuration": "271984",
+        "cached": "147920"
+      }
+    },
+    "ambient_swell_quieter_arpeggio.mid": {
+      "duration": {
+        "durationMs": "271984",
+        "inspectMs": "25"
+      },
+      "opened": {
+        "openMs": "42",
+        "decoder": "libVLC.FluidLite(FluidR3_GM)",
+        "progressive": "true",
+        "cached": "16428",
+        "total": "47978084"
+      },
+      "prepared": {
+        "prepareMs": "68",
+        "playerDuration": "271984",
+        "cached": "147920"
+      }
+    },
+    "c_major_piano.nsf": {
+      "duration": {
+        "durationMs": "158000",
+        "inspectMs": "95"
+      },
+      "opened": {
+        "openMs": "62",
+        "decoder": "libVLC.GME",
+        "progressive": "true",
+        "cached": "16428",
+        "total": "27871244"
+      },
+      "prepared": {
+        "prepareMs": "55",
+        "playerDuration": "158000",
+        "cached": "147500"
+      }
+    },
+    "c_major_piano.wma": {
+      "duration": {
+        "durationMs": "1500",
+        "inspectMs": "116"
+      },
+      "opened": {
+        "openMs": "71",
+        "decoder": "libVLC.FFmpeg(wmav2)",
+        "progressive": "false",
+        "cached": "262188",
+        "total": "262188"
+      },
+      "prepared": {
+        "prepareMs": "51",
+        "playerDuration": "1486",
+        "cached": "262188"
+      }
+    },
+    "c_major_piano.ra": {
+      "duration": {
+        "durationMs": "1520",
+        "inspectMs": "26"
+      },
+      "opened": {
+        "openMs": "26",
+        "decoder": "libVLC.FFmpeg(real_144)",
+        "progressive": "false",
+        "cached": "24364",
+        "total": "24364"
+      },
+      "prepared": {
+        "prepareMs": "18",
+        "playerDuration": "1520",
+        "cached": "24364"
+      }
+    },
+    "long.wma": {
+      "duration": {
+        "durationMs": "120000",
+        "inspectMs": "49"
+      },
+      "opened": {
+        "openMs": "380",
+        "decoder": "libVLC.FFmpeg(wmav2)",
+        "progressive": "false",
+        "cached": "21159980",
+        "total": "21159980"
+      },
+      "prepared": {
+        "prepareMs": "45",
+        "playerDuration": "119954",
+        "cached": "21159980"
+      }
+    },
+    "c_major_piano.mp3": {
+      "duration": {
+        "durationMs": "1541",
+        "inspectMs": "6"
+      },
+      "opened": {
+        "openMs": "35",
+        "decoder": "Portable.MPEG",
+        "progressive": "true",
+        "cached": "16428",
+        "total": "264644"
+      },
+      "prepared": {
+        "prepareMs": "169",
+        "playerDuration": "1500",
+        "cached": "147500"
+      }
+    }
+  },
+  "residentSoundFontLoads": 1,
+  "overlappingMidiReadPairs": 5,
+  "nativeCodecEndOfStream": {
+    "wmaInterleavedSamples": 131072,
+    "realAudioInterleavedSamples": 12160,
+    "matchesPriorIndependentFfmpegReferenceCounts": true
+  },
+  "skinMapping": {
+    "filename": "Bento_Classified.wsz",
+    "providerMime": "application/x-tar",
+    "actualSelectedContainer": "zip",
+    "applicationMime": "application/x-winamp-skin",
+    "verification": "Compiled Store classes loaded by JVM; install/apply and archive UI remain handset checks."
+  },
+  "builds": [
+    "InfiniFolder full debug APK",
+    "audio viewer host debug APK"
+  ],
+  "packaging": {
+    "fullAndAudioHostNativeLibrariesIdentical": [
+      "libvlc.so",
+      "libinfinivlcpcm.so",
+      "libc++_shared.so",
+      "libinfiniopenmpt.so"
+    ],
+    "newNativeDependencyNoticesPresent": true
+  },
+  "automatedRegressionSuiteRun": false,
+  "previousFrozenBaseline": {
+    "checkpoint": 24,
+    "cases": 885,
+    "passing": 855,
+    "knownStorageFailures": 30,
+    "rerunAtThisCheckpoint": false
+  },
+  "limits": [
+    "Local ARM64 observations; provider/network latency and other ABIs are not measured.",
+    "MIDI has a two-second release tail; GME uses reported playback timing or a 150-second loop window plus eight-second fade.",
+    "Generic native PCM still fully spools when its exact frame total is unknown; the preferred FFmpeg pull adapter avoids player-clock pacing.",
+    "Missing FFmpeg symbols or exact public-header ABI mismatch uses the existing libVLC callback backend, which may prepare slowly.",
+    "Unknown playlist timing remains unknown; small untimed native files may be counted within 64 KiB, ten seconds of PCM and 250 ms.",
+    "Full UI/audible playback, shared theme persistence and WSZ install/archive interaction require handset acceptance."
+  ]
+}

@@ -118,3 +118,22 @@ Unreadable-queue handling belongs to the host. It preserves entries with unknown
 `--` duration, skips silently, blocks metadata races and bounds retries so an
 entirely unreadable list stops. Successful explicit retry restores actual metadata.
 See the [handset fixtures](../filesystem-test-images/audio/decoder-fallback-checks.md).
+
+## Loading corrections (checkpoint 25)
+
+Sound now parses MIDI event timing in the portable core and exposes exact finite
+rendered frame counts to the existing lazy PCM source. Native FluidLite holds one
+resident bank and independent synthesizers, using shared-bank synchronization.
+The optional GME adapter renders real game music in a declared finite window
+(metadata playback length or 150 seconds, plus eight-second fade). Original
+FluidLite/GME notices are packaged. Neither engine owns an output device.
+
+Generic native PCM can use the FFmpeg C API exported by the same libVLC binary,
+with explicit EOF drain and no player clock. Public-header ABI checks guard its
+use; the existing libVLC callback path remains a compatibility fallback. Unknown
+exact totals still require a complete PCM spool. Duration inspection no longer invokes unbounded full PCM rendering; tiny untimed
+native files have a strict 64 KiB / ten-second PCM / 250 ms counting budget. Host playlist
+scanning uses that common-source metadata interface, yields while a track loads,
+and preserves known durations/source slices. Loader interruption belongs to the
+host; backend cancellation and bank lifetime belong to Sound. MIDI seeking still
+uses decoded-prefix access, separately from existing indexed MPEG/FLAC seeking.

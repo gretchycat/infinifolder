@@ -236,7 +236,9 @@ object ThemeManager {
         audioArtwork = artwork
         clearSkinBitmaps()
         activeAudioPlayerTheme = theme
-        synchronized(listeners) { listeners.toList().forEach { it.onThemeChanged(activeTheme) } }
+        shared.edit().putString(PREF_THEME_MODE, if (theme.isDark) "dark" else "light").apply()
+        // A player selection is also the application's selection, including restart provenance.
+        setTheme(context, theme, skinFile, artwork, key.takeIf { it.startsWith("skins/") })
     }
 
     fun setAudioPlayerTheme(context: Context, theme: ThemeColors) {

@@ -1610,7 +1610,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         names.add("📂 Import Winamp / XMMS Skin…")
 
         ThemeManager.createDialogBuilder(this)
-            .setTitle("Select Audio Interface Theme")
+            .setTitle("Select Application Theme")
             .setItems(names.toTypedArray()) { _, which ->
                 when {
                     which < bundledSkins.size -> {

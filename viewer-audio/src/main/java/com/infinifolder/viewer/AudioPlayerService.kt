@@ -531,6 +531,8 @@ class AudioPlayerService : Service() {
     }
 
     fun stopPlayback() {
+        loadingThread?.interrupt()
+        loadingThread = null
         invalidateGapless()
         loadCounter.incrementAndGet()
         analysisSource = null
@@ -599,7 +601,10 @@ class AudioPlayerService : Service() {
     fun onCastTrackComplete() = onTrackCompleted()
     fun onCastError(message: String) = notifyError(message)
 
+    @Volatile private var loadingThread: Thread? = null
+
     private fun loadAndPlayCurrent() {
+        loadingThread?.interrupt()
         invalidateGapless()
         val track = currentTrack ?: return
         analysisSource = null
@@ -629,7 +634,7 @@ class AudioPlayerService : Service() {
             runCatching { currentPfd?.close() }
             currentPfd = null
         }
-        Thread {
+        loadingThread = Thread {
             if (loadCounter.get() != thisLoadId) return@Thread
             val loadStarted = android.os.SystemClock.elapsedRealtime()
             cacheFailure = null
@@ -840,7 +845,7 @@ class AudioPlayerService : Service() {
                     skipUnreadable(track, thisLoadId, e)
                 }
             }
-        }.start()
+        }.apply { name = "AudioTrackLoader-$thisLoadId"; start() }
     }
 
     /** Keep failed entries visible, but never retry an unreadable queue in a loop. */
@@ -1134,8 +1139,7 @@ class AudioPlayerService : Service() {
 
         if (original.artist == null || original.album == null || original.artwork == null || duration <= 0) {
             try {
-                val tags = if (file != null) AudioProcessing.metadata.readTags(AudioMetadataSource.LocalFile(file), includeArtwork = true)
-                    else AudioProcessing.readTags(input.resource, includeArtwork = true)
+                val tags = AudioProcessing.readTags(input.resource, includeArtwork = true)
                 title = tags.title ?: title
                 artist = tags.artist ?: artist
                 album = tags.album ?: album
@@ -1478,6 +1482,11 @@ class AudioPlayerService : Service() {
         metadataScannerThread?.interrupt()
         metadataScannerThread = Thread({
             while (gen == metadataScannerGeneration.get() && !Thread.currentThread().isInterrupted) {
+                // Let foreground preparation have the CPU/provider while opening a track.
+                if (isLoading) {
+                    try { Thread.sleep(100) } catch (_: InterruptedException) { break }
+                    continue
+                }
                 val track = synchronized(playlist) { work.next(playlist, currentIndex) } ?: break
                 val enriched = try {
                     resolveTrackMetadataLight(track)
@@ -1508,115 +1517,25 @@ class AudioPlayerService : Service() {
     }
 
     private fun resolveTrackMetadataLight(track: AudioTrack): AudioTrack? {
-        var title = track.title
-        var artist = track.artist
-        var album = track.album
-        var duration = track.durationMs
-
-        // If this track is the currently playing track in MediaPlayer, query duration directly!
-        if (currentTrack?.let { it.uri == track.uri && it.startByte == track.startByte && it.lengthBytes == track.lengthBytes } == true) {
-            val liveDur = synchronized(playerLock) {
-                runCatching { (mediaPlayer?.duration ?: 0).toLong() }.getOrDefault(0L)
-            }
-            if (liveDur > 0L) {
-                duration = liveDur
-            }
-        }
-
-        val uri = track.uri
-        var file = if (uri.scheme == "file" || uri.scheme == null) {
-            uri.path?.let { File(it) }?.takeIf { it.exists() }
-        } else {
-            MediaSourceAdapter.resolveLocalFile(this, uri)
-        }
-
-        var metadataRead = false
-        fun readTags(tags: AudioTags) {
-            val newTitle = tags.title?.takeIf { it.isNotBlank() }
-            val newArtist = tags.artist?.takeIf { it.isNotBlank() }
-            val newAlbum = tags.album?.takeIf { it.isNotBlank() }
-            val newDuration = tags.duration?.toLongOrNull()
-            newTitle?.let { title = it }; newArtist?.let { artist = it }; newAlbum?.let { album = it }
-            if (duration <= 0 && track.startByte == 0L && track.lengthBytes <= 0 && (newDuration ?: 0L) > 0) duration = newDuration!!
-            metadataRead = newTitle != null || newArtist != null || newAlbum != null || (newDuration ?: 0L) > 0
-        }
-
-        run {
-            var pfd: android.os.ParcelFileDescriptor? = null
-            var closeSource: (() -> Unit)? = null
-            try {
-                val tags = if (file != null && file.exists()) {
-                    AudioProcessing.metadata.readTags(AudioMetadataSource.LocalFile(file))
-                } else if (uri.scheme == "content") {
-                    pfd = runCatching { contentResolver.openFileDescriptor(uri, "r") }.getOrNull()
-                    if (pfd != null) {
-                        AudioProcessing.metadata.readTags(AudioMetadataSource.Descriptor(pfd.fileDescriptor))
-                    } else {
-                        AudioProcessing.readContentTags(this, uri)
-                    }
-                } else {
-                    val provider = com.infinifolder.storage.StorageRuntime.get(this).provider
-                    val ref = provider.refForUri(uri) ?: throw java.io.IOException("No provider for audio source")
-                    val device = when (val opened = provider.openSeekable(ref)) {
-                        is com.infinifolder.model.ProviderResult.Success -> opened.value
-                        is com.infinifolder.model.ProviderResult.Failure -> throw java.io.IOException(opened.message, opened.cause)
-                        else -> throw java.io.IOException("Audio source is not seekable")
-                    }
-                    closeSource = { device.close() }
-                    AudioProcessing.metadata.readTags(AudioMetadataSource.Seekable(device.size, device::readAt))
-                }
-                readTags(tags)
-            } catch (_: Exception) {
-            } finally {
-                runCatching { closeSource?.invoke() }
-                runCatching { pfd?.close() }
-            }
-        }
-
-        // Some providers or formats cannot be inspected through MediaDataSource.
-        // Playback already stages these sources, so use that same path as a fallback.
-        var metadataStage: MediaSourceAdapter.StagedSource? = null
-        if ((!metadataRead || (duration <= 0 && track.startByte == 0L && track.lengthBytes <= 0)) &&
-            file == null && !Thread.currentThread().isInterrupted) {
-            try {
-                metadataStage = MediaSourceAdapter.stage(this, uri)
-                file = metadataStage.file
-                readTags(AudioProcessing.metadata.readTags(AudioMetadataSource.LocalFile(file!!)))
-            } catch (error: Exception) {
-                android.util.Log.w("AudioPlayerService", "Staged playlist metadata probe failed: ${error.message}")
-            }
-        }
-        try {
-        // A bounded raw CD-DA CUE slice has 75 frames of 2352 bytes per second.
-        if (duration <= 0L && track.lengthBytes > 0 &&
-            track.uri.lastPathSegment.orEmpty().substringAfterLast('.', "").lowercase() in setOf("bin", "cdda")) {
-            duration = track.lengthBytes / 2352L * 1000L / 75L
-        }
-
-        if (duration <= 0L && file != null && file.exists() && track.startByte == 0L && track.lengthBytes <= 0) {
-            val metadataFile = file
-            if (!Thread.currentThread().isInterrupted) {
-                runCatching { AudioProcessing.readDuration(metadataFile) }.getOrNull()?.takeIf { it > 0 }?.let { duration = it }
-            }
-        }
-
-        val formatInfo = if (file != null && file.exists()) {
-            probeAudioFormat(file, track)
-        } else null
-
-        val finalDur = if (duration > 0) duration else track.durationMs
-        return track.copy(
-            title = title,
-            artist = artist,
-            album = album,
-            durationMs = finalDur,
-            bitrateKbps = if (formatInfo?.isBitrateRelevant == true && formatInfo.bitrateKbps > 0) formatInfo.bitrateKbps else track.bitrateKbps,
-            sampleRateHz = if (formatInfo?.isSampleRateRelevant == true && formatInfo.sampleRate > 0) formatInfo.sampleRate else track.sampleRateHz,
-            channels = formatInfo?.channels?.takeIf { it > 0 } ?: track.channels,
-            isBitrateRelevant = formatInfo?.isBitrateRelevant ?: track.isBitrateRelevant
-        )
-        } finally {
-            metadataStage?.close()
+        if (Thread.currentThread().isInterrupted) return null
+        return AudioPlaybackInput.open(this, track.uri, track.fileName, metadataOnly = true).use { input ->
+            val tags = AudioProcessing.readTags(input.resource)
+            val segmented = track.startByte > 0 || track.lengthBytes > 0
+            val duration = if (track.durationMs > 0 || segmented) track.durationMs
+                else tags.duration?.toLongOrNull()?.coerceAtLeast(0) ?: 0L
+            val format = AudioProcessing.probeFormat(input.resource, track.fileName, duration)
+            track.copy(
+                title = if (segmented) track.title else tags.title?.takeIf { it.isNotBlank() } ?: track.title,
+                artist = tags.artist?.takeIf { it.isNotBlank() } ?: track.artist,
+                album = tags.album?.takeIf { it.isNotBlank() } ?: track.album,
+                durationMs = if (segmented && duration <= 0 && track.lengthBytes > 0 &&
+                    track.fileName.substringAfterLast('.', "").lowercase() in setOf("bin", "cdda"))
+                    track.lengthBytes / 2352L * 1000L / 75L else duration,
+                bitrateKbps = format.bitrateKbps.takeIf { format.isBitrateRelevant && it > 0 } ?: track.bitrateKbps,
+                sampleRateHz = format.sampleRate.takeIf { format.isSampleRateRelevant && it > 0 } ?: track.sampleRateHz,
+                channels = format.channels.takeIf { it > 0 } ?: track.channels,
+                isBitrateRelevant = format.isBitrateRelevant
+            )
         }
     }
 

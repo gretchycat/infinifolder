@@ -37,6 +37,9 @@ Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) d
 - [x] Stream video from common positional/sequential sources with bounded reads and nonblocking socket backpressure; avoid the legacy archive extraction fallback for native slices. Add an audible six-minute seek companion.
 - [x] Route `.rm`/`.rmvb` to Video and eliminate decoder-generated substitute tones; require actual decoding or explicit failure.
 - [x] Register libVLC behind Sound's common PCM interfaces for additional audio codecs; keep player output separate and preserve existing MP3/FLAC paths.
+- [x] Apply music-player theme selections across the app; install/apply WSZ on tap and offer explicit ZIP archive browsing.
+- [x] Keep a resident FluidLite bank with independent streaming MIDI synthesizers; inspect playlist timing without full-track rendering.
+- [x] Use finite GME game-music playback windows and optional unclocked FFmpeg PCM pulling from the existing libVLC binary.
 - [x] Bundle FluidR3_GM as lossless bz2 assets with verified cached extraction and original notices; use FluidLite for MIDI programs/percussion.
 - [x] Silently skip unreadable audio entries while preserving their playlist rows with `--` duration; bound all-unreadable queues and guard metadata races.
 - [ ] Accept the mixed/all-unreadable and FluidR3 instrument fixtures on the handset, including their ZIP variants.

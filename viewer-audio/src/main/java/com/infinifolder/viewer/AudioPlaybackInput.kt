@@ -68,14 +68,14 @@ class AudioPlaybackInput private constructor(
     }
 
     companion object {
-        fun open(context: Context, uri: Uri, name: String, requiresFile: Boolean = false): AudioPlaybackInput {
+        fun open(context: Context, uri: Uri, name: String, requiresFile: Boolean = false, metadataOnly: Boolean = false): AudioPlaybackInput {
             if (Thread.currentThread().isInterrupted) throw InterruptedIOException("Audio input cancelled")
             val stage = { MediaSourceAdapter.stage(context, uri, name) }
             if (requiresFile || MediaSourceAdapter.resolveLocalFile(context, uri)?.canRead() == true)
                 return AudioPlaybackInput(null, stage(), stage)
             val source = MediaSourceAdapter.openPositionalSource(context, uri)
                 ?: return AudioPlaybackInput(null, stage(), stage)
-            return select(source, stage, AudioProcessing::requiresLocalFileForPlayback, name)
+            return select(source, stage, if (metadataOnly) { { false } } else AudioProcessing::requiresLocalFileForPlayback, name)
         }
 
         /** Also used by contract tests; unsupported capability is distinct from a read failure. */

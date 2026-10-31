@@ -68,6 +68,15 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Implemented; focused acceptance still needed
 
+Checkpoint 25 addresses the reported audio loading stalls with lazy MIDI/GME
+PCM, a resident shared SoundFont, bounded duration inspection and optional
+unclocked FFmpeg decoding from the existing libVLC binary. It also shares player
+theme selections across the app, installs/applies WSZ on tap and offers explicit
+ZIP browsing despite incorrect provider MIME. Full app/audio-host builds and
+focused owner-file loading diagnostics succeed; the earlier full regression
+suite was not rerun. [Evidence and handset checks](infinistream-migration.md#checkpoint-25-audio-loading-and-shared-skin-actions)
+record the current scope. Audible/UI acceptance remains pending.
+
 Checkpoint 24 adds real libVLC PCM decoding inside Sound for WMA/RA and other
 available codecs, while retaining the existing output and fast MPEG/FLAC paths.
 MIDI uses a bundled, MIT-licensed FluidR3_GM bank through FluidLite, with streamed

@@ -70,14 +70,14 @@ public class LibVlcAudioRuntimeCheck {
                 if(!source.isFile()) continue;
                 Decoded result=decode(file(source));controls.put(ext,result);
                 if(ext.equals("wma")||ext.equals("ra")) {
-                    check("libVLC.PCM".equals(result.backend),"Extra codec backend was not used");
+                    check(result.backend.startsWith("libVLC."),"Extra codec backend was not used");
                     check(result.samples==expectedSamples.get(ext),"libVLC lost or invented decoded samples for "+ext);
                 }
                 System.out.println("PASS vlc-audio."+ext+" backend="+result.backend+" rate="+result.rate+" channels="+result.channels+" samples="+result.samples+" sha256="+result.hash);
             }
             File pcmFile=new File(work,"prepared-wma.wav");
             try(AudioWaveSource wave=AudioProcessing.INSTANCE.openPlaybackSource(new File(audio,"c_major_piano.wma"),pcmFile,null,()->false)) {
-                check(wave.getPreparation().getDecoder().equals("libVLC.PCM"),"WMA output bypassed the codec adapter");
+                check(wave.getPreparation().getDecoder().startsWith("libVLC."),"WMA output bypassed the codec adapter");
                 check(wave.getPreparation().getFormat().getTotalFrames()==controls.get("wma").samples/controls.get("wma").channels,"Prepared WAVE length is not actual PCM length");
                 byte[] waveBytes=Files.readAllBytes(pcmFile.toPath());
                 check(hex(MessageDigest.getInstance("SHA-256").digest(Arrays.copyOfRange(waveBytes,44,waveBytes.length))).equals(controls.get("wma").hash),"Output WAVE is not the selected decoded audio");

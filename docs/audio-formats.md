@@ -62,6 +62,22 @@ include mixed and all-unreadable playlists plus ZIP copies.
 
 ---
 
+## Loading corrections (checkpoint 25)
+
+MIDI timeline inspection no longer synthesizes a song or loads its bank. The bank
+stays resident while the app process runs; independent streams share sample data
+and keep separate voices. Known MIDI and GME rendering windows use lazy PCM
+pulling. The preferred generic adapter pulls/drains FFmpeg frames from the same libVLC
+binary without a player clock. It retains full PCM spooling when the exact
+frame total is unknown. Missing symbols or a header ABI mismatch use the original
+libVLC callback path, which can still have preparation latency.
+
+Playlist duration scanning uses tags, parsed event timing and bounded native
+inspection rather than full-track decoding. It yields during foreground loading.
+Missing timing remains `--`; unreadable-file rows retain their failure state.
+Changing/stopping tracks interrupts the previous loader. Native timing estimates
+are used for playlist display, never as exact WAVE frame counts.
+
 ## Implemented Architecture & Decoders
 
 All local parsing/decoding is selected inside libinfinisound. Its Android MediaExtractor/MediaCodec backend and portable MP3/AAC/FLAC/WAVE plus existing composite codecs share library contracts. InfiniStream compatibility wraps encoded positional sources and actual typed PCM outputs. AudioPlayerService opens a canonical PCM WAVE source through the library for MediaPlayer to pull, including preload; it does not pass original compressed sources directly to MediaPlayer. Output surfaces, routing, Cast and queue lifetimes remain Android host responsibilities. Existing composite render limits remain; only actual decoder implementations may produce PCM.
@@ -124,7 +140,7 @@ The synthesizer pipeline (`com.infinifolder.audio.synth`) provides full polyphon
 
 | Format | Extensions | MIME Type | Engine | Description & Capabilities |
 | --- | --- | --- | --- | --- |
-| **Standard MIDI & RMID** | `.mid`, `.midi`, `.kar`, `.rmi` | `audio/midi` | libVLC/FluidLite; portable `MidiSequencer` | Android uses the bundled FluidR3_GM bank for actual note/program/percussion synthesis. The portable parser/renderer and RMID unwrap path remain available with their existing limits; complete SMF variant conformance is not claimed. |
+| **Standard MIDI & RMID** | `.mid`, `.midi`, `.kar`, `.rmi` | `audio/midi` | libVLC/FluidLite; portable `MidiSequencer` | Android uses the resident FluidR3_GM bank with independent voices per stream. SMF 0/1 and RMID timing supports lazy PCM and a two-second release tail. The portable parser/renderer and RMID unwrap path remain available with their existing limits; complete SMF variant conformance is not claimed. |
 | **ProTracker Module** | `.mod` | `audio/x-mod` | `OpenMpt` / `TrackerEngine` | Industry-standard `libopenmpt` tracker engine (with pure Kotlin fallback). Full support for 4 to 32 channels (`M.K.`, `4CHN`, `6CHN`, `8CHN`, `OCTA`, `16CN`, `32CN`). Paula period to frequency calculation ($f = \frac{3546895}{2p}$), Amiga stereo panning, 31 sample definitions, 64-row pattern playback, tick scheduling, speed/tempo control (`Fxx`), and volume slides. |
 | **Scream Tracker 3** | `.s3m` | `audio/x-s3m` | `OpenMpt` / `TrackerEngine` | `libopenmpt` engine (`SCRM` header). Supports C4 speed calculations, signed/unsigned 8/16-bit samples, multi-channel rendering, portamentos, vibrato, and ST3 panning. |
 | **FastTracker II** | `.xm` | `audio/x-xm` | `OpenMpt` / `TrackerEngine` | `libopenmpt` engine (`Extended Module: ` header). Multi-sample instruments, volume/panning envelopes, delta-encoded 8/16-bit sample decoding, linear and Amiga frequency tables. |
@@ -138,10 +154,10 @@ The synthesizer pipeline (`com.infinifolder.audio.synth`) provides full polyphon
 | --- | --- | --- | --- | --- |
 | **DOSBox Raw OPL** | `.dro` | `audio/x-dro` | Not implemented | `DBRAWOPL` header. DOSBox hardware register dumps for Yamaha OPL2/OPL3 FM sound cards (AdLib, Sound Blaster). |
 | **Id Software Music** | `.imf` | `audio/x-imf` | Not implemented | OPL2 register/value/delay sequences from *Wolfenstein 3D*, *Commander Keen*, and *Duke Nukem II*. |
-| **Video Game Music** | `.vgm`, `.vgz` | `audio/x-vgm` | Not implemented | `Vgm ` header; `.vgz` is its GZIP wrapper. PSG / FM emulation is not implemented. |
+| **Video Game Music** | `.vgm`, `.vgz` | `audio/x-vgm` | Android GME candidate | `Vgm ` header; `.vgz` is its GZIP wrapper. Uses the finite GME rendering policy where the pinned engine accepts the variant. Portable emulation remains unimplemented. |
 | **YM Sound Chip** | `.ym` | `audio/x-ym` | Not implemented | Atari ST and Amstrad CPC YM2149 / AY-3-8910 chiptune register logs (`YM5!LeOnArD!`, `YM6!`, `YM2!`, `YM3!`). |
-| **Nintendo Sound File** | `.nsf` | `audio/x-nsf` | Not implemented | NES sound chip music dump (`NESM\x1A`). Pulse/triangle/noise emulation is not implemented. |
-| **SNES Sound File** | `.spc` | `audio/x-spc` | Not implemented | `SNES-SPC700 Soun` header. SNES 8-channel DSP audio. |
+| **Nintendo Sound File** | `.nsf`, `.nsfe` | `audio/x-nsf` | Android GME adapter | Real emulation via the GME C API in the pinned libVLC AAR. Selected/default track timing, or a 150-second loop window plus eight-second fade; lazy PCM. This is a rendering policy for untimed loops. |
+| **SNES Sound File** | `.spc` | `audio/x-spc` | Android GME adapter | GME candidate with the same finite rendering policy; variant acceptance depends on the actual emulator. |
 | **Commodore 64 SID** | `.sid` | `audio/x-sid` | Not implemented | `PSID` / `RSID` header. MOS 6581/8580 SID chip synthesis. |
 
 ---

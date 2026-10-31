@@ -5572,6 +5572,10 @@ class MainActivity : Activity(), DebugDumpObserver {
             } else resolveLink.run()
             return
         }
+        if (!externalOnly && !entry.metadata.isDirectory && entry.metadata.name.endsWith(".wsz", ignoreCase = true)) {
+            importWinampSkin(entry.uri, applyToAudio = true)
+            return
+        }
         if (!externalOnly && entry.ref.providerId != "torrent" && entry.metadata.name.endsWith(".torrent", ignoreCase = true)) {
             openTorrentFile(entry)
             return
@@ -8751,10 +8755,10 @@ class MainActivity : Activity(), DebugDumpObserver {
             .show()
     }
 
-    private fun importWinampSkin(uri: Uri) {
+    private fun importWinampSkin(uri: Uri, applyToAudio: Boolean = false) {
         Toast.makeText(this, "Importing skin…", Toast.LENGTH_SHORT).show()
         Thread {
-            val imported = com.infinifolder.theme.ThemeManager.importSkin(applicationContext, uri)
+            val imported = com.infinifolder.theme.ThemeManager.importSkin(applicationContext, uri, audio = applyToAudio)
             runOnUiThread {
                 if (!isDestroyed) Toast.makeText(this,
                     if (imported != null) "Skin '${imported.name}' applied" else "Could not import skin from this file",
@@ -10897,6 +10901,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         val detectedMediaType = MediaTypeDetector.detect(entry.metadata.name, (detectedMagic?.mimeType ?: entry.metadata.mimeType))
 
         val baseOpenGroup: List<String> = when {
+            isFile && entry.metadata.name.endsWith(".wsz", ignoreCase = true) ->
+                listOf("Install and apply theme", "Open as archive", "Open with external app")
             isApp -> listOf("Launch")
             isCategory -> listOf("Browse folder")
             isShortcut -> {
@@ -11131,6 +11137,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                     else showDestinationPicker(entry, false)
                 }
                 "Browse folder" -> navigate(entry.uri, displayName = entry.metadata.name)
+                "Install and apply theme" -> importWinampSkin(entry.uri, applyToAudio = true)
+                "Open as archive" -> if (ArchiveUri.isArchiveUri(entry.uri)) browseNestedArchive(entry)
+                    else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
                 "Browse archive", "Browse" -> navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
                 "Open with external app" -> open(entry, externalOnly = true)
                 "Open" -> if (entry.metadata.isDirectory) navigate(entry.uri, displayName = entry.metadata.name) else open(entry)
