@@ -488,7 +488,7 @@
     },
     "c_major_piano.nsf": {
       "size_bytes": 180,
-      "sha256": "b9a8b2a0521c45cbf2c2ab0725585e82fbd98bafb30df52ba9f50813d6e37bcd"
+      "sha256": "876c19c9d37d99a57529f9e2bb70bb1394be81068338dd715bb253e3c23a0259"
     },
     "c_major_piano.oga": {
       "size_bytes": 21562,
@@ -544,7 +544,7 @@
     },
     "c_major_piano.spc": {
       "size_bytes": 66048,
-      "sha256": "12c6a004f8d06fd528ca789bdc4b6cfcc5c46d39834320545a96e74dd012d924"
+      "sha256": "e55bd86528252d84b5ea0f6140f8e7aeade12a18edfcba8b6b8ad0b130c182d7"
     },
     "c_major_piano.sph": {
       "size_bytes": 265624,
@@ -563,12 +563,12 @@
       "sha256": "ef2c95311d6d661c89775c9f18064f3fc453508dbf3bfb58c6850b4ade9c43fb"
     },
     "c_major_piano.vgm": {
-      "size_bytes": 176,
-      "sha256": "a49aa319150780d539ffbbc19aaa58fdd09d34a16e2c0cfb3b39f90cd01287a8"
+      "size_bytes": 179,
+      "sha256": "30079d2d9d89ae90afbfdbcfa5ce64baf0849b2af6d478a5c114f54676ca4716"
     },
     "c_major_piano.vgz": {
-      "size_bytes": 79,
-      "sha256": "1d091b79e848da759fb08679d87082577ea5be1ffd1e626c3e6d734e96c46130"
+      "size_bytes": 82,
+      "sha256": "52ecc6b0626f0bca07ea73104a779f9a809e4470d5d329b006c2edadccebfae2"
     },
     "c_major_piano.voc": {
       "size_bytes": 132343,

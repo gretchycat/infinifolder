@@ -68,6 +68,14 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Implemented; focused acceptance still needed
 
+Checkpoint 26 follows the owner's confirmation that skin installation works and
+MIDI loading is improved, plus reports of missing playlist lengths and incorrect
+game-music playback. Native timing inspection now includes legacy containers and
+stream duration. GME honors finite endpoints/fades and keeps untimed caps out of
+file metadata. The generated VGM/VGZ, NSF and SPC data also needed corrections.
+Full app/audio-host builds succeed; listening and playlist acceptance of these
+corrections remain pending. No automated tests were run for this checkpoint.
+
 Checkpoint 25 addresses the reported audio loading stalls with lazy MIDI/GME
 PCM, a resident shared SoundFont, bounded duration inspection and optional
 unclocked FFmpeg decoding from the existing libVLC binary. It also shares player

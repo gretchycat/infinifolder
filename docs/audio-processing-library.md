@@ -137,3 +137,12 @@ scanning uses that common-source metadata interface, yields while a track loads,
 and preserves known durations/source slices. Loader interruption belongs to the
 host; backend cancellation and bank lifetime belong to Sound. MIDI seeking still
 uses decoded-prefix access, separately from existing indexed MPEG/FLAC seeking.
+
+Checkpoint 26 corrects this policy for finite game music: file length and fade
+are honored without adding a universal eight seconds. Untimed loop caps remain
+playback policy and are not returned as source duration metadata. GME metadata
+uses information-only sessions, VGZ has bounded inflation, and command warnings
+fail decoding. Native duration inspection also covers portable legacy containers
+and stream timing; an optional host format probe cannot discard successful tags.
+The consumer's malformed game-music fixtures are corrected separately. Successful
+builds do not establish their audible correctness; handset acceptance is pending.

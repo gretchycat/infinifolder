@@ -1,0 +1,53 @@
+{
+  "recorded": "2026-10-31",
+  "scope": "Build and source/fixture corrections following owner feedback. No new runtime or audible diagnostic was run.",
+  "builds": {
+    "fullDebugApk": {
+      "sha256": "595eb55de7b7858ae34e61ea6a67254221de36f2e15a27a997794067efc4603b"
+    },
+    "audioHostDebugApk": {
+      "sha256": "667ea9928e850d861966dde7d8ac5ae1087d1fcee6a75e2449c97041b713acef"
+    },
+    "result": "BUILD SUCCESSFUL in 2m 14s; 412 actionable tasks"
+  },
+  "soundRevision": "876533a0f3c7bb676667d278ed7d83a23f21bc0c",
+  "ownerFeedback": {
+    "skinInstallation": "confirmed working perfectly",
+    "loading": "improved",
+    "playlistLengths": "many playable formats remain unknown",
+    "gameMusic": "NSF/VGM/VGZ/SPC incorrect; fallback durations shown"
+  },
+  "sourceCorrections": [
+    "Inspect native timing outside the platform extension list and consider stream duration.",
+    "Preserve successful metadata if optional host format probing fails.",
+    "Separate GME information-only inspection from emulation and distinguish file timing from untimed playback caps.",
+    "Use file length and fade for finite tracks, loop-derived timing for timed loops, and the existing explicit cap for untimed loops.",
+    "Inflate VGZ within 32 MiB; reject GME emulation warnings."
+  ],
+  "correctedFixtures": {
+    "c_major_piano.nsf": {
+      "size_bytes": 180,
+      "sha256": "876c19c9d37d99a57529f9e2bb70bb1394be81068338dd715bb253e3c23a0259"
+    },
+    "c_major_piano.spc": {
+      "size_bytes": 66048,
+      "sha256": "e55bd86528252d84b5ea0f6140f8e7aeade12a18edfcba8b6b8ad0b130c182d7"
+    },
+    "c_major_piano.vgm": {
+      "size_bytes": 179,
+      "sha256": "30079d2d9d89ae90afbfdbcfa5ce64baf0849b2af6d478a5c114f54676ca4716"
+    },
+    "c_major_piano.vgz": {
+      "size_bytes": 82,
+      "sha256": "52ecc6b0626f0bca07ea73104a779f9a809e4470d5d329b006c2edadccebfae2"
+    }
+  },
+  "fixtureExpectedTimelines": {
+    "vgmAndVgzMs": 1500,
+    "spcMs": 2500,
+    "nsf": "Untimed sustained NSF v1 chord; no intrinsic metadata duration. Playback retains 150 seconds plus an eight-second fade."
+  },
+  "automatedTestsRun": false,
+  "runtimeDiagnosticsRun": false,
+  "handsetAcceptance": "Pending corrected-fixture listening and playlist duration scanning."
+}

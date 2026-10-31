@@ -11,7 +11,7 @@ All remote main hashes were checked against the local tested heads. Sound's exis
 | [libinfinistream](https://github.com/gretchycat/libinfinistream) | Created | [`e86167f`](https://github.com/gretchycat/libinfinistream/commit/e86167f2fd0c2c19d24140f05478099fdb1a693b) |
 | [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | [`d49e57c`](https://github.com/gretchycat/libinfinistore/commit/d49e57c4a4520d7f559da3080d48759f3e92afb0) |
 | [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`14a7908`](https://github.com/gretchycat/libinfinivault/commit/14a7908ffb8cd1af7d9a5400621d91ea1626f4f0) |
-| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`e948748`](https://github.com/gretchycat/libinfinisound/commit/e94874869a7addec1095884722058483bb2e7181) |
+| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`876533a`](https://github.com/gretchycat/libinfinisound/commit/876533a0f3c7bb676667d278ed7d83a23f21bc0c) |
 | [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`0fcedae`](https://github.com/gretchycat/libinfinicanvas/commit/0fcedae408385fa95ef816247ba4861108c933ff) |
 | [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`084e9de`](https://github.com/gretchycat/libinfiniscribe/commit/084e9de5ab5335c79ae88fdf2c297314cfd664e3) |
 | [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`091e10a`](https://github.com/gretchycat/libinfinivideo/commit/091e10a6c06b73fb1828ba75348d09338ac89116) |
@@ -768,6 +768,36 @@ Handset acceptance: retry NSF followed by repeated ambient MIDI opens, watch
 playlist durations, apply built-in/imported themes and return to the manager,
 restart to check persistence, and compare WSZ tap with long-press archive browsing.
 
+## Checkpoint 26: Playlist timing and game-music fixture correction
+
+The owner confirms skin installation works and loading has improved, but reports
+missing playlist lengths for playable files and incorrect NSF/VGM/VGZ/SPC audio.
+Checkpoint 25's preparation measurements did not establish audible correctness.
+
+Sound now inspects native timing for legacy containers beyond its platform-codec
+extension list, including stream-level timing. The host preserves successfully
+read tags even if an optional sample-rate/bitrate probe fails. GME metadata uses
+information-only sessions; its default 150-second loop cap plus eight-second fade
+is no longer reported as intrinsic source metadata. Finite file length and fade
+are honored, so nonlooping VGM no longer acquires eight seconds. Timed loops use
+intro plus two loop repetitions and a supplied/default fade. VGZ has explicit
+bounded inflation; GME emulation warnings fail through the decoder contract.
+The playback cap remains visible while playing a genuinely untimed loop.
+
+The generated fixtures also had data defects: VGM omitted PSG continuation-command
+prefixes, NSF pointed its play routine into initialization and let pulse length
+counters expire, and SPC had ambiguous ID666 timing, no explicit CPU key-on and
+pitches two octaves too high. The generator and four files are corrected with
+updated manifest hashes. Expected finite timelines are 1.5 seconds for VGM/VGZ
+and 2 seconds plus 500 ms fade for SPC. Plain NSF v1 remains a sustained, untimed
+chord. Older copies must be replaced before checking the corrected fixtures.
+
+Full app and audio-host APKs build. No automated tests or new runtime diagnostics
+were run for this correction. Audible playback, endpoint/fade behavior and wider
+playlist timing remain handset acceptance checks. The prior full regression
+baseline is historical, and no claim of complete format conformance is added.
+[Build and correction record](validation/audio-timing-and-fixtures-checkpoint26.json).
+
 ## Final verification and reproducibility
 
 Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 885-case checkpoint.
@@ -797,4 +827,4 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. The requested libVLC backend adds a pinned published native AAR with source/override details; no native binary is committed and no language port is introduced.
 
-Final full debug APK SHA-256: `2f578708e8ba309cc69bd5eef581f266a28cbf475d234d4c28ab782d08a3eea9`.
+Final full debug APK SHA-256: `595eb55de7b7858ae34e61ea6a67254221de36f2e15a27a997794067efc4603b`.

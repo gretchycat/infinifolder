@@ -78,6 +78,17 @@ Missing timing remains `--`; unreadable-file rows retain their failure state.
 Changing/stopping tracks interrupts the previous loader. Native timing estimates
 are used for playlist display, never as exact WAVE frame counts.
 
+Checkpoint 26 expands native timing inspection to legacy containers outside the
+extra-codec extension list and also considers stream-level duration. An optional
+sample-rate/bitrate probe no longer discards successfully read playlist tags.
+Game-music inspection uses an information-only session: finite file length/fade
+and loop-derived timing are distinct from the untimed 150-second playback cap.
+Nonlooping VGM has no added fade. VGZ is explicitly inflated with a size bound.
+Emulation command warnings fail instead of being published as successful audio.
+The generated VGM/VGZ, NSF and SPC files were also corrected; see the
+[fixture notes](../filesystem-test-images/README.md#image-and-audio-format-fixtures).
+The corrected audio and broader playlist scanning await handset acceptance.
+
 ## Implemented Architecture & Decoders
 
 All local parsing/decoding is selected inside libinfinisound. Its Android MediaExtractor/MediaCodec backend and portable MP3/AAC/FLAC/WAVE plus existing composite codecs share library contracts. InfiniStream compatibility wraps encoded positional sources and actual typed PCM outputs. AudioPlayerService opens a canonical PCM WAVE source through the library for MediaPlayer to pull, including preload; it does not pass original compressed sources directly to MediaPlayer. Output surfaces, routing, Cast and queue lifetimes remain Android host responsibilities. Existing composite render limits remain; only actual decoder implementations may produce PCM.
@@ -157,7 +168,7 @@ The synthesizer pipeline (`com.infinifolder.audio.synth`) provides full polyphon
 | **Video Game Music** | `.vgm`, `.vgz` | `audio/x-vgm` | Android GME candidate | `Vgm ` header; `.vgz` is its GZIP wrapper. Uses the finite GME rendering policy where the pinned engine accepts the variant. Portable emulation remains unimplemented. |
 | **YM Sound Chip** | `.ym` | `audio/x-ym` | Not implemented | Atari ST and Amstrad CPC YM2149 / AY-3-8910 chiptune register logs (`YM5!LeOnArD!`, `YM6!`, `YM2!`, `YM3!`). |
 | **Nintendo Sound File** | `.nsf`, `.nsfe` | `audio/x-nsf` | Android GME adapter | Real emulation via the GME C API in the pinned libVLC AAR. Selected/default track timing, or a 150-second loop window plus eight-second fade; lazy PCM. This is a rendering policy for untimed loops. |
-| **SNES Sound File** | `.spc` | `audio/x-spc` | Android GME adapter | GME candidate with the same finite rendering policy; variant acceptance depends on the actual emulator. |
+| **SNES Sound File** | `.spc` | `audio/x-spc` | Android GME adapter | File-supplied length/fade when present; otherwise the declared untimed-loop cap. Variant acceptance depends on the actual emulator. |
 | **Commodore 64 SID** | `.sid` | `audio/x-sid` | Not implemented | `PSID` / `RSID` header. MOS 6581/8580 SID chip synthesis. |
 
 ---

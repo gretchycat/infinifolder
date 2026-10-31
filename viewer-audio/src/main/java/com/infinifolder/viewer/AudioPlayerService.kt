@@ -1523,7 +1523,13 @@ class AudioPlayerService : Service() {
             val segmented = track.startByte > 0 || track.lengthBytes > 0
             val duration = if (track.durationMs > 0 || segmented) track.durationMs
                 else tags.duration?.toLongOrNull()?.coerceAtLeast(0) ?: 0L
-            val format = AudioProcessing.probeFormat(input.resource, track.fileName, duration)
+            // Optional format details must not discard successfully read tags/timing.
+            val format = try { AudioProcessing.probeFormat(input.resource, track.fileName, duration) }
+                catch (cancel: java.io.InterruptedIOException) { throw cancel }
+                catch (error: Exception) {
+                    android.util.Log.w("AudioPlayerService", "Playlist format probe failed", error)
+                    null
+                }
             track.copy(
                 title = if (segmented) track.title else tags.title?.takeIf { it.isNotBlank() } ?: track.title,
                 artist = tags.artist?.takeIf { it.isNotBlank() } ?: track.artist,
@@ -1531,10 +1537,10 @@ class AudioPlayerService : Service() {
                 durationMs = if (segmented && duration <= 0 && track.lengthBytes > 0 &&
                     track.fileName.substringAfterLast('.', "").lowercase() in setOf("bin", "cdda"))
                     track.lengthBytes / 2352L * 1000L / 75L else duration,
-                bitrateKbps = format.bitrateKbps.takeIf { format.isBitrateRelevant && it > 0 } ?: track.bitrateKbps,
-                sampleRateHz = format.sampleRate.takeIf { format.isSampleRateRelevant && it > 0 } ?: track.sampleRateHz,
-                channels = format.channels.takeIf { it > 0 } ?: track.channels,
-                isBitrateRelevant = format.isBitrateRelevant
+                bitrateKbps = format?.bitrateKbps?.takeIf { format.isBitrateRelevant && it > 0 } ?: track.bitrateKbps,
+                sampleRateHz = format?.sampleRate?.takeIf { format.isSampleRateRelevant && it > 0 } ?: track.sampleRateHz,
+                channels = format?.channels?.takeIf { it > 0 } ?: track.channels,
+                isBitrateRelevant = format?.isBitrateRelevant ?: track.isBitrateRelevant
             )
         }
     }

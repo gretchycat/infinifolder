@@ -1026,7 +1026,9 @@ def write_chiptune_formats():
     # SN76489 divider N = 3579545 / (32 * freq): C4->427 (0x1AB), E4->339 (0x153), G4->285 (0x11D)
     dividers = [(0, 427), (1, 339), (2, 285)]
     for ch, div in dividers:
-        vgm_cmds.extend(bytes([0x50, 0x80 | (ch << 5) | (div & 0x0F), (div >> 4) & 0x3F]))
+        # Every PSG byte requires its own VGM 0x50 command, including the
+        # continuation byte of a ten-bit tone divider.
+        vgm_cmds.extend(bytes([0x50, 0x80 | (ch << 5) | (div & 0x0F), 0x50, (div >> 4) & 0x3F]))
         vgm_cmds.extend(bytes([0x50, 0x90 | (ch << 5) | 0x02]))  # volume attenuation = 2 (loud)
     # Wait 66150 samples (90 NTSC frames of 735 samples via 0x62)
     for _ in range(90):
@@ -1045,7 +1047,7 @@ def write_chiptune_formats():
     struct.pack_into("<I", vgm_hdr, 52, 0x0C)           # VGM data offset relative to 0x34 -> 0x40
     vgm_bytes = bytes(vgm_hdr) + bytes(vgm_cmds)
     (AUDIO_DIR / "c_major_piano.vgm").write_bytes(vgm_bytes)
-    (AUDIO_DIR / "c_major_piano.vgz").write_bytes(gzip.compress(vgm_bytes))
+    (AUDIO_DIR / "c_major_piano.vgz").write_bytes(gzip.compress(vgm_bytes, mtime=0))
 
     # 2. DOSBox Raw OPL v2.0 (.dro) & Id Software (.imf) OPL2 FM stream playing C4, E4, G4 on channels 0, 1, 2
     opl_regs = [
@@ -1129,21 +1131,24 @@ def write_chiptune_formats():
     nsf_hdr[5] = 1   # version 1
     nsf_hdr[6] = 1   # 1 song
     nsf_hdr[7] = 1   # starting song 1
-    struct.pack_into("<HHH", nsf_hdr, 8, 0x8000, 0x8000, 0x8027)
+    struct.pack_into("<HH", nsf_hdr, 8, 0x8000, 0x8000)
     nsf_hdr[14:46] = b"C Major Piano Chord".ljust(32, b"\x00")
     nsf_hdr[46:78] = b"InfiniFolder".ljust(32, b"\x00")
     nsf_hdr[78:110] = b"2026 InfiniFolder".ljust(32, b"\x00")
     struct.pack_into("<H", nsf_hdr, 110, 16666)  # 60 Hz NTSC
     nsf_code = bytes([
         0xA9, 0x07, 0x8D, 0x15, 0x40,  # LDA #$07; STA $4015 (enable Pulse 1, Pulse 2, Triangle)
-        0xA9, 0x9C, 0x8D, 0x00, 0x40,  # Pulse 1 duty 50%, vol 12
+        0xA9, 0xBC, 0x8D, 0x00, 0x40,  # Pulse 1 duty 50%, vol 12, length-counter halt
         0xA9, 0xAB, 0x8D, 0x02, 0x40, 0xA9, 0x01, 0x8D, 0x03, 0x40,  # C4 timer = $01AB (427)
-        0xA9, 0x9C, 0x8D, 0x04, 0x40,  # Pulse 2 duty 50%, vol 12
+        0xA9, 0xBC, 0x8D, 0x04, 0x40,  # Pulse 2 duty 50%, vol 12, length-counter halt
         0xA9, 0x52, 0x8D, 0x06, 0x40, 0xA9, 0x01, 0x8D, 0x07, 0x40,  # E4 timer = $0152 (338)
         0xA9, 0xFF, 0x8D, 0x08, 0x40,  # Triangle linear counter
         0xA9, 0x8E, 0x8D, 0x0A, 0x40, 0xA9, 0x00, 0x8D, 0x0B, 0x40,  # G4 triangle timer = $008E (142)
         0x60, 0x60  # RTS for init & play
     ])
+    # Point to the final standalone RTS, not an operand inside initialization.
+    # NSF v1 carries no song length: this is an intentionally sustained chord.
+    struct.pack_into("<H", nsf_hdr, 12, 0x8000 + len(nsf_code) - 1)
     (AUDIO_DIR / "c_major_piano.nsf").write_bytes(bytes(nsf_hdr) + nsf_code)
 
     # 6. Super Nintendo SPC700 (.spc) 66048-byte snapshot with BRR piano sample and S-DSP voices 0..2 playing C4, E4, G4
@@ -1156,19 +1161,23 @@ def write_chiptune_formats():
     spc[46:78] = b"C Major Piano Chord".ljust(32, b"\x00")
     spc[78:110] = b"InfiniFolder".ljust(32, b"\x00")
     spc[131:163] = b"InfiniFolder Test Fixture".ljust(32, b"\x00")
-    spc[169:172] = b"2  "   # 2 seconds before fade
-    spc[172:177] = b"500  " # 500 ms fade
+    # Zero-padded digits avoid the ID666 text/binary ambiguity for short songs.
+    spc[169:172] = b"002"   # 2 seconds before fade
+    spc[172:177] = b"0500\x00" # 500 ms fade, followed by the empty author field
     # SPC700 RAM starts at offset 256 (65536 bytes)
     ram_base = 256
-    # Put `BRA $FE` (2F FE) infinite idle loop at $0200
-    spc[ram_base + 0x0200 : ram_base + 0x0202] = b"\x2F\xFE"
+    # Write KON through the emulated CPU after restoring the snapshot. A DSP
+    # register snapshot alone does not represent the internal voice/key state.
+    spc_code = bytes([0x8F, 0x4C, 0xF2, 0x8F, 0x00, 0xF3,
+                      0x8F, 0x07, 0xF3, 0x2F, 0xFE])
+    spc[ram_base + 0x0200 : ram_base + 0x0200 + len(spc_code)] = spc_code
     # Sample directory at $0300: entry 0 -> start $0400, loop $0400
     struct.pack_into("<HH", spc, ram_base + 0x0300, 0x0400, 0x0400)
     # 16-sample BRR block at $0400 (loop + end flags = 0xB3, followed by 8 bytes of triangle/sine wave nibbles)
     spc[ram_base + 0x0400 : ram_base + 0x0409] = bytes([0xB3, 0x24, 0x67, 0x76, 0x42, 0xEC, 0x98, 0x89, 0xCE])
     # S-DSP registers (128 bytes at offset 65792)
     dsp_base = 65792
-    pitches = [0x085F, 0x0A8C, 0x0C8B]  # C4, E4, G4 relative to 16-sample loop at 32 kHz
+    pitches = [0x0218, 0x02A3, 0x0323]  # C4, E4, G4: frequency * 16 * 4096 / 32000
     for v, p in enumerate(pitches):
         v_off = dsp_base + v * 16
         spc[v_off + 0] = 64              # VOL L
