@@ -80,3 +80,45 @@ checks cover geometry/options and encoded-source contracts. The device helper
 metadata, ownership, PNG bytes/alpha, cancellation and pull composition without
 bootstrapping widgets/fonts. Interactive controls and live SAF/network export
 remain handset acceptance work.
+
+## Viewport correction after checkpoint 18
+
+The owner reported that an edit left a black surface until a zoom gesture and
+that freeform crop handles initially appeared off screen. Operations and saved
+results appeared correct. The retained `20261031-170119-218` snapshot shows the
+blank viewer; the following snapshot shows intact archive thumbnails. These are
+UI observations, not evidence of damaged pixels.
+
+The reset matrix rotated about the image center while its centering calculation
+used bounds rotated about the origin. A real Android Matrix reproduction places
+the 320×200 fixture entirely outside a 1344×2774 view after a quarter-turn.
+Panning also assumed a positive, unrotated matrix scale. The viewport now builds
+one complete transform with a consistent origin, centers its actual rotated
+bounds and clamps panning using mapped bounds. Bitmap replacement reapplies the
+transform even when layout dimensions do not change; zero-size resets defer until
+layout. These operations remain host display geometry; Canvas owns pixel edits.
+
+Crop initialization intersects the displayed image with the visible viewport
+before insetting it, reserves space for the editing toolbars, and leaves an empty
+selection when there is no visible image. Corner and whole-box drags stay within
+that visible area. Small images keep valid selections without the previous
+100-pixel off-screen fallback. Inverse mapping converts density-scaled drawable
+coordinates to actual source pixels before calling Canvas. `ui.image.viewport`
+log entries capture reset/crop geometry without logging resource identities.
+
+Repeat rotate, flip, resize and crop without pinching to restore the image.
+Check freeform and preset crops in fit/fill, all four handles, toolbar clearance,
+dragging against every edge and exported pixels. Repeat from the ZIP fixture.
+Handset acceptance of this correction remains pending.
+
+Sixteen new JVM geometry cases pass; the full gate reports 790 cases, 760 pass
+and the same 30 pre-existing failures. `scripts/verify-image-viewport-runtime.py`
+loads the packaged helper geometry from the APK and checks real Android matrices,
+software-drawn image pixels, rotated pan/crop and density-aware inverse mapping.
+It also reproduces the old off-screen formula. It does not instantiate ImageView
+or exercise hardware rendering/touch input; those remain the handset checks above.
+
+The checkpoint 19 APK also passes the existing 12 image-edit/PNG, 10 EXIF and
+eight PDF native groups: 35 focused runtime groups including the viewport checks.
+Full and image-only debug builds pass. Logs are retained as `checkpoint19-*`
+under `build/infinistream-migration`.

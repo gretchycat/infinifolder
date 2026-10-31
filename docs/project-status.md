@@ -52,11 +52,21 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Implemented; focused acceptance still needed
 
+Checkpoint 19 corrects the reported black image surface after edits and initial
+off-screen freeform crop handles in host display geometry. The previous rotation
+formula is reproduced with Android Matrix. Resets/panning now use consistent
+rotated bounds, crop handles stay in the visible area below/above toolbars, and
+source-pixel mapping accounts for drawable density. The owner reports operations
+and saving appeared correct before this fix; interactive acceptance remains
+pending. The full gate reports 790 cases, 760 pass and the same 30 known
+failures; all 16 new geometry tests and 35 focused native groups pass.
+See [viewport checks](image-processing.md#viewport-correction-after-checkpoint-18).
+
 Checkpoint 18 moves image bitmap rotation/flip/crop/resize and PNG encoding into
 Canvas processors, retaining host controls, resize-dialog snapshots, sampled
 editing and PNG-copy publication. Outputs carry actual geometry/format metadata
 and explicit ownership for copies/aliases/transfers. Asymmetric reference images
-and ZIP copies are in the image fixture directory. Current evidence is 774 cases
+and ZIP copies are in the image fixture directory. Checkpoint 18 recorded 774 cases
 with the same 30 known failures and 86 passing device pipeline checks.
 [Image edit/export acceptance](image-processing.md) remains; portable processing
 and streamed PNG publication remain future work.

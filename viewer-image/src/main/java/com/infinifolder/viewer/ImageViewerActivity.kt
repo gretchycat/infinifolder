@@ -406,16 +406,24 @@ class ImageViewerActivity : ViewerActivity() {
         zoomImageView.resetZoom()
     }
 
+    private fun startCrop(aspectW: Float = 0f, aspectH: Float = 0f) {
+        zoomImageView.setCropViewportInsets(
+            if (topBar.visibility == View.VISIBLE) topBar.bottom - zoomImageView.top else 0,
+            if (editPanel.visibility == View.VISIBLE) zoomImageView.bottom - editPanel.top else 0)
+        zoomImageView.isCropMode = true
+        if (aspectW > 0f && aspectH > 0f) zoomImageView.setCropAspectRatio(aspectW, aspectH)
+    }
+
     private fun showCropOptions() {
         val items = arrayOf("Freeform", "Square (1:1)", "4:3", "16:9", "Apply Crop", "Cancel Crop")
         AlertDialog.Builder(this)
             .setTitle("Crop")
             .setItems(items) { _, which ->
                 when (which) {
-                    0 -> { zoomImageView.isCropMode = true }
-                    1 -> { zoomImageView.isCropMode = true; zoomImageView.setCropAspectRatio(1f, 1f) }
-                    2 -> { zoomImageView.isCropMode = true; zoomImageView.setCropAspectRatio(4f, 3f) }
-                    3 -> { zoomImageView.isCropMode = true; zoomImageView.setCropAspectRatio(16f, 9f) }
+                    0 -> startCrop()
+                    1 -> startCrop(1f, 1f)
+                    2 -> startCrop(4f, 3f)
+                    3 -> startCrop(16f, 9f)
                     4 -> {
                         if (originalBitmap == null) return@setItems
                         val cropped = zoomImageView.getCropBounds()?.let { transformBitmap(ImageTransform.Crop(it)) }

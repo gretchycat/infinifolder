@@ -397,11 +397,43 @@ checkpoint18-* under build/infinistream-migration. Earlier audio results before
 the dialog-snapshot review are retained separately; final results use the final
 APK. Interactive edit/export controls and live providers remain handset checks.
 
+## Checkpoint 19: image viewport and crop follow-up
+
+The owner's checkpoint 18 handset check found a black surface after edits that
+reappeared after zoom, and initial freeform crop handles outside the screen.
+Operations and saved results appeared correct. Retained 17:01 snapshots show
+an empty viewer followed by correct archive thumbnails; no matrix state was
+recorded by that APK.
+
+The host reset rotated about the image center but centered using bounds rotated
+about the origin. The old formula is reproduced with a real Android Matrix:
+the 320×200 fixture lands entirely outside the 1344×2774 view after 90 degrees.
+Reset now constructs a complete matrix using one origin and actual rotated
+bounds. Pan limits use mapped bounds at every orientation. Replacing a bitmap
+reapplies placement even without a layout-size change, with resets deferred for
+zero-size views. Viewport/crop state is now included in diagnostic snapshots.
+
+Crop initialization intersects image and visible viewport before adding margins,
+reserves toolbar space, and removes the off-screen 100-pixel fallback. Corners
+and whole-box dragging stay within visible bounds. Drawable coordinates are
+converted to actual bitmap pixels before Canvas cropping, including density
+scaling. Pixel transforms, library pins and save/publication policy are unchanged.
+See [image processing](image-processing.md#viewport-correction-after-checkpoint-18).
+Verification: 790 JVM cases, 760 passing and the unchanged 30 known failures;
+all 16 new display-geometry cases pass. The native viewport helper reproduces
+the old bug and checks rotation fit/fill, immediately visible software-drawn
+pixels, rotated pan/crop and density-aware inverse mapping. The five viewport,
+12 edit/PNG, 10 EXIF and eight PDF groups pass against the same rebuilt full APK
+(35 focused native groups). Full and image-only debug builds pass. Logs use
+`checkpoint19-*` under `build/infinistream-migration`; the viewport runner is
+`scripts/verify-image-viewport-runtime.py`. Interactive acceptance of the
+correction remains pending.
+
 ## Final verification and reproducibility
 
-Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 774-case checkpoint.
+Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 790-case checkpoint.
 
-Current totals: **774 tests, 744 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
+Current totals: **790 tests, 760 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
 | Independent library | Tests | Failures |
 | --- | ---: | ---: |
@@ -426,4 +458,4 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. No opaque native blob or language port was introduced by this migration.
 
-Final full debug APK SHA-256: `dede67c31304c368b139345f23d797d6e7380c6fbc13604a685b3f9d95271ac9`.
+Final full debug APK SHA-256: `9e3c6bb156a78e5b3a94130a6e003c2fd4e3e09b375bdc59951aef982ac1870f`.

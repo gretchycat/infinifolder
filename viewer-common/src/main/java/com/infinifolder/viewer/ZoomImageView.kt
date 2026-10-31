@@ -2,14 +2,13 @@ package com.infinifolder.viewer
 
 import android.content.Context
 import android.graphics.*
+import android.graphics.drawable.BitmapDrawable
 import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.widget.ImageView
-import kotlin.math.max
-import kotlin.math.min
 
 /**
  * High-performance zoomable, pannable, and editable ImageView.
@@ -22,9 +21,11 @@ class ZoomImageView @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : ImageView(context, attrs, defStyleAttr) {
 
-    private val matrixValues = FloatArray(9)
     private val drawMatrix = Matrix()
 
+    private var resetPending = false
+    private var cropTopInset = 0
+    private var cropBottomInset = 0
     private var scaleFactor = 1f
     private val minScale = 1f
     private val maxScale = 5f
@@ -82,8 +83,7 @@ class ZoomImageView @JvmOverloads constructor(
                 detector.focusY
             )
             checkBounds()
-            imageMatrix = drawMatrix
-            invalidate()
+            publishMatrix()
             return true
         }
     })
@@ -97,8 +97,7 @@ class ZoomImageView @JvmOverloads constructor(
                 scaleFactor = 2.5f
                 drawMatrix.postScale(2.5f, 2.5f, e.x, e.y)
                 checkBounds()
-                imageMatrix = drawMatrix
-                invalidate()
+                publishMatrix()
             }
             return true
         }
@@ -108,8 +107,7 @@ class ZoomImageView @JvmOverloads constructor(
             if (scaleFactor > 1f) {
                 drawMatrix.postTranslate(-distanceX, -distanceY)
                 checkBounds()
-                imageMatrix = drawMatrix
-                invalidate()
+                publishMatrix()
                 return true
             }
             return false
@@ -155,137 +153,114 @@ class ZoomImageView @JvmOverloads constructor(
         resetZoom()
     }
 
-    fun resetZoom() {
-        scaleFactor = 1f
-        drawMatrix.reset()
-        val d = drawable ?: return
-        val viewW = width.toFloat()
-        val viewH = height.toFloat()
-        if (viewW <= 0f || viewH <= 0f) return
+    private fun RectF.geometry() = ViewportRect(left, top, right, bottom)
 
-        val dW = d.intrinsicWidth.toFloat()
-        val dH = d.intrinsicHeight.toFloat()
-        if (dW <= 0f || dH <= 0f) return
+    private fun RectF.setGeometry(rect: ViewportRect?) {
+        if (rect == null) setEmpty() else set(rect.left, rect.top, rect.right, rect.bottom)
+    }
 
-        // Handle rotation
-        if (rotationAngle != 0f) {
-            drawMatrix.postRotate(rotationAngle, dW / 2f, dH / 2f)
-        }
+    private fun viewport() = ViewportRect(0f, 0f, width.toFloat(), height.toFloat())
 
-        val rotatedRect = RectF(0f, 0f, dW, dH)
-        val rotM = Matrix().apply { postRotate(rotationAngle) }
-        rotM.mapRect(rotatedRect)
-        val rotW = rotatedRect.width()
-        val rotH = rotatedRect.height()
+    private fun mappedImageBounds(): RectF? {
+        val d = drawable ?: return null
+        return RectF(0f, 0f, d.intrinsicWidth.toFloat(), d.intrinsicHeight.toFloat()).also { drawMatrix.mapRect(it) }
+    }
 
-        val scale = if (isFitMode) {
-            min(viewW / rotW, viewH / rotH)
-        } else {
-            max(viewW / rotW, viewH / rotH)
-        }
-        drawMatrix.postScale(scale, scale)
+    private fun cropViewport() = ViewportRect(0f, cropTopInset.toFloat(), width.toFloat(), (height - cropBottomInset).toFloat())
 
-        // Center on screen
-        val dx = (viewW - rotW * scale) / 2f - rotatedRect.left * scale
-        val dy = (viewH - rotH * scale) / 2f - rotatedRect.top * scale
-        drawMatrix.postTranslate(dx, dy)
-
-        imageMatrix = drawMatrix
+    fun setCropViewportInsets(top: Int, bottom: Int) {
+        cropTopInset = top.coerceAtLeast(0)
+        cropBottomInset = bottom.coerceAtLeast(0)
         if (isCropMode) initCropRect()
-        invalidate()
+    }
+
+    private fun publishMatrix() {
+        // Publish a completed matrix, including after a same-size bitmap replacement.
+        super.setImageMatrix(Matrix(drawMatrix))
+        postInvalidateOnAnimation()
+    }
+
+    override fun setImageBitmap(bitmap: Bitmap?) {
+        super.setImageBitmap(bitmap)
+        resetZoom()
+    }
+
+    fun resetZoom() {
+        resetPending = true
+        val d = drawable ?: return
+        val bounds = RectF(0f, 0f, d.intrinsicWidth.toFloat(), d.intrinsicHeight.toFloat())
+        // Rotation and its bounds must use the same origin. Mixing center and origin
+        // rotation used to translate quarter-turn images completely off screen.
+        val next = Matrix().apply { postRotate(rotationAngle) }
+        next.mapRect(bounds)
+        val placement = ImageViewportGeometry.placement(bounds.geometry(), viewport(), isFitMode) ?: return
+        next.postScale(placement.scale, placement.scale)
+        next.postTranslate(placement.translateX, placement.translateY)
+        drawMatrix.set(next)
+        scaleFactor = 1f
+        resetPending = false
+        publishMatrix()
+        if (isCropMode) initCropRect()
+        recordViewport("reset")
     }
 
     private fun checkBounds() {
-        val d = drawable ?: return
-        drawMatrix.getValues(matrixValues)
-        val transX = matrixValues[Matrix.MTRANS_X]
-        val transY = matrixValues[Matrix.MTRANS_Y]
-        val currentScale = matrixValues[Matrix.MSCALE_X]
-
-        val viewW = width.toFloat()
-        val viewH = height.toFloat()
-        val imgW = d.intrinsicWidth * currentScale
-        val imgH = d.intrinsicHeight * currentScale
-
-        var deltaX = 0f
-        var deltaY = 0f
-
-        if (imgW < viewW) {
-            deltaX = (viewW - imgW) / 2f - transX
-        } else if (transX > 0) {
-            deltaX = -transX
-        } else if (transX + imgW < viewW) {
-            deltaX = viewW - (transX + imgW)
-        }
-
-        if (imgH < viewH) {
-            deltaY = (viewH - imgH) / 2f - transY
-        } else if (transY > 0) {
-            deltaY = -transY
-        } else if (transY + imgH < viewH) {
-            deltaY = viewH - (transY + imgH)
-        }
-
-        drawMatrix.postTranslate(deltaX, deltaY)
+        val image = mappedImageBounds() ?: return
+        val (dx, dy) = ImageViewportGeometry.panCorrection(image.geometry(), viewport())
+        drawMatrix.postTranslate(dx, dy)
     }
 
     private fun initCropRect() {
-        val d = drawable ?: return
-        val mappedRect = RectF(0f, 0f, d.intrinsicWidth.toFloat(), d.intrinsicHeight.toFloat())
-        drawMatrix.mapRect(mappedRect)
-
-        val margin = 40f
-        cropRect.set(
-            max(mappedRect.left + margin, 20f),
-            max(mappedRect.top + margin, 20f),
-            min(mappedRect.right - margin, width - 20f),
-            min(mappedRect.bottom - margin, height - 20f)
-        )
-        if (cropRect.right <= cropRect.left) cropRect.right = cropRect.left + 100f
-        if (cropRect.bottom <= cropRect.top) cropRect.bottom = cropRect.top + 100f
+        cropRect.setGeometry(mappedImageBounds()?.let {
+            ImageViewportGeometry.initialCrop(it.geometry(), cropViewport())
+        })
+        recordViewport("crop")
+        invalidate()
     }
 
     fun setCropAspectRatio(aspectW: Float, aspectH: Float) {
-        if (aspectW <= 0f || aspectH <= 0f) return
-        val targetRatio = aspectW / aspectH
-        val curW = cropRect.width()
-        val curH = cropRect.height()
-        val curRatio = curW / curH
-
-        if (curRatio > targetRatio) {
-            val newW = curH * targetRatio
-            val cx = cropRect.centerX()
-            cropRect.left = cx - newW / 2f
-            cropRect.right = cx + newW / 2f
-        } else {
-            val newH = curW / targetRatio
-            val cy = cropRect.centerY()
-            cropRect.top = cy - newH / 2f
-            cropRect.bottom = cy + newH / 2f
-        }
+        if (!aspectW.isFinite() || !aspectH.isFinite() || aspectW <= 0f || aspectH <= 0f) return
+        cropRect.setGeometry(ImageViewportGeometry.aspect(cropRect.geometry(), aspectW / aspectH))
         invalidate()
+    }
+
+    private fun recordViewport(reason: String) {
+        val values = FloatArray(9).also { drawMatrix.getValues(it) }
+        com.infinifolder.storage.DiagnosticLog.record("ui.image.viewport",
+            "reason=$reason view=${width}x$height drawable=${drawable?.intrinsicWidth}x${drawable?.intrinsicHeight} " +
+                "rotation=$rotationAngle fit=$isFitMode pending=$resetPending matrix=${values.contentToString()} " +
+                "mapped=${mappedImageBounds()} crop=$cropRect cropViewport=${cropViewport()}")
     }
 
     /** UI maps the display rectangle; Canvas owns source-pixel clamping and cropping. */
     fun getCropBounds(): com.infinifolder.preview.ImageCropBounds? {
-        if (drawable == null) return null
+        val bitmap = (drawable as? BitmapDrawable)?.bitmap ?: return null
+        return getCropBounds(bitmap.width, bitmap.height)
+    }
+
+    private fun getCropBounds(pixelWidth: Int, pixelHeight: Int): com.infinifolder.preview.ImageCropBounds? {
+        val d = drawable ?: return null
+        if (cropRect.isEmpty) return null
         val inv = Matrix()
         if (!drawMatrix.invert(inv)) return null
         val mappedCrop = RectF()
         inv.mapRect(mappedCrop, cropRect)
-        return com.infinifolder.preview.ImageCropBounds(mappedCrop.left, mappedCrop.top, mappedCrop.right, mappedCrop.bottom)
+        // Drawable coordinates may be density-scaled; Canvas expects source pixels.
+        val bounds = ImageViewportGeometry.sourceCrop(mappedCrop.geometry(), d.intrinsicWidth,
+            d.intrinsicHeight, pixelWidth, pixelHeight) ?: return null
+        return com.infinifolder.preview.ImageCropBounds(bounds.left, bounds.top, bounds.right, bounds.bottom)
     }
 
     /** Compatibility for existing callers; new consumers keep the resulting frame metadata. */
     fun getCroppedBitmap(sourceBitmap: Bitmap): Bitmap? {
-        val bounds = getCropBounds() ?: return null
+        val bounds = getCropBounds(sourceBitmap.width, sourceBitmap.height) ?: return null
         return com.infinifolder.preview.ImageTransforms.apply(com.infinifolder.preview.BitmapFrame(sourceBitmap),
             com.infinifolder.preview.ImageTransform.Crop(bounds)).use { it.takeBitmap() }
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
-        if (changed) {
+        if (changed || resetPending) {
             resetZoom()
         }
     }
@@ -316,18 +291,11 @@ class ZoomImageView @JvmOverloads constructor(
                 }
             }
             MotionEvent.ACTION_MOVE -> {
-                when (activeCropHandle) {
-                    0 -> { cropRect.left = min(x, cropRect.right - 50f); cropRect.top = min(y, cropRect.bottom - 50f) }
-                    1 -> { cropRect.right = max(x, cropRect.left + 50f); cropRect.top = min(y, cropRect.bottom - 50f) }
-                    2 -> { cropRect.right = max(x, cropRect.left + 50f); cropRect.bottom = max(y, cropRect.top + 50f) }
-                    3 -> { cropRect.left = min(x, cropRect.right - 50f); cropRect.bottom = max(y, cropRect.top + 50f) }
-                    4 -> {
-                        // Drag whole crop rect
-                        val dx = x - cropRect.centerX()
-                        val dy = y - cropRect.centerY()
-                        cropRect.offset(dx, dy)
-                    }
+                val bounds = mappedImageBounds()?.let {
+                    ImageViewportGeometry.visibleBounds(it.geometry(), cropViewport())
                 }
+                if (bounds != null) cropRect.setGeometry(ImageViewportGeometry.dragCrop(
+                    cropRect.geometry(), activeCropHandle, x, y, bounds))
                 invalidate()
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
