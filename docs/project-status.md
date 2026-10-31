@@ -47,10 +47,18 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Implemented; focused acceptance still needed
 
+Checkpoint 17 moves image-inspector EXIF parsing behind a Canvas common-source
+processor with the existing Android backend. Host fields/formatting remain;
+source cancellation, ownership, short reads and stale-dialog suppression are
+explicit. Synthetic tagged JPEGs and ZIP copies are in the image fixture folder.
+Current evidence is 748 cases with the same 30 known failures and 74 passing
+packaged-APK pipeline checks. [Image inspector UI/provider checks](image-inspector.md)
+remain acceptance work; image editor processing remains a later migration.
+
 Checkpoint 16 moves EPUB structural parsing into Scribe's portable core and ZIP
 resource expansion into Vault, retaining the host's full staging/cache leases,
 WebView, themes and font/navigation controls. Synthetic EPUB 2/3, fallback and
-invalid samples are in `filesystem-test-images/documents/`. Current evidence is
+invalid samples are in `filesystem-test-images/documents/`. Checkpoint 16 recorded
 727 cases with the same 30 known failures and 64 passing device pipeline checks.
 The owner confirms EPUB viewing after the test handoff. Broader interruption and
 live remote/provider checks remain. EPUB 3 NAV-label interpretation

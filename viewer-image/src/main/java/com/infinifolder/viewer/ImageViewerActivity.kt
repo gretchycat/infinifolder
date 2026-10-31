@@ -5,7 +5,6 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Matrix
-import android.media.ExifInterface
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
@@ -36,6 +35,8 @@ class ImageViewerActivity : ViewerActivity() {
 
     private var imageLoadGeneration = 0
     private var imageLoadThread: Thread? = null
+    private var metadataLoadGeneration = 0
+    private var metadataLoadThread: Thread? = null
     private var originalBitmap: Bitmap? = null
     private var decodedImageMetadata: io.github.gretchycat.infinistream.StreamMetadata? = null
     private var isBarsVisible = true
@@ -606,6 +607,8 @@ class ImageViewerActivity : ViewerActivity() {
 
     private fun loadImage(uri: Uri) {
         subtitleView.text = "Loading…"
+        metadataLoadGeneration++
+        metadataLoadThread?.interrupt()
         val generation = ++imageLoadGeneration
         imageLoadThread?.interrupt()
         imageLoadThread = Thread {
@@ -653,38 +656,22 @@ class ImageViewerActivity : ViewerActivity() {
             com.infinifolder.preview.BitmapFrame(bmp, provenance = decodedImageMetadata?.provenance ?: io.github.gretchycat.infinistream.Provenance()).metadata.attributes["colorSpace"]?.let { infoList += "Color space: $it" }
         }
 
-        Thread {
-            try {
-                MediaSourceAdapter.openStream(this, uri).use { s ->
-                    val exif = ExifInterface(s)
-                    val make = exif.getAttribute(ExifInterface.TAG_MAKE)
-                    val model = exif.getAttribute(ExifInterface.TAG_MODEL)
-                    val date = exif.getAttribute(ExifInterface.TAG_DATETIME)
-                    val exposure = exif.getAttribute(ExifInterface.TAG_EXPOSURE_TIME)
-                    val fNum = exif.getAttribute(ExifInterface.TAG_F_NUMBER)
-                    val iso = exif.getAttribute(ExifInterface.TAG_ISO_SPEED_RATINGS)
-                    val focal = exif.getAttribute(ExifInterface.TAG_FOCAL_LENGTH)
-
-                    runOnUiThread {
-                        if (!make.isNullOrBlank() || !model.isNullOrBlank()) infoList += "Camera: ${make ?: ""} ${model ?: ""}".trim()
-                        if (!date.isNullOrBlank()) infoList += "Date: $date"
-                        if (!exposure.isNullOrBlank()) infoList += "Exposure: ${exposure}s"
-                        if (!fNum.isNullOrBlank()) infoList += "Aperture: f/$fNum"
-                        if (!iso.isNullOrBlank()) infoList += "ISO: $iso"
-                        if (!focal.isNullOrBlank()) infoList += "Focal Length: ${focal}mm"
-
-                        val latLong = FloatArray(2)
-                        if (exif.getLatLong(latLong)) {
-                            infoList += "GPS: %.5f, %.5f".format(latLong[0], latLong[1])
-                        }
-
-                        displayMetadataDialog(infoList)
-                    }
+        val generation = ++metadataLoadGeneration
+        metadataLoadThread?.interrupt()
+        metadataLoadThread = Thread {
+            val fields = try {
+                MediaSourceAdapter.openSource(applicationContext, uri).use { source ->
+                    com.infinifolder.preview.ImageMetadata.read(source).use { it.fields }
                 }
             } catch (_: Exception) {
-                runOnUiThread { displayMetadataDialog(infoList) }
+                null // Preserve the inspector's basic details when EXIF is absent/unreadable.
             }
-        }.start()
+            runOnUiThread {
+                if (isFinishing || isDestroyed || generation != metadataLoadGeneration) return@runOnUiThread
+                fields?.let { infoList += it.inspectorLines() }
+                displayMetadataDialog(infoList)
+            }
+        }.apply { start() }
     }
 
     private fun displayMetadataDialog(infoList: List<String>) {
@@ -791,6 +778,9 @@ class ImageViewerActivity : ViewerActivity() {
         imageLoadGeneration++
         imageLoadThread?.interrupt()
         imageLoadThread = null
+        metadataLoadGeneration++
+        metadataLoadThread?.interrupt()
+        metadataLoadThread = null
         stopSlideshow()
         super.onDestroy()
     }

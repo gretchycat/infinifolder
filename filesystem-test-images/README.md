@@ -47,7 +47,7 @@ The original `fat*.img`, `ext*.img`, `hfs.img`, `ntfs.img`, and archive files ar
 | `archives/legacy/` | RAR/ARJ single, multipart, missing-volume and damaged cases, with provenance/licenses |
 | `compression/zstandard/` | Standalone compressed-file fixture |
 | `disks/` | Complete MBR, GPT and Apple Partition Map disks and gzip wrappers |
-| `images/` | 80 image format fixtures rendered from the InfiniFolder app icon (`generate-media-fixtures.py`) |
+| `images/` | 80 image format fixtures rendered from the InfiniFolder app icon, plus synthetic EXIF JPEGs/invalid input and ZIP copies (`generate-media-fixtures.py`, `generate-image-metadata-fixtures.py`) |
 | `audio/` | 75 audio/sound format fixtures synthesized as a C-major piano chord (`C4`–`E4`–`G4`–`C5`, `generate-media-fixtures.py`) |
 | `documents/` | CSV/TSV, text/Markdown/HTML/JSON, large read-only previews, paged PDF/PostScript/EPS/LaTeX, EPUB 2/3/fallback/invalid books and archive-access ZIPs (`generate-document-fixtures.py`, `generate-paged-document-fixtures.py`, `generate-epub-fixtures.py`) |
 
@@ -237,3 +237,14 @@ and preserves existing samples, including edits made during handset testing.
 
 Small source files and a custom color/font descriptor are under
 [syntax/](syntax/README.md), with viewing, editing and theme import/export checks.
+
+
+## Image inspector fixtures
+
+`images/sample-exif-le.jpg` and `sample-exif-be.jpg` retain app-icon JPEG pixels
+with synthetic camera/date/exposure/aperture/ISO/focal-length/GPS tags. Their
+expected values/hashes and archive copies are beside them. No real location or
+camera information is included. The deliberately malformed
+`invalid-metadata.jpg` checks graceful failure. See [inspector checks](../docs/image-inspector.md).
+The standard-library generator preserves existing files and unrelated manifest
+entries, including edited document fixtures.

@@ -19,6 +19,7 @@ MODULES = [
     (':storage-engine:testDebugUnitTest', 'storage-engine/build/test-results/testDebugUnitTest'),
     (':viewer-common:testDebugUnitTest', 'viewer-common/build/test-results/testDebugUnitTest'),
     (':viewer-audio:testDebugUnitTest', 'viewer-audio/build/test-results/testDebugUnitTest'),
+    (':viewer-image:testDebugUnitTest', 'viewer-image/build/test-results/testDebugUnitTest'),
     (':viewer-epub:testDebugUnitTest', 'viewer-epub/build/test-results/testDebugUnitTest'),
     (':libinfinistream:stream-core:test', 'libraries/libinfinistream/stream-core/build/test-results/test'),
     (':libinfinisound:audio-core:test', 'libraries/libinfinisound/audio-core/build/test-results/test'),

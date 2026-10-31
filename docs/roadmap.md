@@ -16,6 +16,11 @@ Updated 2026-10-31. See [current status](project-status.md) for confirmed behavi
 
 Audio output and analysis now share library-decoded PCM sources, with bounded startup and independent frame blocks for seek-capable decoders. Playback prefers portable MPEG for validated content, retaining Android fallback. Portable FLAC now positions exact frames while retaining 24/32-bit precision. Audio uses demonstrated positional provider handles directly, with explicit staging for unsupported/sequential, CUE, companion-file and extraction-backed archive inputs. Unknown-length preparation and other non-seekable decoder prefixes remain. Local MP3 seeking and gapless are user-confirmed; high-resolution FLAC, live remote/container and visualizer acceptance remain. The full image viewer now composes Canvas common resources and output frame metadata while retaining its native decode/sampling paths.
 
+The [image inspector](image-inspector.md) also uses a Canvas common-source EXIF
+processor with the existing Android backend. Host labels/formatting remain;
+source ownership, cancellation and legal short reads are covered at the boundary.
+Portable EXIF parsing and image-editor processing remain future migration work.
+
 Current progress and known pre-existing failures belong in [migration checkpoints](infinistream-migration.md). The remaining product/safety work below continues alongside this architecture work; no language port is included.
 
 PDF now uses Scribe's optional Android backend with common document/frame metadata

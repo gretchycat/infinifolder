@@ -615,6 +615,26 @@
     "bytes": 18874368,
     "sha256": "cd1beed70805398c8d0b2e5cef7b66b912df30652e3953dbb124d539ae5d607a"
   },
+  "images/image-metadata-checks.zip": {
+    "bytes": 29313,
+    "sha256": "517dbb573e3ec28797728380ca195c237298134ff4b4e6bb0cbfbf0261b73d51"
+  },
+  "images/image-metadata-expected.json": {
+    "bytes": 709,
+    "sha256": "1e6186302718086d2e810bfd76ed549344e1353c8556d03f41b8857a5a055ec6"
+  },
+  "images/invalid-metadata.jpg": {
+    "bytes": 20,
+    "sha256": "8ad35f68112819e06238479063993b9d768f590e33460663dd7c6f4229e8148d"
+  },
+  "images/sample-exif-be.jpg": {
+    "bytes": 14353,
+    "sha256": "a5fcc309edd53b67d7e1f2a0ce13547b181aeb5b6ed73cb1471706303789cfde"
+  },
+  "images/sample-exif-le.jpg": {
+    "bytes": 14353,
+    "sha256": "a91940b5e745ca0b1dfecb723a4b1da3395eb0d3ab988e0655e1750e6c33b5be"
+  },
   "syntax/01-source.kt": {
     "bytes": 227,
     "sha256": "b83d4a0871e713f1b997b5da68c53fb066bfbce3431dba8c9fc5004e8bf07d6a"

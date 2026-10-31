@@ -12,7 +12,7 @@ All remote main hashes were checked against the local tested heads. Sound's exis
 | [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | [`faee836`](https://github.com/gretchycat/libinfinistore/commit/faee836518fca09d2c9ba8cedb174b1a80779809) |
 | [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`0522412`](https://github.com/gretchycat/libinfinivault/commit/0522412d226a8171afa10da04b338cb5b38470c8) |
 | [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`61a4644`](https://github.com/gretchycat/libinfinisound/commit/61a4644bdfd216597bc3fe24ef3a55984bcc2363) |
-| [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`ed685ad`](https://github.com/gretchycat/libinfinicanvas/commit/ed685ad0dfeae0dbacd58f26ce2e41fcc577bdd5) |
+| [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`3db2437`](https://github.com/gretchycat/libinfinicanvas/commit/3db243787754781862c36cafd751d80c5a75f09e) |
 | [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`084e9de`](https://github.com/gretchycat/libinfiniscribe/commit/084e9de5ab5335c79ae88fdf2c297314cfd664e3) |
 | [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`447c92d`](https://github.com/gretchycat/libinfinivideo/commit/447c92d593876d40a39807b424c3e0fb35c23807) |
 
@@ -22,7 +22,8 @@ Vault -> Store + Stream + Sound audio-api (playlist containers)
 Sound / Canvas / Scribe / Video -> Stream
 Host storage-engine -> Store + Vault (runtime/router/external-edit composition)
 viewer-common -> host storage-engine + Canvas + Scribe
-viewer-audio -> Sound; viewer-video -> Video; viewer-csv / viewer-pdf -> Scribe
+viewer-audio -> Sound; viewer-video -> Video; viewer-image -> Canvas
+viewer-csv / viewer-pdf -> Scribe
 viewer-epub -> Scribe + Vault (host retains Store cache/staging leases)
 ```
 
@@ -287,11 +288,60 @@ The owner confirms EPUB viewing is working after the checkpoint 16 fixture/test
 handoff (2026-10-31). Broader interruption/back-during-load and live remote/provider
 checks remain separate acceptance work.
 
+## Checkpoint 17: common-source image inspector
+
+Canvas now owns the image inspector's existing Android EXIF calls through the
+registered `canvas.android.exif` pull processor. The live viewer opens a common
+ByteSource using its existing Store adapter, borrows it to the processor and
+closes it after work. The library also offers an owned-open SourceResource route.
+The immutable result retains raw camera/date/exposure/aperture/ISO/focal/GPS
+values, actual structured metadata and source provenance/warnings. It does not
+inherit encoded lengths/read capabilities, pixel attributes or verification.
+Host labels, order, units, locale/float precision and basic current-bitmap details
+remain. The existing Android EXIF backend and dependencies are retained.
+
+Reads and final output check cancellation; source IOExceptions propagate even
+when the platform parser catches them. Device checks exposed Android EXIF's full requested
+read assumption: a one-byte-at-a-time source returned empty fields. The adapter
+now fills the backend's supplied buffer across short reads until its request is
+satisfied or EOF, without staging or another buffer. The original failed attempt
+remains in checkpoint17-exif-short-read-attempt.log. Corrected device checks pass.
+Newer inspector requests, image navigation and teardown invalidate old dialog
+completions and interrupt source work; no new source stat runs on the UI thread.
+Image decode/orientation/edit/export controls retain their previous paths.
+
+Synthetic little-/big-endian tagged JPEGs, invalid metadata, original hashes and
+ZIP copies live beside existing image fixtures. Their standard-library generator
+preserves existing files and unrelated manifest entries. [Inspector checks and
+scope](image-inspector.md) distinguish source metadata from current bitmap details.
+Portable EXIF parsing, metadata writes and image-editor processing remain future
+work, along with the previously recorded document format additions.
+
+Verification: 748 cases, 718 pass, the same 30 pre-existing failures and no new
+failures/skips/missing cases. The 21 additions are 16 Canvas processor contracts
+and five host presentation checks. The full APK, independent Canvas build/tests
+and image-only host APK pass. Ten new actual-APK Android checks compare legacy
+field values, both byte orders, untagged input, source ownership/positional
+cursors, short/unknown-length reads, cancellation/provider errors, invalid-input
+cleanup, 100 repeated opens and ZIP input. All 64 preceding runtime cases repeat
+against the same APK, for 74 total, including PDF/EPUB pipelines and muted MP3
+seeks/gapless. A helper invocation with a nonexistent row-count fixture path was
+corrected; only the successful rerun counts. The muted-audio helper's Handler
+bridge now handles the expected stop interruption as cancellation, retaining
+failure checks for unexpected active interruptions; the original shutdown-log
+attempt is retained and the repeated audio cases pass. A repeated FLAC probe hit
+the previously observed native stale-position callback race; the unchanged
+callback/1500 ms/sample checks pass on retry. Its failed log remains in
+checkpoint17-flac-stale-callback-attempt.log. The final audio aggregate contains
+all 19 successful case logs against the same APK, retaining these separate failed
+attempts. Logs use checkpoint17-* under
+build/infinistream-migration. Image UI and live provider acceptance remain pending.
+
 ## Final verification and reproducibility
 
-Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 727-case checkpoint.
+Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 748-case checkpoint.
 
-Current totals: **727 tests, 697 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
+Current totals: **748 tests, 718 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
 | Independent library | Tests | Failures |
 | --- | ---: | ---: |
@@ -299,7 +349,7 @@ Current totals: **727 tests, 697 pass, 30 pre-existing failures, no new failures
 | Store | 6 | 0 |
 | Vault | 9 | 0 |
 | Sound | 69 | 0 |
-| Canvas | 10 | 0 |
+| Canvas | 26 | 0 |
 | Scribe | 99 | 0 |
 | Video | 4 | 0 |
 
@@ -311,9 +361,9 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 
 - Legacy StorageProvider/BlockDevice/File APIs and transitive exports remain where callers still need them. Do not remove them before source/consumer and publication/recovery tests prove replacement safe. Store's current implementation module is Android-specific; pure model/platform splits can follow without changing current semantics.
 - The actual document path now negotiates a bounded pull route. Planning automatically finds single-resource routes; arbitrary multi-input/multi-track automatic search is not implemented. Multi-port descriptions and explicit registry bindings exist; general graph composition and further viewer/copy/write routing are subsequent checkpoints. Push is an optional synchronous, bounded/backpressured utility; no mandatory scheduler was added.
-- Legacy UI dispatch, inspector/editor-specific helpers and some parser/storage adapters remain for incremental migration. Common-source Vault identification prefers headers/offsets/footers and safely replays sequential prefixes, but this does not claim every old filename dispatch was rewritten. Existing signature/format limits and writable restrictions still apply.
+- Legacy UI dispatch, remaining inspector/editor-specific helpers and some parser/storage adapters remain for incremental migration. Common-source Vault identification prefers headers/offsets/footers and safely replays sequential prefixes, but this does not claim every old filename dispatch was rewritten. Existing signature/format limits and writable restrictions still apply.
 - [Large text/CSV editing](roadmap.md#large-text-and-csv-editing) is planned; default viewing is chunked, while explicitly requested complete-document editing still uses the legacy guarded materialization path.
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. No opaque native blob or language port was introduced by this migration.
 
-Final full debug APK SHA-256: `e3aae318e79841b6b2218979f617986550a6f40535905e1cd1c48c7ab936860d`.
+Final full debug APK SHA-256: `5a82863107980163c0593751010611c99867f4410414874e79e2912a7ec5bb18`.

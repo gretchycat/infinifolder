@@ -70,9 +70,18 @@ public class AudioPullRuntimeCheck {
       Handler handler = new Handler(events.getLooper());
       MediaPlayer player = on(handler,MediaPlayer::new);
       java.util.concurrent.atomic.AtomicReference<Throwable> analysisError=new java.util.concurrent.atomic.AtomicReference<>();
+      java.util.concurrent.atomic.AtomicBoolean analysisStopping=new java.util.concurrent.atomic.AtomicBoolean();
       CountDownLatch analyzed=new CountDownLatch(1);
       AudioAnalysisSession analyzer=AudioProcessing.INSTANCE.createAnalyzer(source.borrowedResource(),()->{
         try { return on(handler,()->new kotlin.Pair<Boolean,Long>(player.isPlaying(),(long)player.getCurrentPosition())); }
+        catch(InterruptedException error) {
+          // stop() interrupts the analyzer while its test-only Handler bridge may be waiting.
+          // Preserve cancellation instead of wrapping it as a playback failure. Unexpected
+          // interruption while active still fails the test.
+          if(!analysisStopping.get()) throw new RuntimeException(error);
+          Thread.currentThread().interrupt();
+          return new kotlin.Pair<Boolean,Long>(false,0L);
+        }
         catch(Exception error) { throw new RuntimeException(error); }
       },(message,error)->{analysisError.set(error);System.out.println("ANALYZER ERROR "+message+" "+error);return kotlin.Unit.INSTANCE;},
       (samples,channels,rate)->{analyzed.countDown();return kotlin.Unit.INSTANCE;});
@@ -125,7 +134,7 @@ public class AudioPullRuntimeCheck {
           check(source.getProgressive(),"Seek triggered full-file fallback");
         }
         on(handler,()->{player.pause();return null;});
-        analyzer.stop();
+        analysisStopping.set(true);analyzer.stop();
         check(analysisError.get()==null,"Analyzer failed: "+analysisError.get());
         File reference=new File(out,"seek-reference.wav");
         new AudioFileProcessor(Collections.emptyList()).prepare(new com.infinifolder.audio.stream.FileAudioInput(input,input.getName()),reference,DecoderPreference.PORTABLE_ONLY,null,()->false);
@@ -146,7 +155,7 @@ public class AudioPullRuntimeCheck {
             check(Arrays.equals(actual,wanted),"Seeked PCM differs from linear decoding");
           }
         }
-      } finally { analyzer.stop();on(handler,()->{player.release();return null;}); events.quitSafely(); }
+      } finally { analysisStopping.set(true);analyzer.stop();on(handler,()->{player.release();return null;}); events.quitSafely(); }
     }
   }
   static void gapless(File fixtures, File out, boolean shared) throws Exception {

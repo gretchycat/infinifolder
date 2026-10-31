@@ -1,0 +1,22 @@
+{
+  "files": {
+    "sample-exif-le.jpg": {
+      "bytes": 14353,
+      "sha256": "a91940b5e745ca0b1dfecb723a4b1da3395eb0d3ab988e0655e1750e6c33b5be"
+    },
+    "sample-exif-be.jpg": {
+      "bytes": 14353,
+      "sha256": "a5fcc309edd53b67d7e1f2a0ce13547b181aeb5b6ed73cb1471706303789cfde"
+    },
+    "invalid-metadata.jpg": {
+      "bytes": 20,
+      "sha256": "8ad35f68112819e06238479063993b9d768f590e33460663dd7c6f4229e8148d"
+    }
+  },
+  "camera": "InfiniStream Synthetic Metadata Fixture",
+  "dateTime": "2026:10:31 12:34:56",
+  "iso": "200",
+  "latitude": 41.5,
+  "longitude": -87.25,
+  "note": "Synthetic tags, not real camera/location data. Exposure/f-number/focal text follows the platform backend."
+}
