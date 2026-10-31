@@ -21,7 +21,8 @@ Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) d
 - [x] Add exact portable FLAC positioning and validate real Android precision; use common positional inputs for normal/gapless audio where supported, retaining explicit staging fallbacks.
 - [x] Route the full image viewer through Canvas common-resource composition, preserving native decode/sampling and output frame metadata.
 - [x] Move image-inspector EXIF parsing behind a Canvas common-source processor, preserving fields/formatting and handling short reads, source errors and cancellation. See [inspector scope/checks](image-inspector.md).
-- [ ] Accept the migrated image inspector on local/SAF/archive/network sources, including navigation/back during work and image editing/PNG-copy export.
+- [x] Confirm little-/big-endian EXIF fixture checks and ZIP variants after checkpoint 17; user confirmation 2026-10-31.
+- [ ] Extend migrated image-inspector acceptance to malformed input, live SAF/network sources, navigation/back during work and image editing/PNG-copy export.
 - [x] Move Android PDF parsing/rendering into Scribe's optional Android backend, preserving host navigation/zoom/staging and serializing page lifetimes. Add valid/corrupt PDF, PostScript/EPS and LaTeX fixtures.
 - [ ] Accept PDF navigation/fit/zoom, rapid page requests, back during work and archive/remote opening after the backend migration.
 - [x] Move EPUB package/chapter/NCX parsing into Scribe's portable core over related common resources, and leased ZIP expansion into Vault. Retain the host's WebView, navigation, themes and font controls.

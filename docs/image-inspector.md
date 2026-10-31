@@ -44,9 +44,11 @@ pixels with synthetic tags:
 - Exposure, aperture and focal length using the existing backend's value text.
 
 Repeat from `image-metadata-checks.zip`. Compare a normal `icon.jpg`/`icon.png`
-with no camera metadata. `invalid-metadata.jpg` is deliberately malformed and
-may not open as an image; failure must not crash the viewer. Navigate/back while
-an inspector is loading, and check zoom/rotate/crop/resize/PNG-copy export.
+with no camera metadata. `invalid-metadata.jpg` is a deliberately truncated
+20-byte JPEG header with no encoded picture data, so it cannot render an image.
+It tests handling of a truncated image file. It should remain visible in the file
+listing; opening it must not crash the viewer. Navigate/back while an inspector
+is loading, and check zoom/rotate/crop/resize/PNG-copy export.
 Use copies when checking edits. Live SAF/network loading and UI interaction
 still require handset acceptance.
 
@@ -57,3 +59,12 @@ presentation parity. `scripts/verify-image-metadata-runtime.py` compares actual
 APK Canvas output against the prior Android EXIF calls, and checks byte orders,
 short reads, sequential/archive sources, ownership, failures and cancellation.
 It does not bootstrap Android widgets or establish UI acceptance.
+
+## Handset feedback (2026-10-31)
+
+The owner confirms the little-endian and big-endian tagged JPEG checks work,
+including the ZIP variants, after checkpoint 17. The owner reports the invalid
+sample does not show; whether this means no rendered picture or an absent file
+listing is awaiting clarification. This is not recorded as successful malformed-
+input UI acceptance. Live SAF/network, navigation/back during inspector work and
+image editing/export checks remain separate acceptance work.

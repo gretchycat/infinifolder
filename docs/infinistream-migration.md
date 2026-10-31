@@ -335,7 +335,10 @@ callback/1500 ms/sample checks pass on retry. Its failed log remains in
 checkpoint17-flac-stale-callback-attempt.log. The final audio aggregate contains
 all 19 successful case logs against the same APK, retaining these separate failed
 attempts. Logs use checkpoint17-* under
-build/infinistream-migration. Image UI and live provider acceptance remain pending.
+build/infinistream-migration. The owner confirms little-/big-endian EXIF fixture
+checks and ZIP variants after the checkpoint 17 handoff (2026-10-31). Broader
+malformed-input, UI and live provider acceptance remains. The invalid sample is a
+20-byte truncated JPEG without picture data; see the inspector fixture notes.
 
 ## Final verification and reproducibility
 

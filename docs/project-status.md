@@ -6,6 +6,10 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Confirmed on the handset
 
+- Little-endian and big-endian EXIF image checks, including their ZIP variants,
+  are user-confirmed working after checkpoint 17 (2026-10-31). Broader malformed-
+  input, UI and [inspector/provider checks](image-inspector.md) remain.
+
 - EPUB viewing after the Scribe/Vault migration is user-confirmed working
   (2026-10-31, checkpoint 16 handoff). Broader live remote/provider and
   interruption checks remain separate acceptance work.
