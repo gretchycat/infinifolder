@@ -24,6 +24,7 @@ dependencies {
 android {
     namespace = "com.infinifolder"
     compileSdk = 36
+    androidResources { noCompress += "bz2" }
 
     defaultConfig {
         applicationId = "com.infinifolder"

@@ -31,7 +31,7 @@ object MediaTypeDetector {
     )
 
     private val AUDIO_EXTENSIONS = setOf(
-        "mp3", "flac", "wav", "ogg", "oga", "opus", "m4a", "aac", "mid", "midi", "kar", "rmi", "wma", "aiff", "aif", "aifc", "alac",
+        "mp3", "flac", "wav", "ogg", "oga", "opus", "m4a", "aac", "mid", "midi", "kar", "rmi", "wma", "ape", "aiff", "aif", "aifc", "alac",
         "au", "snd", "voc", "8svx", "svx", "16sv", "maud", "w64", "rf64", "caf",
         "avr", "ircam", "sph", "pvf", "wve", "htk", "adx", "amr", "awb", "gsm", "g722",
         "sf2", "sfz", "pat", "mod", "s3m", "xm", "it", "dro", "imf", "vgm", "vgz", "ym",

@@ -68,6 +68,18 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Implemented; focused acceptance still needed
 
+Checkpoint 24 adds real libVLC PCM decoding inside Sound for WMA/RA and other
+available codecs, while retaining the existing output and fast MPEG/FLAC paths.
+MIDI uses a bundled, MIT-licensed FluidR3_GM bank through FluidLite, with streamed
+bz2 extraction and a verified private cache. Unreadable entries now skip silently,
+keep their playlist rows with `--` duration and cannot loop indefinitely or regain
+a stale duration from background metadata. MIDI, mixed/all-unreadable and ZIP
+[fixtures](../filesystem-test-images/audio/decoder-fallback-checks.md) are ready
+for handset acceptance. The gate has 885 cases (855 pass and the same 30 known
+storage failures); 102 native groups and 45 strict audit observations pass.
+[Checkpoint 24](infinistream-migration.md#checkpoint-24-additional-audio-codecs-fluidr3-and-unreadable-queues)
+records the build/runtime evidence and limitations.
+
 Checkpoint 23 corrects the [cross-format audit](file-handler-stub-audit.md)
 findings: explicit audio codec validation, complete mandatory raster data,
 real CP437 glyphs and ALAC EOF/prediction rejection. ALAC 24-bit conversion is

@@ -1242,7 +1242,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                 titleText?.setTextColor(if (isCurrent) theme.selectionText else theme.textPrimary)
 
                 val durText = row.getChildAt(2) as? TextView
-                durText?.text = if (track.durationMs > 0) formatTime(track.durationMs.toInt()) else "--:--"
+                durText?.text = if (track.durationMs > 0) formatTime(track.durationMs.toInt()) else "--"
                 durText?.setTextColor(if (isCurrent) theme.selectionText else theme.textSecondary)
             }
         } else {
@@ -1287,7 +1287,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                 row.addView(titleText, LinearLayout.LayoutParams(0, -2, 1f))
 
                 val durText = TextView(this).apply {
-                    text = if (track.durationMs > 0) formatTime(track.durationMs.toInt()) else "--:--"
+                    text = if (track.durationMs > 0) formatTime(track.durationMs.toInt()) else "--"
                     textSize = 10f
                     typeface = Typeface.MONOSPACE
                     gravity = Gravity.END
@@ -2008,7 +2008,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         val titles = list.mapIndexed { index, track ->
             val mark = if (index == service.currentIndex) "▶ " else "   "
             val title = if (!track.artist.isNullOrBlank() && track.artist != "Unknown Artist") "${track.artist} - ${track.title}" else track.title
-            val duration = if (track.durationMs > 0) formatTime(track.durationMs) else "--:--"
+            val duration = if (track.durationMs > 0) formatTime(track.durationMs) else "--"
             "$mark${index + 1}. $title  $duration"
         }
         dialog.setTitle("Playlist (${list.size} tracks)")

@@ -20,6 +20,7 @@ val mimeTypes = when (viewerKind) {
 android {
     namespace = "com.infinifolder.standalone"
     compileSdk = 36
+    androidResources { noCompress += "bz2" }
     defaultConfig {
         applicationId = "com.infinifolder.standalone." + viewerKind
         minSdk = 26

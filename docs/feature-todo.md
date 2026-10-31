@@ -36,15 +36,19 @@ Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) d
 - [x] Route playback activity shortcuts to the matching audio/video player; start the selected video before folder discovery.
 - [x] Stream video from common positional/sequential sources with bounded reads and nonblocking socket backpressure; avoid the legacy archive extraction fallback for native slices. Add an audible six-minute seek companion.
 - [x] Route `.rm`/`.rmvb` to Video and eliminate decoder-generated substitute tones; require actual decoding or explicit failure.
+- [x] Register libVLC behind Sound's common PCM interfaces for additional audio codecs; keep player output separate and preserve existing MP3/FLAC paths.
+- [x] Bundle FluidR3_GM as lossless bz2 assets with verified cached extraction and original notices; use FluidLite for MIDI programs/percussion.
+- [x] Silently skip unreadable audio entries while preserving their playlist rows with `--` duration; bound all-unreadable queues and guard metadata races.
+- [ ] Accept the mixed/all-unreadable and FluidR3 instrument fixtures on the handset, including their ZIP variants.
 - [ ] Implement real chiptune emulators and additional portable codecs; keep unsupported input from generating audio.
 - [ ] Accept updated remote/ZIP streaming startup and seeks, activity-shortcut return and the audible companion on the handset.
 - [ ] Accept libVLC video surfaces/sound, seeking, aspect/speed, embedded subtitles, playlists/repeat, PiP and rapid navigation from local/ZIP/live remote inputs. See [video checks](video-formats.md#handset-checks).
 - [x] Audit file handlers for remaining placeholders and false success; record native reproductions and distinguish active paths from test support. See [file handler audit](file-handler-stub-audit.md).
 - [x] Correct the audited audio/image false-success paths, replace ANSI stipple with real CP437 glyphs, harden ALAC EOF/prediction handling, and remove legacy silent playback simulation (checkpoint 23). Require strict packaged-APK rejection/reference-glyph checks; keep broader format conformance work separate.
-- [ ] Reject unknown codecs/packing in AU, AIFC, CAF, Wave64/RF64, 8SVX/MAUD and VOC; preserve valid decoding and real backend fallback.
-- [ ] Replace ANSI ASCII/box-drawing glyph stipple with actual CP437 glyphs.
-- [ ] Reject unsupported image compression and incomplete raster/chunk/tile data instead of returning blank or padded successful frames; preserve working custom formats and explicit embedded-preview limits.
-- [ ] Harden vendored ALAC EOF/prediction handling; isolate legacy PCM output simulation and mark unavailable permissions as unknown or inferred.
+- [x] Reject unknown codecs/packing in AU, AIFC, CAF, Wave64/RF64, 8SVX/MAUD and VOC; preserve valid decoding and real backend fallback.
+- [x] Replace ANSI ASCII/box-drawing glyph stipple with actual CP437 glyphs.
+- [x] Reject unsupported image compression and incomplete raster/chunk/tile data instead of returning blank or padded successful frames; preserve working custom formats and explicit embedded-preview limits.
+- [x] Harden vendored ALAC EOF/prediction handling; isolate legacy PCM output simulation and mark unavailable permissions as unknown or inferred.
 - [ ] Continue converting legacy callers to metadata-driven composition before removing compatibility APIs or exported dependencies.
 - [ ] Extend automatic planning for arbitrary multi-input/track graphs; current multi-port processors use explicit bindings.
 - [ ] Verify live remote providers, Android playback/seek/gapless/route behavior and editor/container write acceptance after these checkpoints.

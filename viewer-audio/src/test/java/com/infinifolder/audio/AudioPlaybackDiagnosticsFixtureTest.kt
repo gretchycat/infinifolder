@@ -21,7 +21,7 @@ class AudioPlaybackDiagnosticsFixtureTest {
     @Test
     fun testInstrumentAndGenerateAuthoritativePlaybackReport() {
         val files = fixtureDir.listFiles()?.filter {
-            it.isFile && !it.name.endsWith(".ans") // ANSI music playback through Sound is planned.
+            it.isFile && it.extension.lowercase() !in setOf("ans", "md", "zip") // Audio and playlist inputs only; ANSI music is planned.
         }?.sortedBy { it.name } ?: emptyList()
 
         assertTrue("Audio fixture directory must contain files", files.isNotEmpty())
@@ -92,9 +92,9 @@ class AudioPlaybackDiagnosticsFixtureTest {
 
         // Generate authoritative report markdown table
         val mdReport = buildString {
-            appendLine("# Authoritative Audio Playback & Health Diagnostic Report")
+            appendLine("# Audio decoding and signal checks (JVM fixtures)")
             appendLine()
-            appendLine("Generated on ${java.time.Instant.now()} across **${files.size}** audio fixtures in `filesystem-test-images/audio/`.")
+            appendLine("Generated on ${java.time.Instant.now()} across **${files.size}** audio/playlist fixtures in `filesystem-test-images/audio/`.")
             appendLine()
             appendLine("This JVM fixture report uses Android stubs. It does not establish device playback or codec availability. Unsupported codecs must fail; generated substitute tones are forbidden. Earlier reports counted placeholder synthesis as successful decoding and overstated support.")
             appendLine()
@@ -115,7 +115,7 @@ class AudioPlaybackDiagnosticsFixtureTest {
                 val peak = r.signalMetrics?.let { "%.2f".format(it.peakAmplitude) } ?: "N/A"
                 val rms = r.signalMetrics?.let { "%.1f dB".format(it.rmsDb) } ?: "N/A"
                 val errs = (r.parsingErrors + r.playbackErrors).joinToString("; ").ifEmpty { "None" }
-                val statusBadge = when (r.healthStatus) {
+                val statusBadge = if (r.engineUsed == "PlaylistParser") "**PARSED**" else when (r.healthStatus) {
                     AudioHealthStatus.HEALTHY -> "**PASS**"
                     AudioHealthStatus.SILENT -> "**SILENT**"
                     AudioHealthStatus.CLIPPING -> "**CLIPPING**"
@@ -126,16 +126,19 @@ class AudioPlaybackDiagnosticsFixtureTest {
                 appendLine("| `${r.fileName}` | ${r.fileSize} B | `${r.mimeType}` | `${r.engineUsed}` | $durStr | $rateCh | $peak | $rms | $statusBadge | $errs |")
             }
 
-            val passedCount = results.count { it.healthStatus == AudioHealthStatus.HEALTHY }
-            val failedCount = results.count { it.healthStatus == AudioHealthStatus.DECODE_FAILED }
+            val audioResults = results.filter { it.engineUsed != "PlaylistParser" }
+            val parsedCount = results.size - audioResults.size
+            val passedCount = audioResults.count { it.healthStatus == AudioHealthStatus.HEALTHY }
+            val failedCount = audioResults.count { it.healthStatus == AudioHealthStatus.DECODE_FAILED }
             appendLine()
             appendLine("### Summary Statistics")
-            appendLine("- **Total Audio Fixtures Tested**: ${results.size}")
-            appendLine("- **Successfully Decoded & Verified Healthy**: $passedCount / ${results.size} (${"%.1f".format(passedCount * 100.0 / results.size)}%)")
-            appendLine("- **Failed / Unplayable**: $failedCount / ${results.size}")
+            appendLine("- **Total Audio Fixtures Tested**: ${audioResults.size}")
+            appendLine("- **Playlists Parsed (no playback claimed)**: $parsedCount")
+            appendLine("- **Successfully Decoded & Verified Healthy**: $passedCount / ${audioResults.size} (${"%.1f".format(passedCount * 100.0 / audioResults.size)}%)")
+            appendLine("- **Not decoded in this JVM**: $failedCount / ${audioResults.size}")
         }
 
         reportFile.writeText(mdReport)
-        println("\nAuthoritative playback diagnostic report successfully written to ${reportFile.absolutePath}")
+        println("\nJVM decoding and signal report written to ${reportFile.absolutePath}")
     }
 }

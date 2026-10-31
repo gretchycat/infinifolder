@@ -11,7 +11,7 @@ internal class PlaylistMetadataWork {
         if (tracks.isEmpty()) return null
         val start = (currentIndex + 1).coerceIn(0, tracks.size)
         val ordered = tracks.drop(start) + tracks.take(start)
-        return ordered.firstOrNull { attempted.add(key(it)) }
+        return ordered.firstOrNull { !it.isUnreadable && attempted.add(key(it)) }
     }
 
     fun matches(a: AudioTrack, b: AudioTrack): Boolean = key(a) == key(b)
@@ -23,7 +23,7 @@ internal class PlaylistMetadataWork {
             title = if (segmented || current.title != before.title) current.title else result.title,
             artist = if (current.artist != before.artist) current.artist else result.artist,
             album = if (current.album != before.album) current.album else result.album,
-            durationMs = if (current.durationMs != before.durationMs || (segmented && current.durationMs > 0)) current.durationMs else result.durationMs,
+            durationMs = if (current.isUnreadable) 0 else if (current.durationMs != before.durationMs || (segmented && current.durationMs > 0)) current.durationMs else result.durationMs,
             bitrateKbps = current.bitrateKbps ?: result.bitrateKbps,
             sampleRateHz = current.sampleRateHz ?: result.sampleRateHz,
             channels = current.channels ?: result.channels,

@@ -91,3 +91,30 @@ removed; supported Android codecs remain registered inside Sound. Unsupported
 input reports failure. SFZ missing/invalid referenced samples and empty GUS
 patches fail explicitly. Chiptune emulation and additional portable codecs remain
 planned. `.rm`/`.rmvb` association belongs to the Video host and libVLC.
+
+
+## Additional native codecs and bundled MIDI (checkpoint 24)
+
+Sound's Android module now registers a libVLC PCM fallback, using the same
+3.7.7 upstream dependency as Video without depending on Video's API. A native
+callback adapter borrows independent common input handles and produces PCM into
+a bounded queue. The player continues to consume the common PCM/WAVE output;
+libVLC opens no output device for this path. WMA/RA, WavPack/TTA and AC-3/E-AC-3/DTS
+fixtures decode actual input. Candidate extensions are not conformance guarantees.
+The backend outputs signed 16-bit PCM and retains full PCM preparation when an
+exact output frame total is unknown. It does not invent a WAVE length from a
+container duration. The established portable MPEG/FLAC policy remains.
+
+`AudioProcessing.initialize(context)` enables lazy bundled FluidR3_GM extraction
+and selects libVLC's FluidLite for MIDI. Three consecutive bz2 fragments contain
+the unmodified MIT-licensed bank; a bounded installer checks its original SHA-256
+before atomic publication to a private SF2 cache. Core/portable synthesis remains
+available. Explicit `PORTABLE_FIRST`/`PORTABLE_ONLY` policies retain their meaning.
+Upstream LGPL/MIT/Apache notices are packaged with the library assets. Android
+CMake/NDK source is provided for the callback bridge; the current Termux build
+and runtime checks exercise arm64, not desktop/iOS execution.
+
+Unreadable-queue handling belongs to the host. It preserves entries with unknown
+`--` duration, skips silently, blocks metadata races and bounds retries so an
+entirely unreadable list stops. Successful explicit retry restores actual metadata.
+See the [handset fixtures](../filesystem-test-images/audio/decoder-fallback-checks.md).

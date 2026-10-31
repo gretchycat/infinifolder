@@ -13,7 +13,7 @@ fixed synthesized chord without decoding their inputs. That behavior is removed.
 No playback fallback may substitute a different stream. Portable DSD and ADX
 conversion, actual MIDI/tracker rendering and soundbank sample previews remain;
 AMR and other compressed formats require a real registered platform codec.
-Unsupported codecs report failure. Chiptune emulation remains planned.
+Unsupported codecs report failure. Portable chiptune emulation remains planned; registered native codecs may accept supported variants.
 SFZ references must resolve to decodable samples; empty GUS patches fail rather
 than inventing an instrument. Explicit MIDI notes and valid sample-bank previews
 still synthesize from their actual inputs.
@@ -30,6 +30,35 @@ format; an unsupported codec cannot be reinterpreted as PCM. The legacy PCM
 engine no longer simulates playback after unavailable/failed AudioTrack output.
 The JVM report measures parsing/signal health and keeps actual decoder names;
 it does not establish hardware playback.
+
+
+## libVLC fallback, FluidR3 and unreadable tracks
+
+Checkpoint 24 registers libVLC inside Sound's Android codec composition, after
+existing backends. Actual WMA, RA, WavPack, TTA, AC-3, E-AC-3 and DTS fixtures
+now decode through this backend. Existing MP3/FLAC selection stays in place.
+`.ape` gains an audio association and is offered to the registered codecs;
+recognition alone is not proof that a particular variant decodes.
+
+The adapter translates common positional inputs into libVLC callbacks and
+returns real signed 16-bit PCM. The host continues to output library PCM through
+its existing player. libVLC container durations are not invented exact frame
+counts: this backend uses full PCM preparation before WAVE publication, with
+bounded encoded reads and no additional encoded-file copy inside the adapter.
+
+Android MIDI defaults to libVLC's FluidLite with the bundled MIT-licensed
+FluidR3_GM bank. The first MIDI open streams its bz2 asset fragments into a
+checksum-verified private SF2 cache (148,398,306 bytes), reused on later opens.
+Actual bank presets/programs and channel-10 percussion are handled by FluidLite.
+The portable legacy synthesizer remains available separately; its preview SF2
+reader is not the GM preset engine. Licenses and source references are bundled.
+
+Unreadable files skip without an error toast. Their entries remain in the
+playlist, duration is cleared to `--`, and late metadata cannot restore a failed
+entry's duration. A finite search stops an entirely unreadable queue, including
+repeat-all. Selecting an entry again permits retry; successful preparation clears
+its unreadable state. Manual [MIDI/skip fixtures](../filesystem-test-images/audio/decoder-fallback-checks.md)
+include mixed and all-unreadable playlists plus ZIP copies.
 
 ---
 
@@ -81,13 +110,13 @@ The synthesizer pipeline (`com.infinifolder.audio.synth`) provides full polyphon
   - Low Frequency Oscillator for vibrato (pitch modulation), tremolo (amplitude modulation), and auto-pan.
   - Waveforms: Sine, Triangle, Sawtooth, Square.
 - **`SoundFontReader`**:
-  - **SoundFont 2 (`.sf2`)**: RIFF `sfbk` parser reading `LIST INFO`, `LIST sdta` (16-bit PCM sample pool), and `LIST pdta` (`shdr`, `phdr`, `pbag`, `pgen`, `inst`, `ibag`, `igen`).
+  - **SoundFont 2 (`.sf2`)**: RIFF `sfbk` parser reading `LIST INFO`, `LIST sdta` (16-bit PCM sample pool), and `LIST pdta` (`shdr` sample headers). This legacy sample-preview reader does not implement complete GM preset zones; bundled MIDI uses FluidLite instead.
   - **SFZ (`.sfz`)**: Plain-text definition parser (`<region> sample=... pitch_keycenter=... loop_mode=...`).
   - **Gravis UltraSound (`.pat`)**: `GF1PATCH110` parser reading instrument headers and waveforms.
 - **`WavetableSynthesizer`**:
   - 32-to-64 polyphonic dynamic voice allocator with voice stealing.
   - Channel volume, expression, panning, pitch bend, and soft-knee limiting.
-  - Includes a built-in multi-harmonic additive instrument soundbank for high-quality standalone synthesis.
+  - Includes a built-in harmonic fallback instrument for explicit MIDI notes.
 
 ---
 
@@ -95,7 +124,7 @@ The synthesizer pipeline (`com.infinifolder.audio.synth`) provides full polyphon
 
 | Format | Extensions | MIME Type | Engine | Description & Capabilities |
 | --- | --- | --- | --- | --- |
-| **Standard MIDI & RMID** | `.mid`, `.midi`, `.kar`, `.rmi` | `audio/midi` | `MidiSequencer` | Complete SMF Format 0, 1, 2, and RIFF RMID unpacker. Multi-track chronological event merge, microsecond-accurate tempo changes (`FF 51 03`), Note On/Off, Pitch Bend, Program Change, and synthesis via `WavetableSynthesizer`. |
+| **Standard MIDI & RMID** | `.mid`, `.midi`, `.kar`, `.rmi` | `audio/midi` | libVLC/FluidLite; portable `MidiSequencer` | Android uses the bundled FluidR3_GM bank for actual note/program/percussion synthesis. The portable parser/renderer and RMID unwrap path remain available with their existing limits; complete SMF variant conformance is not claimed. |
 | **ProTracker Module** | `.mod` | `audio/x-mod` | `OpenMpt` / `TrackerEngine` | Industry-standard `libopenmpt` tracker engine (with pure Kotlin fallback). Full support for 4 to 32 channels (`M.K.`, `4CHN`, `6CHN`, `8CHN`, `OCTA`, `16CN`, `32CN`). Paula period to frequency calculation ($f = \frac{3546895}{2p}$), Amiga stereo panning, 31 sample definitions, 64-row pattern playback, tick scheduling, speed/tempo control (`Fxx`), and volume slides. |
 | **Scream Tracker 3** | `.s3m` | `audio/x-s3m` | `OpenMpt` / `TrackerEngine` | `libopenmpt` engine (`SCRM` header). Supports C4 speed calculations, signed/unsigned 8/16-bit samples, multi-channel rendering, portamentos, vibrato, and ST3 panning. |
 | **FastTracker II** | `.xm` | `audio/x-xm` | `OpenMpt` / `TrackerEngine` | `libopenmpt` engine (`Extended Module: ` header). Multi-sample instruments, volume/panning envelopes, delta-encoded 8/16-bit sample decoding, linear and Amiga frequency tables. |
@@ -103,7 +132,7 @@ The synthesizer pipeline (`com.infinifolder.audio.synth`) provides full polyphon
 
 ---
 
-### 4. Chiptune & Hardware Register Dumps — planned decoding
+### 4. Chiptune & Hardware Register Dumps — portable decoding planned
 
 | Format | Extensions | MIME Type | Engine | Description & Capabilities |
 | --- | --- | --- | --- | --- |
@@ -123,10 +152,10 @@ The synthesizer pipeline (`com.infinifolder.audio.synth`) provides full polyphon
 | --- | --- | --- | --- | --- |
 | **Direct Stream Digital (DSF)** | `.dsf` | `audio/x-dsf` | `AudiophileStreamDecoder` | Sony DSF container (`DSD `). DSD64 1-bit Pulse Density Modulation (PDM) @ 2.8224 MHz decimated into 16-bit 44.1 kHz PCM via a 64-sample moving average decimation filter. |
 | **Direct Stream Digital (DFF)** | `.dff` | `audio/x-dff` | `AudiophileStreamDecoder` | Philips DSDIFF container (`FRM8....DSD `). 1-bit PDM stream decimation to 16-bit PCM. |
-| **True Audio** | `.tta` | `audio/x-tta` | Real platform codec required | `TTA1` header recognized by format metadata; no portable TTA decoder. |
-| **WavPack Lossless** | `.wv` | `audio/x-wavpack` | Real platform codec required | `wvpk` signature; no portable WavPack decoder. |
-| **RealMedia Audio** | `.ra` | `audio/x-pn-realaudio` | Real platform codec required | Audio association only; no portable RealAudio decoder. Use the video player for `.rm`/`.rmvb`. |
-| **Dolby Digital & Surround** | `.ac3`, `.eac3`, `.dts`, `.mlp`, `.thd` | `audio/ac3`, `audio/eac3`, `audio/vnd.dts`, `audio/x-mlp`, `audio/x-truehd` | Real platform codec required | No portable decoder for these codecs. Android availability varies; unsupported inputs fail explicitly. |
+| **True Audio** | `.tta` | `audio/x-tta` | libVLC fallback | Original TTA fixture decodes through libVLC; no portable TTA decoder. |
+| **WavPack Lossless** | `.wv` | `audio/x-wavpack` | libVLC fallback | Original WavPack fixture decodes through libVLC; the current adapter returns 16-bit PCM. |
+| **RealMedia Audio** | `.ra` | `audio/x-pn-realaudio` | libVLC fallback | Original RA fixture decodes real PCM through Sound. Use the video player for `.rm`/`.rmvb`. |
+| **Dolby Digital & Surround** | `.ac3`, `.eac3`, `.dts`, `.mlp`, `.thd` | `audio/ac3`, `audio/eac3`, `audio/vnd.dts`, `audio/x-mlp`, `audio/x-truehd` | Android / libVLC | AC-3, E-AC-3 and DTS fixtures decode through libVLC. Other variants depend on actual backend acceptance; there is no portable decoder. |
 
 ---
 

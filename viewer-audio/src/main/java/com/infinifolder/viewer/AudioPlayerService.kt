@@ -46,7 +46,8 @@ data class AudioTrack(
     val sampleRateHz: Int? = null,
     val channels: Int? = null,
     val isBitrateRelevant: Boolean = true,
-    val fileName: String = title
+    val fileName: String = title,
+    val isUnreadable: Boolean = false
 )
 
 interface AudioPlayerListener {
@@ -197,6 +198,7 @@ class AudioPlayerService : Service() {
     override fun onCreate() {
         super.onCreate()
         currentService = this
+        AudioProcessing.initialize(applicationContext)
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
@@ -311,8 +313,9 @@ class AudioPlayerService : Service() {
         }
         synchronized(playlist) {
             val active = playlist.getOrNull(currentIndex)
-            originalPlaylist.clear(); originalPlaylist.addAll(expanded)
-            playlist.clear(); playlist.addAll(expanded)
+            val refreshed = retainUnreadableState(playlist, expanded)
+            originalPlaylist.clear(); originalPlaylist.addAll(refreshed)
+            playlist.clear(); playlist.addAll(refreshed)
             val idx = if (active != null && uriMatches(active.uri, currentUri)) {
                 playlist.indexOfFirst { sameTrack(it, active) }
             } else playlist.indexOfFirst { uriMatches(it.uri, currentUri) }
@@ -504,14 +507,9 @@ class AudioPlayerService : Service() {
         runCatching {
             synchronized(playlist) {
                 if (playlist.isEmpty()) return@runCatching
-                if (currentIndex < playlist.size - 1) {
-                    currentIndex++
-                } else if (repeatMode == RepeatMode.ALL || playlist.size > 1) {
-                    currentIndex = 0
-                } else {
-                    stopPlayback()
-                    return@runCatching
-                }
+                val next = nextReadableTrack(playlist, currentIndex, repeatMode == RepeatMode.ALL || playlist.size > 1)
+                if (next == null) { stopPlayback(); return@runCatching }
+                currentIndex = next
                 loadAndPlayCurrent()
             }
         }
@@ -525,15 +523,9 @@ class AudioPlayerService : Service() {
                     seekTo(0)
                     return@runCatching
                 }
-                if (currentIndex > 0) {
-                    currentIndex--
-                    loadAndPlayCurrent()
-                } else if (repeatMode == RepeatMode.ALL) {
-                    currentIndex = playlist.size - 1
-                    loadAndPlayCurrent()
-                } else {
-                    seekTo(0)
-                }
+                val previous = nextReadableTrack(playlist, currentIndex, repeatMode == RepeatMode.ALL, -1)
+                if (previous != null) { currentIndex = previous; loadAndPlayCurrent() }
+                else if (currentTrack?.isUnreadable != true) seekTo(0)
             }
         }
     }
@@ -658,7 +650,7 @@ class AudioPlayerService : Service() {
             if (source == null || (stagedFile != null && !stagedFile.exists())) {
                 isLoading = false
                 notifyPlaybackState(isPlaying = false, isLoading = false)
-                notifyError("Unable to prepare audio track")
+                skipUnreadable(track, thisLoadId, java.io.IOException("Unable to read audio source"))
                 return@Thread
             }
             val trackMime = try { contentResolver.getType(track.uri) } catch (_: Throwable) { null }
@@ -685,7 +677,9 @@ class AudioPlayerService : Service() {
                 isBitrateRelevant = formatInfo.isBitrateRelevant
                 isSampleRateRelevant = formatInfo.isSampleRateRelevant
             }
-            var enriched = enrichTrackMetadata(track, stagedFile, formatInfo, source)
+            var enriched = enrichTrackMetadata(track, stagedFile, formatInfo, source).let {
+                if (track.isUnreadable) unreadableTrack(it) else it
+            }
             val metadataAt = android.os.SystemClock.elapsedRealtime()
             if (loadCounter.get() != thisLoadId) return@Thread
             synchronized(playlist) {
@@ -731,13 +725,15 @@ class AudioPlayerService : Service() {
                         "totalPcmBytes=${waveSource.metadata.length} access=${waveSource.metadata.attributes["access"]}")
                 decodedInfo.let { (rate, channels, duration) ->
                     formatInfo = formatInfo.copy(sampleRate = rate, channels = channels, isSampleRateRelevant = true)
-                    enriched = enriched.copy(sampleRateHz = rate.takeIf { it > 0 }, channels = channels.takeIf { it > 0 },
+                    enriched = enriched.copy(isUnreadable = false, sampleRateHz = rate.takeIf { it > 0 }, channels = channels.takeIf { it > 0 },
                         durationMs = if (duration > 0) duration else enriched.durationMs)
                     com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.currentReport?.apply {
                         sampleRate = rate; this.channels = channels; bitsPerSample = preparation.format.bitsPerSample; isSampleRateRelevant = true
                     }
                     synchronized(playlist) {
                         if (currentIndex in playlist.indices && playlist[currentIndex].uri == track.uri && loadCounter.get() == thisLoadId) {
+                            restoreReadableState(playlist, track, enriched.durationMs)
+                            restoreReadableState(originalPlaylist, track, enriched.durationMs)
                             playlist[currentIndex] = enriched
                             val oi = originalPlaylist.indexOfFirst { it.uri == track.uri && it.startByte == track.startByte && it.lengthBytes == track.lengthBytes }
                             if (oi >= 0) originalPlaylist[oi] = enriched
@@ -841,10 +837,34 @@ class AudioPlayerService : Service() {
                 if (loadCounter.get() == thisLoadId) {
                     isLoading = false
                     notifyPlaybackState(isPlaying = false, isLoading = false)
-                    notifyError("Error preparing playback: ${e.message}")
+                    skipUnreadable(track, thisLoadId, e)
                 }
             }
         }.start()
+    }
+
+    /** Keep failed entries visible, but never retry an unreadable queue in a loop. */
+    private fun skipUnreadable(track: AudioTrack, loadId: Long, error: Exception) {
+        com.infinifolder.storage.DiagnosticLog.record("audio.track.skipped", "file=${track.fileName} load=$loadId", error)
+        mainHandler.post {
+            if (loadCounter.get() != loadId) return@post
+            synchronized(playlist) {
+                if (currentTrack?.let { sameTrack(it, track) } != true) return@synchronized
+                for (index in playlist.indices) if (sameTrack(playlist[index], track)) playlist[index] = unreadableTrack(playlist[index])
+                for (index in originalPlaylist.indices) if (sameTrack(originalPlaylist[index], track)) originalPlaylist[index] = unreadableTrack(originalPlaylist[index])
+                notifyPlaylistUpdated()
+                val next = nextReadableTrack(playlist, currentIndex, repeatMode == RepeatMode.ALL)
+                if (next == null) {
+                    isLoading = false
+                    stopPlayback()
+                    notifyTrackChanged(currentTrack)
+                    notifyProgress(0, 0)
+                } else {
+                    currentIndex = next
+                    loadAndPlayCurrent()
+                }
+            }
+        }
     }
 
     private fun resetPlayerForAudio(player: MediaPlayer, sessionId: Int = 0) {
@@ -878,7 +898,7 @@ class AudioPlayerService : Service() {
             val isCurrent = synchronized(playerLock) { mediaPlayer === errored }
             if (isCurrent) {
                 com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.recordPlaybackError("MediaPlayer Error: what=$what, extra=$extra")
-                notifyError("Playback error: $what, $extra")
+                currentTrack?.let { skipUnreadable(it, loadCounter.get(), java.io.IOException("PCM playback error: $what, $extra")) }
             } else {
                 val isPrepared = synchronized(playerLock) { preparedNext?.player === errored }
                 if (isPrepared) invalidateGapless()
@@ -900,10 +920,13 @@ class AudioPlayerService : Service() {
         }
     }
 
+    private fun readableGaplessNextIndex(): Int? = if (repeatMode == RepeatMode.ONE) null
+        else nextReadableTrack(playlist, currentIndex, repeatMode == RepeatMode.ALL)
+
     private fun scheduleGapless() {
         synchronized(playlist) {
             if (com.infinifolder.audio.cast.CastManager.isCasting || playbackSpeed != 1f) return
-            val nextIndex = gaplessNextIndex(currentIndex, playlist.size, repeatMode) ?: return
+            val nextIndex = readableGaplessNextIndex() ?: return
             val track = playlist[nextIndex]
             synchronized(playerLock) {
                 val owner = mediaPlayer ?: return
@@ -916,7 +939,7 @@ class AudioPlayerService : Service() {
                     val next = prepareGaplessTrack(track, sessionId) ?: return@submit
                     var installed = false
                     synchronized(playlist) {
-                        val index = gaplessNextIndex(currentIndex, playlist.size, repeatMode)
+                        val index = readableGaplessNextIndex()
                         val stillNext = index != null && sameTrack(playlist[index], track)
                         synchronized(playerLock) {
                             if (generation == gaplessGeneration && mediaPlayer === owner && stillNext &&
@@ -971,7 +994,7 @@ class AudioPlayerService : Service() {
             p.prepare()
             installPlayerListeners(p)
             val preparedTrack = decodedMetadata.let { (rate, channels, duration) ->
-                track.copy(sampleRateHz = rate.takeIf { it > 0 } ?: track.sampleRateHz,
+                track.copy(isUnreadable = false, sampleRateHz = rate.takeIf { it > 0 } ?: track.sampleRateHz,
                     channels = channels.takeIf { it > 0 } ?: track.channels,
                     durationMs = duration.takeIf { it > 0 } ?: track.durationMs)
             }
@@ -997,7 +1020,7 @@ class AudioPlayerService : Service() {
         val track: AudioTrack
         val next: GaplessPrepared
         synchronized(playlist) {
-            val nextIndex = gaplessNextIndex(currentIndex, playlist.size, repeatMode) ?: return false
+            val nextIndex = readableGaplessNextIndex() ?: return false
             synchronized(playerLock) {
                 next = preparedNext ?: return false
                 if (mediaPlayer !== finished || !sameTrack(playlist[nextIndex], next.track) ||
@@ -1064,9 +1087,9 @@ class AudioPlayerService : Service() {
             RepeatMode.ONE -> { seekTo(0); play() }
             RepeatMode.ALL -> playNext()
             RepeatMode.NONE -> {
-                val isLast = synchronized(playlist) { currentIndex >= playlist.size - 1 }
-                if (!isLast) {
-                    playNext()
+                val next = synchronized(playlist) { nextReadableTrack(playlist, currentIndex, false) }
+                if (next != null) {
+                    synchronized(playlist) { currentIndex = next; loadAndPlayCurrent() }
                 } else {
                     // Finished the whole queue with no repeat: release everything and let the UI close
                     stopPlayback()

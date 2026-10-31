@@ -1,0 +1,600 @@
+{
+  "apkSha256": "07a5629ceff58cd6943107ae250c26126e7a0c94eb1e18c079d7efd737b79d4f",
+  "cases": [
+    {
+      "id": "audio-valid-au",
+      "family": "audio",
+      "extension": "au",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "SunAuDecoder",
+      "samples": 132300,
+      "pcmSha256": "d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f"
+    },
+    {
+      "id": "unknown-codec-au",
+      "family": "audio",
+      "extension": "au",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-aifc",
+      "family": "audio",
+      "extension": "aifc",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "AiffDecoder",
+      "samples": 132300,
+      "pcmSha256": "d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f"
+    },
+    {
+      "id": "unknown-codec-aifc",
+      "family": "audio",
+      "extension": "aifc",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-caf",
+      "family": "audio",
+      "extension": "caf",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "CafDecoder",
+      "samples": 132300,
+      "pcmSha256": "d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f"
+    },
+    {
+      "id": "unknown-codec-caf",
+      "family": "audio",
+      "extension": "caf",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-w64",
+      "family": "audio",
+      "extension": "w64",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "Wave64AndRf64Decoder",
+      "samples": 132300,
+      "pcmSha256": "d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f"
+    },
+    {
+      "id": "unknown-codec-w64",
+      "family": "audio",
+      "extension": "w64",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-rf64",
+      "family": "audio",
+      "extension": "rf64",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "Wave64AndRf64Decoder",
+      "samples": 132300,
+      "pcmSha256": "d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f"
+    },
+    {
+      "id": "unknown-codec-rf64",
+      "family": "audio",
+      "extension": "rf64",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-8svx",
+      "family": "audio",
+      "extension": "8svx",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "IffAudioDecoder",
+      "samples": 24000,
+      "pcmSha256": "92a5392d15ea722d05181458ebb302cb02ba213d76f75a99ef2aacb31f69e726"
+    },
+    {
+      "id": "unknown-codec-8svx",
+      "family": "audio",
+      "extension": "8svx",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-maud",
+      "family": "audio",
+      "extension": "maud",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "IffAudioDecoder",
+      "samples": 132300,
+      "pcmSha256": "d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f"
+    },
+    {
+      "id": "unknown-codec-maud",
+      "family": "audio",
+      "extension": "maud",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-voc",
+      "family": "audio",
+      "extension": "voc",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "VocDecoder",
+      "samples": 66146,
+      "pcmSha256": "f7d54d642338acd33b21dacdd3cfdf3e8b6d2b2bcc6287c7431cf12306e9d0f1"
+    },
+    {
+      "id": "unknown-codec-voc",
+      "family": "audio",
+      "extension": "voc",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-wav",
+      "family": "audio",
+      "extension": "wav",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "Android.MediaCodec",
+      "samples": 132300,
+      "pcmSha256": "d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f"
+    },
+    {
+      "id": "unknown-codec-wav",
+      "family": "audio",
+      "extension": "wav",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-exr",
+      "family": "image",
+      "extension": "exr",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 36458,
+      "firstPixel": "ff4a5056"
+    },
+    {
+      "id": "unimplemented-exr-rle",
+      "family": "image",
+      "extension": "exr",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "missing-exr-chunks",
+      "family": "image",
+      "extension": "exr",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-xcf",
+      "family": "image",
+      "extension": "xcf",
+      "probe": "control",
+      "accepted": true,
+      "width": 64,
+      "height": 64,
+      "differentPixels": 4067,
+      "firstPixel": "ff12171a"
+    },
+    {
+      "id": "unsupported-xcf-compression",
+      "family": "image",
+      "extension": "xcf",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-psd",
+      "family": "image",
+      "extension": "psd",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 36458,
+      "firstPixel": "ff12161a"
+    },
+    {
+      "id": "missing-psd-pixels",
+      "family": "image",
+      "extension": "psd",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-hdr",
+      "family": "image",
+      "extension": "hdr",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 36420,
+      "firstPixel": "ff181c1f"
+    },
+    {
+      "id": "missing-hdr-pixels",
+      "family": "image",
+      "extension": "hdr",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-fits",
+      "family": "image",
+      "extension": "fits",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 34538,
+      "firstPixel": "ff151515"
+    },
+    {
+      "id": "truncated-fits-pixels",
+      "family": "image",
+      "extension": "fits",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-dds",
+      "family": "image",
+      "extension": "dds",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 35809,
+      "firstPixel": "ff101518"
+    },
+    {
+      "id": "truncated-dds-pixels",
+      "family": "image",
+      "extension": "dds",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-pcx",
+      "family": "image",
+      "extension": "pcx",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 31711,
+      "firstPixel": "ff121619"
+    },
+    {
+      "id": "truncated-pcx-pixels",
+      "family": "image",
+      "extension": "pcx",
+      "probe": "reject",
+      "accepted": false,
+      "error": "java.lang.IllegalArgumentException: Invalid PCX run"
+    },
+    {
+      "id": "image-valid-tga",
+      "family": "image",
+      "extension": "tga",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 36458,
+      "firstPixel": "ff12161a"
+    },
+    {
+      "id": "truncated-tga-pixels",
+      "family": "image",
+      "extension": "tga",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-qoi",
+      "family": "image",
+      "extension": "qoi",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 36458,
+      "firstPixel": "ff12161a"
+    },
+    {
+      "id": "missing-qoi-pixels",
+      "family": "image",
+      "extension": "qoi",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "missing-ppm-pixels",
+      "family": "image",
+      "extension": "ppm",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-tiff",
+      "family": "image",
+      "extension": "tiff",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 36458,
+      "firstPixel": "ff12161a"
+    },
+    {
+      "id": "unsupported-tiff-compression",
+      "family": "image",
+      "extension": "tiff",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-eps",
+      "family": "image",
+      "extension": "eps",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 36458,
+      "firstPixel": "ff12161a"
+    },
+    {
+      "id": "missing-epsi-preview",
+      "family": "image",
+      "extension": "eps",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-wmf",
+      "family": "image",
+      "extension": "wmf",
+      "probe": "control",
+      "accepted": true,
+      "width": 64,
+      "height": 64,
+      "differentPixels": 4067,
+      "firstPixel": "ff12171a"
+    },
+    {
+      "id": "missing-wmf-dib-pixels",
+      "family": "image",
+      "extension": "wmf",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "ansi-stipple",
+      "family": "image",
+      "extension": "ans",
+      "probe": "glyph",
+      "accepted": true,
+      "width": 640,
+      "height": 16,
+      "differentPixels": 56,
+      "firstPixel": "ff000000",
+      "matchesCodeBitStipple": false,
+      "matchesReferenceGlyph": true
+    }
+  ],
+  "findings": [],
+  "failedControls": [],
+  "recorded": "2026-10-31",
+  "scope": "Checkpoint 24 real libVLC PCM, FluidR3 asset extraction and existing headless pipeline/rejection checks. No audible/UI or cross-platform runtime acceptance is claimed.",
+  "nativeGroups": {
+    "audio": 34,
+    "video": 8,
+    "video-streaming": 8,
+    "viewport": 5,
+    "image-edit": 12,
+    "image-metadata": 10,
+    "pdf": 8,
+    "vlc-audio": 17
+  },
+  "nativePassLines": {
+    "audio": [
+      "PASS PCM extractor chord.mp3 decoder=Android.MediaCodec initial=16428 total=264644",
+      "PASS PCM extractor chord.aac decoder=Android.MediaCodec initial=270380 total=270380",
+      "PASS PCM extractor chord.m4a decoder=Android.MediaCodec initial=16428 total=264644",
+      "PASS PCM extractor chord.wav decoder=Android.MediaCodec initial=16428 total=264644",
+      "PASS PCM extractor chord.flac decoder=Android.MediaCodec initial=16428 total=264644",
+      "PASS PCM extractor high-resolution.flac decoder=Portable.FLAC initial=24620 total=30062",
+      "PASS PCM extractor full-resolution.flac decoder=Portable.FLAC initial=32812 total=40068",
+      "PASS MediaPlayer prepare audio-pull-long.mp3 decoder=Portable.MPEG access=decoded-block-disk-cache openMs=70 preparedMs=356 cached=147500 total=158760044 durationMs=900000",
+      "PASS MediaPlayer SEEK 260000ms completedMs=459 cachedPcmBytes=6406188 frameSeeks=17",
+      "PASS MediaPlayer SEEK 310000ms completedMs=160 cachedPcmBytes=8519724 frameSeeks=18",
+      "PASS MediaPlayer SEEK 800000ms completedMs=204 cachedPcmBytes=10600492 frameSeeks=20",
+      "PASS MediaPlayer SEEK 30000ms completedMs=169 cachedPcmBytes=12714028 frameSeeks=21",
+      "PASS MediaPlayer SEEK 898000ms completedMs=82 cachedPcmBytes=13073516 frameSeeks=22",
+      "PASS MediaPlayer prepare audio-pull-long-cbr.mp3 decoder=Portable.MPEG access=decoded-block-disk-cache openMs=59 preparedMs=286 cached=147500 total=158760044 durationMs=900000",
+      "PASS MediaPlayer SEEK 260000ms completedMs=676 cachedPcmBytes=6406188 frameSeeks=16",
+      "PASS MediaPlayer SEEK 310000ms completedMs=308 cachedPcmBytes=8519724 frameSeeks=17",
+      "PASS MediaPlayer SEEK 800000ms completedMs=451 cachedPcmBytes=10600492 frameSeeks=19",
+      "PASS MediaPlayer SEEK 30000ms completedMs=640 cachedPcmBytes=12714028 frameSeeks=20",
+      "PASS MediaPlayer SEEK 898000ms completedMs=335 cachedPcmBytes=13073516 frameSeeks=21",
+      "PASS MediaPlayer prepare audio-pull-long-flac24.flac decoder=Portable.FLAC access=decoded-block-disk-cache openMs=73 preparedMs=218 cached=147500 total=238140044 durationMs=900000",
+      "PASS MediaPlayer SEEK 260000ms completedMs=582 cachedPcmBytes=4939820 frameSeeks=12",
+      "PASS MediaPlayer SEEK 310000ms completedMs=366 cachedPcmBytes=6537260 frameSeeks=13",
+      "PASS MediaPlayer SEEK 800000ms completedMs=338 cachedPcmBytes=8134700 frameSeeks=14",
+      "PASS MediaPlayer SEEK 30000ms completedMs=303 cachedPcmBytes=9732140 frameSeeks=15",
+      "PASS MediaPlayer SEEK 898000ms completedMs=174 cachedPcmBytes=10271372 frameSeeks=16",
+      "PASS linked gapless handoff shared=false with tagged MP3 sources; exact 66150-frame timelines, playback muted",
+      "PASS source-mp3 decoder=Portable.MPEG bits=16 encodedBytesRead=35557496 encodedStaging=none; metadata, frame count and codec-specific PCM checks verified",
+      "PASS source-flac24 decoder=Portable.FLAC bits=24 encodedBytesRead=2521142 encodedStaging=none; metadata, frame count and codec-specific PCM checks verified",
+      "PASS source-m4a decoder=Android.MediaCodec bits=16 encodedBytesRead=245675 encodedStaging=none; metadata, frame count and codec-specific PCM checks verified",
+      "PASS explicit staged fallback and ownership",
+      "PASS linked gapless handoff shared=true with tagged MP3 sources; exact 66150-frame timelines, playback muted",
+      "PASS no-substitute.rejected-streams",
+      "PASS no-substitute.missing-soundbank-samples",
+      "PASS no-substitute.android-amr"
+    ],
+    "video": [
+      "PASS libvlc.packaged-vlc-and-sound-native-linkage",
+      "PASS libvlc.mp4-h264-aac",
+      "PASS libvlc.webm-vp8-vorbis",
+      "PASS libvlc.mkv-embedded-subtitles",
+      "PASS libvlc.long-indexed-mp4",
+      "PASS libvlc.native-decode-seek-pause-speed",
+      "PASS libvlc.invalid-input-and-reopen-cleanup",
+      "PASS libvlc.realmedia-local-and-streamed-decode-reject-invalid"
+    ],
+    "video-streaming": [
+      "PASS video-stream.packaged-native-linkage",
+      "PASS video-stream.metadata-without-whole-file-copy",
+      "PASS video-stream.positional-native-decode-and-long-seeks",
+      "PASS video-stream.compressed-zip-native-seek-replay",
+      "PASS video-stream.unknown-length-native-chunked-input",
+      "PASS video-stream.stored-zip-native-positional-view",
+      "PASS video-stream.compressed-zip-declines-eager-extraction",
+      "PASS video-stream.six-minute-audible-fixture"
+    ],
+    "viewport": [
+      "PASS image-viewport.original-bug-reproduced",
+      "PASS image-viewport.rotation-fit-fill",
+      "PASS image-viewport.software-pixels-visible",
+      "PASS image-viewport.rotated-pan-and-visible-crop",
+      "PASS image-viewport.inverse-crop-density"
+    ],
+    "image-edit": [
+      "PASS image-edit.four-orientations-pixels-and-metadata",
+      "PASS image-edit.fractional-clamped-collapsed-crops",
+      "PASS image-edit.inverse-display-crop-coordinates",
+      "PASS image-edit.filtered-resize-and-no-op",
+      "PASS image-edit.owned-result-close",
+      "PASS image-edit.alias-close-preserves-borrowed-input",
+      "PASS image-edit.transfer-and-processor-session-ownership",
+      "PASS image-edit.png-pixels-bytes-and-output-metadata",
+      "PASS image-edit.png-positional-source-and-registry-pipeline",
+      "PASS image-edit.transform-and-png-cancellation",
+      "PASS image-edit.invalid-options-and-closed-input",
+      "PASS image-edit.independent-reference-pngs-and-zip"
+    ],
+    "image-metadata": [
+      "PASS image-metadata.little-endian-legacy-parity-metadata",
+      "PASS image-metadata.big-endian-legacy-parity",
+      "PASS image-metadata.without-exif-legacy-parity",
+      "PASS image-metadata.borrowed-lifetime-positional-cursors",
+      "PASS image-metadata.short-reads-owned-close",
+      "PASS image-metadata.unknown-length-sequential-source",
+      "PASS image-metadata.cancellation-before-and-during-read",
+      "PASS image-metadata.provider-error-propagation",
+      "PASS image-metadata.invalid-input-and-repeated-cleanup",
+      "PASS image-metadata.zip-entry-common-source"
+    ],
+    "pdf": [
+      "PASS pdf.metadata",
+      "PASS pdf.pages-pixels-navigation",
+      "PASS pdf.raster-budget",
+      "PASS pdf.frame-lifetime",
+      "PASS pdf.failed-request-recovery",
+      "PASS pdf.cancellation-close",
+      "PASS pdf.corrupt-input-cleanup",
+      "PASS pdf.serialized-render-close"
+    ],
+    "vlc-audio": [
+      "PASS vlc-audio.wma backend=libVLC.PCM rate=44100 channels=2 samples=131072 sha256=e48c7ffc372eca3d5cde637b69fd99fa8ffabd6725738287d9b589462ee8c2bf",
+      "PASS vlc-audio.ra backend=libVLC.PCM rate=8000 channels=1 samples=12160 sha256=ea748ab1d81a5ca7aa343e6e4cd8580b45a5ac2cd8455edfe2fd27b6e0127e5e",
+      "PASS vlc-audio.wv backend=libVLC.PCM rate=44100 channels=2 samples=132300 sha256=d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f",
+      "PASS vlc-audio.tta backend=libVLC.PCM rate=44100 channels=2 samples=132300 sha256=d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f",
+      "PASS vlc-audio.ac3 backend=libVLC.PCM rate=44100 channels=2 samples=135168 sha256=a78d7bcb2e460d4b8c284f5af35899e29c0cd70f67e721b329aa7600ec709926",
+      "PASS vlc-audio.eac3 backend=libVLC.PCM rate=44100 channels=2 samples=135168 sha256=26da54fbde5c634e04f61fb256c792b2ca3ba12dc5d1f4dfe2ca5a040b5ae3da",
+      "PASS vlc-audio.dts backend=libVLC.PCM rate=44100 channels=2 samples=133120 sha256=3a2b5012f33ecd972577e20407341cabf4f0f479a42be4767a0a098094eeec0a",
+      "PASS vlc-audio.ogg backend=Android.MediaCodec rate=44100 channels=2 samples=132300 sha256=1e0261bd128837b0cecb5cbe171a5d9c10098b50522d5c6dc7480f0cfa1938c0",
+      "PASS vlc-audio.opus backend=Android.MediaCodec rate=48000 channels=2 samples=145296 sha256=cfcb7696db3b806f15d0aeaaa4ff0ba59a7669ce2110a6ea26505f16a3310292",
+      "PASS vlc-audio.common-wave-preparation-exact-length",
+      "PASS vlc-audio.common-input-short-reads-and-ownership",
+      "PASS vlc-audio.invalid-input-no-substitute",
+      "PASS vlc-audio.reopen-and-repeated-close",
+      "PASS vlc-audio.backpressure-close",
+      "PASS vlc-audio.cancellation",
+      "PASS vlc-audio.fluidr3-programs-and-percussion",
+      "PASS vlc-audio.bundled-bzip2-checksum-and-reuse"
+    ]
+  },
+  "regression": {
+    "cases": 885,
+    "passed": 855,
+    "knownStorageFailures": 30,
+    "newFailures": 0,
+    "missingCases": 0,
+    "newPassingCases": 18
+  },
+  "originalAudioControlsWithIdenticalPcm": [
+    "audio-valid-au",
+    "audio-valid-aifc",
+    "audio-valid-caf",
+    "audio-valid-w64",
+    "audio-valid-rf64",
+    "audio-valid-8svx",
+    "audio-valid-maud",
+    "audio-valid-voc",
+    "audio-valid-wav"
+  ],
+  "libraryRevisions": {
+    "libinfinicanvas": "0fcedae408385fa95ef816247ba4861108c933ff",
+    "libinfiniscribe": "084e9de5ab5335c79ae88fdf2c297314cfd664e3",
+    "libinfinisound": "4aa00e6f087b7a8c1d96eef6d8e642fa9b80ed81",
+    "libinfinistore": "d30927346d3a4d68d26405ff4ac1c6b09edabfc8",
+    "libinfinistream": "e86167f2fd0c2c19d24140f05478099fdb1a693b",
+    "libinfinivault": "14a7908ffb8cd1af7d9a5400621d91ea1626f4f0",
+    "libinfinivideo": "091e10a6c06b73fb1828ba75348d09338ac89116"
+  },
+  "standaloneBuilds": [
+    "Sound Android/core (100 tests)",
+    "Sound portableOnly core (100 tests)",
+    "Store Android (8 tests)",
+    "InfiniFolder full APK",
+    "audio host"
+  ],
+  "soundFont": {
+    "name": "FluidR3_GM.sf2",
+    "license": "MIT, Frank Wen",
+    "source": "https://deb.debian.org/debian/pool/main/f/fluid-soundfont/fluid-soundfont_3.1.orig.tar.gz",
+    "sourceArchiveSha256": "2621acaa1c78e4abdb24bdd163230cc577e61276936d6aa6e3180582142f0343",
+    "bytes": 148398306,
+    "sha256": "74594e8f4250680adf590507a306655a299935343583256f3b722c48a1bc1cb0",
+    "compressedBytes": 118540984,
+    "consecutiveBzip2AssetParts": 3,
+    "nativeSynthesizer": "libVLC FluidLite"
+  },
+  "packaging": {
+    "soundFontPartsStoredWithoutZipRecompression": true,
+    "fullAndAudioHostNativeLibrariesIdentical": [
+      "libvlc.so",
+      "libvlcjni.so",
+      "libinfinivlcpcm.so",
+      "libinfiniopenmpt.so",
+      "libc++_shared.so"
+    ],
+    "newThirdPartyNoticesPresentInApk": true
+  },
+  "limitations": [
+    "Thirty documented pre-existing storage failures remain.",
+    "Native checks use Termux Android arm64 app_process, without UI or audible output; NDK/CMake and Linux/Windows/macOS/iOS runtime execution are not validated.",
+    "Unreadable queue UI, instrument audibility and archive/provider playback need handset acceptance.",
+    "libVLC PCM has unknown exact frame total and uses full PCM preparation before WAVE publication; long files can add startup latency.",
+    "APE association is covered; APE decoding has no original encoded fixture in this checkpoint."
+  ]
+}

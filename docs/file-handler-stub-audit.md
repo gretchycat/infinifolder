@@ -22,6 +22,11 @@ The corrected probe mutates that actual compression field. The historical JSON
 is retained unchanged; it must not be interpreted as eight codec-field probes.
 MAUD now honors the divisor, rejects zero, and rejects unsupported compression.
 
+Checkpoint 24 adds real libVLC PCM fallback for formats formerly left unavailable,
+plus bundled FluidR3 MIDI and silent unreadable-queue handling. Those are actual
+decode paths, and the 45-probe rejection/reference-glyph gate is retained. See
+[the migration checkpoint](infinistream-migration.md#checkpoint-24-additional-audio-codecs-fluidr3-and-unreadable-queues).
+
 ## Result
 
 Additional placeholder and false-success behavior exists. The packaged APK
