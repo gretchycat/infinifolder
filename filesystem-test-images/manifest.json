@@ -727,6 +727,10 @@
     "bytes": 128,
     "sha256": "88cafd9afcf900fa72cc93b4c1d13206f1ee35424f6572bc888d51f59a5767e1"
   },
+  "video/04-realvideo-ac3.rm": {
+    "bytes": 406215,
+    "sha256": "ced5ea7532c0203f2714a5a1c4139c27cc9b1ca560946c1b93c4220c1af6028d"
+  },
   "video/90-six-minute-seek.mp4": {
     "bytes": 1127370,
     "sha256": "3808388dafb05cf4c86bd0d8bda900803b108c9e67015fd0977b4b3242fd8a47"
@@ -736,12 +740,20 @@
     "sha256": "dbe22c348c395d16ecd7470ab4601cd3443cdddeeadfdfc1782bff3368eb2cbd"
   },
   "video/README.md": {
-    "bytes": 944,
-    "sha256": "dc3e0d75794f386b5fb6824cac8e59211650d4af5e19cba6eb5f67a69e1f533d"
+    "bytes": 1346,
+    "sha256": "daf8b62a4a32b30183ce593fd73abffad4be90294406451eadcd09a32e6d475a"
+  },
+  "video/invalid-realmedia.rm": {
+    "bytes": 24,
+    "sha256": "e35f03bdab875cd81ebd02139ee8c278f9040b5b22fb2d1afaca66478f0c7436"
   },
   "video/invalid-video.mp4": {
     "bytes": 24,
     "sha256": "754ed2f212d495ae30ef2f68f8ab18b0ab162ce669f768373d79f72f1ba3c3bd"
+  },
+  "video/realmedia-checks.zip": {
+    "bytes": 390548,
+    "sha256": "288cd724138ecedcc130d229496619a45e3310e6c1144ba297d98b5a30f98296"
   },
   "video/video-audio-seek-checks.zip": {
     "bytes": 2490277,

@@ -35,6 +35,8 @@ Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) d
 - [x] Add the requested libVLC backend behind libinfinivideo's backend-neutral controls, preserving local/staged inputs and common metadata. Retain the Android platform compatibility adapter.
 - [x] Route playback activity shortcuts to the matching audio/video player; start the selected video before folder discovery.
 - [x] Stream video from common positional/sequential sources with bounded reads and nonblocking socket backpressure; avoid the legacy archive extraction fallback for native slices. Add an audible six-minute seek companion.
+- [x] Route `.rm`/`.rmvb` to Video and eliminate decoder-generated substitute tones; require actual decoding or explicit failure.
+- [ ] Implement real chiptune emulators and additional portable codecs; keep unsupported input from generating audio.
 - [ ] Accept updated remote/ZIP streaming startup and seeks, activity-shortcut return and the audible companion on the handset.
 - [ ] Accept libVLC video surfaces/sound, seeking, aspect/speed, embedded subtitles, playlists/repeat, PiP and rapid navigation from local/ZIP/live remote inputs. See [video checks](video-formats.md#handset-checks).
 - [ ] Continue converting legacy callers to metadata-driven composition before removing compatibility APIs or exported dependencies.

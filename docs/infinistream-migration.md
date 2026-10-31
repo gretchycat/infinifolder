@@ -9,12 +9,12 @@ All remote main hashes were checked against the local tested heads. Sound's exis
 | Repository | Status | Pinned commit |
 | --- | --- | --- |
 | [libinfinistream](https://github.com/gretchycat/libinfinistream) | Created | [`e86167f`](https://github.com/gretchycat/libinfinistream/commit/e86167f2fd0c2c19d24140f05478099fdb1a693b) |
-| [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | [`faee836`](https://github.com/gretchycat/libinfinistore/commit/faee836518fca09d2c9ba8cedb174b1a80779809) |
+| [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | [`b3ed247`](https://github.com/gretchycat/libinfinistore/commit/b3ed2474db561fd7c31c923cbb25aae990fb298d) |
 | [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`14a7908`](https://github.com/gretchycat/libinfinivault/commit/14a7908ffb8cd1af7d9a5400621d91ea1626f4f0) |
-| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`61a4644`](https://github.com/gretchycat/libinfinisound/commit/61a4644bdfd216597bc3fe24ef3a55984bcc2363) |
+| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`d4d266d`](https://github.com/gretchycat/libinfinisound/commit/d4d266d63fdcd3b9a849a14021822c599b39d0b4) |
 | [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`ae706d7`](https://github.com/gretchycat/libinfinicanvas/commit/ae706d70d84a3d6e635d96347bc5c0fe26e5346b) |
 | [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`084e9de`](https://github.com/gretchycat/libinfiniscribe/commit/084e9de5ab5335c79ae88fdf2c297314cfd664e3) |
-| [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`1577ecc`](https://github.com/gretchycat/libinfinivideo/commit/1577ecce391d54410aa3cabc6f7a3d8167e1dde3) |
+| [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`091e10a`](https://github.com/gretchycat/libinfinivideo/commit/091e10a6c06b73fb1828ba75348d09338ac89116) |
 
 ```text
 Store -> Stream
@@ -527,18 +527,69 @@ runtime. Full/host and standalone Video/Vault builds pass. Handset checks remain
 Activity shortcut, startup from local/remote/ZIP, cancellation, picture/sound,
 long seeking, subtitles and PiP.
 
+## Checkpoint 22: RealMedia routing and rejection of substitute audio
+
+The owner reports checkpoint 21 working, then reports `.rm` opening the audio
+player and producing the audio test chord. Store now identifies `.rm`/`.rmvb`
+explicitly and the viewer routes those extensions to Video/libVLC, including
+provider-supplied RealAudio MIME labels. `.ra` keeps its audio association.
+
+The chord came from extracted legacy decoder stubs. Advanced-audio/RealMedia,
+WMA, telephony and chiptune paths generated fixed PCM without decoding the input.
+These substitute branches and unsupported registrations are removed. Existing
+DSD/ADX sample conversion, actual MIDI/tracker rendering and valid soundbank
+previews remain. Actual registered Android codecs still run inside Sound.
+Unsupported input must fail and must not publish PCM. Missing/invalid SFZ
+references and sampleless GUS patches now fail rather than inventing a sample;
+SFZ reads its referenced WAV through the real decoder with actual sample rate
+and channels. True chiptune emulation/additional portable codecs remain planned.
+
+Six new Sound tests cover unsupported headers/extensions, the extensionless RMF
+case, compatibility entry points, no WAVE publication on failure, missing samples
+and exact SFZ sample bytes/rate. Three old fixture cases now assert rejection of
+their former fake decoders while retaining the actual DSD/ADX checks. Their old
+assertions accepted any nonempty generated PCM and did not prove decoding. The
+regenerated JVM audio report now records unavailable codecs as failed and states
+its Android-stub/device-acceptance limits. This corrects prior false support claims.
+
+Three viewer-routing tests and one MIME test bring the gate to 830 cases: 800
+pass, the same 30 pre-existing storage failures, and no missing cases. All prior
+820 case outcomes remain; the intentionally corrected fixture expectations are
+recorded above. Sound core has 75 passing cases including portable-only execution.
+
+Original `04-realvideo-ac3.rm` contains actual RV20 video and AC-3 audio (12 s,
+320×180, 440 Hz tone). `realmedia-checks.zip` has byte-identical valid/invalid
+copies. The generator preserves previous fixture payloads. The invalid RMF header
+must fail, and opening a valid movie afterward still works. Native libVLC checks
+both video/audio decoder progress from local and common-source RealMedia inputs.
+
+The exact final full APK passes 34 audio groups (including invalid-input/sample
+rejection and actual Android AMR-NB/WB), eight video groups and eight streaming
+groups: 50 focused groups, with dummy/muted outputs. Long MP3/24-bit FLAC seek
+callbacks, sample-exact seek windows, positional sources and linked gapless
+handoffs pass. The video-only host repeats eight video plus eight streaming
+groups against its own C++ runtime. Full, audio/video host, standalone Android
+Sound/Store and portable-only Sound builds pass. `checkpoint22-*` logs are in
+`build/infinistream-migration`. An initial routing test exposed the earlier MIME
+shortcut and an initial native helper had a Java checked-exception compile error;
+those attempts are retained separately and are not counted as passing checks.
+Video-only checkpoint 22 APK SHA-256: `0c3cc55b34b1cdc8f861207146246b8c6dd16cac39bcafd548391d9ec3ef78b0`.
+
+Actual owner-file picture/sound, UI error handling and live-provider acceptance
+remain handset checks; no substituted stream is acceptable.
+
 ## Final verification and reproducibility
 
-Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 820-case checkpoint.
+Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 830-case checkpoint.
 
-Current totals: **820 tests, 790 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
+Current totals: **830 tests, 800 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
 | Independent library | Tests | Failures |
 | --- | ---: | ---: |
 | Stream | 26 | 0 |
 | Store | 6 | 0 |
 | Vault | 9 | 0 |
-| Sound | 69 | 0 |
+| Sound | 75 | 0 |
 | Canvas | 52 | 0 |
 | Scribe | 99 | 0 |
 | Video | 31 | 0 |
@@ -556,4 +607,4 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. The requested libVLC backend adds a pinned published native AAR with source/override details; no native binary is committed and no language port is introduced.
 
-Final full debug APK SHA-256: `98039df2ad35e38523c934f7b2530908e89da5fa30592933960f0fefcb731ecb`.
+Final full debug APK SHA-256: `29219a34caa3c8153ec24bf8e9a303be9c4bc8c855f33f9e9e06e6c3a20cb813`.

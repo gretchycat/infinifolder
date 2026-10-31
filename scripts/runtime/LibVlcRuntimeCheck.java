@@ -1,6 +1,9 @@
 import android.content.*;
 import android.os.Looper;
 import io.github.gretchycat.infinivideo.LibVlcMedia;
+import io.github.gretchycat.infinivideo.VideoStreamServer;
+import io.github.gretchycat.infinistream.FileSourceResource;
+import io.github.gretchycat.infinistream.ContentType;
 import org.videolan.libvlc.*;
 import org.videolan.libvlc.interfaces.IMedia;
 import java.io.*;
@@ -82,6 +85,34 @@ public class LibVlcRuntimeCheck {
             check(player.isPlaying(),"resume completes");
         } finally { player.stop();player.release();media.release(); }
     }
+    static void realMedia(LibVLC vlc, File root) throws Exception {
+        File file = new File(root,"04-realvideo-ac3.rm");
+        parsed(vlc,file,12000,false);
+        try (VideoStreamServer server = new VideoStreamServer(new FileSourceResource(file,new ContentType()))) {
+            for (boolean streamed : new boolean[]{false,true}) {
+                Media media = streamed ? LibVlcMedia.INSTANCE.open(vlc,android.net.Uri.parse(server.getUrl()))
+                    : LibVlcMedia.INSTANCE.open(vlc,file);
+                MediaPlayer player = new MediaPlayer(vlc);
+                try {
+                    media.setHWDecoderEnabled(false,false);
+                    media.addOption(":vout=dummy");media.addOption(":aout=dummy");
+                    check(player.setAudioOutput("dummy"),"RealMedia dummy audio output");
+                    player.setMedia(media);player.play();
+                    long deadline = System.currentTimeMillis()+8000;
+                    while (System.currentTimeMillis()<deadline && (media.getStats()==null ||
+                            media.getStats().decodedVideo==0 || media.getStats().decodedAudio==0)) Thread.sleep(40);
+                    check(media.getStats()!=null && media.getStats().decodedVideo>0 && media.getStats().decodedAudio>0,
+                        "RealMedia actual video/audio packets decoded, streamed="+streamed);
+                } finally { player.stop();player.release();media.release(); }
+            }
+            check(server.getBytesRead()>0,"RealMedia common source consumed");
+        }
+        Media bad = LibVlcMedia.INSTANCE.open(vlc,new File(root,"invalid-realmedia.rm"));
+        try { bad.parse(0);check(bad.getTrackCount()==0,"invalid RealMedia has no tracks"); }
+        finally { bad.release(); }
+        parsed(vlc,file,12000,false);
+        pass("realmedia-local-and-streamed-decode-reject-invalid");
+    }
     static LibVLC createEngine(String[] args) throws Exception {
         PrintStream evidence = new PrintStream(new FileOutputStream(args[3]), true, "UTF-8");
         System.setOut(evidence);System.setErr(evidence);
@@ -113,6 +144,7 @@ public class LibVlcRuntimeCheck {
                 Media bad=LibVlcMedia.INSTANCE.open(vlc,new File(root,"invalid-video.mp4"));
                 try { bad.parse(0);check(bad.getTrackCount()==0,"invalid input no tracks"); } finally { bad.release(); }
                 parsed(vlc,new File(root,"01-avc-aac.mp4"),12000,false);pass("invalid-input-and-reopen-cleanup");
+                realMedia(vlc,root);
             } finally { vlc.release(); }
             System.exit(0);
         } catch(Throwable error) { error.printStackTrace();System.exit(1); }

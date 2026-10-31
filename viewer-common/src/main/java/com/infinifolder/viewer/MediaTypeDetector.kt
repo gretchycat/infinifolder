@@ -40,7 +40,7 @@ object MediaTypeDetector {
     )
 
     private val VIDEO_EXTENSIONS = setOf(
-        "mp4", "mkv", "webm", "avi", "mov", "3gp", "ts", "m2ts", "ogv", "wmv", "flv", "m4v"
+        "mp4", "mkv", "webm", "avi", "mov", "3gp", "ts", "m2ts", "ogv", "wmv", "flv", "m4v", "rm", "rmvb"
     )
 
     private val TEXT_EXTENSIONS = setOf(
@@ -71,7 +71,8 @@ object MediaTypeDetector {
             lowerMime == "text/markdown" -> return MediaType.MARKDOWN
             lowerMime in setOf("text/html", "application/xhtml+xml") -> return MediaType.HTML
             lowerMime.startsWith("image/") -> return MediaType.IMAGE
-            lowerMime.startsWith("audio/") -> return MediaType.AUDIO
+            // Some providers use the RealAudio MIME even for RealMedia videos.
+            lowerMime.startsWith("audio/") -> return if (ext in setOf("rm", "rmvb")) MediaType.VIDEO else MediaType.AUDIO
             lowerMime.startsWith("video/") -> return MediaType.VIDEO
             lowerMime.startsWith("text/") || lowerMime in TEXT_MIME_TYPES -> return when {
                 ext in setOf("csv", "tsv") -> MediaType.SPREADSHEET
@@ -120,6 +121,14 @@ object MediaTypeDetector {
         // 8. HTML
         if (ext in HTML_EXTENSIONS || lowerMime == "text/html" || lowerMime == "application/xhtml+xml") {
             return MediaType.HTML
+        }
+
+        // Providers can label RealMedia video as audio/x-pn-realaudio. Keep its
+        // container extensions and MIME aliases on the actual video backend.
+        if (ext in setOf("rm", "rmvb") || lowerMime in setOf(
+                "application/vnd.rn-realmedia", "application/vnd.rn-realmedia-vbr",
+                "application/x-pn-realmedia", "video/vnd.rn-realvideo", "video/x-pn-realvideo")) {
+            return MediaType.VIDEO
         }
 
         // 9. Audio

@@ -161,17 +161,11 @@ class AudioDecodersFixtureTest {
         assertEquals(2, adxPcm.channels)
         assertTrue(adxPcm.samples.isNotEmpty())
 
-        val amrBytes = readFixture("c_major_piano.amr")
-        assertTrue(TelephonyAudioDecoder.canDecode(amrBytes))
-        val amrPcm = TelephonyAudioDecoder.decode(amrBytes)
-        assertNotNull(amrPcm)
-        assertEquals(8000, amrPcm!!.sampleRate)
-
-        val awbBytes = readFixture("c_major_piano.awb")
-        assertTrue(TelephonyAudioDecoder.canDecode(awbBytes))
-        val awbPcm = TelephonyAudioDecoder.decode(awbBytes)
-        assertNotNull(awbPcm)
-        assertEquals(16000, awbPcm!!.sampleRate)
+        for (ext in listOf("amr", "awb")) {
+            val bytes = readFixture("c_major_piano.$ext")
+            assertFalse("Telephony decoding requires a real platform codec", TelephonyAudioDecoder.canDecode(bytes))
+            assertNull("No substitute tone for .$ext", TelephonyAudioDecoder.decode(bytes, ext))
+        }
     }
 
     @Test
@@ -261,24 +255,25 @@ class AudioDecodersFixtureTest {
         for (name in listOf("c_major_piano.dro", "c_major_piano.imf", "c_major_piano.vgm", "c_major_piano.vgz",
             "c_major_piano.ym", "c_major_piano.nsf", "c_major_piano.spc", "c_major_piano.sid")) {
             val bytes = readFixture(name)
-            assertTrue("ChiptunePlayer should recognize $name", ChiptunePlayer.canDecode(bytes))
-            val pcm = ChiptunePlayer.renderToPcm(bytes)
-            assertNotNull("ChiptunePlayer should render $name", pcm)
-            assertEquals(44100, pcm!!.sampleRate)
-            assertTrue(pcm.samples.isNotEmpty())
+            assertFalse("No emulator is registered for $name", ChiptunePlayer.canDecode(bytes))
+            assertNull("Must not synthesize unrelated music for $name", ChiptunePlayer.renderToPcm(bytes))
         }
     }
 
     @Test
     fun testAudiophileStreamDecoder() {
-        for (name in listOf("c_major_piano.dsf", "c_major_piano.dff", "c_major_piano.tta", "c_major_piano.wv",
-            "c_major_piano.ra", "c_major_piano.ac3", "c_major_piano.eac3", "c_major_piano.mlp", "c_major_piano.thd")) {
-            val bytes = readFixture(name)
-            assertTrue("AudiophileStreamDecoder should recognize $name", AudiophileStreamDecoder.canDecode(bytes))
+        for (ext in listOf("dsf", "dff")) {
+            val bytes = readFixture("c_major_piano.$ext")
+            assertTrue(AudiophileStreamDecoder.canDecode(bytes))
             val pcm = AudiophileStreamDecoder.decode(bytes)
-            assertNotNull("AudiophileStreamDecoder should decode $name", pcm)
+            assertNotNull("Existing DSD sample conversion still decodes .$ext", pcm)
             assertEquals(44100, pcm!!.sampleRate)
             assertTrue(pcm.samples.isNotEmpty())
+        }
+        for (ext in listOf("tta", "wv", "ra", "ac3", "eac3", "mlp", "thd")) {
+            val bytes = readFixture("c_major_piano.$ext")
+            assertFalse(AudiophileStreamDecoder.canDecode(bytes, ext))
+            assertNull("No substitute chord for .$ext", AudiophileStreamDecoder.decode(bytes, ext))
         }
     }
 

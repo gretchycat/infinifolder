@@ -23,7 +23,7 @@ def encode(name, codec, duration=12, audio=True):
         command += ['-f', 'lavfi', '-i', f'sine=frequency=440:sample_rate=44100:duration={duration}']
     command += ['-c:v', codec, '-threads', '2', '-b:v', '24k' if duration > 12 else '160k', '-g', '20', '-pix_fmt', 'yuv420p']
     if audio:
-        command += ['-c:a', 'libvorbis' if name.endswith('.webm') else 'aac', '-b:a', '48k']
+        command += ['-c:a', 'libvorbis' if name.endswith('.webm') else 'ac3' if name.endswith('.rm') else 'aac', '-b:a', '48k']
     else:
         command += ['-an']
     if name.endswith('.mp4'):
@@ -33,6 +33,7 @@ def encode(name, codec, duration=12, audio=True):
 
 encode('01-avc-aac.mp4', 'libx264')
 encode('02-vp8-vorbis.webm', 'libvpx')
+encode('04-realvideo-ac3.rm', 'rv20')
 encode('90-six-minute-seek.mp4', 'libx264', 360, False)
 audible = OUT / '91-six-minute-audio-seek.mp4'
 if not audible.exists():
@@ -66,4 +67,12 @@ audio_archive = OUT / 'video-audio-seek-checks.zip'
 if not audio_archive.exists():
     with zipfile.ZipFile(audio_archive, 'w', zipfile.ZIP_DEFLATED) as z:
         z.write(audible, 'video/' + audible.name)
+invalid_rm = OUT / 'invalid-realmedia.rm'
+if not invalid_rm.exists():
+    invalid_rm.write_bytes(b'.RMF' + bytes(20))
+real_archive = OUT / 'realmedia-checks.zip'
+if not real_archive.exists():
+    with zipfile.ZipFile(real_archive, 'w', zipfile.ZIP_DEFLATED) as z:
+        for name in ['04-realvideo-ac3.rm', 'invalid-realmedia.rm']:
+            z.write(OUT / name, 'video/' + name)
 update_manifest([p for p in OUT.iterdir() if p.is_file()])

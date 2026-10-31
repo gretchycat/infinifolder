@@ -82,3 +82,12 @@ Normal playback and gapless preloading now retain an `AudioPlaybackInput` lease.
 Portable FLAC now seeks by exact coded sample/frame numbers with validated frame CRCs and following-frame links. A bounded byte search and anchor map avoid decoding skipped PCM. Android raw extraction on this device can return 16-bit samples even for a 24-bit source: the adapter now checks the real output instead of overwriting its encoding hint. Precision loss selects portable FLAC, while wider codec containers use the canonical source width for format-stable fallback. Exact sample checks include mono/stereo, 16/24/32-bit, fixed/variable blocks and a valid-looking frame embedded in sample payload.
 
 The common input path does not remove provider latency or make cold MPEG indexing constant-time. Archives without an economical positional adapter still stage. Native iOS/desktop output, related-file composition and arbitrary multi-track planning remain later work.
+
+## Decoder failure contract
+
+Only actual decoding or input-driven note/sample rendering can produce PCM. The
+old WMA, RealAudio/advanced-audio, chiptune and telephony chord substitutes are
+removed; supported Android codecs remain registered inside Sound. Unsupported
+input reports failure. SFZ missing/invalid referenced samples and empty GUS
+patches fail explicitly. Chiptune emulation and additional portable codecs remain
+planned. `.rm`/`.rmvb` association belongs to the Video host and libVLC.

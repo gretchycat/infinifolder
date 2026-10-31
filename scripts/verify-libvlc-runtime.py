@@ -81,7 +81,7 @@ with log.open('w') as output:
 print(log.read_text(), end='')
 report = evidence.read_text() if evidence.exists() else ''
 print(report, end='')
-if result.returncode == 0 and sum(line.startswith('PASS ') for line in report.splitlines()) != (8 if args.streaming else 7):
+if result.returncode == 0 and sum(line.startswith('PASS ') for line in report.splitlines()) != 8:
     raise SystemExit('Missing native check completion: libVLC redirects stdout/stderr to logcat; exit 0 alone is not acceptance')
 with apk.open('rb') as source:
     print('APK SHA-256: ' + hashlib.file_digest(source, 'sha256').hexdigest())

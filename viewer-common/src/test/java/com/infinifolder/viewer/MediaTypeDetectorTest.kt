@@ -131,4 +131,25 @@ class MediaTypeDetectorTest {
         assertEquals(MediaType.HTML, MediaTypeDetector.detect("misnamed.csv", "text/html"))
         assertEquals(MediaType.TEXT, MediaTypeDetector.detect("notes.txt", "text/plain"))
     }
+    @Test fun realMediaVideoExtensionsOverrideLegacyAudioMime() {
+        for (ext in listOf("rm", "RM", "rmvb", "RMVB")) {
+            for (mime in listOf(null, "application/octet-stream", "audio/x-pn-realaudio", "audio/vnd.rn-realaudio")) {
+                assertEquals("$ext $mime", MediaType.VIDEO, MediaTypeDetector.detect("movie.$ext", mime))
+            }
+            assertTrue(MediaTypeDetector.isViewableInternally("movie.$ext"))
+        }
+    }
+
+    @Test fun realMediaVideoMimeRoutesWithoutAnExtension() {
+        for (mime in listOf("application/vnd.rn-realmedia", "application/vnd.rn-realmedia-vbr",
+                "application/x-pn-realmedia", "video/vnd.rn-realvideo", "video/x-pn-realvideo")) {
+            assertEquals(mime, MediaType.VIDEO, MediaTypeDetector.detect("stream", mime))
+        }
+    }
+
+    @Test fun realAudioKeepsItsAudioAssociation() {
+        assertEquals(MediaType.AUDIO, MediaTypeDetector.detect("sound.ra", "audio/x-pn-realaudio"))
+        assertEquals(MediaType.AUDIO, MediaTypeDetector.detect("sound", "audio/x-pn-realaudio"))
+    }
+
 }

@@ -19,6 +19,7 @@ public class AudioPullRuntimeCheck {
   public static void run(String[] args) throws Exception {
     File root = new File(args[0]), fixtures = new File(root,"libraries/libinfinisound/audio-core/src/test/resources/audio");
     File out = new File(root,"build/infinistream-migration");
+    if (args.length>1 && args[1].equals("no-substitute")) { noSubstitute(root,out);return; }
     if (args.length>1 && (args[1].equals("gapless") || args[1].equals("source-gapless"))) { gapless(fixtures,out,args[1].equals("source-gapless"));return; }
     if (args.length>1 && args[1].startsWith("source-")) { sourceCheck(fixtures,out,args[1]);return; }
     for (String name : new String[]{"chord.mp3","chord.aac","chord.m4a","chord.wav","chord.flac","high-resolution.flac","full-resolution.flac"}) {
@@ -251,6 +252,44 @@ public class AudioPullRuntimeCheck {
     }
     check(raw.closes==1,"Encoded source must close once");
     if(fallback){check(leases.get()==1,"Staged lease must close once");System.out.println("PASS explicit staged fallback and ownership");}
+  }
+
+  static void noSubstitute(File root,File out) throws Exception {
+    for(String[] entry:new String[][]{{"rm",".RMF"},{"rmvb",".RMF"},{"ra",".RMF"},{"wv","wvpk"},
+        {"tta","TTA1"},{"vgm","Vgm "},{"sid","PSID"},{"wma","ASF"}}) {
+      byte[] bytes=Arrays.copyOf(entry[1].getBytes("US-ASCII"),128);
+      AudioDecodeRequest request=new AudioDecodeRequest(bytes,entry[0],null);
+      check(PortableAudioProcessing.INSTANCE.decodeLegacy(request,null)==null,"No portable substitute for "+entry[0]);
+      check(AudioProcessing.INSTANCE.decode(request,null)==null,"No platform fallback substitute for "+entry[0]);
+      File cache=new File(out,"rejected-"+entry[0]+".wav");cache.delete();
+      File encoded=new File(out,"rejected-input."+entry[0]);
+      try(FileOutputStream output=new FileOutputStream(encoded)) { output.write(bytes); }
+      try {
+        try(AudioWaveSource source=AudioProcessing.INSTANCE.openPlaybackSource(
+            new FileSourceResource(encoded,new ContentType()),cache,null,()->false)) {
+          byte[] pcm=new byte[4096];source.readAt(0,pcm,0,pcm.length);
+          throw new AssertionError("Invalid input produced a PCM source: "+entry[0]);
+        }
+      } catch(Exception expected) { check(expected instanceof IOException,"Expected actual decode failure, got "+expected); check(!cache.exists()||cache.length()==0,"Failed input published PCM"); }
+      finally { encoded.delete(); }
+    }
+    System.out.println("PASS no-substitute.rejected-streams");
+    File instrument=new File(out,"missing-sample.sfz");
+    byte[] sfz="<region> sample=missing-audio-check.wav".getBytes("UTF-8");
+    check(AudioProcessing.INSTANCE.decode(new AudioDecodeRequest(sfz,"sfz",instrument),null)==null,"Missing SFZ must fail");
+    byte[] patch=Arrays.copyOf("GF1PATCH110".getBytes("US-ASCII"),128);
+    check(AudioProcessing.INSTANCE.decode(new AudioDecodeRequest(patch,"pat",null),null)==null,"Empty patch must fail");
+    System.out.println("PASS no-substitute.missing-soundbank-samples");
+    for(String ext:new String[]{"amr","awb"}) {
+      File input=new File(root,"filesystem-test-images/audio/c_major_piano."+ext),cache=new File(out,"real-"+ext+".wav");
+      try {
+        AudioPreparation prepared=AudioProcessing.INSTANCE.prepareForOutput(input,cache,DecoderPreference.PLATFORM_FIRST,null,()->false);
+        check(prepared.getDecoder().equals("Android.MediaCodec"),"Actual Android codec required for "+ext);
+        check(prepared.getFormat().getSampleRate()==(ext.equals("amr")?8000:16000),"Actual AMR sample rate");
+        check(cache.length()>44,"Actual AMR PCM decoded");
+      } finally { cache.delete(); }
+    }
+    System.out.println("PASS no-substitute.android-amr");
   }
 
 }

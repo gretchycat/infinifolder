@@ -50,6 +50,11 @@ random access, while compressed streams can replay prefixes. Accept
 [video playback](video-formats.md#handset-checks), shortcut routing and streaming
 startup/seeking, then extend container access and portable backends incrementally.
 
+RealMedia `.rm`/`.rmvb` now route to Video. Sound rejects unsupported input
+without the old decoder-generated test chords. Real chiptune emulation and
+additional portable WMA/telephony/advanced-audio codecs remain future work;
+registered Android codecs are retained. Missing soundbank samples fail explicitly.
+
 ## Next: accept the new safety paths
 
 - Exercise external-edit source checks, durable unfinished sessions and conflict choices with real editors.

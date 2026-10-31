@@ -103,6 +103,8 @@ class AudioPlaybackDiagnosticsFixtureTest {
             appendLine()
             appendLine("Generated on ${java.time.Instant.now()} across **${files.size}** audio fixtures in `filesystem-test-images/audio/`.")
             appendLine()
+            appendLine("This JVM fixture report uses Android stubs. It does not establish device playback or codec availability. Unsupported codecs must fail; generated substitute tones are forbidden. Earlier reports counted placeholder synthesis as successful decoding and overstated support.")
+            appendLine()
             appendLine("### Diagnostic Health Criteria")
             appendLine("- **HEALTHY**: Decoded valid PCM stream with audible signal (Peak > 0.05, RMS > -40 dB, zero clipping, duration > 100ms).")
             appendLine("- **SILENT**: Stream decoded without error, but sample values are zero or inaudible (RMS < -60 dB).")

@@ -13,7 +13,9 @@ native engine reports 3.0.25 Vetinari. `video-api` exposes backend-neutral
 The app imports library types, with no direct libVLC dependency or player calls.
 The library owns native decoding, video/subtitle surfaces and audio focus;
 the host owns controls, playlists, repeat/PiP decisions and source leases.
-The old Android platform adapter remains available for compatibility.
+The old Android platform adapter remains available for compatibility. `.rm` and
+`.rmvb` now select this video backend even with a provider-supplied RealAudio MIME;
+`.ra` remains associated with audio.
 
 Local files are borrowed directly. Remote/archive videos now use common sources
 through a library-owned loopback range transport: positional sources serve ranges
@@ -49,6 +51,8 @@ for the AAR pin, source-built override, notices and shared C++ packaging.
 
 Original synthetic fixtures are in `filesystem-test-images/video/`:
 
+- `04-realvideo-ac3.rm`: 12-second RV20/AC-3 moving pattern and tone; open loose
+  and through `realmedia-checks.zip`. Invalid RealMedia must report failure.
 - `01-avc-aac.mp4`: 12-second moving test pattern and 440 Hz tone.
 - `02-vp8-vorbis.webm`: the same duration/pattern/tone with different codecs.
 - `03-avc-aac-subtitles.mkv`: the MP4 video/audio with embedded subtitles at
@@ -73,8 +77,9 @@ MP4/WebM/MKV tracks/dimensions/duration, embedded subtitle detection, native
 software decode, long forward/back seek positions with decoder progress,
 pause/speed/resume, malformed input and cleanup. Dummy outputs keep it headless
 and silent; it does not verify audible sound, hardware surfaces, subtitle pixels
-or PiP. The default runner requires all seven completion markers because libVLC redirects
-standard output/error into logcat. Exit zero alone is not treated as success.
+or PiP. The default runner requires all eight completion markers because libVLC redirects
+standard output/error into logcat. RealMedia metadata and actual local/streamed
+video/audio decoding are included. Exit zero alone is not treated as success.
 Its `--streaming` mode requires eight markers for common-source/native range
 playback, bounded reads of a 512 MiB virtual movie, compressed ZIP replay,
 unknown-length WebM/MP4, non-extracting container views and the audible companion.

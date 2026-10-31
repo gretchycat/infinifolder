@@ -6,6 +6,10 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Confirmed on the handset
 
+- The checkpoint 21 video shortcut/streaming correction is user-reported working
+  (2026-10-31). The subsequently reported `.rm` association and substitute-audio
+  defect is addressed separately in checkpoint 22; its handset check is pending.
+
 - The checkpoint 19 image viewport/crop correction is user-confirmed working
   (2026-10-31). The owner reports everything works as expected after retesting
   the black surface after edits and off-screen crop handles. The recorded gate
@@ -59,6 +63,19 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Implemented; focused acceptance still needed
 
+Checkpoint 22 routes `.rm`/`.rmvb` to Video/libVLC even with a RealAudio MIME.
+Sound's old advanced-audio, WMA, telephony and chiptune stubs no longer generate
+substitute chords. Real registered codecs must decode the selected stream or
+return failure. Actual DSD/ADX conversion, MIDI/tracker rendering and valid
+soundbank previews remain; missing/invalid SFZ samples and empty GUS patches
+fail explicitly. Six core rejection/sample tests, three routing cases and one
+MIME case bring the gate to 830 tests: 800 pass and the same 30 known failures.
+The new original RV20/AC-3 `.rm` fixture decodes actual video/audio in native
+local/streamed checks; ZIP copies are added for handset checks. Invalid streams fail, and actual Android AMR-NB/WB
+still decode. Reopen the owner's `.rm` files and verify their picture/sound; no
+invalid/unsupported input should emit a replacement tone. The generated JVM
+fixture report corrects the former false successful-decoding claims.
+
 Checkpoint 21 corrects the Activity-bar video shortcut and replaces whole-video
 remote/archive staging with common-source streaming inside libinfinivideo.
 Positional inputs serve native byte ranges; sequential inputs stream immediately
@@ -71,8 +88,8 @@ copy contain an AAC tone. The gate reports 820 cases, 790 pass and the same 30
 known failures. Fifty focused native groups pass against the full APK, plus 15
 video/streaming groups against the video-only host. Full/host and standalone
 Video/Vault builds pass. [Video handset checks](video-formats.md#handset-checks)
-remain pending for the shortcut, local/remote/ZIP startup, actual picture/sound,
-seeking, subtitles and PiP. Desktop/iOS backends remain future work.
+now include broader live provider coverage, subtitles and PiP beyond the owner
+report. Desktop/iOS backends remain future work.
 
 Checkpoint 18 moves image bitmap rotation/flip/crop/resize and PNG encoding into
 Canvas processors, retaining host controls, resize-dialog snapshots, sampled

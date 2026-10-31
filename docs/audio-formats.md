@@ -6,15 +6,32 @@ Updated 2026-10-31. This document tracks audio and sound format support across M
 
 > **ANSI music playback is planned, not implemented.** Sound will own note-macro parsing, timing and PCM synthesis, allowing the existing music player to play its audio independently. Scribe/terminal presentation can optionally synchronize accompanying artwork using the same timed events. ANSI music variants and ABC notation are also tracked in [Text, markup, document, and text-based media formats](text-and-document-formats.md). Existing static ANSI image previews do not provide music playback.
 
+## Decoder correctness correction
+
+The old RealMedia/advanced-audio, WMA, telephony and chiptune stubs returned a
+fixed synthesized chord without decoding their inputs. That behavior is removed.
+No playback fallback may substitute a different stream. Portable DSD and ADX
+conversion, actual MIDI/tracker rendering and soundbank sample previews remain;
+AMR and other compressed formats require a real registered platform codec.
+Unsupported codecs report failure. Chiptune emulation remains planned.
+SFZ references must resolve to decodable samples; empty GUS patches fail rather
+than inventing an instrument. Explicit MIDI notes and valid sample-bank previews
+still synthesize from their actual inputs.
+
+`.rm` and `.rmvb` route to libinfinivideo/libVLC, including when providers label
+those names with a RealAudio MIME. `.ra` keeps its audio association. The generated
+[JVM fixture report](audio-playback-authoritative-report.md) now records unavailable
+codecs as failed; earlier placeholder-generated successes overstated support.
+
 ---
 
 ## Implemented Architecture & Decoders
 
-All local parsing/decoding is selected inside libinfinisound. Its Android MediaExtractor/MediaCodec backend and portable MP3/AAC/FLAC/WAVE plus existing composite codecs share library contracts. InfiniStream compatibility wraps encoded positional sources and actual typed PCM outputs. AudioPlayerService prepares a canonical PCM WAVE file through the library before handing it to MediaPlayer, including preload; it does not pass original compressed sources directly to MediaPlayer. Output surfaces, routing, Cast and queue lifetimes remain Android host responsibilities. Existing composite render limits and supported formats are preserved.
+All local parsing/decoding is selected inside libinfinisound. Its Android MediaExtractor/MediaCodec backend and portable MP3/AAC/FLAC/WAVE plus existing composite codecs share library contracts. InfiniStream compatibility wraps encoded positional sources and actual typed PCM outputs. AudioPlayerService opens a canonical PCM WAVE source through the library for MediaPlayer to pull, including preload; it does not pass original compressed sources directly to MediaPlayer. Output surfaces, routing, Cast and queue lifetimes remain Android host responsibilities. Existing composite render limits remain; only actual decoder implementations may produce PCM.
 
-PCM file preparation bounds memory but uses disk and can add startup/preload latency; the RIFF output limit is 4 GiB. A future streaming output adapter can consume PCM directly without rewriting codecs.
+Seek-capable decoders fill independent PCM disk-cache blocks on demand. Unknown-length and legacy buffered renderers retain full preparation, which can add startup/preload latency. The RIFF output limit is 4 GiB. Audio output still consumes only library-decoded PCM.
 
-All formats integrate with `AudioPlayerService` background playback, lock screen media notifications, audio focus management, the segmented 16-band animated spectrum visualizer (`VisualizerView`), and playlist navigation.
+Successfully decoded formats integrate with `AudioPlayerService` background playback, lock screen media notifications, audio focus management, the segmented 16-band animated spectrum visualizer (`VisualizerView`), and playlist navigation.
 
 ---
 
@@ -37,7 +54,7 @@ All formats integrate with `AudioPlayerService` background playback, lock screen
 | **Psion Audio** | `.wve` | `audio/x-wve` | `SpecializedSampleDecoder` | 32-byte `ALawSoundFile**` header with 8 kHz G.711 A-law speech decompression. |
 | **HTK Speech Feature** | `.htk` | `audio/x-htk` | `SpecializedSampleDecoder` | 12-byte big-endian header. Converts 100ns sample periods to sample rate and decodes 16-bit linear PCM. |
 | **CRI ADX ADPCM** | `.adx` | `audio/x-adx` | `TelephonyAudioDecoder` | CRI Middleware game audio (`0x80 0x00`). 18-byte frames per channel with 2nd-order AR prediction filter. |
-| **Adaptive Multi-Rate (AMR-NB/WB)** | `.amr`, `.awb` | `audio/amr`, `audio/amr-wb` | `TelephonyAudioDecoder` / `MediaPlayer` | `#!AMR\n` and `#!AMR-WB\n` headers. Dual-mode support through native hardware codecs and software fallback. |
+| **Adaptive Multi-Rate (AMR-NB/WB)** | `.amr`, `.awb` | `audio/amr`, `audio/amr-wb` | `Android.MediaCodec` inside Sound | `#!AMR\n` and `#!AMR-WB\n` headers. Requires an actual platform codec; the former synthetic software fallback is removed. |
 
 ---
 
@@ -78,17 +95,17 @@ The synthesizer pipeline (`com.infinifolder.audio.synth`) provides full polyphon
 
 ---
 
-### 4. Chiptune & Hardware Register Dumps
+### 4. Chiptune & Hardware Register Dumps — planned decoding
 
 | Format | Extensions | MIME Type | Engine | Description & Capabilities |
 | --- | --- | --- | --- | --- |
-| **DOSBox Raw OPL** | `.dro` | `audio/x-dro` | `ChiptunePlayer` | `DBRAWOPL` header. DOSBox hardware register dumps for Yamaha OPL2/OPL3 FM sound cards (AdLib, Sound Blaster). |
-| **Id Software Music** | `.imf` | `audio/x-imf` | `ChiptunePlayer` | OPL2 register/value/delay sequences from *Wolfenstein 3D*, *Commander Keen*, and *Duke Nukem II*. |
-| **Video Game Music** | `.vgm`, `.vgz` | `audio/x-vgm` | `ChiptunePlayer` | `Vgm ` header (with automatic GZIP decompression for `.vgz`). Emulates PSG / FM sound chips. |
-| **YM Sound Chip** | `.ym` | `audio/x-ym` | `ChiptunePlayer` | Atari ST and Amstrad CPC YM2149 / AY-3-8910 chiptune register logs (`YM5!LeOnArD!`, `YM6!`, `YM2!`, `YM3!`). |
-| **Nintendo Sound File** | `.nsf` | `audio/x-nsf` | `ChiptunePlayer` | NES sound chip music dump (`NESM\x1A`). Generates pulse, triangle, and noise waveforms. |
-| **SNES Sound File** | `.spc` | `audio/x-spc` | `ChiptunePlayer` | `SNES-SPC700 Soun` header. SNES 8-channel DSP audio. |
-| **Commodore 64 SID** | `.sid` | `audio/x-sid` | `ChiptunePlayer` | `PSID` / `RSID` header. MOS 6581/8580 SID chip synthesis. |
+| **DOSBox Raw OPL** | `.dro` | `audio/x-dro` | Not implemented | `DBRAWOPL` header. DOSBox hardware register dumps for Yamaha OPL2/OPL3 FM sound cards (AdLib, Sound Blaster). |
+| **Id Software Music** | `.imf` | `audio/x-imf` | Not implemented | OPL2 register/value/delay sequences from *Wolfenstein 3D*, *Commander Keen*, and *Duke Nukem II*. |
+| **Video Game Music** | `.vgm`, `.vgz` | `audio/x-vgm` | Not implemented | `Vgm ` header; `.vgz` is its GZIP wrapper. PSG / FM emulation is not implemented. |
+| **YM Sound Chip** | `.ym` | `audio/x-ym` | Not implemented | Atari ST and Amstrad CPC YM2149 / AY-3-8910 chiptune register logs (`YM5!LeOnArD!`, `YM6!`, `YM2!`, `YM3!`). |
+| **Nintendo Sound File** | `.nsf` | `audio/x-nsf` | Not implemented | NES sound chip music dump (`NESM\x1A`). Pulse/triangle/noise emulation is not implemented. |
+| **SNES Sound File** | `.spc` | `audio/x-spc` | Not implemented | `SNES-SPC700 Soun` header. SNES 8-channel DSP audio. |
+| **Commodore 64 SID** | `.sid` | `audio/x-sid` | Not implemented | `PSID` / `RSID` header. MOS 6581/8580 SID chip synthesis. |
 
 ---
 
@@ -98,10 +115,10 @@ The synthesizer pipeline (`com.infinifolder.audio.synth`) provides full polyphon
 | --- | --- | --- | --- | --- |
 | **Direct Stream Digital (DSF)** | `.dsf` | `audio/x-dsf` | `AudiophileStreamDecoder` | Sony DSF container (`DSD `). DSD64 1-bit Pulse Density Modulation (PDM) @ 2.8224 MHz decimated into 16-bit 44.1 kHz PCM via a 64-sample moving average decimation filter. |
 | **Direct Stream Digital (DFF)** | `.dff` | `audio/x-dff` | `AudiophileStreamDecoder` | Philips DSDIFF container (`FRM8....DSD `). 1-bit PDM stream decimation to 16-bit PCM. |
-| **True Audio** | `.tta` | `audio/x-tta` | `AudiophileStreamDecoder` | `TTA1` header. Lossless 16-bit multichannel PCM audio. |
-| **WavPack Lossless** | `.wv` | `audio/x-wavpack` | `AudiophileStreamDecoder` | `wvpk` header. Decodes WavPack lossless audio frames. |
-| **RealMedia Audio** | `.ra` | `audio/x-pn-realaudio` | `AudiophileStreamDecoder` | `.RMF` RealMedia container. |
-| **Dolby Digital & Surround** | `.ac3`, `.eac3`, `.dts`, `.mlp`, `.thd` | `audio/ac3`, `audio/eac3`, `audio/vnd.dts`, `audio/x-mlp`, `audio/x-truehd` | `AudiophileStreamDecoder` | Synchronized frame extraction for Dolby Digital AC-3 (`0x0B 0x77`), Enhanced AC-3, and Dolby TrueHD / MLP streams (`0x10 0x50 0xFF 0xD8`). |
+| **True Audio** | `.tta` | `audio/x-tta` | Real platform codec required | `TTA1` header recognized by format metadata; no portable TTA decoder. |
+| **WavPack Lossless** | `.wv` | `audio/x-wavpack` | Real platform codec required | `wvpk` signature; no portable WavPack decoder. |
+| **RealMedia Audio** | `.ra` | `audio/x-pn-realaudio` | Real platform codec required | Audio association only; no portable RealAudio decoder. Use the video player for `.rm`/`.rmvb`. |
+| **Dolby Digital & Surround** | `.ac3`, `.eac3`, `.dts`, `.mlp`, `.thd` | `audio/ac3`, `audio/eac3`, `audio/vnd.dts`, `audio/x-mlp`, `audio/x-truehd` | Real platform codec required | No portable decoder for these codecs. Android availability varies; unsupported inputs fail explicitly. |
 
 ---
 

@@ -47,4 +47,10 @@ class MimeRegistryTest {
         assertEquals(Support.UNSUPPORTED, capabilities[ResourceCapability.DELETE])
         assertEquals(Support.SUPPORTED, capabilities[ResourceCapability.RENAME])
     }
+    @Test fun realMediaContainerExtensionsHaveExplicitMimeTypes() {
+        assertEquals("application/vnd.rn-realmedia", MimeRegistry.guess("movie.rm"))
+        assertEquals("application/vnd.rn-realmedia-vbr", MimeRegistry.guess("movie.RMVB"))
+        assertEquals("audio/x-pn-realaudio", MimeRegistry.guess("sound.ra"))
+    }
+
 }

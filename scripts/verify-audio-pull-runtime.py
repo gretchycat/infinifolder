@@ -7,6 +7,7 @@ All generated files remain in ignored build/infinistream-migration.
 """
 from pathlib import Path
 import argparse
+import hashlib
 import os
 import shutil
 import subprocess
@@ -45,7 +46,7 @@ env = os.environ.copy()
 env.pop('LD_LIBRARY_PATH', None)
 env.pop('LD_PRELOAD', None)
 env['CLASSPATH'] = str(dex / 'classes.dex') + ':' + str(apk)
-names = ['chord.mp3', 'chord.aac', 'chord.m4a', 'chord.wav', 'chord.flac', 'high-resolution.flac', 'full-resolution.flac', 'long', 'long-cbr', 'long-flac24', 'gapless', 'source-mp3', 'source-flac24', 'source-m4a', 'source-fallback', 'source-gapless']
+names = ['chord.mp3', 'chord.aac', 'chord.m4a', 'chord.wav', 'chord.flac', 'high-resolution.flac', 'full-resolution.flac', 'long', 'long-cbr', 'long-flac24', 'gapless', 'source-mp3', 'source-flac24', 'source-m4a', 'source-fallback', 'source-gapless', 'no-substitute']
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('cases', nargs='*')
 parser.add_argument('--file', action='append', type=Path, default=[], help='Check a local MP3 of at least 32 seconds without copying it into the repository')
@@ -74,6 +75,12 @@ for name, extra in runs:
     with log_path.open('w') as log:
         result = subprocess.run(['/system/bin/app_process64', '/system/bin', 'AudioPullRuntimeCheck',
             str(ROOT)] + (extra or [name]), env=env, stdout=log, stderr=subprocess.STDOUT, timeout=120)
-    print(log_path.read_text(), end='', flush=True)
+    report = log_path.read_text()
+    print(report, end='', flush=True)
+    if name == 'no-substitute' and sum(line.startswith('PASS no-substitute.') for line in report.splitlines()) != 3:
+        raise SystemExit('Missing no-substitute completion markers')
     if result.returncode:
         raise SystemExit(f'{name}: Android runtime exit {result.returncode}; see {log_path}')
+
+with apk.open('rb') as source:
+    print('APK SHA-256: ' + hashlib.file_digest(source, 'sha256').hexdigest())

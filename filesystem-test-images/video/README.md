@@ -14,3 +14,9 @@ Regeneration needs FFmpeg with libx264, libvpx, AAC and libvorbis encoders.
 with matching `video-audio-seek-checks.zip` copies. Test 0:10, 4:00, 5:00 and 5:50
 while watching movement and listening for the tone. The original 90 remains
 silent; `video-expected.json` describes the original set.
+
+`04-realvideo-ac3.rm` adds actual RV20 video and AC-3 audio (12 seconds, 320×180,
+440 Hz tone). `realmedia-checks.zip` contains the same file and the deliberately
+truncated `invalid-realmedia.rm`. Open the valid files loose and in the ZIP; an
+invalid stream must fail without a replacement tone. FFmpeg needs RV20 and AC-3
+encoders for this companion. Original fixture/ZIP contents remain unchanged.
