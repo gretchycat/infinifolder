@@ -283,8 +283,9 @@ classes, structure/titles, related positional resources, invalid input, XML poli
 and limits, cancellation and an EPUB nested in ZIP. The prior 54 runtime cases
 also pass against the same APK: 64 total, including muted MP3 seeks and gapless.
 Helper DEX targets API 26, matching the app's minimum API. Logs use checkpoint16-*.
-WebView rendering, images/CSS, fragment navigation, themes/font controls, back
-during loading and live remote/provider opening still require handset acceptance.
+The owner confirms EPUB viewing is working after the checkpoint 16 fixture/test
+handoff (2026-10-31). Broader interruption/back-during-load and live remote/provider
+checks remain separate acceptance work.
 
 ## Final verification and reproducibility
 

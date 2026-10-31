@@ -6,6 +6,10 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Confirmed on the handset
 
+- EPUB viewing after the Scribe/Vault migration is user-confirmed working
+  (2026-10-31, checkpoint 16 handoff). Broader live remote/provider and
+  interruption checks remain separate acceptance work.
+
 - Valid PDFs are user-confirmed working; the reported failure was corrupt input
   (2026-10-31). Checkpoint 15 moves the existing Android PDF backend into Scribe
   and adds serialized page work, bounded aspect-preserving rasters and explicit
@@ -48,8 +52,8 @@ resource expansion into Vault, retaining the host's full staging/cache leases,
 WebView, themes and font/navigation controls. Synthetic EPUB 2/3, fallback and
 invalid samples are in `filesystem-test-images/documents/`. Current evidence is
 727 cases with the same 30 known failures and 64 passing device pipeline checks.
-EPUB images/CSS, fragment links, themes/font size, back during loading and live
-remote opening still need handset acceptance. EPUB 3 NAV-label interpretation
+The owner confirms EPUB viewing after the test handoff. Broader interruption and
+live remote/provider checks remain. EPUB 3 NAV-label interpretation
 and lazy package serving remain future work; PostScript/LaTeX rendering is planned.
 
 | Area | Remaining acceptance |

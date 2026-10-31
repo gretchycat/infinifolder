@@ -26,8 +26,9 @@ was corrupt input, and the updated viewer still needs handset acceptance.
 EPUB now composes Vault ZIP resource expansion and Scribe's portable structured
 book processor over related common resources. The host retains full explicit
 staging, cache policy, WebView, themes and font/navigation controls. EPUB 2/3,
-fallback and invalid fixtures cover the migrated boundaries; handset WebView and
-remote acceptance remain. EPUB 3 NAV labels and on-demand package resource
+fallback and invalid fixtures cover the migrated boundaries; EPUB viewing is
+user-confirmed after the checkpoint 16 handoff. Broader interruption and live
+remote/provider acceptance remain. EPUB 3 NAV labels and on-demand package resource
 serving remain follow-up. PostScript/LaTeX and Office rendering are still planned.
 
 ## Next: accept the new safety paths

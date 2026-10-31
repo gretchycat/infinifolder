@@ -23,7 +23,8 @@ Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) d
 - [x] Move Android PDF parsing/rendering into Scribe's optional Android backend, preserving host navigation/zoom/staging and serializing page lifetimes. Add valid/corrupt PDF, PostScript/EPS and LaTeX fixtures.
 - [ ] Accept PDF navigation/fit/zoom, rapid page requests, back during work and archive/remote opening after the backend migration.
 - [x] Move EPUB package/chapter/NCX parsing into Scribe's portable core over related common resources, and leased ZIP expansion into Vault. Retain the host's WebView, navigation, themes and font controls.
-- [ ] Accept EPUB chapter/TOC and fragment links, themes/font size, related images/CSS, back during loading and archive/remote staging with the new synthetic books. EPUB 3 NAV-label interpretation remains follow-up; current HTML-title fallback is retained.
+- [x] Confirm EPUB viewing after the Scribe/Vault migration; user confirmation follows the checkpoint 16 fixture/test handoff (2026-10-31).
+- [ ] Extend EPUB acceptance to interruption/back during loading and live remote/provider staging. EPUB 3 NAV-label interpretation remains follow-up; current HTML-title fallback is retained.
 - [ ] Continue converting legacy callers to metadata-driven composition before removing compatibility APIs or exported dependencies.
 - [ ] Extend automatic planning for arbitrary multi-input/track graphs; current multi-port processors use explicit bindings.
 - [ ] Verify live remote providers, Android playback/seek/gapless/route behavior and editor/container write acceptance after these checkpoints.
