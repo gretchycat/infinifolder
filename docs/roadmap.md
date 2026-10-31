@@ -23,9 +23,9 @@ Canvas also owns [bitmap edits and PNG encoding](image-processing.md) through
 registered processors. Host gestures, preview controls and save policy remain.
 Portable EXIF/image processing and streamed PNG publication remain future work.
 
-Image-edit viewport follow-up: the reported blank surface after edits and initial
-off-screen crop handles have a host geometry correction awaiting handset
-acceptance. See [image processing](image-processing.md#viewport-correction-after-checkpoint-18).
+Image-edit viewport follow-up: the host geometry correction for the blank
+surface after edits and initial off-screen crop handles is user-confirmed
+working (2026-10-31). See [image processing](image-processing.md#viewport-correction-after-checkpoint-18).
 
 Current progress and known pre-existing failures belong in [migration checkpoints](infinistream-migration.md). The remaining product/safety work below continues alongside this architecture work; no language port is included.
 

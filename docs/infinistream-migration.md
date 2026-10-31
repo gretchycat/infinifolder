@@ -426,8 +426,9 @@ pixels, rotated pan/crop and density-aware inverse mapping. The five viewport,
 12 edit/PNG, 10 EXIF and eight PDF groups pass against the same rebuilt full APK
 (35 focused native groups). Full and image-only debug builds pass. Logs use
 `checkpoint19-*` under `build/infinistream-migration`; the viewport runner is
-`scripts/verify-image-viewport-runtime.py`. Interactive acceptance of the
-correction remains pending.
+`scripts/verify-image-viewport-runtime.py`. The owner confirms the correction
+works as expected after retesting (2026-10-31). Broader live provider/export
+acceptance remains separate.
 
 ## Final verification and reproducibility
 

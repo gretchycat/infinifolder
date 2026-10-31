@@ -6,6 +6,13 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Confirmed on the handset
 
+- The checkpoint 19 image viewport/crop correction is user-confirmed working
+  (2026-10-31). The owner reports everything works as expected after retesting
+  the black surface after edits and off-screen crop handles. The recorded gate
+  has 790 cases with the same 30 known failures, plus 35 passing focused native
+  groups. Broader provider/export checks remain separate; see
+  [image processing](image-processing.md#viewport-correction-after-checkpoint-18).
+
 - Little-endian and big-endian EXIF image checks, including their ZIP variants,
   are user-confirmed working after checkpoint 17 (2026-10-31). The truncated
   invalid JPEG remains listed and shows “Cannot decode this image format.”
@@ -51,16 +58,6 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 - Latest activity-light correction is confirmed: green pulses follow reads; pending loading without read progress is steady dim green; the light returns idle when loading ends. Red file operations and amber verification have separate theme fields.
 
 ## Implemented; focused acceptance still needed
-
-Checkpoint 19 corrects the reported black image surface after edits and initial
-off-screen freeform crop handles in host display geometry. The previous rotation
-formula is reproduced with Android Matrix. Resets/panning now use consistent
-rotated bounds, crop handles stay in the visible area below/above toolbars, and
-source-pixel mapping accounts for drawable density. The owner reports operations
-and saving appeared correct before this fix; interactive acceptance remains
-pending. The full gate reports 790 cases, 760 pass and the same 30 known
-failures; all 16 new geometry tests and 35 focused native groups pass.
-See [viewport checks](image-processing.md#viewport-correction-after-checkpoint-18).
 
 Checkpoint 18 moves image bitmap rotation/flip/crop/resize and PNG encoding into
 Canvas processors, retaining host controls, resize-dialog snapshots, sampled

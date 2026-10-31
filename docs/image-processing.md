@@ -109,14 +109,17 @@ log entries capture reset/crop geometry without logging resource identities.
 Repeat rotate, flip, resize and crop without pinching to restore the image.
 Check freeform and preset crops in fit/fill, all four handles, toolbar clearance,
 dragging against every edge and exported pixels. Repeat from the ZIP fixture.
-Handset acceptance of this correction remains pending.
+The owner confirms the correction works as expected after retesting
+(2026-10-31). This accepts the reported viewport/crop issues; broader live
+SAF/network and export variants remain separate checks.
 
 Sixteen new JVM geometry cases pass; the full gate reports 790 cases, 760 pass
 and the same 30 pre-existing failures. `scripts/verify-image-viewport-runtime.py`
 loads the packaged helper geometry from the APK and checks real Android matrices,
 software-drawn image pixels, rotated pan/crop and density-aware inverse mapping.
 It also reproduces the old off-screen formula. It does not instantiate ImageView
-or exercise hardware rendering/touch input; those remain the handset checks above.
+or exercise hardware rendering/touch input; the owner's confirmation above
+covers the interactive retest.
 
 The checkpoint 19 APK also passes the existing 12 image-edit/PNG, 10 EXIF and
 eight PDF native groups: 35 focused runtime groups including the viewport checks.

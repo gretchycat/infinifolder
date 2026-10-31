@@ -22,7 +22,8 @@ Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) d
 - [x] Route the full image viewer through Canvas common-resource composition, preserving native decode/sampling and output frame metadata.
 - [x] Move image-inspector EXIF parsing behind a Canvas common-source processor, preserving fields/formatting and handling short reads, source errors and cancellation. See [inspector scope/checks](image-inspector.md).
 - [x] Route image bitmap rotation/flip/crop/resize and PNG encoding through Canvas processors with actual metadata and explicit result ownership. See [scope/checks](image-processing.md).
-- [ ] Accept image edit/PNG-export controls after the Canvas processing migration, including no-op edits and ZIP/SAF/network sources. The reported black viewport and off-screen crop handles have a host geometry correction awaiting handset checks; see [viewport correction](image-processing.md#viewport-correction-after-checkpoint-18).
+- [x] Confirm the image-edit viewport/crop correction after checkpoint 19. The owner reports everything works as expected (2026-10-31); see [viewport correction](image-processing.md#viewport-correction-after-checkpoint-18).
+- [ ] Extend image edit/PNG-export acceptance to no-op edits and broader ZIP/SAF/network source and publication variants.
 - [x] Confirm little-/big-endian EXIF fixture checks and ZIP variants after checkpoint 17; user confirmation 2026-10-31.
 - [x] Confirm the truncated invalid JPEG remains listed and is rejected with the decode-error toast; user confirmation 2026-10-31.
 - [ ] Extend migrated image-inspector acceptance to other malformed input, live SAF/network sources, navigation/back during work and image editing/PNG-copy export.
