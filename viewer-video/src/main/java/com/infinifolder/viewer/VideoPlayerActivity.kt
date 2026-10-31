@@ -504,7 +504,7 @@ class VideoPlayerActivity : ViewerActivity() {
 
             runOnUiThread {
                 if (file != null && file.exists()) {
-                    videoInputMetadata = io.github.gretchycat.infinivideo.AndroidVideoBackend.bind(videoView, file)
+                    videoInputMetadata = io.github.gretchycat.infinivideo.AndroidVideoBackend.bind(videoView, file, uri.toString())
                 } else {
                     loadingIndicator.visibility = View.GONE
                     val error = loadError

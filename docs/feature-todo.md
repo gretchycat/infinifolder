@@ -4,6 +4,18 @@
 
 Updated: 2026-10-24. [Current confirmations and priorities](project-status.md) distinguish implementation from handset acceptance. Unchecked items below are remaining work, unless explicitly described as historical evidence.
 
+## InfiniStream architecture migration
+
+- [x] Align references with the supplied architecture; retain dated evidence and safety limits.
+- [x] Create/reuse the seven justified repositories, pin source submodules and build them independently.
+- [x] Extract existing Store/Vault and media/document implementations without codec/filesystem rewrites.
+- [x] Use common sources in viewer/audio reads, preserve typed output metadata and source ownership, and execute the text pull pipeline.
+- [x] Add bounded content identification, capability/metadata validation and an explicit regression comparison gate.
+- [ ] Continue converting legacy callers to metadata-driven composition before removing compatibility APIs or exported dependencies.
+- [ ] Extend automatic planning for arbitrary multi-input/track graphs; current multi-port processors use explicit bindings.
+- [ ] Verify live remote providers, Android playback/seek/gapless/route behavior and editor/container write acceptance after these checkpoints.
+- [ ] Resolve original-code licensing and existing F-Droid native/AAR build requirements before a distributable library release.
+
 ## Cloud storage
 
 - [ ] Evaluate an optional rclone-backed provider for cloud services through the

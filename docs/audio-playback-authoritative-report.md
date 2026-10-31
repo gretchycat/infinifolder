@@ -1,6 +1,6 @@
 # Authoritative Audio Playback & Health Diagnostic Report
 
-Generated on 2026-10-30T23:09:02.582111075Z across **71** audio fixtures in `filesystem-test-images/audio/`.
+Generated on 2026-10-31T00:27:57.986213932Z across **71** audio fixtures in `filesystem-test-images/audio/`.
 
 ### Diagnostic Health Criteria
 - **HEALTHY**: Decoded valid PCM stream with audible signal (Peak > 0.05, RMS > -40 dB, zero clipping, duration > 100ms).

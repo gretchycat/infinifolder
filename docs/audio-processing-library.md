@@ -26,7 +26,7 @@ git submodule update --init --recursive
 gradle :app:assembleDebug
 ```
 
-InfiniFolder requests `io.github.gretchycat.libinfinisound:audio-api:0.2.0` for Store playlists and `io.github.gretchycat.libinfinisound:audio-processing:0.2.0` for audio. Gradle substitutes the pinned source; no Maven publication is required. The host shares its SDK setting with the included build when no SDK is configured globally.
+InfiniFolder requests `io.github.gretchycat.libinfinisound:audio-api:0.2.0` for Vault playlist containers and `io.github.gretchycat.libinfinisound:audio-processing:0.2.0` for audio. Gradle substitutes the pinned source; no Maven publication is required. The host shares its SDK setting with the included build when no SDK is configured globally.
 
 From the library checkout, portable builds need a JDK/Gradle and no Android SDK:
 

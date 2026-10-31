@@ -11,6 +11,8 @@ import com.infinifolder.webdav.WebDavProviderFactory
 import com.infinifolder.torrent.MagnetStorageProvider
 import com.infinifolder.model.*
 import java.io.IOException
+import io.github.gretchycat.infinistream.InputStreamSource
+import io.github.gretchycat.infinistream.asInputStream
 
 /** One provider graph per application process, shared by browser, editors, and background services. */
 class StorageRuntime private constructor(context: Context) {
@@ -82,7 +84,7 @@ class StorageRuntime private constructor(context: Context) {
         archives.streamResolver = { uri ->
             val ref = provider.refForUri(uri) ?: throw IOException("No provider owns $uri")
             when (val result = provider.openRead(ref)) {
-                is ProviderResult.Success -> result.value
+                is ProviderResult.Success -> InputStreamSource(result.value).asInputStream()
                 is ProviderResult.Failure -> throw IOException(result.message, result.cause)
                 is ProviderResult.Unsupported -> null
             }

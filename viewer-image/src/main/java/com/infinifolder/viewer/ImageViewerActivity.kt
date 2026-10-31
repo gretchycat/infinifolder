@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
@@ -16,7 +15,6 @@ import com.infinifolder.viewer.common.R
 import com.infinifolder.model.ProviderResult
 import com.infinifolder.model.ResourceEntry
 import com.infinifolder.preview.ThumbnailDecoder
-import com.infinifolder.preview.decodeFrame
 import java.io.ByteArrayOutputStream
 import kotlin.math.roundToInt
 
@@ -616,19 +614,7 @@ class ImageViewerActivity : ViewerActivity() {
                     MediaSourceAdapter.openStream(this, u)
                 }
                 // Decode at high screen resolution (up to 2560px max side) without unbounded RAM exhaustion
-                decoder.decodeFrame(uri, 2560)?.bitmap ?: run {
-                    MediaSourceAdapter.openStream(this, uri).use { inStream ->
-                        val options = BitmapFactory.Options().apply {
-                            inJustDecodeBounds = true
-                        }
-                        BitmapFactory.decodeStream(inStream, null, options)
-                        options.inSampleSize = calculateInSampleSize(options, 2560, 2560)
-                        options.inJustDecodeBounds = false
-                        MediaSourceAdapter.openStream(this, uri).use { inStream2 ->
-                            BitmapFactory.decodeStream(inStream2, null, options)
-                        }
-                    }
-                }
+                decoder.decodeViewerFrame(uri, 2560)?.bitmap
             } catch (t: Throwable) {
                 null
             }
@@ -650,19 +636,6 @@ class ImageViewerActivity : ViewerActivity() {
                 }
             }
         }.apply { start() }
-    }
-
-    private fun calculateInSampleSize(options: BitmapFactory.Options, reqW: Int, reqH: Int): Int {
-        val (h: Int, w: Int) = options.outHeight to options.outWidth
-        var inSampleSize = 1
-        if (h > reqH || w > reqW) {
-            val halfH = h / 2
-            val halfW = w / 2
-            while ((halfH / inSampleSize) >= reqH && (halfW / inSampleSize) >= reqW) {
-                inSampleSize *= 2
-            }
-        }
-        return inSampleSize
     }
 
     private fun showMetadataInspector() {

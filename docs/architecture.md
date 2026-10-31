@@ -18,8 +18,8 @@ Ordinary sources do not pass through Vault. Stream contracts describe optional p
 - `:app`: browser Activity, navigation, menus, Android integrations, operation foreground service.
 - `:storage-engine`: host composition (`StorageRuntime`, `RoutingStorageProvider`) and external-edit orchestration. It exports the pinned Store/Vault libraries for compatibility.
 - `libinfinistream`: JVM sources/sinks, optional positional I/O, capabilities, metadata, probing and processor contracts.
-- `libinfinistore` / `store-android`: existing resource/provider, protocol, transfer, link, cache, publication/recovery and Android access implementations. It depends on Stream and the small Sound playlist API.
-- `libinfinivault` / `vault-android`: existing archive/image interpreters, mounts, mutation batches and ext/lwext4 native build; depends on Store and Stream. Store never depends back on Vault.
+- `libinfinistore` / `store-android`: existing resource/provider, protocol, transfer, link, cache, publication/recovery and Android access implementations. It depends only on Stream within the family.
+- `libinfinivault` / `vault-android`: existing archive/image interpreters, mounts, mutation batches and ext/lwext4 native build; depends on Store/Stream and the small Sound API for playlist containers. Store never depends back on Vault.
 - `:viewer-common`: Android viewer launch/document contracts, themes/icon policy, source/staging adapters, recovery/diagnostics UI and screenshot export. Codec implementations now come from Canvas; bounded text and Markdown processing come from Scribe.
 - `libinfinicanvas` / `canvas-android`: existing platform/custom image codecs and thumbnails with actual BitmapFrame output metadata.
 - `libinfiniscribe` / `scribe-core`: JVM Markdown renderer and bounded charset/text decoding, retaining original bytes for guarded edits.

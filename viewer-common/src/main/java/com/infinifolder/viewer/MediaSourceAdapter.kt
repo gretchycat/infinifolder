@@ -47,15 +47,18 @@ object MediaSourceAdapter {
         return null
     }
 
-    fun openStream(context: Context, uri: Uri): InputStream {
+    /** New source path preserves metadata; the InputStream entry point remains a compatibility adapter. */
+    fun openStream(context: Context, uri: Uri): InputStream = openSource(context, uri).asInputStream()
+
+    fun openSource(context: Context, uri: Uri): ByteSource {
         val provider = com.infinifolder.storage.StorageRuntime.get(context).provider
         val ref = provider?.refForUri(uri)
         if (provider != null && ref != null) {
-            return com.infinifolder.storage.ProviderStreams.openRead(provider, ref).asInputStream()
+            return com.infinifolder.storage.ProviderStreams.openRead(provider, ref, sourceIdentity = uri.toString())
         }
         if (uri.scheme == "content") return InputStreamSource(context.contentResolver.openInputStream(uri)
-            ?: throw IOException("Cannot open content stream: $uri")).asInputStream()
-        if (uri.scheme == "file") return FileSourceResource(File(uri.path ?: throw IOException("Missing path"))).open().asInputStream()
+            ?: throw IOException("Cannot open content stream: $uri"), StreamMetadata(provenance = Provenance(source = uri.toString())))
+        if (uri.scheme == "file") return FileSourceResource(File(uri.path ?: throw IOException("Missing path"))).open()
         throw IOException("No provider owns $uri")
     }
 
@@ -69,19 +72,24 @@ object MediaSourceAdapter {
         return (provider.parent(ref) as? ProviderResult.Success)?.value?.documentId?.let(Uri::parse)
     }
 
-    data class LoadedText(val text: String, val hasMore: Boolean, val revision: com.infinifolder.storage.ContentRevision?)
+    data class LoadedText(val text: String, val hasMore: Boolean, val revision: com.infinifolder.storage.ContentRevision?,
+        val metadata: StreamMetadata = StreamMetadata(ContentType(DataKind.TEXT, "text/plain", "text", "unicode"),
+            finiteness = Finiteness.FINITE, attributes = mapOf("complete" to (!hasMore).toString())))
 
     fun readDocument(context: Context, uri: Uri, maxBytes: Int = 4 * 1024 * 1024, charset: Charset = Charsets.UTF_8): LoadedText {
-        openStream(context, uri).use { input ->
-            val document = io.github.gretchycat.infiniscribe.TextDocuments.read(InputStreamSource(input, ownsInput = false), maxBytes, charset)
-            return LoadedText(document.text, document.hasMore,
-                if (document.hasMore) null else com.infinifolder.storage.ContentRevision.of(document.bytes))
-        }
+        return openSource(context, uri).use { source -> readDocument(source, maxBytes, charset) }
+    }
+
+    /** Borrowed source overload shared by Android document loads and contract tests. */
+    fun readDocument(source: ByteSource, maxBytes: Int = 4 * 1024 * 1024, charset: Charset = Charsets.UTF_8): LoadedText {
+        val document = io.github.gretchycat.infiniscribe.TextDocuments.read(source, maxBytes, charset)
+        return LoadedText(document.text, document.hasMore,
+            if (document.hasMore) null else com.infinifolder.storage.ContentRevision.of(document.bytes), document.metadata)
     }
 
     fun readText(context: Context, uri: Uri, maxBytes: Int = 4 * 1024 * 1024, charset: Charset = Charsets.UTF_8): Pair<String, Boolean> {
-        openStream(context, uri).use { input ->
-            val document = io.github.gretchycat.infiniscribe.TextDocuments.read(InputStreamSource(input, ownsInput = false), maxBytes, charset)
+        openSource(context, uri).use { source ->
+            val document = io.github.gretchycat.infiniscribe.TextDocuments.read(source, maxBytes, charset)
             return document.text to document.hasMore
         }
     }
