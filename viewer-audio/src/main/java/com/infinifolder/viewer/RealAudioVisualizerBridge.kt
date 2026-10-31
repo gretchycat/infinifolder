@@ -41,11 +41,12 @@ class RealAudioVisualizerBridge(
         detach()
         sourceId = source.id
         val thisGeneration = generation
-        val next = AudioProcessing.createAnalyzer(source.path, playback, onFailure = { message, error ->
+        val onFailure: (String, Throwable) -> Unit = { message, error ->
             com.infinifolder.storage.DiagnosticLog.record("audio.visualizer.failure", message, error)
-        }) { samples, channels, rate ->
+        }
+        val onSamples: (FloatArray, Int, Int) -> Unit = samples@{ samples, channels, rate ->
             synchronized(this) {
-                if (generation != thisGeneration) return@createAnalyzer
+                if (generation != thisGeneration) return@samples
                 val levels = AudioSignalAnalysis.pcm(samples, channels, rate, waveformPoints, rawBands)
                 hasStereoVu = levels.stereo
                 vuLeft = (levels.left.rms * 1.8f).coerceIn(0f, 1f)
@@ -56,6 +57,8 @@ class RealAudioVisualizerBridge(
                 mainHandler.post(updateRunnable)
             }
         }
+        val next = source.resource?.let { AudioProcessing.createAnalyzer(it, playback, onFailure, onSamples) }
+            ?: AudioProcessing.createAnalyzer(source.path, playback, onFailure, onSamples)
         analyzer = next
         next.start()
     }

@@ -98,6 +98,7 @@ class AudioPlayerService : Service() {
     private val progressLock = Any()
     private var mediaPlayer: MediaPlayer? = null
     private var currentStream: java.io.FileInputStream? = null
+    private var currentPcmSource: com.infinifolder.audio.AudioWaveSource? = null
     private var currentPfd: android.os.ParcelFileDescriptor? = null
     private var currentDecodedFile: File? = null
     private val gaplessExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
@@ -116,11 +117,11 @@ class AudioPlayerService : Service() {
         val playbackFile: File,
         val decodedFile: File?,
         val decodeEngine: String,
-        val stream: java.io.FileInputStream
+        val pcmSource: com.infinifolder.audio.AudioWaveSource
     ) {
         fun release() {
+            runCatching { pcmSource.close() }
             runCatching { player.release() }
-            runCatching { stream.close() }
             runCatching { decodedFile?.delete() }
             if (stagedFile != source.file) runCatching { stagedFile.delete() }
             runCatching { source.close() }
@@ -164,7 +165,8 @@ class AudioPlayerService : Service() {
     val currentDuration: Int
         get() = if (com.infinifolder.audio.cast.CastManager.isCasting) com.infinifolder.audio.cast.CastManager.durationMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             else synchronized(playerLock) { runCatching { mediaPlayer?.duration ?: 0 }.getOrDefault(0) }
-    data class AnalysisSource(val id: Long, val path: String)
+    data class AnalysisSource(val id: Long, val path: String,
+        val resource: io.github.gretchycat.infinistream.SourceResource? = null)
     @Volatile var analysisSource: AnalysisSource? = null
         private set
 
@@ -523,6 +525,8 @@ class AudioPlayerService : Service() {
         if (com.infinifolder.audio.cast.CastManager.isCasting) com.infinifolder.audio.cast.CastManager.stopCasting()
         stopProgressReporting()
         synchronized(playerLock) {
+            runCatching { currentPcmSource?.close() }
+            currentPcmSource = null
             runCatching { mediaPlayer?.stop(); mediaPlayer?.release() }
             mediaPlayer = null
             runCatching { currentStream?.close() }
@@ -603,6 +607,8 @@ class AudioPlayerService : Service() {
         notifyProgress(0, track.durationMs.toInt())
         stopProgressReporting()
         synchronized(playerLock) {
+            runCatching { currentPcmSource?.close() }
+            currentPcmSource = null
             runCatching { mediaPlayer?.stop(); mediaPlayer?.release() }
             mediaPlayer = null
             runCatching { currentStream?.close() }
@@ -612,6 +618,7 @@ class AudioPlayerService : Service() {
         }
         Thread {
             if (loadCounter.get() != thisLoadId) return@Thread
+            val loadStarted = android.os.SystemClock.elapsedRealtime()
             cacheFailure = null
             val source = try { MediaSourceAdapter.stage(this, track.uri) } catch (e: Exception) {
                 if (com.infinifolder.storage.DiskCache.capacityError(e) != null) cacheFailure = e to track.uri
@@ -635,6 +642,7 @@ class AudioPlayerService : Service() {
             }
             val trackMime = try { contentResolver.getType(track.uri) } catch (_: Throwable) { null }
                 ?: com.infinifolder.mime.MimeRegistry.guess(stagedFile.name)
+            val stagedAt = android.os.SystemClock.elapsedRealtime()
             var formatInfo = probeAudioFormat(stagedFile, track)
             com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.startTrack(
                 uri = track.uri,
@@ -648,7 +656,8 @@ class AudioPlayerService : Service() {
                 isBitrateRelevant = formatInfo.isBitrateRelevant
                 isSampleRateRelevant = formatInfo.isSampleRateRelevant
             }
-            var enriched = enrichTrackMetadata(track, stagedFile)
+            var enriched = enrichTrackMetadata(track, stagedFile, formatInfo)
+            val metadataAt = android.os.SystemClock.elapsedRealtime()
             if (loadCounter.get() != thisLoadId) return@Thread
             synchronized(playlist) {
                 if (currentIndex in playlist.indices && sameTrack(playlist[currentIndex], track)) {
@@ -663,6 +672,7 @@ class AudioPlayerService : Service() {
             var pfd: android.os.ParcelFileDescriptor? = null
             var player: MediaPlayer? = null
             var decodedOutput: File? = null
+            var pcmSource: com.infinifolder.audio.AudioWaveSource? = null
             try {
                 val p = MediaPlayer()
                 player = p
@@ -674,15 +684,21 @@ class AudioPlayerService : Service() {
                 )
                 val output = File.createTempFile("decoded_stream_", ".wav", cacheDir)
                 decodedOutput = output
-                val preparation = com.infinifolder.audio.decoder.UniversalAudioDecoder.prepareForOutput(
+                val waveSource = com.infinifolder.audio.decoder.UniversalAudioDecoder.openWaveSource(
                     stagedFile, output, cancelled = { loadCounter.get() != thisLoadId })
+                val decodedAt = android.os.SystemClock.elapsedRealtime()
+                pcmSource = waveSource
+                val preparation = waveSource.preparation
                 val decodedInfo = Triple(preparation.format.sampleRate, preparation.format.channels, preparation.format.durationMs ?: 0L)
                 val playbackFile = output
-                fis = java.io.FileInputStream(output)
                 resetPlayerForAudio(p)
-                // This file contains only canonical PCM produced by libinfinisound.
-                p.setDataSource(fis.fd, 0, output.length())
+                // Only library-decoded PCM crosses this output boundary, pulled as needed.
+                p.setDataSource(com.infinifolder.audio.engine.PcmMediaDataSource(waveSource.borrowedResource().open()))
                 p.prepare()
+                com.infinifolder.storage.DiagnosticLog.record("audio.load.prepared",
+                    "load=$thisLoadId sourceStageMs=${stagedAt - loadStarted} metadataMs=${metadataAt - stagedAt} " +
+                        "pcmOpenMs=${decodedAt - metadataAt} playerPrepareMs=${android.os.SystemClock.elapsedRealtime() - decodedAt} " +
+                        "progressive=${waveSource.progressive} cachedPcmBytes=${output.length()} totalPcmBytes=${waveSource.metadata.length}")
                 decodedInfo.let { (rate, channels, duration) ->
                     formatInfo = formatInfo.copy(sampleRate = rate, channels = channels, isSampleRateRelevant = true)
                     enriched = enriched.copy(sampleRateHz = rate.takeIf { it > 0 }, channels = channels.takeIf { it > 0 },
@@ -719,7 +735,8 @@ class AudioPlayerService : Service() {
                 synchronized(playerLock) {
                     if (loadCounter.get() == thisLoadId) {
                         mediaPlayer = p
-                        analysisSource = AnalysisSource(thisLoadId, playbackFile.absolutePath)
+                        analysisSource = AnalysisSource(thisLoadId, playbackFile.absolutePath, waveSource.borrowedResource())
+                        currentPcmSource = waveSource
                         currentDecodedFile = playbackFile.takeIf { it != stagedFile }
                         currentStream = fis
                         currentPfd = pfd
@@ -727,6 +744,7 @@ class AudioPlayerService : Service() {
                     }
                 }
                 if (!attached) {
+                    runCatching { pcmSource?.close() }
                     runCatching { p.release() }
                     runCatching { fis?.close() }
                     runCatching { pfd?.close() }
@@ -785,6 +803,7 @@ class AudioPlayerService : Service() {
                     notifyPlaybackState(isPlaying = false, isLoading = false)
                 }
             } catch (e: Exception) {
+                runCatching { pcmSource?.close() }
                 runCatching { player?.release() }
                 runCatching { fis?.close() }
                 runCatching { pfd?.close() }
@@ -889,7 +908,7 @@ class AudioPlayerService : Service() {
         var source: MediaSourceAdapter.StagedSource? = null
         var stagedFile: File? = null
         var decodedFile: File? = null
-        var stream: java.io.FileInputStream? = null
+        var pcmSource: com.infinifolder.audio.AudioWaveSource? = null
         var player: MediaPlayer? = null
         var complete = false
         try {
@@ -901,13 +920,14 @@ class AudioPlayerService : Service() {
             val p = MediaPlayer()
             player = p
             decodedFile = File.createTempFile("gapless_decoded_", ".wav", cacheDir)
-            val preparation = com.infinifolder.audio.decoder.UniversalAudioDecoder.prepareForOutput(
+            val waveSource = com.infinifolder.audio.decoder.UniversalAudioDecoder.openWaveSource(
                 file, decodedFile!!, reportDiagnostics = false)
+            pcmSource = waveSource
+            val preparation = waveSource.preparation
             if (Thread.currentThread().isInterrupted) return null
             val decodedMetadata = Triple(preparation.format.sampleRate, preparation.format.channels, preparation.format.durationMs ?: 0L)
-            stream = java.io.FileInputStream(decodedFile!!)
             resetPlayerForAudio(p, sessionId)
-            p.setDataSource(stream!!.fd, 0, decodedFile!!.length())
+            p.setDataSource(com.infinifolder.audio.engine.PcmMediaDataSource(waveSource.borrowedResource().open()))
             p.prepare()
             installPlayerListeners(p)
             val preparedTrack = decodedMetadata.let { (rate, channels, duration) ->
@@ -915,7 +935,7 @@ class AudioPlayerService : Service() {
                     channels = channels.takeIf { it > 0 } ?: track.channels,
                     durationMs = duration.takeIf { it > 0 } ?: track.durationMs)
             }
-            val result = GaplessPrepared(preparedTrack, p, source, file, decodedFile!!, decodedFile, preparation.decoder, stream!!)
+            val result = GaplessPrepared(preparedTrack, p, source, file, decodedFile!!, decodedFile, preparation.decoder, waveSource)
             complete = true
             return result
         } catch (error: Exception) {
@@ -923,8 +943,8 @@ class AudioPlayerService : Service() {
             return null
         } finally {
             if (!complete) {
+                runCatching { pcmSource?.close() }
                 runCatching { player?.release() }
-                runCatching { stream?.close() }
                 runCatching { decodedFile?.delete() }
                 if (stagedFile != null && stagedFile != source?.file) runCatching { stagedFile.delete() }
                 runCatching { source?.close() }
@@ -946,6 +966,7 @@ class AudioPlayerService : Service() {
                 gaplessWork = null
                 gaplessRequestedTrack = null
                 gaplessGeneration++
+                runCatching { currentPcmSource?.close() }
                 runCatching { finished.release() }
                 runCatching { currentStream?.close() }
                 runCatching { currentPfd?.close() }
@@ -954,7 +975,8 @@ class AudioPlayerService : Service() {
                 stagedSource = next.source
                 stagedTempFile = next.stagedFile
                 currentDecodedFile = next.decodedFile
-                currentStream = next.stream
+                currentStream = null
+                currentPcmSource = next.pcmSource
                 mediaPlayer = next.player
                 currentIndex = nextIndex
                 val duration = runCatching { next.player.duration.toLong() }.getOrDefault(0L)
@@ -965,7 +987,7 @@ class AudioPlayerService : Service() {
                     channels = current.channels ?: next.track.channels
                 )
                 track = playlist[currentIndex]
-                analysisSource = AnalysisSource(loadCounter.incrementAndGet(), next.playbackFile.absolutePath)
+                analysisSource = AnalysisSource(loadCounter.incrementAndGet(), next.playbackFile.absolutePath, next.pcmSource.borrowedResource())
             }
         }
         com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.startTrack(
@@ -1039,8 +1061,7 @@ class AudioPlayerService : Service() {
     private fun probeAudioFormat(file: File, track: AudioTrack): com.infinifolder.audio.AudioFormatInfo =
         com.infinifolder.audio.AudioProcessing.metadata.probeFormat(file, track.title, track.durationMs)
 
-    private fun enrichTrackMetadata(original: AudioTrack, file: File): AudioTrack {
-        val formatInfo = probeAudioFormat(file, original)
+    private fun enrichTrackMetadata(original: AudioTrack, file: File, formatInfo: com.infinifolder.audio.AudioFormatInfo): AudioTrack {
         var title = original.title
         var artist = original.artist
         var album = original.album
@@ -1062,12 +1083,8 @@ class AudioPlayerService : Service() {
                 }
             } catch (_: Exception) {}
 
-            if (duration <= 0) {
-                runCatching {
-                    val decodedDuration = AudioProcessing.readDuration(file)
-                    if (decodedDuration > 0) duration = decodedDuration
-                }
-            }
+            // Unknown duration is filled by the opened PCM source/player. Never decode
+            // the complete source just to enrich metadata before playback can begin.
 
             // Fallback: Check folder artwork (.icon.* then cover.*)
             if (artwork == null) {
