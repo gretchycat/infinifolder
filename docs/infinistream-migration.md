@@ -336,9 +336,11 @@ checkpoint17-flac-stale-callback-attempt.log. The final audio aggregate contains
 all 19 successful case logs against the same APK, retaining these separate failed
 attempts. Logs use checkpoint17-* under
 build/infinistream-migration. The owner confirms little-/big-endian EXIF fixture
-checks and ZIP variants after the checkpoint 17 handoff (2026-10-31). Broader
-malformed-input, UI and live provider acceptance remains. The invalid sample is a
-20-byte truncated JPEG without picture data; see the inspector fixture notes.
+checks and ZIP variants after the checkpoint 17 handoff (2026-10-31). The owner
+also confirms the 20-byte truncated invalid JPEG remains listed and shows the
+“Cannot decode this image format.” toast when opened, as expected for a file
+without picture data. Other malformed input, UI and live provider acceptance
+remains; see the inspector fixture notes.
 
 ## Final verification and reproducibility
 

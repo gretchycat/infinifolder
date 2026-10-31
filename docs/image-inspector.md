@@ -63,8 +63,8 @@ It does not bootstrap Android widgets or establish UI acceptance.
 ## Handset feedback (2026-10-31)
 
 The owner confirms the little-endian and big-endian tagged JPEG checks work,
-including the ZIP variants, after checkpoint 17. The owner reports the invalid
-sample does not show; whether this means no rendered picture or an absent file
-listing is awaiting clarification. This is not recorded as successful malformed-
-input UI acceptance. Live SAF/network, navigation/back during inspector work and
-image editing/export checks remain separate acceptance work.
+including the ZIP variants, after checkpoint 17. The owner also confirms that
+`invalid-metadata.jpg` remains listed, renders no image and shows the toast
+“Cannot decode this image format.” This is the expected rejection of the
+truncated fixture. Other malformed inputs, live SAF/network, navigation/back
+during inspector work and image editing/export remain separate acceptance work.
