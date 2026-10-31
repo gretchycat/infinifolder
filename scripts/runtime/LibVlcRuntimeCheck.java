@@ -37,10 +37,16 @@ public class LibVlcRuntimeCheck {
         } finally { media.release(); }
     }
     static void decodeSeek(LibVLC vlc,File file) throws Exception {
-        Media media=LibVlcMedia.INSTANCE.open(vlc,file);
+        decodeSeekMedia(vlc,LibVlcMedia.INSTANCE.open(vlc,file));
+        pass("native-decode-seek-pause-speed");
+    }
+    static void decodeSeekMedia(LibVLC vlc,Media media) throws Exception { exerciseSeek(vlc,media,false); }
+    static void decodeSeekAudioClock(LibVLC vlc,Media media) throws Exception { exerciseSeek(vlc,media,true); }
+    static void exerciseSeek(LibVLC vlc,Media media,boolean audioClock) throws Exception {
         MediaPlayer player=new MediaPlayer(vlc);
         try {
             media.setHWDecoderEnabled(false,false);
+            if(audioClock)media.addOption(":no-video");
             media.addOption(":vout=dummy");media.addOption(":aout=dummy");
             check(player.setAudioOutput("dummy"),"dummy audio output");
             player.setMedia(media);player.play();
@@ -48,7 +54,7 @@ public class LibVlcRuntimeCheck {
             while((!player.isPlaying()||!player.isSeekable()||player.getTime()<100)&&System.currentTimeMillis()<deadline)Thread.sleep(20);
             check(player.isPlaying()&&player.isSeekable(),"playing seekable native video");
             for(long position:new long[]{300000,10000,350000}) {
-                int before=media.getStats()==null?0:media.getStats().decodedVideo;
+                int before=media.getStats()==null?0:(audioClock?media.getStats().decodedAudio:media.getStats().decodedVideo);
                 long started=System.nanoTime();player.setTime(position,false);
                 deadline=System.currentTimeMillis()+4000;
                 // setTime can update the getter optimistically. Also require decoder progress
@@ -56,15 +62,16 @@ public class LibVlcRuntimeCheck {
                 boolean advanced=false;
                 while(System.currentTimeMillis()<deadline) {
                     Thread.sleep(40);
-                    advanced=media.getStats()!=null&&media.getStats().decodedVideo>before;
+                    advanced=media.getStats()!=null&&(audioClock?media.getStats().decodedAudio:media.getStats().decodedVideo)>before;
                     if(advanced&&Math.abs(player.getTime()-position)<=1500&&(System.nanoTime()-started)>150000000)break;
                 }
+                System.out.println("STATE target="+position+" actual="+player.getTime()+" beforeFrames="+before+" afterFrames="+(media.getStats()==null?-1:(audioClock?media.getStats().decodedAudio:media.getStats().decodedVideo))+" playing="+player.isPlaying()+" state="+player.getPlayerState());
                 check(advanced&&Math.abs(player.getTime()-position)<=1500,"bounded forward/back seek with decoder progress "+position+" actual="+player.getTime());
                 System.out.println("SEEK targetMs="+position+" elapsedMs="+(System.nanoTime()-started)/1000000);
             }
             deadline=System.currentTimeMillis()+3000;
-            while((media.getStats()==null||media.getStats().decodedVideo==0)&&System.currentTimeMillis()<deadline)Thread.sleep(20);
-            check(media.getStats()!=null&&media.getStats().decodedVideo>0,"actual native video frames decoded");
+            while((media.getStats()==null||(audioClock?media.getStats().decodedAudio:media.getStats().decodedVideo)==0)&&System.currentTimeMillis()<deadline)Thread.sleep(20);
+            check(media.getStats()!=null&&(audioClock?media.getStats().decodedAudio:media.getStats().decodedVideo)>0,"actual native packets decoded");
             player.pause();deadline=System.currentTimeMillis()+2000;
             while(player.isPlaying()&&System.currentTimeMillis()<deadline)Thread.sleep(20);
             check(!player.isPlaying(),"pause completes");
@@ -74,22 +81,26 @@ public class LibVlcRuntimeCheck {
             while(!player.isPlaying()&&System.currentTimeMillis()<deadline)Thread.sleep(20);
             check(player.isPlaying(),"resume completes");
         } finally { player.stop();player.release();media.release(); }
-        pass("native-decode-seek-pause-speed");
+    }
+    static LibVLC createEngine(String[] args) throws Exception {
+        PrintStream evidence = new PrintStream(new FileOutputStream(args[3]), true, "UTF-8");
+        System.setOut(evidence);System.setErr(evidence);
+        Looper.prepareMainLooper();
+        System.out.println("Native path="+System.getProperty("java.library.path"));
+        for(String name:new String[]{"libc++_shared.so","libinfiniopenmpt.so","libvlc.so","libvlcjni.so"}) {
+            File library=new File(args[2],name);
+            if(name.equals("libinfiniopenmpt.so")&&!library.isFile())continue;
+            System.load(library.getAbsolutePath());System.out.println("Loaded "+name);
+        }
+        LibVLC engine=new LibVLC(new TestContext(new File(args[1])), new java.util.ArrayList<>(java.util.List.of(
+            "--no-video-title-show", "--vout=dummy", "--aout=dummy", "--no-spu", "--text-renderer=dummy")));
+        System.out.println("libVLC version="+LibVLC.version()+" changeset="+LibVLC.changeset());
+        return engine;
     }
     public static void main(String[] args) {
         try {
-            PrintStream evidence = new PrintStream(new FileOutputStream(args[3]), true, "UTF-8");
-            System.setOut(evidence);System.setErr(evidence);
-            Looper.prepareMainLooper();
-            System.out.println("Native path="+System.getProperty("java.library.path"));
+            LibVLC vlc=createEngine(args);
             boolean sound=new File(args[2],"libinfiniopenmpt.so").isFile();
-            for(String name:new String[]{"libc++_shared.so","libinfiniopenmpt.so","libvlc.so","libvlcjni.so"}) {
-                if(name.equals("libinfiniopenmpt.so")&&!sound)continue;
-                System.load(new File(args[2],name).getAbsolutePath());
-                System.out.println("Loaded "+name);
-            }
-            LibVLC vlc=new LibVLC(new TestContext(new File(args[1])), new java.util.ArrayList<>(java.util.List.of(
-                "--no-video-title-show", "--vout=dummy", "--aout=dummy", "--no-spu", "--text-renderer=dummy")));
             try {
                 System.out.println("libVLC version="+LibVLC.version()+" changeset="+LibVLC.changeset());
                 pass(sound?"packaged-vlc-and-sound-native-linkage":"packaged-vlc-native-linkage");

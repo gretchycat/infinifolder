@@ -731,13 +731,21 @@
     "bytes": 1127370,
     "sha256": "3808388dafb05cf4c86bd0d8bda900803b108c9e67015fd0977b4b3242fd8a47"
   },
+  "video/91-six-minute-audio-seek.mp4": {
+    "bytes": 2710735,
+    "sha256": "dbe22c348c395d16ecd7470ab4601cd3443cdddeeadfdfc1782bff3368eb2cbd"
+  },
   "video/README.md": {
-    "bytes": 646,
-    "sha256": "6d30c645799a54def84b0f1b619b81ec067151c6aac84ad504bc764573120e6f"
+    "bytes": 944,
+    "sha256": "dc3e0d75794f386b5fb6824cac8e59211650d4af5e19cba6eb5f67a69e1f533d"
   },
   "video/invalid-video.mp4": {
     "bytes": 24,
     "sha256": "754ed2f212d495ae30ef2f68f8ab18b0ab162ce669f768373d79f72f1ba3c3bd"
+  },
+  "video/video-audio-seek-checks.zip": {
+    "bytes": 2490277,
+    "sha256": "a4725e839e976c0e8025b7d4b6e8bd927d9f6ba05e9f773a9c24cccdbcefc409"
   },
   "video/video-checks.zip": {
     "bytes": 1957107,

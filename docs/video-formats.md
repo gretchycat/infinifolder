@@ -12,17 +12,27 @@ native engine reports 3.0.25 Vetinari. `video-api` exposes backend-neutral
 `VideoPlayback` controls/events, scale modes and long millisecond positions.
 The app imports library types, with no direct libVLC dependency or player calls.
 The library owns native decoding, video/subtitle surfaces and audio focus;
-the host owns controls, playlists, repeat/PiP decisions and staged-source leases.
+the host owns controls, playlists, repeat/PiP decisions and source leases.
 The old Android platform adapter remains available for compatibility.
 
-Local files are borrowed directly; remote/archive sources retain the existing
-explicit cache staging. Common input metadata preserves logical identity,
-name/type/warnings while actual length/access capabilities describe the local
-file. Presentation output carries actual dimensions/duration when available,
-backend and negotiated seekability, without claiming raw CPU frame bytes.
-Native readers stop/release before their source lease closes. Stale asynchronous
-loads and native callbacks cannot replace a newer selection or reopen a closed
-activity. Background load completion does not start hidden playback.
+Local files are borrowed directly. Remote/archive videos now use common sources
+through a library-owned loopback range transport: positional sources serve ranges
+without downloading preceding bytes; known-length sequential streams reopen and
+replay a prefix when seeking. Unknown lengths use sequential chunked HTTP.
+The video path performs no full-file staging. Vault's non-extracting view API
+avoids its legacy whole-entry extraction fallback, preserving actual native
+slices for stored ZIP/filesystems and sequential streams for compressed ZIP.
+Inherited format/enclosing-container caches can still be required; compressed
+seeks can cost work proportional to the skipped prefix.
+
+Common input metadata preserves logical identity, type and warnings. Output
+reports actual discovered dimensions/duration and seekability, without claiming
+raw CPU frame bytes. Native readers/transport stop before their provider owner
+closes. Stale loads cannot replace a newer selection or reopen a closed activity.
+The selected item starts without waiting for a folder listing. File/network
+buffering is 300 ms. The Activity shortcut selects the matching video/audio
+player and brings the existing instance forward. Input/open/ready/close records
+include access mode and logical bytes served for diagnosis.
 
 Fit, aspect-preserving fill, 16:9/4:3, 0.5×–2× speed, seeking, playlist controls,
 repeat, operation progress and external opening remain. Embedded subtitle
@@ -47,7 +57,10 @@ Original synthetic fixtures are in `filesystem-test-images/video/`:
   5:50, then back to 0:10. Confirm the moving image resumes at each position.
 - `invalid-video.mp4`: deliberately incomplete header; expect failure and
   successful opening of a valid clip afterward.
-- `video-checks.zip`: byte-identical fixture copies for archive playback.
+- `91-six-minute-audio-seek.mp4`: the six-minute video with a 440 Hz AAC tone;
+  use this for sound plus seeking. The original 90 fixture is intentionally silent.
+- `video-checks.zip`: original fixture copies for archive playback.
+- `video-audio-seek-checks.zip`: the new audible six-minute companion.
 
 Check sound/sync, pause/resume, progress dragging and ±10 seconds, all speed
 and aspect modes, next/previous/repeat, orientation, PiP and returning from
@@ -60,8 +73,14 @@ MP4/WebM/MKV tracks/dimensions/duration, embedded subtitle detection, native
 software decode, long forward/back seek positions with decoder progress,
 pause/speed/resume, malformed input and cleanup. Dummy outputs keep it headless
 and silent; it does not verify audible sound, hardware surfaces, subtitle pixels
-or PiP. The runner requires all seven completion markers because libVLC redirects
+or PiP. The default runner requires all seven completion markers because libVLC redirects
 standard output/error into logcat. Exit zero alone is not treated as success.
+Its `--streaming` mode requires eight markers for common-source/native range
+playback, bounded reads of a 512 MiB virtual movie, compressed ZIP replay,
+unknown-length WebM/MP4, non-extracting container views and the audible companion.
+Streaming seek checks use native demux/decoder progress with a dummy audio clock
+and video output disabled. Repeat the shortcut, local/remote/ZIP startup, seeking
+and actual picture/sound controls on the handset.
 
 ## Historical platform-backend inventory (2026-10-27)
 

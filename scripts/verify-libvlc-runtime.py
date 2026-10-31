@@ -9,11 +9,13 @@ import argparse
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--apk', type=Path)
+parser.add_argument('--streaming', action='store_true', help='Check actual common-source HTTP streaming and container slices')
 parser.add_argument('--label', default='', help='Separate logs/artifacts for another APK, e.g. host')
 args = parser.parse_args()
 if args.label and not args.label.replace('-', '').isalnum():
     parser.error('label must contain only letters, numbers or hyphens')
-tag = '-' + args.label if args.label else ''
+tag = ('-' + args.label if args.label else '') + ('-stream' if args.streaming else '')
+entrypoint = 'VideoStreamingRuntimeCheck' if args.streaming else 'LibVlcRuntimeCheck'
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'build/infinistream-migration'
@@ -32,16 +34,19 @@ kotlin = next((Path.home() / '.gradle/caches/modules-2/files-2.1/org.jetbrains.k
 classpath = [ANDROID, kotlin,
     ROOT / 'libraries/libinfinistream/stream-core/build/libs/stream-core-0.1.0.jar',
     ROOT / 'libraries/libinfinivideo/video-android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar',
-    OUT / 'vlc-research/classes.jar']
-for path in classes.glob('LibVlcRuntimeCheck*.class'):
+    OUT / 'vlc-research/classes.jar',
+    ROOT / 'libraries/libinfinivideo/video-api/build/libs/video-api-0.1.0.jar',
+    ROOT / 'libraries/libinfinivault/vault-android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar',
+    ROOT / 'libraries/libinfinistore/store-android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar']
+for path in list(classes.glob('LibVlcRuntimeCheck*.class')) + list(classes.glob('VideoStreamingRuntimeCheck*.class')):
     path.unlink()
 subprocess.run(['javac', '-classpath', ':'.join(map(str, classpath)), '-d', str(classes),
-    str(ROOT / 'scripts/runtime/LibVlcRuntimeCheck.java')], check=True)
+    str(ROOT / 'scripts/runtime/LibVlcRuntimeCheck.java')] + ([str(ROOT / 'scripts/runtime/VideoStreamingRuntimeCheck.java')] if args.streaming else []), check=True)
 if (dex / 'classes.dex').exists():
     (dex / 'classes.dex').chmod(0o644)
 subprocess.run([str(SDK / 'build-tools/36.0.0/d8'), '--min-api', '26', '--lib', str(ANDROID), '--output', str(dex)] +
     [item for path in classpath[1:] for item in ('--classpath', str(path))] +
-    [str(path) for path in sorted(classes.glob('LibVlcRuntimeCheck*.class'))], check=True)
+    [str(path) for path in sorted(classes.glob('*.class'))], check=True)
 (dex / 'classes.dex').chmod(0o444)
 apk = OUT / ('libvlc' + tag + '-runtime.apk')
 if apk.exists():
@@ -70,13 +75,13 @@ log = OUT / ('libvlc' + tag + '-runtime.log')
 evidence = OUT / ('libvlc' + tag + '-runtime-evidence.log')
 if evidence.exists(): evidence.unlink()
 with log.open('w') as output:
-    result = subprocess.run(['/system/bin/app_process64', '-Djava.library.path=' + str(native), '/system/bin', 'LibVlcRuntimeCheck',
+    result = subprocess.run(['/system/bin/app_process64', '-Djava.library.path=' + str(native), '/system/bin', entrypoint,
         str(ROOT / 'filesystem-test-images/video'), str(OUT / 'libvlc-state'), str(native), str(evidence)], env=env, stdout=output,
         stderr=subprocess.STDOUT, timeout=60)
 print(log.read_text(), end='')
 report = evidence.read_text() if evidence.exists() else ''
 print(report, end='')
-if result.returncode == 0 and sum(line.startswith('PASS libvlc.') for line in report.splitlines()) != 7:
+if result.returncode == 0 and sum(line.startswith('PASS ') for line in report.splitlines()) != (8 if args.streaming else 7):
     raise SystemExit('Missing native check completion: libVLC redirects stdout/stderr to logcat; exit 0 alone is not acceptance')
 with apk.open('rb') as source:
     print('APK SHA-256: ' + hashlib.file_digest(source, 'sha256').hexdigest())

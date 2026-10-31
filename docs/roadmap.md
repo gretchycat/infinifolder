@@ -44,9 +44,11 @@ serving remain follow-up. PostScript/LaTeX and Office rendering are still planne
 
 Video now uses the requested libVLC Android backend behind libinfinivideo's
 common playback controls and typed input/output metadata. The host retains
-controls, PiP/playlist policy and explicit local/staged source leases. Accept
-[video playback](video-formats.md#handset-checks), then extend direct common-source
-transport and portable platform backends incrementally.
+controls, PiP/playlist policy and source leases. Common-source range streaming
+now avoids video-file staging; stored ZIP/filesystem slices preserve native
+random access, while compressed streams can replay prefixes. Accept
+[video playback](video-formats.md#handset-checks), shortcut routing and streaming
+startup/seeking, then extend container access and portable backends incrementally.
 
 ## Next: accept the new safety paths
 

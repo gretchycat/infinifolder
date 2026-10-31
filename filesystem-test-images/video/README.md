@@ -9,3 +9,8 @@ contain byte-identical copies. Existing fixtures are never overwritten.
 
 See ../../docs/video-formats.md for player controls and handset checks.
 Regeneration needs FFmpeg with libx264, libvpx, AAC and libvorbis encoders.
+
+`91-six-minute-audio-seek.mp4` adds a 440 Hz AAC tone to the silent 90 fixture,
+with matching `video-audio-seek-checks.zip` copies. Test 0:10, 4:00, 5:00 and 5:50
+while watching movement and listening for the tone. The original 90 remains
+silent; `video-expected.json` describes the original set.

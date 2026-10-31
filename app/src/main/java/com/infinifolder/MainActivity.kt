@@ -9145,8 +9145,9 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun openOperationInterface(op: OperationSnapshot) {
-        if (op.id.startsWith("playback_")) {
-            val intent = Intent(this, com.infinifolder.viewer.AudioPlayerActivity::class.java).apply {
+        val playbackActivity = com.infinifolder.viewer.ViewerCatalog.playbackActivity(op.id)
+        if (playbackActivity != null) {
+            val intent = Intent().setClassName(this, playbackActivity).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             }
             startActivity(intent)

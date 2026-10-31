@@ -10,11 +10,11 @@ All remote main hashes were checked against the local tested heads. Sound's exis
 | --- | --- | --- |
 | [libinfinistream](https://github.com/gretchycat/libinfinistream) | Created | [`e86167f`](https://github.com/gretchycat/libinfinistream/commit/e86167f2fd0c2c19d24140f05478099fdb1a693b) |
 | [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | [`faee836`](https://github.com/gretchycat/libinfinistore/commit/faee836518fca09d2c9ba8cedb174b1a80779809) |
-| [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`0522412`](https://github.com/gretchycat/libinfinivault/commit/0522412d226a8171afa10da04b338cb5b38470c8) |
+| [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`14a7908`](https://github.com/gretchycat/libinfinivault/commit/14a7908ffb8cd1af7d9a5400621d91ea1626f4f0) |
 | [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`61a4644`](https://github.com/gretchycat/libinfinisound/commit/61a4644bdfd216597bc3fe24ef3a55984bcc2363) |
 | [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`ae706d7`](https://github.com/gretchycat/libinfinicanvas/commit/ae706d70d84a3d6e635d96347bc5c0fe26e5346b) |
 | [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`084e9de`](https://github.com/gretchycat/libinfiniscribe/commit/084e9de5ab5335c79ae88fdf2c297314cfd664e3) |
-| [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`9484caf`](https://github.com/gretchycat/libinfinivideo/commit/9484caffe2fa3005fe6a1fe6a20b3f53759d3710) |
+| [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`1577ecc`](https://github.com/gretchycat/libinfinivideo/commit/1577ecce391d54410aa3cabc6f7a3d8167e1dde3) |
 
 ```text
 Store -> Stream
@@ -481,11 +481,57 @@ Actual sound/sync, hardware surfaces, subtitle pixels, PiP and live provider
 acceptance remain handset work. Direct arbitrary ByteSource callbacks, track
 selection UI, new format routing, desktop/iOS adapters and encoding are follow-up.
 
+## Checkpoint 21: activity routing and streamed video inputs
+
+The reported Activity-bar shortcut opened the audio player for video operations.
+It now maps the exact playback operation to its matching viewer and brings the
+existing player forward. The selected video starts before sibling discovery
+finishes, and libVLC's file/network startup buffers are explicitly 300 ms.
+
+The previous remote/archive path did stage the complete video. The host now owns
+source leases and passes common resources into Video. Video owns a loopback-only,
+per-session HTTP adapter with 64 KiB reads, bounded clients/workers and nonblocking
+socket writes. Actual positional sources serve native byte ranges directly.
+Known-length sequential sources reopen and replay a prefix for seeks; unknown
+lengths use chunked HTTP without invented positional capability. The adapter
+never writes a staged video. Vault adds a non-extracting seekable-view probe:
+stored ZIP/filesystem slices stay positional, compressed ZIP falls back to its
+stream, and probing nested archives does not silently extract their parents.
+Other inherited container/provider caching limits still apply. Stop cancels the
+transport and native reader before the host closes the source owner.
+
+The original six-minute 90 fixture is intentionally silent. New
+`91-six-minute-audio-seek.mp4` and `video-audio-seek-checks.zip` add a 440 Hz AAC
+tone without replacing the original seek file or original ZIP. The generator
+preserves existing fixture payloads and clears Termux's inherited library override
+for FFmpeg.
+
+Verification adds 19 Video stream-transport cases and three Activity-routing
+cases: 820 total, 790 pass and the same 30 known storage failures. All previous
+798 cases retain their outcomes. Native streaming checks use the final APK's
+actual libVLC to parse a 512 MiB virtual movie after reading 720,896 bytes, then
+seek to 5:00, 0:10 and 5:50 with decoder progress in about 0.16 seconds each.
+The complete probe/seek run reads about 23 MiB rather than the whole input.
+Compressed ZIP replay, unknown-length WebM/MP4, native stored-ZIP slices,
+non-extracting compressed-ZIP fallback and the audible fixture also pass.
+These are headless checks with dummy audio output and video rendering disabled;
+they do not establish picture/sound/sync or live server acceptance.
+
+An initial native back-seek exposed blocking HTTP responses occupying workers;
+nonblocking socket writes and a slow-client regression case correct that issue.
+Intermediate attempts are retained separately from final `checkpoint21-final-*`
+logs in `build/infinistream-migration`. The final full APK passes seven existing
+video groups, eight streaming groups, and 35 affected image/PDF groups. The
+video-only host repeats both video modes against its separately packaged C++
+runtime. Full/host and standalone Video/Vault builds pass. Handset checks remain:
+Activity shortcut, startup from local/remote/ZIP, cancellation, picture/sound,
+long seeking, subtitles and PiP.
+
 ## Final verification and reproducibility
 
-Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 798-case checkpoint.
+Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 820-case checkpoint.
 
-Current totals: **798 tests, 768 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
+Current totals: **820 tests, 790 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
 | Independent library | Tests | Failures |
 | --- | ---: | ---: |
@@ -495,7 +541,7 @@ Current totals: **798 tests, 768 pass, 30 pre-existing failures, no new failures
 | Sound | 69 | 0 |
 | Canvas | 52 | 0 |
 | Scribe | 99 | 0 |
-| Video | 12 | 0 |
+| Video | 31 | 0 |
 
 All seven standalone source builds passed with the pinned sibling dependencies. Stream/Scribe and portable Sound builds need no Android runtime. Android modules were built with SDK 36, JDK 21 targeting Java 17, Kotlin 2.2.20 and AGP 8.9.2 using Gradle 9.7.1. The preceding checkpoint built full app and selected audio/text/image/video host debug APKs; checkpoints 5/6/7 rebuilt the full app and affected text/CSV hosts, and repeated the independent Scribe build. Checkpoint 8 repeats full/CSV-host and independent Scribe builds; checkpoint 9 repeats full/text/HTML/Markdown-host and independent Scribe builds. Checkpoint 10 rebuilds full/CSV-host APKs for the startup callback fix. Checkpoint 11 rebuilds full/audio-host and standalone Android/portable Sound artifacts for PCM pull output; checkpoint 12 repeats those builds for decoder frame positioning and playback policy; checkpoint 13 repeats them for trailing MP3 metadata and long seeks; checkpoint 14 repeats affected Sound/Stream/Canvas and audio/image host builds for common encoded inputs and exact FLAC positioning. Termux ARM64 native source builds passed; the standard NDK/CMake path and desktop/iOS runtime execution were not exercised.
 
@@ -510,4 +556,4 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. The requested libVLC backend adds a pinned published native AAR with source/override details; no native binary is committed and no language port is introduced.
 
-Final full debug APK SHA-256: `cf18eb8809120a8af1a43c6b741891b918d408d0fbbb02de0fd01401371c5257`.
+Final full debug APK SHA-256: `98039df2ad35e38523c934f7b2530908e89da5fa30592933960f0fefcb731ecb`.

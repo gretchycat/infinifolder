@@ -2,6 +2,12 @@ package com.infinifolder.viewer
 
 /** Host-independent launch contract. Libraries use granted URI + name/MIME/edit extras. */
 object ViewerCatalog {
+    fun playbackActivity(operationId: String): String? = when (operationId) {
+        "playback_video" -> activity(MediaType.VIDEO)
+        "playback_audio" -> activity(MediaType.AUDIO)
+        else -> null
+    }
+
     fun activity(type: MediaType): String? = when (type) {
         MediaType.IMAGE -> "ImageViewerActivity"
         MediaType.TEXT -> "TextViewerActivity"

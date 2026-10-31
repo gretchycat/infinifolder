@@ -59,18 +59,20 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Implemented; focused acceptance still needed
 
-Checkpoint 20 selects the owner-requested libVLC backend in libinfinivideo. The
-host uses common playback controls and metadata; the library owns native
-video/subtitle surfaces and audio focus. Local files remain direct and remote/
-archive files keep explicit staging. Settings, controls, playlist/repeat and PiP
-remain; source-load/native callback generations and lease cleanup are guarded.
-The new MP4/WebM/subtitled MKV and six-minute seek fixtures are in
-`filesystem-test-images/video/`. [Video handset checks](video-formats.md#handset-checks)
-remain pending; arbitrary provider read callbacks and desktop/iOS backends remain
-future work. The full gate reports 798 cases, 768 passing and the same 30 known
-failures. Forty-two focused native groups pass against the full APK, plus seven
-video groups against the video-only host's runtime. Full/host and standalone
-Video builds pass.
+Checkpoint 21 corrects the Activity-bar video shortcut and replaces whole-video
+remote/archive staging with common-source streaming inside libinfinivideo.
+Positional inputs serve native byte ranges; sequential inputs stream immediately
+and replay a prefix for seeks when their total is known. Unknown totals remain
+sequential. Vault can probe native slices without its whole-entry extraction
+fallback; other inherited container/provider caches still have their limits.
+Selected playback starts before sibling listing finishes, with 300 ms native
+startup buffers. The original six-minute 90 fixture is silent; new 91 and its ZIP
+copy contain an AAC tone. The gate reports 820 cases, 790 pass and the same 30
+known failures. Fifty focused native groups pass against the full APK, plus 15
+video/streaming groups against the video-only host. Full/host and standalone
+Video/Vault builds pass. [Video handset checks](video-formats.md#handset-checks)
+remain pending for the shortcut, local/remote/ZIP startup, actual picture/sound,
+seeking, subtitles and PiP. Desktop/iOS backends remain future work.
 
 Checkpoint 18 moves image bitmap rotation/flip/crop/resize and PNG encoding into
 Canvas processors, retaining host controls, resize-dialog snapshots, sampled

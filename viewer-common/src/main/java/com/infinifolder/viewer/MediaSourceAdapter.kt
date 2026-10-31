@@ -118,6 +118,23 @@ object MediaSourceAdapter {
         return null
     }
 
+    /** Prefer actual random access, including container slices, without extraction fallback. */
+    fun openStreamingPositionalSource(context: Context, uri: Uri): ByteSource? {
+        if (!com.infinifolder.archive.ArchiveUri.isArchiveUri(uri)) return openPositionalSource(context, uri)
+        val archives = com.infinifolder.storage.StorageRuntime.get(context).archives
+        val ref = archives.refForUri(uri) ?: return null
+        return when (val result = com.infinifolder.storage.validateSeekableResult(archives.openStreamingSeekable(ref), false)) {
+            is ProviderResult.Success -> try {
+                com.infinifolder.storage.BlockDeviceSource(result.value, StreamMetadata(provenance = Provenance(source = uri.toString())))
+            } catch (error: Throwable) {
+                try { result.value.close() } catch (close: Throwable) { error.addSuppressed(close) }
+                throw error
+            }
+            is ProviderResult.Failure -> throw IOException(result.message, result.cause)
+            is ProviderResult.Unsupported -> null
+        }
+    }
+
     fun readAllBytes(context: Context, uri: Uri): ByteArray {
         return openStream(context, uri).use { it.readBytes() }
     }

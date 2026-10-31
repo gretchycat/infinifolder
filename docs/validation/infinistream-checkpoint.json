@@ -1,5 +1,5 @@
 {
-  "source": "Checkpoint 20 expected cases; original 458-case pre-migration snapshot is infinistream-baseline.json",
+  "source": "Checkpoint 21 expected cases; original 458-case pre-migration snapshot is infinistream-baseline.json",
   "recorded": "2026-10-31",
   "cases": {
     "com.infinifolder.FileNameEllipsizerTest.testCompoundDiscAndArchiveExtensionTruncation": "passed",
@@ -671,6 +671,9 @@
     "com.infinifolder.viewer.StagedSourceTest.borrowedOriginalSurvivesCleanup": "passed",
     "com.infinifolder.viewer.TextWindowPresentationTest.aGapOrOverlapIsRejectedRatherThanDisplayedAsAContinuousSource": "passed",
     "com.infinifolder.viewer.TextWindowPresentationTest.adjacentWindowsComposeWithoutArtificialLineBreaksOrFalsePartialSaveRevisions": "passed",
+    "com.infinifolder.viewer.ViewerCatalogTest.audioActivityShortcutReturnsAudioPlayer": "passed",
+    "com.infinifolder.viewer.ViewerCatalogTest.unrelatedActivityDoesNotOpenAPlayer": "passed",
+    "com.infinifolder.viewer.ViewerCatalogTest.videoActivityShortcutReturnsVideoPlayer": "passed",
     "io.github.gretchycat.infiniscribe.DelimitedTextTest.testDetectDelimiter": "passed",
     "io.github.gretchycat.infiniscribe.DelimitedTextTest.testFormatCsvRoundTrip": "passed",
     "io.github.gretchycat.infiniscribe.DelimitedTextTest.testParseQuotedAndEscapedCsv": "passed",
@@ -799,6 +802,25 @@
     "io.github.gretchycat.infinivideo.VideoPlaybackTest.speedPreservesAllPickerValues": "passed",
     "io.github.gretchycat.infinivideo.VideoPlaybackTest.stagedInputUsesActualFileCapabilitiesAndLength": "passed",
     "io.github.gretchycat.infinivideo.VideoPlaybackTest.surfaceMetadataDoesNotClaimEncodedByteCapabilities": "passed",
-    "io.github.gretchycat.infinivideo.VideoPlaybackTest.unknownDurationAndDimensionsStayUnknown": "passed"
+    "io.github.gretchycat.infinivideo.VideoPlaybackTest.unknownDurationAndDimensionsStayUnknown": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.closeCancelsBlockedActiveHandle": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.closeIsIdempotentAndDoesNotCloseBorrowedOwner": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.concurrentRangesHaveIndependentOffsets": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.distantRangeReadsOnlyRequestedBytesWithLongOffsets": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.duplicateRangeHeadersAreRejected": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.emptySourceDoesNotOpenBody": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.invalidAndMultipleRangesDoNotOpenSource": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.metadataPreservesIdentityAndMarksReplayCost": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.openingAndHeadDoNotReadOrOpenEncodedBody": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.openingFailurePreservesOriginalCauseAndReturnsError": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.prematureEofIsRecordedAsFailure": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.rangeParserHandlesBoundsAndOverflow": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.sequentialRangesReplayOnlyRequiredPrefixInSmallChunks": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.shortPositionalReadsAreFilledWithoutDroppingBytes": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.slowResponsesDoNotBlockNewRangeRequests": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.suffixAndClampedEndRangesAreExact": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.tokenAndMethodsAreCheckedBeforeSourceOpen": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.unknownLengthRangeDoesNotInventRandomAccess": "passed",
+    "io.github.gretchycat.infinivideo.VideoStreamServerTest.unknownLengthUsesChunkedStreaming": "passed"
   }
 }

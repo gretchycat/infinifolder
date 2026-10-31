@@ -34,6 +34,12 @@ def encode(name, codec, duration=12, audio=True):
 encode('01-avc-aac.mp4', 'libx264')
 encode('02-vp8-vorbis.webm', 'libvpx')
 encode('90-six-minute-seek.mp4', 'libx264', 360, False)
+audible = OUT / '91-six-minute-audio-seek.mp4'
+if not audible.exists():
+    subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-n',
+        '-i', str(OUT / '90-six-minute-seek.mp4'), '-f', 'lavfi', '-i',
+        'sine=frequency=440:sample_rate=44100:duration=360', '-map', '0:v', '-map', '1:a',
+        '-c:v', 'copy', '-c:a', 'aac', '-b:a', '32k', '-movflags', '+faststart', str(audible)], check=True, env=ENV)
 subtitle = OUT / '03-embedded-subtitles.srt'
 if not subtitle.exists():
     subtitle.write_text('1\n00:00:01,000 --> 00:00:05,000\nInfiniStream embedded subtitle check\n\n2\n00:00:06,000 --> 00:00:10,000\nSecond subtitle: café Ω\n', encoding='utf-8')
@@ -56,4 +62,8 @@ if not archive.exists():
         for path in sorted(OUT.iterdir()):
             if path.suffix in {'.mp4', '.webm', '.mkv', '.json', '.srt'}:
                 z.write(path, 'video/' + path.name)
+audio_archive = OUT / 'video-audio-seek-checks.zip'
+if not audio_archive.exists():
+    with zipfile.ZipFile(audio_archive, 'w', zipfile.ZIP_DEFLATED) as z:
+        z.write(audible, 'video/' + audible.name)
 update_manifest([p for p in OUT.iterdir() if p.is_file()])

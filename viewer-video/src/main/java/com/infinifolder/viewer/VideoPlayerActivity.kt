@@ -34,7 +34,7 @@ class VideoPlayerActivity : ViewerActivity() {
 
     private var targetUri: Uri? = null
     private var displayName: String = "Video"
-    private var stagedSource: MediaSourceAdapter.StagedSource? = null
+    private var videoInput: VideoPlaybackInput? = null
     private val loadGeneration = AtomicInteger()
     private val sourceExecutor = Executors.newSingleThreadExecutor()
     private var sourceJob: Future<*>? = null
@@ -119,6 +119,10 @@ class VideoPlayerActivity : ViewerActivity() {
 
     private fun discoverPlaylistAndStart() {
         val u = targetUri ?: return
+        playlist.clear()
+        playlist.add(u)
+        currentIndex = 0
+        loadVideoAtIndex(0) // Start the selected item without waiting for a folder listing.
         Thread {
             val list = mutableListOf<Uri>()
             val parentUri = intent?.getStringExtra("parentUri")?.let { Uri.parse(it) }
@@ -138,14 +142,13 @@ class VideoPlayerActivity : ViewerActivity() {
             if (list.none { it == u || it.toString() == uStr }) {
                 list.add(0, u)
             }
-            val idx = list.indexOfFirst { it == u || it.toString() == uStr }.coerceAtLeast(0)
-
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
+                val playing = playlist.getOrNull(currentIndex) ?: u
+                if (list.none { it == playing }) list.add(0, playing)
                 playlist.clear()
                 playlist.addAll(list)
-                currentIndex = idx
-                loadVideoAtIndex(currentIndex)
+                currentIndex = list.indexOf(playing).coerceAtLeast(0)
             }
         }.start()
     }
@@ -174,6 +177,8 @@ class VideoPlayerActivity : ViewerActivity() {
         videoPlayer.listener = object : VideoPlayback.Listener {
             override fun onReady(metadata: io.github.gretchycat.infinistream.StreamMetadata) {
                 videoOutputMetadata = metadata
+                com.infinifolder.storage.DiagnosticLog.record("ui.video.source.ready",
+                    "access=${videoInput?.access} readBytes=${videoPlayer.streamBytesRead} length=${videoInputMetadata.length}")
                 loadingIndicator.visibility = View.GONE
                 com.infinifolder.ops.AppOperations.coordinator.registerExternal(
                     id = "playback_video", label = "Video: $displayName",
@@ -490,30 +495,31 @@ class VideoPlayerActivity : ViewerActivity() {
         sourceJob?.cancel(true)
         progressHandler.removeCallbacks(progressRunnable)
         videoPlayer.stop()
-        cleanupStagedFile()
+        cleanupVideoInput()
         sourceJob = sourceExecutor.submit {
-            var source: MediaSourceAdapter.StagedSource? = null
+            var source: VideoPlaybackInput? = null
             try {
-                val metadata = MediaSourceAdapter.resource(this, uri).metadata
-                source = MediaSourceAdapter.stage(this, uri)
+                source = VideoPlaybackInput.open(this, uri)
                 val loaded = source
                 runOnUiThread {
                     if (generation != loadGeneration.get() || isFinishing || isDestroyed) {
                         loaded.close()
                         return@runOnUiThread
                     }
-                    stagedSource = loaded
+                    videoInput = loaded
                     try {
                         applySpeed()
                         adjustAspectRatio()
-                        videoPlayer.open(loaded.file, metadata, autoPlay = !activityStopped)
+                        val file = loaded.file
+                        if (file != null) videoPlayer.open(file, loaded.metadata, autoPlay = !activityStopped)
+                        else videoPlayer.open(loaded.resource, autoPlay = !activityStopped)
                         if (activityStopped) pausedForBackground = true
                         videoInputMetadata = videoPlayer.inputMetadata
                         com.infinifolder.storage.DiagnosticLog.record("viewer.video.open",
-                            "backend=libvlc bytes=${videoInputMetadata.length} staged=true")
+                            "backend=libvlc bytes=${videoInputMetadata.length} access=${loaded.access} transport=${videoInputMetadata.attributes["video.transport"] ?: "file"}")
                     } catch (error: Exception) {
                         videoPlayer.stop()
-                        cleanupStagedFile()
+                        cleanupVideoInput()
                         loadingIndicator.visibility = View.GONE
                         com.infinifolder.storage.DiagnosticLog.record("viewer.video.open.failed", error = error)
                         Toast.makeText(this, "Failed to open video with libVLC", Toast.LENGTH_SHORT).show()
@@ -678,9 +684,13 @@ class VideoPlayerActivity : ViewerActivity() {
         }
     }
 
-    private fun cleanupStagedFile() {
-        stagedSource?.close()
-        stagedSource = null
+    private fun cleanupVideoInput() {
+        videoInput?.let {
+            com.infinifolder.storage.DiagnosticLog.record("ui.video.source.close",
+                "access=${it.access} readBytes=${videoPlayer.streamBytesRead} replayedBytes=${videoPlayer.replayedBytes}")
+            it.close()
+        }
+        videoInput = null
     }
 
     private fun formatTime(ms: Long): String = io.github.gretchycat.infinivideo.VideoMetadata.formatTime(ms)
@@ -742,7 +752,7 @@ class VideoPlayerActivity : ViewerActivity() {
         sourceJob?.cancel(true)
         sourceExecutor.shutdownNow()
         if (::videoPlayer.isInitialized) videoPlayer.close()
-        cleanupStagedFile()
+        cleanupVideoInput()
         com.infinifolder.ops.AppOperations.coordinator.completeExternal("playback_video")
     }
 }
