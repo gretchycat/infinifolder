@@ -19,6 +19,7 @@ public class AudioPullRuntimeCheck {
   public static void run(String[] args) throws Exception {
     File root = new File(args[0]), fixtures = new File(root,"libraries/libinfinisound/audio-core/src/test/resources/audio");
     File out = new File(root,"build/infinistream-migration");
+    if (args.length>1 && args[1].equals("gapless")) { gapless(fixtures,out);return; }
     for (String name : new String[]{"chord.mp3","chord.aac","chord.m4a","chord.wav","chord.flac","high-resolution.flac","full-resolution.flac"}) {
       if (args.length>1 && !args[1].equals(name)) continue;
       File cache = new File(out,"pull-"+name+".wav");
@@ -50,34 +51,53 @@ public class AudioPullRuntimeCheck {
         System.out.println("PASS PCM extractor "+name+" decoder="+source.getPreparation().getDecoder()+" initial="+initial+" total="+pos);
       }
     }
-    if (args.length>1 && !args[1].equals("long")) return;
-    File cache = new File(out,"pull-long.wav");
+    if (args.length>1 && !args[1].startsWith("long") && !args[1].equals("provided")) return;
+    boolean cbr = args.length>1 && args[1].equals("long-cbr");
+    File input = args.length>2 ? new File(args[2]) : new File(out,cbr ? "audio-pull-long-cbr.mp3" : "audio-pull-long.mp3");
+    File cache = new File(out,cbr ? "pull-long-cbr.wav" : "pull-long.wav");
     long started=System.nanoTime();
-    try (AudioWaveSource source = AudioProcessing.INSTANCE.openPlaybackSource(new File(out,"audio-pull-long.mp3"),cache,null,()->false)) {
+    try (AudioWaveSource source = AudioProcessing.INSTANCE.openPlaybackSource(input,cache,new AudioPreparationObserver() {
+      public void warning(String decoder, Throwable error) { System.out.println("WARNING "+decoder+" "+error); error.printStackTrace(); }
+      public void prepared(AudioPreparation preparation) { System.out.println("PREPARED "+preparation); }
+    },()->false)) {
       long openedMs=(System.nanoTime()-started)/1000000;
       long total=source.getMetadata().getLength();
       check(source.getProgressive(),"Long MP3 needs lazy source");
       HandlerThread events = new HandlerThread("AudioSeekRuntimeEvents"); events.start();
       Handler handler = new Handler(events.getLooper());
       MediaPlayer player = on(handler,MediaPlayer::new);
+      java.util.concurrent.atomic.AtomicReference<Throwable> analysisError=new java.util.concurrent.atomic.AtomicReference<>();
+      CountDownLatch analyzed=new CountDownLatch(1);
+      AudioAnalysisSession analyzer=AudioProcessing.INSTANCE.createAnalyzer(source.borrowedResource(),()->{
+        try { return on(handler,()->new kotlin.Pair<Boolean,Long>(player.isPlaying(),(long)player.getCurrentPosition())); }
+        catch(Exception error) { throw new RuntimeException(error); }
+      },(message,error)->{analysisError.set(error);System.out.println("ANALYZER ERROR "+message+" "+error);return kotlin.Unit.INSTANCE;},
+      (samples,channels,rate)->{analyzed.countDown();return kotlin.Unit.INSTANCE;});
       try {
         on(handler,()->{player.setDataSource(new PcmMediaDataSource(source.borrowedResource().open()));player.prepare();return null;});
         long preparedMs=(System.nanoTime()-started)/1000000;
         int duration=on(handler,player::getDuration);
-        check(Math.abs(duration-120000)<30,"exact 120s duration");
+        check(Math.abs(duration-source.getPreparation().getFormat().getDurationMs())<30,"exact duration");
+        check(duration>=32000,"MP3 seek probe requires at least 32 seconds");
+        int lastSecond=duration/1000-2;
+        int[] secondsToRead=args.length>2 ? new int[]{Math.min(270,lastSecond),Math.min(330,lastSecond),Math.min(420,lastSecond),20,lastSecond} : new int[]{270,330,810,20,890,330};
+        int[] seekTargets=args.length>2 ? new int[]{Math.min(260000,lastSecond*1000),Math.min(310000,lastSecond*1000),Math.min(420000,lastSecond*1000),30000,lastSecond*1000} : new int[]{260000,310000,800000,30000,880000};
         check(cache.length()<total/10,"Prepare must not decode the whole track: "+cache.length()+"/"+total);
-        System.out.println("PASS MediaPlayer prepare long MP3 openMs="+openedMs+" preparedMs="+preparedMs+" cached="+cache.length()+" total="+total+" durationMs="+duration);
+        System.out.println("PASS MediaPlayer prepare "+input.getName()+" decoder="+source.getPreparation().getDecoder()+" access="+source.getMetadata().getAttributes().get("access")+" openMs="+openedMs+" preparedMs="+preparedMs+" cached="+cache.length()+" total="+total+" durationMs="+duration);
         int frameBytes=source.getPreparation().getFormat().getChannels()*source.getPreparation().getFormat().getBitsPerSample()/8;
         check("decoded-block-disk-cache".equals(source.getMetadata().getAttributes().get("access")),"MP3 playback needs indexed PCM blocks");
         byte[] window=new byte[16384];
-        for (int seconds : new int[]{90,5,110,20,90}) {
+        for (int seconds : secondsToRead) {
           long t=System.nanoTime();
-          int n=source.readAt(44L+seconds*44100L*frameBytes,window,0,window.length);
+          int n=source.readAt(44L+seconds*(long)source.getPreparation().getFormat().getSampleRate()*frameBytes,window,0,window.length);
           check(n==window.length,"seek window length");
           check(Long.parseLong(source.getMetadata().getAttributes().get("cachedPcmBytes"))<1000000,"Seek decoded an entire prefix");
           System.out.println("SEEK "+seconds+"s latencyMs="+(System.nanoTime()-t)/1000000+" access="+source.getMetadata().getAttributes().get("access"));
         }
-        for (int milliseconds : new int[]{80000,10000,100000,30000}) {
+        on(handler,()->{player.setVolume(0,0);player.start();return null;});
+        analyzer.start();
+        check(analyzed.await(3,TimeUnit.SECONDS),"Analyzer produced no PCM");
+        for (int milliseconds : seekTargets) {
           CountDownLatch sought=new CountDownLatch(1);
           java.util.concurrent.atomic.AtomicReference<String> failed=new java.util.concurrent.atomic.AtomicReference<>();
           long t=System.nanoTime();
@@ -93,13 +113,17 @@ public class AudioPullRuntimeCheck {
           check(Math.abs(on(handler,player::getCurrentPosition)-milliseconds)<100,"MediaPlayer seek position");
           System.out.println("PASS MediaPlayer SEEK "+milliseconds+"ms completedMs="+elapsed+" cachedPcmBytes="+source.getMetadata().getAttributes().get("cachedPcmBytes")+" frameSeeks="+source.getMetadata().getAttributes().get("decoderFrameSeeks"));
           check(elapsed<1500,"PCM seek exceeded the local fixture budget");
+          check(source.getProgressive(),"Seek triggered full-file fallback");
         }
+        on(handler,()->{player.pause();return null;});
+        analyzer.stop();
+        check(analysisError.get()==null,"Analyzer failed: "+analysisError.get());
         File reference=new File(out,"seek-reference.wav");
-        new AudioFileProcessor(Collections.emptyList()).prepare(new com.infinifolder.audio.stream.FileAudioInput(new File(out,"audio-pull-long.mp3"),"source.mp3"),reference,DecoderPreference.PORTABLE_ONLY,null,()->false);
+        new AudioFileProcessor(Collections.emptyList()).prepare(new com.infinifolder.audio.stream.FileAudioInput(input,"source.mp3"),reference,DecoderPreference.PORTABLE_ONLY,null,()->false);
         try (RandomAccessFile expected=new RandomAccessFile(reference,"r")) {
           byte[] actual=new byte[16384], wanted=new byte[16384];
-          for (int seconds : new int[]{0,90,5,110,20}) {
-            long pos=44L+seconds*44100L*frameBytes;
+          for (int seconds : secondsToRead) {
+            long pos=44L+seconds*(long)source.getPreparation().getFormat().getSampleRate()*frameBytes;
             source.readAt(pos,actual,0,actual.length);expected.seek(pos);expected.readFully(wanted);
             int differences=0,max=0;
             for(int i=0;i<actual.length;i+=2) {
@@ -110,7 +134,38 @@ public class AudioPullRuntimeCheck {
             check(Arrays.equals(actual,wanted),"Seeked MP3 PCM differs from linear decoding");
           }
         }
-      } finally { on(handler,()->{player.release();return null;}); events.quitSafely(); }
+      } finally { analyzer.stop();on(handler,()->{player.release();return null;}); events.quitSafely(); }
+    }
+  }
+  static void gapless(File fixtures, File out) throws Exception {
+    File tagged=new File(out,"gapless-tagged.mp3");
+    try (FileOutputStream file=new FileOutputStream(tagged)) {
+      file.write(java.nio.file.Files.readAllBytes(new File(fixtures,"chord.mp3").toPath()));
+      byte[] tag=new byte[128];tag[0]='T';tag[1]='A';tag[2]='G';file.write(tag);
+    }
+    try (AudioWaveSource first=AudioProcessing.INSTANCE.openPlaybackSource(tagged,new File(out,"gapless-first.wav"),null,()->false);
+         AudioWaveSource second=AudioProcessing.INSTANCE.openPlaybackSource(tagged,new File(out,"gapless-second.wav"),null,()->false)) {
+      HandlerThread events=new HandlerThread("GaplessRuntimeEvents");events.start();Handler handler=new Handler(events.getLooper());
+      MediaPlayer current=on(handler,MediaPlayer::new), next=on(handler,MediaPlayer::new);
+      CountDownLatch firstDone=new CountDownLatch(1),secondDone=new CountDownLatch(1);
+      java.util.concurrent.atomic.AtomicReference<String> failed=new java.util.concurrent.atomic.AtomicReference<>();
+      try {
+        on(handler,()->{
+          current.setVolume(0,0);next.setVolume(0,0);
+          current.setDataSource(new PcmMediaDataSource(first.borrowedResource().open()));current.prepare();
+          next.setDataSource(new PcmMediaDataSource(second.borrowedResource().open()));next.prepare();
+          current.setOnCompletionListener(p->firstDone.countDown());next.setOnCompletionListener(p->secondDone.countDown());
+          MediaPlayer.OnErrorListener error=(p,w,e)->{failed.set(w+"/"+e);firstDone.countDown();secondDone.countDown();return true;};
+          current.setOnErrorListener(error);next.setOnErrorListener(error);
+          current.setNextMediaPlayer(next);current.start();return null;
+        });
+        check(firstDone.await(5,TimeUnit.SECONDS),"First linked player never completed");
+        check(secondDone.await(5,TimeUnit.SECONDS),"Next linked player did not start/complete automatically");
+        check(failed.get()==null,"Linked player failed: "+failed.get());
+        check(first.getProgressive() && second.getProgressive(),"Tagged gapless playback triggered fallback");
+        check(first.getPreparation().getFormat().getTotalFrames()==66150L && second.getPreparation().getFormat().getTotalFrames()==66150L,"Gapless trim changed");
+        System.out.println("PASS linked gapless handoff with tagged MP3 sources; exact 66150-frame timelines, playback muted");
+      } finally { on(handler,()->{current.release();next.release();return null;});events.quitSafely(); }
     }
   }
 }

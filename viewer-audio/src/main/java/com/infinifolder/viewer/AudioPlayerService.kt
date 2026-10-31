@@ -99,6 +99,8 @@ class AudioPlayerService : Service() {
     private var mediaPlayer: MediaPlayer? = null
     private var currentStream: java.io.FileInputStream? = null
     private var currentPcmSource: com.infinifolder.audio.AudioWaveSource? = null
+    private data class PendingSeek(val playerId: Int, val targetMs: Int, val startedMs: Long)
+    private var pendingSeek: PendingSeek? = null // Guarded by playerLock; Android may coalesce seeks.
     private var currentPfd: android.os.ParcelFileDescriptor? = null
     private var currentDecodedFile: File? = null
     private val gaplessExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
@@ -431,8 +433,27 @@ class AudioPlayerService : Service() {
         if (com.infinifolder.audio.cast.CastManager.isCasting) {
             com.infinifolder.audio.cast.CastManager.seek(positionMs.toLong()); return
         }
-        synchronized(playerLock) { runCatching { mediaPlayer?.seekTo(positionMs) } }
+        synchronized(playerLock) {
+            mediaPlayer?.let { player ->
+                pendingSeek = PendingSeek(System.identityHashCode(player), positionMs, android.os.SystemClock.elapsedRealtime())
+                com.infinifolder.storage.DiagnosticLog.record("audio.seek.requested",
+                    "targetMs=$positionMs durationMs=$currentDuration ${pcmAccessDescription()}")
+                runCatching { player.seekTo(positionMs) }.onFailure { error ->
+                    pendingSeek = null
+                    com.infinifolder.storage.DiagnosticLog.record("audio.seek.failed", "targetMs=$positionMs", error)
+                }
+            }
+        }
         notifyProgress(positionMs, currentDuration)
+    }
+
+    /** Snapshot only: reading diagnostics must not wait for a decoder or request PCM. */
+    private fun pcmAccessDescription(): String {
+        val source = currentPcmSource ?: return "pcmSource=none"
+        val attributes = source.metadata.attributes
+        return "decoder=${source.preparation.decoder} progressive=${source.progressive} " +
+            "access=${attributes["access"]} cachedPcmBytes=${attributes["cachedPcmBytes"]} " +
+            "decoderFrameSeeks=${attributes["decoderFrameSeeks"]}"
     }
 
     fun togglePlayPause() {
@@ -698,7 +719,7 @@ class AudioPlayerService : Service() {
                 com.infinifolder.storage.DiagnosticLog.record("audio.load.prepared",
                     "load=$thisLoadId sourceStageMs=${stagedAt - loadStarted} metadataMs=${metadataAt - stagedAt} " +
                         "pcmOpenMs=${decodedAt - metadataAt} playerPrepareMs=${android.os.SystemClock.elapsedRealtime() - decodedAt} " +
-                        "progressive=${waveSource.progressive} cachedPcmBytes=${waveSource.metadata.attributes["cachedPcmBytes"] ?: output.length()} " +
+                        "decoder=${preparation.decoder} progressive=${waveSource.progressive} cachedPcmBytes=${waveSource.metadata.attributes["cachedPcmBytes"] ?: output.length()} " +
                         "totalPcmBytes=${waveSource.metadata.length} access=${waveSource.metadata.attributes["access"]}")
                 decodedInfo.let { (rate, channels, duration) ->
                     formatInfo = formatInfo.copy(sampleRate = rate, channels = channels, isSampleRateRelevant = true)
@@ -827,6 +848,17 @@ class AudioPlayerService : Service() {
     }
 
     private fun installPlayerListeners(player: MediaPlayer) {
+        player.setOnSeekCompleteListener { completed ->
+            synchronized(playerLock) {
+                val request = pendingSeek
+                if (mediaPlayer === completed && request?.playerId == System.identityHashCode(completed)) {
+                    pendingSeek = null
+                    com.infinifolder.storage.DiagnosticLog.record("audio.seek.completed",
+                        "latestTargetMs=${request.targetMs} positionMs=${runCatching { completed.currentPosition }.getOrNull()} " +
+                            "elapsedMs=${android.os.SystemClock.elapsedRealtime() - request.startedMs} ${pcmAccessDescription()}")
+                }
+            }
+        }
         player.setOnCompletionListener { finished ->
             val isCurrent = synchronized(playerLock) { mediaPlayer === finished }
             if (isCurrent) {

@@ -68,3 +68,9 @@ The new source boundary passed 66 core/viewer/storage checks and built both debu
 ## InfiniStream migration
 
 Sound now shares `stream-core:0.1.0`. StreamAudioInput wraps known-length positional sources without implicit spooling; PcmStreamHandle and AudioStreamProcessor expose actual typed output metadata and declared ports. FileAudioInput retains legacy file hints while reading through the shared source. Store/Vault sources can be passed to the same adapter; Android output and queue lifetimes are unchanged. Standalone builds require the sibling Stream checkout pinned by the workspace (or -PinfiniLibrariesDir).
+
+## MP3 footer recovery (2026-10-31)
+
+JLayer's packet look-ahead can discard the final audio packet when a trailing ID3v1 tag is passed to the codec. On affected files this left the declared PCM timeline short and invoked a full-file fallback during a seek near the end. Sound now presents JLayer with an owned byte view ending before that tag, including after indexed seeks. The probe reads three footer bytes; original metadata, encoder trim and gapless frame counts are retained. Synthesized tagged/untagged PCM comparisons and affected-file runtime checks cover this path.
+
+The host records `audio.seek.requested` / `audio.seek.completed` with the latest target, elapsed time, decoder, actual cache strategy, cached PCM bytes and decoder-positioning count. Android can coalesce requests; the completion log identifies the latest requested target. These snapshots request no PCM and do not wait for decoding. The runtime harness runs playback muted with concurrent analysis; `--file /path/to/track.mp3` checks an owner-supplied MP3 of at least 32 seconds without adding it to source control.
