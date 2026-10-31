@@ -37,6 +37,11 @@ class CsvViewerActivity : ViewerActivity() {
     private var documentTask: Future<*>? = null
     @Volatile private var documentGeneration = 0
     @Volatile private var chunkReader: TableChunkReader? = null
+    private val countWorker = Executors.newSingleThreadExecutor()
+    private var countTask: Future<*>? = null
+    private var totalDataRows: Long? = null
+    private var rowCountStarted = false
+    private var rowCountRunning = false
     private var currentChunk: TableChunk? = null
     private var headerRow: List<String>? = null
     private val rowWindow = ScrollWindow<TableChunk>(5, { it.start }, { chunk -> chunk.rowIndices.count { it != 0L } })
@@ -192,7 +197,9 @@ class CsvViewerActivity : ViewerActivity() {
         filterRow.addView(searchInput, LinearLayout.LayoutParams(0, -2, 1f))
 
         statsTextView = TextView(this).apply {
-            text = "0 rows"
+            text = "Loading…"
+            maxLines = 2
+            maxWidth = dp(190)
             textSize = 12f
             setTextColor(if (isDark) 0xFFAAAAAA.toInt() else 0xFF666666.toInt())
             setPadding(dp(8), 0, 0, 0)
@@ -228,7 +235,10 @@ class CsvViewerActivity : ViewerActivity() {
             isFastScrollEnabled = false
             setOnScrollListener(object : AbsListView.OnScrollListener {
                 override fun onScrollStateChanged(view: AbsListView?, scrollState: Int) { maybeLoadRows() }
-                override fun onScroll(view: AbsListView?, firstVisibleItem: Int, visibleItemCount: Int, totalItemCount: Int) { maybeLoadRows() }
+                override fun onScroll(view: AbsListView?, firstVisibleItem: Int, visibleItemCount: Int, totalItemCount: Int) {
+                    if (!adjustingWindow) updateRowStats()
+                    maybeLoadRows()
+                }
             })
         }
         tableColumn.addView(headerContainer, LinearLayout.LayoutParams(-1, -2))
@@ -290,13 +300,55 @@ class CsvViewerActivity : ViewerActivity() {
         documentFullyLoaded = chunk.table.metadata.attributes["complete"] == "true"
         loadedRevision = chunk.originalBytes?.let { com.infinifolder.storage.ContentRevision.of(it) }
         originalData = if (documentFullyLoaded) chunk.table.rows.map { it.toMutableList() }.toMutableList() else mutableListOf()
+        rememberRowTotal(chunk)
         rebuildWindowRows()
         renderTable(preservePosition = false); progressBar.visibility = View.GONE
+        rowList.post { ensureRowCount() }
     }
 
     private fun rebuildWindowRows() {
         filteredData = rowWindow.pages.flatMap { it.rowIndices.zip(it.table.rows) }.filter { it.first != 0L }
-        statsTextView.text = "${filteredData.size} rows${if (!documentFullyLoaded) " in view" else ""}"
+    }
+
+    private fun rememberRowTotal(chunk: TableChunk) {
+        if (!chunk.hasNext) {
+            totalDataRows = (chunk.nextRowIndex - 1).coerceAtLeast(0)
+            rowCountRunning = false
+            countTask?.cancel(true)
+        }
+    }
+
+    private fun ensureRowCount() {
+        if (isDestroyed || isFinishing || totalDataRows != null || rowCountStarted) return
+        val targetUri = uri ?: return
+        rowCountStarted = true; rowCountRunning = true
+        updateRowStats()
+        countTask = countWorker.submit {
+            try {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                val total = TableChunkReader(MediaSourceAdapter.openDocumentSource(this, targetUri), displayName,
+                    CancellationToken { isDestroyed || isFinishing }).use { it.countDataRows() }
+                runOnUiThread {
+                    if (isDestroyed || isFinishing || totalDataRows != null) return@runOnUiThread
+                    totalDataRows = total; rowCountRunning = false
+                    updateRowStats()
+                }
+            } catch (_: Exception) {
+                runOnUiThread {
+                    if (isDestroyed || isFinishing || totalDataRows != null) return@runOnUiThread
+                    rowCountRunning = false
+                    updateRowStats()
+                }
+            }
+        }
+    }
+
+    private fun updateRowStats() {
+        if (adjustingWindow) return
+        val first = filteredData.getOrNull(rowList.firstVisiblePosition)?.first
+        val last = filteredData.getOrNull(rowList.lastVisiblePosition)?.first
+        statsTextView.text = CsvRowStats.label(first, last, totalDataRows, rowCountRunning,
+            searchInput.text.toString().isNotBlank())
     }
 
     private fun rowAnchor(): RowAnchor? = filteredData.getOrNull(rowList.firstVisiblePosition)?.let {
@@ -327,6 +379,7 @@ class CsvViewerActivity : ViewerActivity() {
                 runOnUiThread {
                     if (request != documentGeneration || isDestroyed) return@runOnUiThread
                     edgeLoading = false
+                    rememberRowTotal(next)
                     val anchor = rowAnchor()
                     val shift = if (direction > 0) rowWindow.append(next, rowList.firstVisiblePosition.coerceAtLeast(0))
                         else rowWindow.prepend(next, rowList.lastVisiblePosition.coerceAtLeast(0))
@@ -349,7 +402,9 @@ class CsvViewerActivity : ViewerActivity() {
             if (idx != 0 && (q.isEmpty() || row.any { it.contains(q, ignoreCase = true) })) idx.toLong() to row else null
         }
         headerRow = originalData.firstOrNull()
-        statsTextView.text = "${filteredData.size} rows"; renderTable(preservePosition = false)
+        totalDataRows = (originalData.size - 1).coerceAtLeast(0).toLong()
+        rowCountRunning = false; countTask?.cancel(true)
+        renderTable(preservePosition = false)
     }
 
     private fun loadForEditing(row: Long, column: Int) {
@@ -383,6 +438,7 @@ class CsvViewerActivity : ViewerActivity() {
 
     override fun onDestroy() {
         documentGeneration++; documentTask?.cancel(true)
+        countTask?.cancel(true); countWorker.shutdownNow()
         documentWorker.execute { runCatching { chunkReader?.close() }; chunkReader = null }
         documentWorker.shutdown()
         super.onDestroy()
@@ -409,6 +465,7 @@ class CsvViewerActivity : ViewerActivity() {
                 if (observer.isAlive) observer.removeOnPreDrawListener(this)
                 if (request == documentGeneration && !isDestroyed) {
                     adjustingWindow = false
+                    updateRowStats()
                     rowList.post { maybeLoadRows() }
                 }
                 return true

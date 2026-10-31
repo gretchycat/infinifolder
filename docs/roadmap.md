@@ -2,7 +2,7 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
-Updated 2026-10-24. See [current status](project-status.md) for confirmed behavior and [detailed tasks](feature-todo.md) for acceptance work.
+Updated 2026-10-30. See [current status](project-status.md) for confirmed behavior and [detailed tasks](feature-todo.md) for acceptance work.
 
 ## Active: InfiniStream library migration
 
@@ -34,6 +34,31 @@ Broaden format-specific byte/metadata/edge checks, multipart ZIP/7z, advanced LV
 ## Requested future features
 
 Most-used sorting; torrent device acceptance and seekable piece reads; Downloads organization rules; handset acceptance for floating browser and home-screen shortcuts; later widget. NFS/cloud providers, broader search/recents/trash and portable metadata remain future scope. WebDAV is user-confirmed working.
+
+### Large text and CSV editing
+
+Add editing beyond the current complete-file limits (4 MiB for text, 8 MiB for
+CSV/TSV) using the existing random-access, chunked viewing foundation.
+
+- Keep the edit model, parsing and serialization in Scribe, with bounded memory
+  and undo/redo history. Handle edits across chunk boundaries, Unicode characters,
+  quoted/multiline CSV records and changes in encoded length. Refresh affected
+  row/byte positions and counts while preserving the visible position.
+- Save through the host and Store/Vault publication contracts: stream the complete
+  edited result to a staged destination, check the original revision and publish
+  only after success. Retain conflict handling, cancellation, low-space checks and
+  recovery; a loaded window must never overwrite the rest of a source.
+- Keep provider capabilities explicit, including remote and container sources.
+  Use staged replacement where supported; do not assume positional reads imply
+  safe in-place writes. Preserve existing encoding, delimiter and literal-cell
+  semantics unless a separate change is deliberately specified.
+- Accept on disposable copies of fixtures 90/91: edit near the beginning, middle
+  and end; insert/delete content across windows; scroll away and back; undo/redo;
+  save/reopen and check untouched content. Include quoted CSV newlines, Unicode,
+  source conflicts and interrupted saves.
+
+This is planned work. Large files remain read-only under the current guards
+until the chunked editing and safe publication paths are implemented and accepted.
 
 ### Cloud storage through rclone
 

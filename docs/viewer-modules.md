@@ -47,8 +47,13 @@ Filters and forward search run on the worker; stale loads are ignored and handle
 close off the UI thread. Loose Android CSV MIME aliases select the grid, matching
 archive CSV behavior. UI smoothness still requires handset acceptance.
 
+The CSV counter tracks the visible source-row range rather than the cache size.
+An independent background reader counts data records exactly in bounded windows;
+the header is excluded, totals remain unknown until EOF, and filtered ranges keep
+the original source row numbers. Counting closes/cancels independently of scrolling.
+
 Only a complete source obtains an edit/save revision. Explicit editing keeps
 the existing complete-document 4 MiB text/8 MiB CSV loading and publication path;
-paged editing remains follow-up. The large delivered fixtures remain read-only
+large-file editing is [roadmap work](roadmap.md#large-text-and-csv-editing). The large delivered fixtures remain read-only
 and can now be browsed beyond the former prefix instead of laying out that whole
 prefix in one Android widget. See the updated [fixture guide](../filesystem-test-images/documents/README.md).

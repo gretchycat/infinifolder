@@ -18,6 +18,14 @@ Updated: 2026-10-24. [Current confirmations and priorities](project-status.md) d
 - [ ] Verify live remote providers, Android playback/seek/gapless/route behavior and editor/container write acceptance after these checkpoints.
 - [ ] Resolve original-code licensing and existing F-Droid native/AAR build requirements before a distributable library release.
 
+## Large text and CSV editing
+
+- [ ] Add a bounded chunk-backed edit model for text and CSV/TSV beyond the current complete-file limits, including cross-window Unicode/record edits, undo/redo and updated row/byte positions.
+- [ ] Stream complete edited results through revision-checked staged publication, preserving provider capabilities, conflicts, cancellation, low-space behavior and recovery.
+- [ ] Accept begin/middle/end edits, scroll-away/back, undo/redo and save/reopen on disposable copies of fixtures 90/91, including untouched-content and interrupted-save checks.
+
+See the [large-file editing roadmap](roadmap.md#large-text-and-csv-editing). Current large-file read-only guards remain in place.
+
 ## Cloud storage
 
 - [ ] Evaluate an optional rclone-backed provider for cloud services through the

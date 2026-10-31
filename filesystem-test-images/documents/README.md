@@ -42,6 +42,9 @@ retains up to five 50-record windows plus a fixed header, and shows 16 columns
 at a time with controls for wider tables. Text retains up to three bounded
 byte windows and keeps Go to byte offset. Sources that cannot seek use a bounded
 sequential cache, so evicted ranges cannot be revisited on those sources.
+The CSV counter shows visible source row numbers and the exact data-row total
+(excluding the header) after background counting; it must not report the 250-row
+cache as the document size. Filters keep original source row numbers.
 Large files remain read-only. Explicit editing retains the existing complete-file
 limits (8 MiB for spreadsheets, 4 MiB for text) and original revision checks.
 
