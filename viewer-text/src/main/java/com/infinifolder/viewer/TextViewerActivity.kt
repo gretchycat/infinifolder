@@ -46,7 +46,8 @@ class TextViewerActivity : ViewerActivity() {
 
 
     private lateinit var contentEditText: EditText
-    private lateinit var lineNumbersView: TextView
+    private lateinit var lineNumbersView: SyntaxLineNumbersView
+    private lateinit var syntax: SyntaxTextController
     private lateinit var scrollView: AnchoredScrollView
     private lateinit var topBar: LinearLayout
     private lateinit var titleView: TextView
@@ -202,14 +203,20 @@ class TextViewerActivity : ViewerActivity() {
         }
         topBar.addView(lineNumBtn)
 
-        // Encoding selector
+        // Text appearance and encoding menu
         val encBtn = TextView(this).apply {
-            text = "🔤"
+            text = "Aa"
             textSize = 16f
             setTextColor(0xFFFFFFFF.toInt())
-            contentDescription = "Encoding"
+            contentDescription = "Text appearance and encoding"
             setPadding(dp(10), dp(6), dp(10), dp(6))
-            setOnClickListener { showEncodingPicker() }
+            setOnClickListener { anchor ->
+                PopupMenu(this@TextViewerActivity, anchor).apply {
+                    menu.add("Text appearance…").setOnMenuItemClickListener { if (::syntax.isInitialized) syntax.showSettings(); true }
+                    menu.add("Encoding…").setOnMenuItemClickListener { showEncodingPicker(); true }
+                    show()
+                }
+            }
         }
         topBar.addView(encBtn)
 
@@ -360,7 +367,7 @@ class TextViewerActivity : ViewerActivity() {
             )
         }
 
-        lineNumbersView = TextView(this).apply {
+        lineNumbersView = SyntaxLineNumbersView(this) { if (::contentEditText.isInitialized) contentEditText else null }.apply {
             textSize = 13f
             typeface = Typeface.MONOSPACE
             minWidth = dp(80)
@@ -429,7 +436,39 @@ class TextViewerActivity : ViewerActivity() {
         root.addView(textContainer)
 
         setContentView(root)
+        contentEditText.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> lineNumbersView.requestLayout(); lineNumbersView.invalidate() }
+        syntax = SyntaxTextController(this, contentEditText, currentName, currentMime, { currentChunk?.start ?: 0L },
+            stableLayout = ::applySyntaxWithAnchor, afterApply = {
+                lineNumbersView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, contentEditText.textSize)
+                lineNumbersView.typeface = contentEditText.typeface
+                (contentEditText.background as? android.graphics.drawable.ColorDrawable)?.color?.let(lineNumbersView::setBackgroundColor)
+                lineNumbersView.requestLayout(); lineNumbersView.invalidate()
+                if (searchInput.text.isNotEmpty()) performSearch(searchInput.text.toString(), followMatch = false)
+            })
     }
+
+    private fun applySyntaxWithAnchor(action: () -> Unit): Boolean {
+        if (adjustingWindow) return false
+        val anchor = textAnchor(); val request = documentGeneration
+        adjustingWindow = true; scrollView.beginAnchorChange()
+        action()
+        val observer = contentEditText.viewTreeObserver
+        observer.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (observer.isAlive) observer.removeOnPreDrawListener(this)
+                if (request != documentGeneration || isDestroyed) { scrollView.cancelAnchorChange(); return true }
+                contentEditText.layout?.let { layout ->
+                    val line = layout.getLineForOffset(anchor.character.coerceAtMost(contentEditText.length()))
+                    scrollView.restoreAnchor(anchor.horizontal, contentEditText.top + contentEditText.totalPaddingTop + layout.getLineTop(line) + anchor.withinLine)
+                }
+                adjustingWindow = false; scrollView.post { maybeLoadTextEdge() }
+                return true
+            }
+        })
+        return true
+    }
+
+    override fun onResume() { super.onResume(); if (::syntax.isInitialized) syntax.refreshPreferences() }
 
     private fun loadText() {
         documentFullyLoaded = false
@@ -634,6 +673,7 @@ class TextViewerActivity : ViewerActivity() {
     }
 
     override fun onDestroy() {
+        if (::syntax.isInitialized) syntax.close()
         documentGeneration++; documentTask?.cancel(true)
         documentWorker.execute { runCatching { chunkReader?.close() }; chunkReader = null }
         documentWorker.shutdown()
@@ -649,6 +689,10 @@ class TextViewerActivity : ViewerActivity() {
             sb.append(base?.plus(i) ?: "·").append('\n')
         }
         lineNumbersView.text = sb.toString()
+        val starts = IntArray(count); var next = 1
+        text.forEachIndexed { index, char -> if (char == '\n') starts[next++] = index + 1 }
+        lineNumbersView.starts = starts; lineNumbersView.firstLine = base
+        lineNumbersView.requestLayout(); lineNumbersView.invalidate()
     }
 
     private fun updateWordWrap() {
@@ -895,6 +939,7 @@ class TextViewerActivity : ViewerActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (::syntax.isInitialized && syntax.onActivityResult(requestCode, resultCode, data)) return
         if (requestCode == 901 && resultCode == RESULT_OK) data?.data?.let(::performSave)
     }
 

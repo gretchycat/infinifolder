@@ -232,3 +232,8 @@ python3 filesystem-test-images/generate-document-fixtures.py
 
 All document fixture contents are synthetic. The generator creates missing files
 and preserves existing samples, including edits made during handset testing.
+
+## Syntax highlighting
+
+Small source files and a custom color/font descriptor are under
+[syntax/](syntax/README.md), with viewing, editing and theme import/export checks.

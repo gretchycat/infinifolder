@@ -562,5 +562,49 @@
   "filesystems/windows/recovery/safety/mbr-overlapping-volumes.img": {
     "bytes": 18874368,
     "sha256": "cd1beed70805398c8d0b2e5cef7b66b912df30652e3953dbb124d539ae5d607a"
+  },
+  "syntax/01-source.kt": {
+    "bytes": 227,
+    "sha256": "b83d4a0871e713f1b997b5da68c53fb066bfbce3431dba8c9fc5004e8bf07d6a"
+  },
+  "syntax/02-source.py": {
+    "bytes": 202,
+    "sha256": "ffa94b28c7080690795b0e57c41a2dd43e12cbc07c6ba15dbc1933920adc0ff9"
+  },
+  "syntax/03-source.json": {
+    "bytes": 157,
+    "sha256": "c9c473a3dea4d9d70375be08d1442de686937ba3bfe3d2fc5387b7d4b880a4c2"
+  },
+  "syntax/04-source.html": {
+    "bytes": 165,
+    "sha256": "cc2424c129599f3ac7fe7af5055624b1ff700b9a9c7bd2fa02500a6c1a4792e2"
+  },
+  "syntax/05-source.md": {
+    "bytes": 153,
+    "sha256": "7f6b0922a5866ffc3e7eb08087fe4970cfe373ce416f64cecbf4d54d78d9ab90"
+  },
+  "syntax/06-source.css": {
+    "bytes": 89,
+    "sha256": "cb988310ec51dd6f89d5c3965779e173d25e46687e06a619aa2ed0d25c6caed5"
+  },
+  "syntax/07-source.yaml": {
+    "bytes": 62,
+    "sha256": "6c1094c05b151285f30d39ea5a5e8197347f7e7918413cd3d86a14a42a75310a"
+  },
+  "syntax/08-source.sh": {
+    "bytes": 81,
+    "sha256": "7452078936450f30c3ecbf3876cc6cd4a164f378d9cfb4aecb6d3f06ba88b11f"
+  },
+  "syntax/09-source.sql": {
+    "bytes": 92,
+    "sha256": "256b09d0a1b32dc58f58c099a6310b0a0dd17905fc1b5f5d39a020e741d38fa3"
+  },
+  "syntax/README.md": {
+    "bytes": 1002,
+    "sha256": "7c577d410fdc7ecee876c5e32e2cf998941496713c73d30e50a0b1df4ccbc574"
+  },
+  "syntax/custom-text-theme.json": {
+    "bytes": 854,
+    "sha256": "8bf508bfcc85ddb1c56d3a28c2f4efb51142a5635594b9e6ca70b487a6664ac0"
   }
 }

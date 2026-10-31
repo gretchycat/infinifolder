@@ -57,3 +57,9 @@ the existing complete-document 4 MiB text/8 MiB CSV loading and publication path
 large-file editing is [roadmap work](roadmap.md#large-text-and-csv-editing). The large delivered fixtures remain read-only
 and can now be browsed beyond the former prefix instead of laying out that whole
 prefix in one Android widget. See the updated [fixture guide](../filesystem-test-images/documents/README.md).
+
+### Shared source styling
+
+Text viewing/editing and HTML/Markdown source modes now consume Scribe scope/style
+descriptors through one shared Android adapter. See [syntax highlighting](syntax-highlighting.md)
+for controls, theme import/export, supported lexical profiles and bounded-context limits.

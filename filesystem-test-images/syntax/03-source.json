@@ -1,0 +1,11 @@
+{
+  "title": "Syntax highlighting 🎵",
+  "enabled": true,
+  "number": 42,
+  "escaped": "quote \" and 日本語",
+  "items": [
+    1,
+    2,
+    null
+  ]
+}

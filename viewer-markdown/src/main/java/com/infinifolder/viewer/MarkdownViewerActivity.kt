@@ -22,6 +22,7 @@ class MarkdownViewerActivity : ViewerActivity() {
 
     private lateinit var webView: WebView
     private lateinit var sourceEditText: EditText
+    private var syntax: SyntaxTextController? = null
     private lateinit var topBar: LinearLayout
     private lateinit var editActionBar: LinearLayout
     private lateinit var titleView: TextView
@@ -255,6 +256,9 @@ class MarkdownViewerActivity : ViewerActivity() {
 
         root.addView(contentFrame)
         setContentView(root)
+        syntax?.close()
+        syntax = SyntaxTextController(this, sourceEditText, currentName, "text/markdown")
+        syntax?.addToolbarButton(topBar)
     }
 
     private fun loadMarkdown() {
@@ -402,6 +406,7 @@ class MarkdownViewerActivity : ViewerActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (syntax?.onActivityResult(requestCode, resultCode, data) == true) return
         if (requestCode == 901 && resultCode == RESULT_OK) data?.data?.let(::performSave)
     }
 
@@ -441,6 +446,9 @@ class MarkdownViewerActivity : ViewerActivity() {
             Toast.makeText(this, "No external application found for this file.", Toast.LENGTH_SHORT).show()
         }
     }
+
+    override fun onResume() { super.onResume(); syntax?.refreshPreferences() }
+    override fun onDestroy() { syntax?.close(); super.onDestroy() }
 
     override fun onBackPressed() {
         if (isEditMode && hasUnsavedEdits) {

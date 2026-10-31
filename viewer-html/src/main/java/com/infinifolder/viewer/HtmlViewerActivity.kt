@@ -47,6 +47,7 @@ class HtmlViewerActivity : ViewerActivity() {
     private lateinit var webView: WebView
     private lateinit var sourceContainer: LinearLayout
     private lateinit var sourceEditText: EditText
+    private var syntax: SyntaxTextController? = null
     private lateinit var progressBar: ProgressBar
     private lateinit var titleTextView: TextView
     private lateinit var modeToggleBtn: Button
@@ -280,6 +281,9 @@ class HtmlViewerActivity : ViewerActivity() {
         mainColumn.addView(contentFrame)
         rootLayout.addView(mainColumn)
         setContentView(rootLayout)
+        syntax?.close()
+        syntax = SyntaxTextController(this, sourceEditText, displayName, "text/html")
+        syntax?.addToolbarButton(toolbar)
     }
 
     private fun loadDocument() {
@@ -434,6 +438,14 @@ class HtmlViewerActivity : ViewerActivity() {
             Toast.makeText(this, "No external handler found", Toast.LENGTH_SHORT).show()
         }
     }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        syntax?.onActivityResult(requestCode, resultCode, data)
+    }
+
+    override fun onResume() { super.onResume(); syntax?.refreshPreferences() }
+    override fun onDestroy() { syntax?.close(); super.onDestroy() }
 
     override fun onBackPressed() {
         if (isDirty) {

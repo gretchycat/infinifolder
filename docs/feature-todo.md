@@ -13,6 +13,7 @@ Updated: 2026-10-24. [Current confirmations and priorities](project-status.md) d
 - [x] Add bounded content identification, capability/metadata validation and an explicit regression comparison gate.
 - [x] Move CSV/TSV delimiter/parser/formatter code into Scribe and use typed table processors for actual viewer loads/saves.
 - [x] Use positional document chunks and bounded text/grid presentation; handle Android CSV MIME aliases and preserve complete-file save guards.
+- [x] Share bounded source syntax highlighting and TextMate/VS Code-style descriptors across text viewing/editing and HTML/Markdown source modes; retain save guards. See [scope and controls](syntax-highlighting.md).
 - [ ] Continue converting legacy callers to metadata-driven composition before removing compatibility APIs or exported dependencies.
 - [ ] Extend automatic planning for arbitrary multi-input/track graphs; current multi-port processors use explicit bindings.
 - [ ] Verify live remote providers, Android playback/seek/gapless/route behavior and editor/container write acceptance after these checkpoints.

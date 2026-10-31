@@ -46,6 +46,7 @@ Updated 2026-10-27. Start with [project status](project-status.md), [task list](
 - [Project status](project-status.md)
 - [RAR, ARJ, integrity and unreadable-source handling](rar-arj-and-integrity.md)
 - [Roadmap](roadmap.md)
+- [Syntax highlighting and text appearance](syntax-highlighting.md)
 - [Filesystem limits and destination preflight](storage-filesystem-limits.md)
 - [Storage safety and architecture progress](storage-safety-progress.md)
 - [Storage API consistency and remaining tasks](storage-api-consistency.md)

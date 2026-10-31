@@ -1,0 +1,20 @@
+{
+  "name": "Custom source example",
+  "colors": {
+    "editor.foreground": "#E0E5DC",
+    "editor.background": "#141714"
+  },
+  "infiniscribe": {
+    "version": 1,
+    "fontFamily": "monospace",
+    "fontSize": 14
+  },
+  "tokenColors": [
+    { "scope": "comment", "settings": { "foreground": "#80B070", "fontStyle": "italic" } },
+    { "scope": ["keyword", "storage"], "settings": { "foreground": "#C792EA", "fontStyle": "bold" } },
+    { "scope": "string", "settings": { "foreground": "#E5C07B" } },
+    { "scope": "constant", "settings": { "foreground": "#F78C6C" } },
+    { "scope": "variable.other.property", "settings": { "foreground": "#82AAFF", "infiniscribe": { "fontFamily": "serif", "fontSize": 16 } } },
+    { "scope": "markup.heading", "settings": { "foreground": "#82AAFF", "fontStyle": "bold", "infiniscribe": { "fontSize": 20 } } }
+  ]
+}

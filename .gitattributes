@@ -1,2 +1,3 @@
 # Document fixtures include CRLF, bare CR, tabs and padded fields; preserve exact bytes.
 filesystem-test-images/documents/** -text whitespace=-blank-at-eol
+filesystem-test-images/syntax/** -text
