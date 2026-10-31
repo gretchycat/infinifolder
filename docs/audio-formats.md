@@ -23,6 +23,14 @@ those names with a RealAudio MIME. `.ra` keeps its audio association. The genera
 [JVM fixture report](audio-playback-authoritative-report.md) now records unavailable
 codecs as failed; earlier placeholder-generated successes overstated support.
 
+Checkpoint 23 also rejects unknown codec identifiers in the legacy AU/AIFC/CAF,
+Wave64/RF64, IFF and VOC readers, checks complete PCM frames, and hardens ALAC
+EOF/prediction handling and 24-bit conversion. A backend must decode the declared
+format; an unsupported codec cannot be reinterpreted as PCM. The legacy PCM
+engine no longer simulates playback after unavailable/failed AudioTrack output.
+The JVM report measures parsing/signal health and keeps actual decoder names;
+it does not establish hardware playback.
+
 ---
 
 ## Implemented Architecture & Decoders

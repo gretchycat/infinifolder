@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 """Observe decoder rejection behavior in the built APK, without changing original fixtures.
 
-Exit zero means the audit completed, not that handlers are correct. Findings and
-valid controls are recorded separately in file-handler-audit-results.json.
+By default exit zero means the audit completed, not that handlers are correct.
+With --verify, every rejection probe must reject and the reference glyph must
+match. Findings and controls are recorded in file-handler-audit-results.json.
 Requires the same Termux/Android SDK/JDK environment as the native runtime checks.
 """
 from pathlib import Path
 import hashlib
+import argparse
 import json
 import os
 import re
 import shutil
 import struct
 import subprocess
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--verify', action='store_true', help='Fail for accepted invalid inputs or an incorrect reference glyph')
+args = parser.parse_args()
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'build/infinistream-migration'
@@ -50,7 +56,7 @@ for ext in ['au', 'aifc', 'caf', 'w64', 'rf64', '8svx', 'maud', 'voc', 'wav']:
     elif ext == '8svx':
         data[data.index(b'VHDR') + 23] = 0x7f
     elif ext == 'maud':
-        struct.pack_into('>H', data, data.index(b'MHDR') + 20, 0xffff)
+        struct.pack_into('>H', data, data.index(b'MHDR') + 26, 0xffff)
     else:
         start = struct.unpack_from('<H', data, 20)[0]
         assert data[start] == 9, 'Expected the fixture new-format VOC block'
@@ -183,7 +189,7 @@ with (OUT / 'file-handler-audit-runtime.log').open('w') as log:
         str(manifest), str(observations)], env=env, stdout=log, stderr=subprocess.STDOUT, timeout=90, check=True)
 rows = json.loads(observations.read_text())
 assert len(rows) == len(cases)
-findings = [row for row in rows if (row['probe'] == 'reject' and row['accepted']) or row.get('matchesCodeBitStipple', False)]
+findings = [row for row in rows if (row['probe'] == 'reject' and row['accepted']) or (row['probe'] == 'glyph' and not row.get('matchesReferenceGlyph', False))]
 controls = [row for row in rows if row['probe'] == 'control']
 failed_controls = [row for row in controls if not row['accepted']]
 with apk.open('rb') as source:
@@ -192,9 +198,14 @@ report = {'apkSha256': digest, 'cases': rows, 'findings': [row['id'] for row in 
     'failedControls': [row['id'] for row in failed_controls]}
 (OUT / 'file-handler-audit-results.json').write_text(json.dumps(report, indent=2) + '\n')
 for row in rows:
-    label = 'FINDING' if row in findings else 'CONTROL' if row['probe'] == 'control' else 'REJECTED'
+    label = 'FINDING' if row in findings else 'CONTROL' if row['probe'] == 'control' else 'GLYPH' if row['probe'] == 'glyph' else 'REJECTED'
     print(label, row['id'], json.dumps(row))
 print(f'Audit complete: {len(rows)} observations; {len(findings)} findings; {len(failed_controls)} failed controls')
 print('APK SHA-256:', digest)
 if failed_controls:
     raise SystemExit('Valid controls failed; review audit coverage before drawing conclusions')
+
+if args.verify and findings:
+    raise SystemExit('Decoder conformance gate failed: ' + ', '.join(row['id'] for row in findings))
+if args.verify:
+    print('DECODER_REJECTION_GATE_PASSED')

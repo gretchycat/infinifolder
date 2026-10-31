@@ -76,7 +76,7 @@ class PcmAudioEngine(
 
             Log.i(TAG, "AudioTrack initialized: Rate=${stereoPcm.sampleRate}Hz, Stereo, Buffer=${minBufSize * 2} bytes, TotalFrames=${stereoPcm.samples.size / 2}")
         }.onFailure {
-            Log.w(TAG, "AudioTrack hardware init unavailable (JVM or test environment): ${it.message}")
+            Log.w(TAG, "AudioTrack initialization failed: ${it.message}")
         }
     }
 
@@ -84,8 +84,18 @@ class PcmAudioEngine(
         if (isReleasedState.get()) return
         if (isPlayingState.compareAndSet(false, true)) {
             Log.i(TAG, "AudioTrack play requested at frame $currentFramePosition / ${stereoPcm.samples.size / 2}")
+            val track = audioTrack
+            if (track == null || track.state != AudioTrack.STATE_INITIALIZED) {
+                isPlayingState.set(false)
+                AudioPlaybackDiagnostics.recordPlaybackError("AudioTrack is unavailable")
+                return
+            }
+            try { track.play() } catch (error: Exception) {
+                isPlayingState.set(false)
+                AudioPlaybackDiagnostics.recordPlaybackError("AudioTrack play failed: ${error.message}", error)
+                return
+            }
             AudioPlaybackDiagnostics.recordPlaybackStarted("PcmAudioEngine(AudioTrack)")
-            runCatching { audioTrack?.play() }
             startPlaybackThread()
         }
     }
@@ -133,24 +143,19 @@ class PcmAudioEngine(
                 System.arraycopy(samples, sampleOffset, shortBuf, 0, framesToWrite * 2)
 
                 val written = try {
-                    audioTrack?.write(shortBuf, 0, framesToWrite * 2) ?: (framesToWrite * 2)
+                    audioTrack?.write(shortBuf, 0, framesToWrite * 2) ?: -1
                 } catch (e: Exception) {
                     AudioPlaybackDiagnostics.recordPlaybackError("AudioTrack write failure: ${e.message}", e)
                     -1
                 }
 
-                val framesWritten = if (written > 0) written / 2 else framesToWrite
-                currentFramePosition += framesWritten
-
-                // If running without hardware AudioTrack (e.g. JVM unit test), simulate timing
-                if (audioTrack == null) {
-                    val sleepMs = (framesWritten * 1000L) / stereoPcm.sampleRate
-                    try {
-                        Thread.sleep(sleepMs.coerceAtLeast(1L))
-                    } catch (_: InterruptedException) {
-                        break
-                    }
+                if (written <= 0 || written % 2 != 0) {
+                    isPlayingState.set(false)
+                    AudioPlaybackDiagnostics.recordPlaybackError("AudioTrack did not accept complete PCM frames: $written")
+                    break
                 }
+                currentFramePosition += written / 2
+
             }
 
             if (currentFramePosition >= totalFrames && isPlayingState.compareAndSet(true, false)) {

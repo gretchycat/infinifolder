@@ -1,0 +1,453 @@
+{
+  "apkSha256": "3240752b0b689e8123aa1081eec2a505098415beda649aa5830e588be03be09a",
+  "cases": [
+    {
+      "id": "audio-valid-au",
+      "family": "audio",
+      "extension": "au",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "SunAuDecoder",
+      "samples": 132300,
+      "pcmSha256": "d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f"
+    },
+    {
+      "id": "unknown-codec-au",
+      "family": "audio",
+      "extension": "au",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-aifc",
+      "family": "audio",
+      "extension": "aifc",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "AiffDecoder",
+      "samples": 132300,
+      "pcmSha256": "d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f"
+    },
+    {
+      "id": "unknown-codec-aifc",
+      "family": "audio",
+      "extension": "aifc",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-caf",
+      "family": "audio",
+      "extension": "caf",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "CafDecoder",
+      "samples": 132300,
+      "pcmSha256": "d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f"
+    },
+    {
+      "id": "unknown-codec-caf",
+      "family": "audio",
+      "extension": "caf",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-w64",
+      "family": "audio",
+      "extension": "w64",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "Wave64AndRf64Decoder",
+      "samples": 132300,
+      "pcmSha256": "d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f"
+    },
+    {
+      "id": "unknown-codec-w64",
+      "family": "audio",
+      "extension": "w64",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-rf64",
+      "family": "audio",
+      "extension": "rf64",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "Wave64AndRf64Decoder",
+      "samples": 132300,
+      "pcmSha256": "d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f"
+    },
+    {
+      "id": "unknown-codec-rf64",
+      "family": "audio",
+      "extension": "rf64",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-8svx",
+      "family": "audio",
+      "extension": "8svx",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "IffAudioDecoder",
+      "samples": 24000,
+      "pcmSha256": "92a5392d15ea722d05181458ebb302cb02ba213d76f75a99ef2aacb31f69e726"
+    },
+    {
+      "id": "unknown-codec-8svx",
+      "family": "audio",
+      "extension": "8svx",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-maud",
+      "family": "audio",
+      "extension": "maud",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "IffAudioDecoder",
+      "samples": 132300,
+      "pcmSha256": "d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f"
+    },
+    {
+      "id": "unknown-codec-maud",
+      "family": "audio",
+      "extension": "maud",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-voc",
+      "family": "audio",
+      "extension": "voc",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "VocDecoder",
+      "samples": 66146,
+      "pcmSha256": "f7d54d642338acd33b21dacdd3cfdf3e8b6d2b2bcc6287c7431cf12306e9d0f1"
+    },
+    {
+      "id": "unknown-codec-voc",
+      "family": "audio",
+      "extension": "voc",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "audio-valid-wav",
+      "family": "audio",
+      "extension": "wav",
+      "probe": "control",
+      "accepted": true,
+      "decoder": "Android.MediaCodec",
+      "samples": 132300,
+      "pcmSha256": "d7de36af19f56998e1eb76166b31293fba86348edf392403dd4658098c15195f"
+    },
+    {
+      "id": "unknown-codec-wav",
+      "family": "audio",
+      "extension": "wav",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-exr",
+      "family": "image",
+      "extension": "exr",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 36458,
+      "firstPixel": "ff4a5056"
+    },
+    {
+      "id": "unimplemented-exr-rle",
+      "family": "image",
+      "extension": "exr",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "missing-exr-chunks",
+      "family": "image",
+      "extension": "exr",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-xcf",
+      "family": "image",
+      "extension": "xcf",
+      "probe": "control",
+      "accepted": true,
+      "width": 64,
+      "height": 64,
+      "differentPixels": 4067,
+      "firstPixel": "ff12171a"
+    },
+    {
+      "id": "unsupported-xcf-compression",
+      "family": "image",
+      "extension": "xcf",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-psd",
+      "family": "image",
+      "extension": "psd",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 36458,
+      "firstPixel": "ff12161a"
+    },
+    {
+      "id": "missing-psd-pixels",
+      "family": "image",
+      "extension": "psd",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-hdr",
+      "family": "image",
+      "extension": "hdr",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 36420,
+      "firstPixel": "ff181c1f"
+    },
+    {
+      "id": "missing-hdr-pixels",
+      "family": "image",
+      "extension": "hdr",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-fits",
+      "family": "image",
+      "extension": "fits",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 34538,
+      "firstPixel": "ff151515"
+    },
+    {
+      "id": "truncated-fits-pixels",
+      "family": "image",
+      "extension": "fits",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-dds",
+      "family": "image",
+      "extension": "dds",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 35809,
+      "firstPixel": "ff101518"
+    },
+    {
+      "id": "truncated-dds-pixels",
+      "family": "image",
+      "extension": "dds",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-pcx",
+      "family": "image",
+      "extension": "pcx",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 31711,
+      "firstPixel": "ff121619"
+    },
+    {
+      "id": "truncated-pcx-pixels",
+      "family": "image",
+      "extension": "pcx",
+      "probe": "reject",
+      "accepted": false,
+      "error": "java.lang.IllegalArgumentException: Invalid PCX run"
+    },
+    {
+      "id": "image-valid-tga",
+      "family": "image",
+      "extension": "tga",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 36458,
+      "firstPixel": "ff12161a"
+    },
+    {
+      "id": "truncated-tga-pixels",
+      "family": "image",
+      "extension": "tga",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-qoi",
+      "family": "image",
+      "extension": "qoi",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 36458,
+      "firstPixel": "ff12161a"
+    },
+    {
+      "id": "missing-qoi-pixels",
+      "family": "image",
+      "extension": "qoi",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "missing-ppm-pixels",
+      "family": "image",
+      "extension": "ppm",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-tiff",
+      "family": "image",
+      "extension": "tiff",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 36458,
+      "firstPixel": "ff12161a"
+    },
+    {
+      "id": "unsupported-tiff-compression",
+      "family": "image",
+      "extension": "tiff",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-eps",
+      "family": "image",
+      "extension": "eps",
+      "probe": "control",
+      "accepted": true,
+      "width": 192,
+      "height": 192,
+      "differentPixels": 36458,
+      "firstPixel": "ff12161a"
+    },
+    {
+      "id": "missing-epsi-preview",
+      "family": "image",
+      "extension": "eps",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "image-valid-wmf",
+      "family": "image",
+      "extension": "wmf",
+      "probe": "control",
+      "accepted": true,
+      "width": 64,
+      "height": 64,
+      "differentPixels": 4067,
+      "firstPixel": "ff12171a"
+    },
+    {
+      "id": "missing-wmf-dib-pixels",
+      "family": "image",
+      "extension": "wmf",
+      "probe": "reject",
+      "accepted": false
+    },
+    {
+      "id": "ansi-stipple",
+      "family": "image",
+      "extension": "ans",
+      "probe": "glyph",
+      "accepted": true,
+      "width": 640,
+      "height": 16,
+      "differentPixels": 56,
+      "firstPixel": "ff000000",
+      "matchesCodeBitStipple": false,
+      "matchesReferenceGlyph": true
+    }
+  ],
+  "findings": [],
+  "failedControls": [],
+  "recorded": "2026-10-31",
+  "scope": "Checkpoint 23 packaged-APK decoder rejection and reference-glyph checks. Native pipeline checks run headless; this is not full format conformance or handset UI/audible acceptance.",
+  "nativeGroups": {
+    "audio": 34,
+    "video": 8,
+    "video-streaming": 8,
+    "viewport": 5,
+    "image-edit": 12,
+    "image-metadata": 10,
+    "pdf": 8
+  },
+  "regression": {
+    "cases": 867,
+    "passed": 837,
+    "knownStorageFailures": 30,
+    "newFailures": 0,
+    "missingCases": 0,
+    "newPassingCases": 37
+  },
+  "originalAudioControlsWithIdenticalPcm": [
+    "audio-valid-au",
+    "audio-valid-aifc",
+    "audio-valid-caf",
+    "audio-valid-w64",
+    "audio-valid-rf64",
+    "audio-valid-8svx",
+    "audio-valid-maud",
+    "audio-valid-voc",
+    "audio-valid-wav"
+  ],
+  "maudAuditCorrection": "Original historical probe changed MHDR + 20 (clock divisor); current probe changes actual compression at MHDR + 26. Historical artifact retained unchanged.",
+  "libraryRevisions": {
+    "libinfinicanvas": "0fcedae408385fa95ef816247ba4861108c933ff",
+    "libinfiniscribe": "084e9de5ab5335c79ae88fdf2c297314cfd664e3",
+    "libinfinisound": "fd6142e632014471216df3bbcf118061f3dbde00",
+    "libinfinistore": "2df9b0ae31f5209979fa6a051d63a04513f98ce7",
+    "libinfinistream": "e86167f2fd0c2c19d24140f05478099fdb1a693b",
+    "libinfinivault": "14a7908ffb8cd1af7d9a5400621d91ea1626f4f0",
+    "libinfinivideo": "091e10a6c06b73fb1828ba75348d09338ac89116"
+  },
+  "standaloneBuilds": [
+    "Sound Android/core",
+    "Sound portableOnly core",
+    "Canvas Android",
+    "Store Android",
+    "InfiniFolder full APK",
+    "audio host",
+    "image host"
+  ]
+}

@@ -4,7 +4,6 @@ import com.infinifolder.audio.decoder.UniversalAudioDecoder
 import com.infinifolder.audio.diagnostics.AudioHealthStatus
 import com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics
 import com.infinifolder.audio.diagnostics.AudioPlaybackReport
-import com.infinifolder.audio.engine.PcmAudioEngine
 import com.infinifolder.playlist.PlaylistParser
 import com.infinifolder.mime.MimeRegistry
 import com.infinifolder.storage.FileMagicDetector
@@ -51,10 +50,10 @@ class AudioPlaybackDiagnosticsFixtureTest {
             if (PlaylistParser.isPlaylist(file.name, file.readText())) {
                 val tracks = PlaylistParser.parse(file.name, file.readText())
                 report.engineUsed = "PlaylistParser"
-                report.durationMs = (tracks.size * 1000).toLong()
+                // A parsed playlist does not establish track duration.
                 report.healthStatus = AudioHealthStatus.HEALTHY
-                report.isPlaybackStarted = true
-                report.isPlaybackCompleted = true
+                report.isPlaybackStarted = false
+                report.isPlaybackCompleted = false
                 println("[PLAYLIST] ${file.name}: Parsed ${tracks.size} entries")
                 results.add(report)
                 continue
@@ -77,16 +76,10 @@ class AudioPlaybackDiagnosticsFixtureTest {
                 report.bitsPerSample = pcm.bitsPerSample
                 report.healthStatus = metrics.health
 
-                // Verify engine playback with PcmAudioEngine
-                var completed = false
-                val engine = PcmAudioEngine(pcm) { completed = true }
-                engine.play()
-                engine.seekTo(100)
-                engine.setSpeed(1.0f)
-                assertTrue("Engine should report isPlaying or positive duration", engine.durationMs > 0)
-                engine.release()
-                report.isPlaybackStarted = true
-                report.isPlaybackCompleted = true
+                // JVM decoding and signal analysis cannot establish device playback.
+                assertTrue("Decoded PCM should have positive duration", pcm.durationMs > 0)
+                report.isPlaybackStarted = false
+                report.isPlaybackCompleted = false
 
                 println("[AUDIO] ${file.name} | Engine: ${report.engineUsed} | ${pcm.sampleRate}Hz • ${pcm.channels}ch • ${pcm.durationMs}ms | Peak: ${"%.2f".format(metrics.peakAmplitude)} • RMS: ${"%.1f".format(metrics.rmsDb)}dB | Status: ${metrics.health}")
             } else {

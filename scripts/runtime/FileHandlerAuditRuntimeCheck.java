@@ -59,6 +59,13 @@ public class FileHandlerAuditRuntimeCheck {
                                     if (bitmap.getPixel(x,y)!=(foreground?0xffaaaaaa:0xff000000)) matches=false;
                                 }
                                 row.put("matchesCodeBitStipple", matches);
+                                int[] referenceA = {0x0c,0x1e,0x33,0x33,0x3f,0x33,0x33,0};
+                                boolean reference = true;
+                                for (int y=0;y<16;y++) for (int x=0;x<8;x++) {
+                                    boolean fg = ((referenceA[y/2] >> x) & 1) != 0;
+                                    if (bitmap.getPixel(x,y)!=(fg?0xffaaaaaa:0xff000000)) reference=false;
+                                }
+                                row.put("matchesReferenceGlyph", reference);
                             }
                         } finally { bitmap.recycle(); }
                     }

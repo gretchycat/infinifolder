@@ -40,6 +40,7 @@ Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) d
 - [ ] Accept updated remote/ZIP streaming startup and seeks, activity-shortcut return and the audible companion on the handset.
 - [ ] Accept libVLC video surfaces/sound, seeking, aspect/speed, embedded subtitles, playlists/repeat, PiP and rapid navigation from local/ZIP/live remote inputs. See [video checks](video-formats.md#handset-checks).
 - [x] Audit file handlers for remaining placeholders and false success; record native reproductions and distinguish active paths from test support. See [file handler audit](file-handler-stub-audit.md).
+- [x] Correct the audited audio/image false-success paths, replace ANSI stipple with real CP437 glyphs, harden ALAC EOF/prediction handling, and remove legacy silent playback simulation (checkpoint 23). Require strict packaged-APK rejection/reference-glyph checks; keep broader format conformance work separate.
 - [ ] Reject unknown codecs/packing in AU, AIFC, CAF, Wave64/RF64, 8SVX/MAUD and VOC; preserve valid decoding and real backend fallback.
 - [ ] Replace ANSI ASCII/box-drawing glyph stipple with actual CP437 glyphs.
 - [ ] Reject unsupported image compression and incomplete raster/chunk/tile data instead of returning blank or padded successful frames; preserve working custom formats and explicit embedded-preview limits.

@@ -9,10 +9,10 @@ All remote main hashes were checked against the local tested heads. Sound's exis
 | Repository | Status | Pinned commit |
 | --- | --- | --- |
 | [libinfinistream](https://github.com/gretchycat/libinfinistream) | Created | [`e86167f`](https://github.com/gretchycat/libinfinistream/commit/e86167f2fd0c2c19d24140f05478099fdb1a693b) |
-| [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | [`b3ed247`](https://github.com/gretchycat/libinfinistore/commit/b3ed2474db561fd7c31c923cbb25aae990fb298d) |
+| [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | [`2df9b0a`](https://github.com/gretchycat/libinfinistore/commit/2df9b0ae31f5209979fa6a051d63a04513f98ce7) |
 | [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`14a7908`](https://github.com/gretchycat/libinfinivault/commit/14a7908ffb8cd1af7d9a5400621d91ea1626f4f0) |
-| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`d4d266d`](https://github.com/gretchycat/libinfinisound/commit/d4d266d63fdcd3b9a849a14021822c599b39d0b4) |
-| [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`ae706d7`](https://github.com/gretchycat/libinfinicanvas/commit/ae706d70d84a3d6e635d96347bc5c0fe26e5346b) |
+| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`fd6142e`](https://github.com/gretchycat/libinfinisound/commit/fd6142e632014471216df3bbcf118061f3dbde00) |
+| [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`0fcedae`](https://github.com/gretchycat/libinfinicanvas/commit/0fcedae408385fa95ef816247ba4861108c933ff) |
 | [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`084e9de`](https://github.com/gretchycat/libinfiniscribe/commit/084e9de5ab5335c79ae88fdf2c297314cfd664e3) |
 | [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`091e10a`](https://github.com/gretchycat/libinfinivideo/commit/091e10a6c06b73fb1828ba75348d09338ac89116) |
 
@@ -591,19 +591,75 @@ audit adds repeatable observation tooling and evidence, not a conformance pass o
 new frozen regression expectations. The recorded 830-case migration gate remains
 the checkpoint 22 gate; audit findings are tracked separately.
 
+## Checkpoint 23: Decoder validation and real ANSI glyphs
+
+The owner's no-false-success requirement now covers the additional paths found
+by the cross-format audit. AU, AIFC, CAF, Wave64/RF64, IFF and VOC reject unknown
+codec identifiers and unsupported sample layouts. Required headers, chunk bounds
+and complete frames are checked. Real registered fallback decoders remain
+available. VOC no longer silently skips unimplemented silence/loop blocks or
+labels changing formats as one PCM stream. MAUD honors its clock divisor and
+reads the actual compression field; the earlier audit's MAUD mutation is
+corrected without rewriting its historical JSON.
+
+Canvas rejects unsupported EXR/TIFF/XCF compression and incomplete required
+channels, chunks, scanlines, strips, tiles and raster/preview bytes. PackBits
+must produce the requested bytes. It validates input structure rather than
+rejecting genuinely black or transparent images. Existing valid decoding and
+real embedded previews remain. ANSI uses actual CP437 glyph rows, including
+letters, accents and box drawing, doubled vertically to keep 8x16 geometry;
+colors and block/shade handling remain. Public domain font sources, pinned
+provenance, a generator and packaged attribution are included.
+
+ALAC fills short reads, detects EOF, implements forward positioning and retains
+explicit reopen fallback for backward positioning. Unsupported predictors,
+sample representations and out-of-packet bit reads fail before output is
+reported. A newly discovered 24-bit adapter error is repaired; synthetic
+16-/24-bit files compare every sample across full and short packets. Original
+BSD notices remain. The old PCM engine reports unavailable/failed AudioTrack
+output as failure and advances only accepted frames. The JVM fixture report
+no longer simulates playback or replaces the actual decoder name with an
+AudioTrack label. Failed file metadata lookups retain effective access checks
+but publish unknown owner/group/mode.
+
+Twenty Sound, fifteen Canvas, one Store and one host-engine test add 37 cases.
+The gate reports 867 cases: 837 passing, the same 30 documented storage failures,
+no new failures/skips and no missing cases. The original 458-case baseline is
+preserved. The strict packaged-APK rejection gate is
+`python scripts/audit-file-handlers.py --verify`; default audit mode continues
+to report observations and does not imply conformance from exit zero.
+
+The full APK and audio/image hosts build successfully. Standalone Sound,
+portable-only Sound, Canvas and Store builds/tests pass. Native checks against
+the same APK pass all 85 existing groups: 34 audio, 8 video, 8 video streaming,
+5 viewport, 12 image edit, 10 metadata and 8 PDF. The strict rejection audit adds
+45 observations: 23 invalid inputs rejected, 21 valid controls decoded, one real
+reference glyph matched and zero findings. All nine original audio control PCM
+hashes remain identical to checkpoint 22. These observations are separate from
+the 867 frozen JUnit cases; known storage failures are not counted as passes.
+
+[Checkpoint evidence](validation/decoder-corrections-checkpoint23.json) records
+the APK checksum, source library revisions, observations and native group counts.
+Logs are `checkpoint23-*` under ignored `build/infinistream-migration`.
+APK SHA-256: `3240752b0b689e8123aa1081eec2a505098415beda649aa5830e588be03be09a`.
+Handset checks: play/seek ordinary and ALAC audio, open normal and ANSI images,
+try unsupported/truncated samples and confirm errors instead of fabricated
+content, then repeat an image edit/zoom/crop. These automated checks do not claim
+complete format conformance, live-provider behavior or audible/UI acceptance.
+
 ## Final verification and reproducibility
 
-Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 830-case checkpoint.
+Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 867-case checkpoint.
 
-Current totals: **830 tests, 800 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
+Current totals: **867 tests, 837 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
 | Independent library | Tests | Failures |
 | --- | ---: | ---: |
 | Stream | 26 | 0 |
-| Store | 6 | 0 |
+| Store | 7 | 0 |
 | Vault | 9 | 0 |
-| Sound | 75 | 0 |
-| Canvas | 52 | 0 |
+| Sound | 95 | 0 |
+| Canvas | 67 | 0 |
 | Scribe | 99 | 0 |
 | Video | 31 | 0 |
 

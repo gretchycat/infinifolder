@@ -68,14 +68,19 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Implemented; focused acceptance still needed
 
-The [cross-format audit](file-handler-stub-audit.md) reproduces 22 problem cases
-in the checkpoint 22 APK, with 21 valid controls decoding and two bad inputs
-correctly rejected (45 observations). Active defects include unknown audio codecs
-being interpreted as PCM, ANSI glyph stipple, and blank/partial image success for
-unsupported compression or missing pixels. Vendored ALAC has source-confirmed
-unfinished EOF/prediction branches. The legacy PCM timing simulation has only a
-JVM-test caller in the reviewed tree. These findings are unresolved; the audit
-records existing behavior and is not a passing conformance gate.
+Checkpoint 23 corrects the [cross-format audit](file-handler-stub-audit.md)
+findings: explicit audio codec validation, complete mandatory raster data,
+real CP437 glyphs and ALAC EOF/prediction rejection. ALAC 24-bit conversion is
+sample-checked. Legacy AudioTrack failure no longer simulates playback, JVM
+reports retain actual decoder names and file permissions remain unknown after
+failed metadata lookup. The gate has **867 cases: 837 pass and the same 30 known
+failures**. The APK also passes 85 existing native groups and all 45 strict audit observations,
+with identical PCM for the nine original audio controls. Standalone and native
+validation are recorded in the
+[migration checkpoint](infinistream-migration.md#checkpoint-23-decoder-validation-and-real-ansi-glyphs).
+Handset acceptance of the corrected paths remains separate. The original MAUD
+audit probe changed a rate divisor, not a codec; the historical evidence is
+retained with that correction and the new gate mutates the actual codec field.
 
 Checkpoint 22 routes `.rm`/`.rmvb` to Video/libVLC even with a RealAudio MIME.
 Sound's old advanced-audio, WMA, telephony and chiptune stubs no longer generate

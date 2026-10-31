@@ -28,7 +28,7 @@ Decoded via `ImageDecoder` (API 28+) with `BitmapFactory` fallback and EXIF orie
 - **AVIF**: `.avif`, `.avifs` (`image/avif`) via Android 12+ (API 31+) platform codecs
 - **JPEG XL**: `.jxl` (`image/jxl`) via bundled software decoder `io.github.awxkee:jxl-coder`
 - **JPEG 2000**: `.jp2`, `.j2k`, `.jpf`, `.jpx`, `.j2c` (`image/jp2`, `image/jpx`) via `Jpeg2000Decoder` (`io.github.michaldvorak-gemalto:jp2-android` / OpenJPEG)
-- **TIFF / BigTIFF & DNG**: `.tif`, `.tiff`, `.dng` (`image/tiff`, `image/x-adobe-dng`) via `TiffAndRawImageDecoder` (little/big-endian IFDs, strips and tiles, Uncompressed, PackBits, LZW, Deflate/Zlib, JPEG-in-TIFF, horizontal differencing predictor, RGB/Grayscale/Palette/CMYK, 1/8/16-bit) and Android platform RAW codecs
+- **Classic TIFF & DNG**: `.tif`, `.tiff`, `.dng` (`image/tiff`, `image/x-adobe-dng`) via `TiffAndRawImageDecoder` (little/big-endian IFDs, strips and tiles, Uncompressed, PackBits, LZW, Deflate/Zlib, JPEG-in-TIFF, horizontal differencing predictor, RGB/Grayscale/Palette/CMYK, 1/8/16-bit) and Android platform RAW codecs
 - **Quite OK Image (QOI) & farbfeld**: `.qoi`, `.ff` (`image/x-qoi`, `image/x-farbfeld`) via `SimpleLosslessImageDecoder`
 - **Netpbm & Portable FloatMap**: `.pbm`, `.pgm`, `.ppm`, `.pnm`, `.pam`, `.pfm` (`image/x-portable-*`) via `NetpbmDecoder` (ASCII `P1`–`P3`, binary `P4`–`P6`, `P7` PAM, and `PF`/`Pf` 32-bit float HDR with tone mapping)
 
@@ -37,7 +37,7 @@ Decoded via `ImageDecoder` (API 28+) with `BitmapFactory` fallback and EXIF orie
 - **SVG / SVGZ**: `.svg`, `.svgz` (`image/svg+xml`) rendered to `Bitmap` at the target display/thumbnail dimensions via `com.caverock:androidsvg-aar`
 - **Windows Metafile**: `.wmf`, `.wmz` (`image/wmf`) via `MetafileAndVectorImageDecoder` (supports GZIP `.wmz`, Aldus Placeable headers, and `META_STRETCHDIB` / `META_DIBSTRETCHBLT` / `META_SETDIBTODEV` records)
 - **PostScript / Encapsulated PostScript**: `.ps`, `.eps`, `.ept` (`image/x-eps`) via `MetafileAndVectorImageDecoder` and `TiffAndRawImageDecoder` (DOS binary `.ept` embedded TIFF/WMF previews, EPSI `%%BeginPreview` hex bitmaps, and `DisplayImage` DirectClass/PseudoClass raster streams)
-- **ANSI Art & DEC Sixel**: `.ans` (`image/x-ansi`) via `MetafileAndVectorImageDecoder` (CP437 8×16 glyph renderer with 16-color, 256-color, and 24-bit TrueColor SGR + `SAUCE00` metadata) and `.sixel`, `.six` (`image/x-sixel`) via `RetroImageDecoder`
+- **ANSI Art & DEC Sixel**: `.ans` (`image/x-ansi`) via `MetafileAndVectorImageDecoder` (real CP437 bitmap glyphs (8×8 rows doubled to 8×16 cells) with 16-color, 256-color, and 24-bit TrueColor SGR + `SAUCE00` metadata) and `.sixel`, `.six` (`image/x-sixel`) via `RetroImageDecoder`
 
 ### Multi-layer authoring & pixel-art project formats
 
@@ -45,7 +45,7 @@ Decoded via `LayeredImageDecoder`:
 
 - **OpenRaster & Krita**: `.ora`, `.kra` (`image/openraster`, `image/x-krita`) — extracts `mergedimage.png` / `preview.png` / `Thumbnails/thumbnail.png`
 - **Adobe Photoshop**: `.psd`, `.psb` (`image/vnd.adobe.photoshop`) — decodes v1 PSD and v2 PSB merged composite image data (Raw & PackBits RLE across Bitmap, Grayscale, Indexed, RGB, and CMYK modes, 8-bit & 16-bit)
-- **GIMP XCF**: `.xcf` (`image/x-xcf`) — parses visible layers, tile hierarchies, and uncompressed/RLE 64×64 tiles and composites them onto the canvas
+- **GIMP XCF**: `.xcf` (`image/x-xcf`) — parses the supported 8-bit RGB/RGBA/grayscale visible layers, tile hierarchies, and uncompressed/RLE 64×64 tiles and composites them onto the canvas
 - **Aseprite**: `.ase`, `.aseprite` (`image/x-aseprite`) — parses frame 0 layer, palette (`0x2019`/`0x0004`), and raw/zlib-compressed cel (`0x2005`) chunks across 32-bit RGBA, 16-bit Grayscale, and 8-bit Indexed modes
 
 ### Workstation, classic computer & mobile bitmap formats
@@ -69,6 +69,14 @@ Decoded via `HdrAndScientificImageDecoder`:
 - **DirectDraw Surface & Khronos KTX**: `.dds` (`image/vnd.ms-dds`, uncompressed RGBA/RGB and `DXT1`/`DXT3`/`DXT5` block decompression) and `.ktx` (`image/ktx`, uncompressed `GL_RGBA`/`GL_RGB`)
 - **Astronomy FITS**: `.fits`, `.fit`, `.fts` (`image/fits`) — 8/16/32-bit integer and 32/64-bit float 2D/3D arrays with `BZERO`/`BSCALE` and auto min/max normalization
 - **Medical DICOM**: `.dcm`, `.dicom` (`image/dicom`) — Explicit/Implicit VR tag parser supporting 8/16-bit monochrome and RGB pixel data plus encapsulated JPEG frames
+
+Checkpoint 23 rejects unsupported compression and incomplete mandatory raster
+bytes instead of returning blank or padded successful frames. This includes
+missing EXR chunks, XCF/TIFF compression outside implemented modes, missing
+PSD composite data and truncated HDR/FITS/DDS/PCX/QOI/Netpbm/EPSI/WMF pixels.
+The custom TIFF reader rejects BigTIFF's different directory layout; BigTIFF,
+EXR RLE and XCF zlib remain future codec work. Genuine blank images remain valid.
+These are supported subsets, not complete format-conformance guarantees.
 
 ### Camera RAW formats
 

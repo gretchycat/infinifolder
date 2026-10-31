@@ -4,10 +4,28 @@ Recorded 2026-10-31 against InfiniFolder `1487f7a`, following the owner's
 confirmation of the RealMedia correction. The architecture description remains
 authoritative. This audit records defects for the next corrections.
 
+## Correction status — checkpoint 23
+
+The following sections record checkpoint 22 behavior. Checkpoint 23 corrects the
+identified decoder false-success paths, replaces ANSI stipple with real CP437
+glyphs, hardens ALAC boundaries, removes legacy silent playback simulation and
+returns unknown ownership/mode after failed stat lookups. The packaged-APK gate
+is `python scripts/audit-file-handlers.py --verify`; unlike observation-only mode,
+it fails if a rejection probe is accepted or the real `A` glyph is incorrect.
+Validation evidence is recorded in the migration checkpoint.
+
+**Audit correction:** the original MAUD mutation at `MHDR + 20` changed its clock
+divisor, not its compression field. Seven original audio probes changed actual
+codec identifiers; the eighth exposed an ignored rate divisor. MAUD compression
+is at `MHDR + 26`, as confirmed against the [SoX MAUD reader](https://github.com/chirlu/sox/blob/master/src/maud.c).
+The corrected probe mutates that actual compression field. The historical JSON
+is retained unchanged; it must not be interpreted as eight codec-field probes.
+MAUD now honors the divisor, rejects zero, and rejects unsupported compression.
+
 ## Result
 
 Additional placeholder and false-success behavior exists. The packaged APK
-reproduces **22 problem cases in 45 observations**: eight unknown audio codecs,
+reproduces **22 problem cases in 45 observations**: seven unknown audio codecs, one ignored MAUD rate divisor,
 13 unsupported/incomplete image inputs, and one ANSI glyph placeholder.
 All **21 valid controls** decode. Unknown-codec WAVE and truncated TGA are
 correctly rejected. These are observations of current defects, not 22 independent
@@ -23,9 +41,9 @@ APK SHA-256: `29219a34caa3c8153ec24bf8e9a303be9c4bc8c855f33f9e9e06e6c3a20cb813`.
 
 ## 1. Unknown audio codecs produce PCM — active, high priority
 
-Changing only the codec identifier in valid AU, AIFC, CAF, Wave64, RF64, 8SVX,
-MAUD and VOC fixtures still returns PCM through **AudioProcessing.decode**, the
-Android library composition. In all eight cases its PCM SHA-256 is identical to
+Changing codec identifiers in valid AU, AIFC, CAF, Wave64, RF64, 8SVX and VOC
+fixtures, plus the MAUD rate divisor (see correction above), still returns PCM through **AudioProcessing.decode**, the
+Android library composition. In all eight original mutations the PCM SHA-256 is identical to
 the original fixture's PCM: the changed codec identifier has effectively been
 ignored. The custom-first legacy adapter runs before the Android backend for
 these formats.
@@ -36,7 +54,7 @@ these formats.
 | AIFC | [AiffDecoder.kt](../libraries/libinfinisound/audio-core/src/main/java/com/infinifolder/audio/decoder/AiffDecoder.kt), lines 78–113 | Unknown compression types enter the ordinary PCM branch. |
 | CAF | [CafDecoder.kt](../libraries/libinfinisound/audio-core/src/main/java/com/infinifolder/audio/decoder/CafDecoder.kt), lines 70–105 | Unknown format IDs fall through to PCM conversion. |
 | Wave64/RF64 | [Wave64AndRf64Decoder.kt](../libraries/libinfinisound/audio-core/src/main/java/com/infinifolder/audio/decoder/Wave64AndRf64Decoder.kt), lines 136–164 | Every format tag other than IEEE float is treated as integer PCM. |
-| 8SVX/MAUD | [IffAudioDecoder.kt](../libraries/libinfinisound/audio-core/src/main/java/com/infinifolder/audio/decoder/IffAudioDecoder.kt), lines 49–73 | Unknown 8SVX compression becomes uncompressed; MAUD compression is discarded. |
+| 8SVX/MAUD | [IffAudioDecoder.kt](../libraries/libinfinisound/audio-core/src/main/java/com/infinifolder/audio/decoder/IffAudioDecoder.kt), lines 49–73 | Unknown 8SVX compression becomes uncompressed; MAUD rate divisor is discarded and its actual compression field is never read. |
 | VOC | [VocDecoder.kt](../libraries/libinfinisound/audio-core/src/main/java/com/infinifolder/audio/decoder/VocDecoder.kt), lines 44–84 | Packing/codec fields are ignored or reduced to sample width. |
 
 Reject unimplemented codecs and sample representations. Another registered
