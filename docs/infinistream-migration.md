@@ -834,6 +834,10 @@ listed formats; play/skip through the reported ZIP and retain readable lengths
 while only the two invalid rows show `--`; reopen the updated short NSF fixture.
 [Build and source correction record](validation/archive-audio-timing-checkpoint27.json).
 
+Owner follow-up (2026-10-31): playlist lengths for playable files now appear
+consistently. This accepts the reported timing workflow; it does not imply new
+Cast/live-provider, instrument-fidelity or NSF endpoint verification.
+
 ## Final verification and reproducibility
 
 Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 885-case checkpoint.

@@ -39,6 +39,7 @@ Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) d
 - [x] Register libVLC behind Sound's common PCM interfaces for additional audio codecs; keep player output separate and preserve existing MP3/FLAC paths.
 - [x] Apply music-player theme selections across the app; install/apply WSZ on tap and offer explicit ZIP archive browsing.
 - [x] Keep a resident FluidLite bank with independent streaming MIDI synthesizers; inspect playlist timing without full-track rendering.
+- [x] Confirm consistent automatic playlist lengths for playable files after portable timing and archive URI/queue corrections; owner confirmation 2026-10-31.
 - [x] Use finite GME game-music playback windows and optional unclocked FFmpeg PCM pulling from the existing libVLC binary.
 - [x] Bundle FluidR3_GM as lossless bz2 assets with verified cached extraction and original notices; use FluidLite for MIDI programs/percussion.
 - [x] Silently skip unreadable audio entries while preserving their playlist rows with `--` duration; bound all-unreadable queues and guard metadata races.

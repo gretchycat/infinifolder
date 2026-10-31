@@ -6,6 +6,11 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Confirmed on the handset
 
+- Playlist lengths for playable files are user-confirmed consistent after
+  checkpoint 27 (2026-10-31), following the standalone/ZIP timing and archive URI
+  fixes. This confirms the reported length workflow; separate NSF endpoint,
+  instrument fidelity, live-provider and Cast checks are not newly established.
+
 - The checkpoint 22 RealMedia association/substitute-audio correction is
   user-confirmed working (2026-10-31). The subsequent cross-format stub audit
   identifies additional defects separately; see the
@@ -73,8 +78,9 @@ the NSF chord's untimed cap, and ZIP playback resetting lengths. Sound adds
 portable timing/audition inspection and optional appended NSF timing metadata;
 the NSF fixture declares 1.5 seconds. The host fixes empty-path archive URI
 aliasing, archive-relative M3U resolution, and known-duration retention through
-refresh, metadata merges and gapless promotion. Listening/queue acceptance remains
-pending; automated tests were not run for these corrections.
+refresh, metadata merges and gapless promotion. The owner now confirms consistent
+lengths for playable files. Broader listening/endpoint checks remain pending;
+automated tests were not run for these corrections.
 
 Checkpoint 26 follows the owner's confirmation that skin installation works and
 MIDI loading is improved, plus reports of missing playlist lengths and incorrect

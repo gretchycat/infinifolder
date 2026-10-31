@@ -38,7 +38,7 @@
   "archiveFixtureModified": false,
   "automatedTestsRun": false,
   "runtimeDiagnosticsRun": false,
-  "handsetAcceptance": "Pending playlist timing/retention in the reported ZIP, the listed standalone formats and the updated NSF fixture.",
+  "handsetAcceptance": "Owner confirms consistent lengths for playable files; separate endpoint/fidelity/provider/Cast checks remain.",
   "limits": [
     "Truly untimed NSF still uses the explicit 150-second plus eight-second fade policy; no length is invented from its filename.",
     "Appended metadata parsing does not implement additional NSF2 CPU/IRQ features.",
@@ -49,5 +49,11 @@
     "https://www.nesdev.org/wiki/NSF2",
     "https://www.nesdev.org/wiki/NSFe",
     "https://github.com/FFmpeg/FFmpeg/blob/master/libavcodec/mlp_parse.c"
-  ]
+  ],
+  "ownerAcceptance": {
+    "recorded": "2026-10-31",
+    "confirmation": "Lengths for playable files are showing up consistently.",
+    "scope": "Reported automatic playlist-length workflow after the standalone/ZIP corrections.",
+    "remaining": "Separate NSF endpoint, instrument fidelity, live-provider and Cast acceptance."
+  }
 }
