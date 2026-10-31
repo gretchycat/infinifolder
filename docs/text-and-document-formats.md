@@ -42,7 +42,11 @@ Updated 2026-10-27. This document tracks plain text, source code, markup, pagina
 
 ### 4. PDF documents (`:viewer-pdf`)
 
-`PdfViewerActivity` uses Android's native `PdfRenderer` with pinch-to-zoom (`ZoomImageView`), fit-width / fit-page toggle, previous/next page buttons, and direct page jump:
+`PdfViewerActivity` uses Scribe's `scribe-android` PDF backend, which wraps the
+existing Android `PdfRenderer`. The host retains pinch-to-zoom (`ZoomImageView`),
+fit-width / fit-page toggle, previous/next page buttons, direct page jump and
+explicit staging leases. Page work is serialized; stale frames are discarded,
+and document destruction releases the renderer before the staging lease.
 
 - **Extensions & MIME**: `.pdf` (`application/pdf`, `%PDF-` magic header)
 
@@ -72,9 +76,13 @@ Updated 2026-10-27. This document tracks plain text, source code, markup, pagina
 
 ---
 
-### 1. Text-Based Visual & Audio Media (Target: `:viewer-text` and `:viewer-html` Renderers)
+### 1. Text-Based Visual & Audio Media (Sound and terminal presentation)
 
-Text-based art and terminal music are stored inside plain-text or terminal byte streams and belong in the text renderers (`TextViewerActivity` and/or `HtmlViewerActivity`).
+Text-based art and terminal music share terminal byte streams. Their presentation
+can be combined, while Sound owns music parsing/timing/synthesis and exposes PCM
+for the normal player. Scribe/terminal presentation consumes synchronized events;
+audio output remains a separate host concern. Existing Canvas static ANSI previews
+remain available. Full terminal emulation and ANSI music playback are planned.
 
 #### Core Prerequisites for ANSI Art & ANSI Music
 
@@ -84,14 +92,14 @@ Text-based art and terminal music are stored inside plain-text or terminal byte 
    - ANSI art frequently uses cursor movement (`ESC[A`–`H`, `ESC[s`, `ESC[u`) to draw out-of-order rather than top-to-bottom. A simple regex-to-`Spannable` pass is insufficient; the renderer needs a 2D cell grid (`width × dynamicRows` of `[glyph, fgColor, bgColor, blink/iCE]`) driven by an ECMA-48 / `ANSI.SYS` state machine.
 3. **SAUCE Metadata Parser & Writer**:
    - Reads/writes the trailing 128-byte `SAUCE00` record (after `0x1A` EOF marker) and optional `COMNT` block to determine exact column width (typically 80, or custom for `.ans`/`.bin`), iCE color mode (non-blink high-intensity backgrounds), aspect ratio, and font choice.
-4. **Terminal Tone Synthesizer (`AudioTrack`) & Render-Clock Synchronizer**:
-   - Required for **ANSI music**. Must parse `PLAY`-style note macros out of `ESC[M...` / `ESC[N...` / `ESC[?...` sequences, generate square/triangle/FM waveforms into an Android `AudioTrack`, and synchronize character-by-character terminal output with musical note playback when baud-rate emulation is active.
+4. **Sound note parser/synthesizer and optional presentation synchronizer**:
+   - Parse supported `PLAY`-style macro dialects into timed note events and synthesize bounded PCM through Sound's common contracts. The normal music player consumes that PCM using its existing output path. Optional terminal presentation follows the same clock; it must not implement a second synthesizer. Define dialect handling explicitly: CTerm documents `CSI M`, `CSI N`, and `CSI |` introducers and a `0x0E` terminator, including the conflict between `CSI M` music and delete-line. See the [CTerm manual](https://syncterm.bbsdev.net/cterm.html#_ansi_music). `.ans` alone does not prove a file contains music. The legacy table below describes candidate macro/editor features, not implemented support or a universal dialect specification.
 
 | Format | Extensions / Sequences | Viewer / Player Difficulty | Creation / Editor Difficulty | Prerequisites |
 | --- | --- | --- | --- | --- |
 | **ASCII / NFO / DIZ Art** | `.asc`, `.nfo`, `.diz` | **Tier 2 (Low)** | **Tier 2 (Low)** (text/CP437 editor) | **Prerequisites**: CP437 byte-to-Unicode mapping table + CP437 8×16 bitmap font (or zero-line-spacing monospace canvas) + SAUCE metadata parser. Creation uses `TextViewerActivity` with CP437 encoding output and a block-character palette bar. |
 | **ANSI Art & VT Animations** | `.ans`, `.vt` | **Tier 3 (Medium)** | **Tier 4 (High)** (character-cell draw editor) | **Prerequisites**: (1) **CP437 / Topaz bitmap font atlas**; (2) **Virtual terminal screen buffer** handling `ESC[...m` (16-color, iCE colors, 256-color `38;5;n`, 24-bit `38;2;r;g;b` / `.tnd` `ESC[1;r;g;bt`) and cursor positioning; (3) **SAUCE parser**; (4) Optional **baud-rate timer** (300–115200 bps) for `.vt`/`.ans` animations. Creating `.ans` art requires a character-cell canvas editor with foreground/background color picker, F1–F12 CP437 shading-block brushes (`░▒▓█▄▀▌▐`), and an optimizer that serializes the 2D grid into minimal `ESC[...m` sequences + SAUCE footer. |
-| **ANSI Music (in Text Renderer)** | `ESC[M...`, `ESC[N...`, `ESC[?...` (`0x0E` terminator) in `.ans`, `.asc`, `.mus` | **Tier 3 (Medium)** | **Tier 3 (Medium)** (`PLAY` macro composer/tester) | **Prerequisites**: (1) **ANSI terminal parser hook** that intercepts CSI music sequences (`ESC[M`, `ESC[N`, `ESC[?`, `ESC[=freq;durT`, and `0x0E` Ctrl-N musical note prefix) without printing raw macro text to the screen; (2) **QBasic `PLAY` macro interpreter** (`O0`–`O6` octave, `<`/`>`, `A`–`G` with `#`/`+`/`-` sharps/flats, `L1`–`L64` note length, `.` dotted notes, `T32`–`T255` BPM tempo, `P`/`R` rests, `MN`/`ML`/`MS` articulation, `MB`/`MF` background/foreground execution); (3) **`AudioTrack` waveform synthesizer** (band-limited square/pulse/triangle/OPL tone generator with envelope click-suppression); (4) **Playback transport bar** in the text viewer (Play/Pause/Seek/Mute ANSI Music while viewing the document). Creation requires a `PLAY`-string editor with live audition and `ESC[M...^N` block insertion. |
+| **ANSI Music (Sound; optional terminal presentation)** | Dialect-dependent `ESC[M...`, `ESC[N...`, `ESC[\|...` and `0x0E` terminator in terminal streams | **Tier 3 (Medium)** | **Tier 3 (Medium)** (`PLAY` macro composer/tester) | Planned Sound parser for explicit PLAY-style dialects, timed note events, bounded PCM synthesis and seek/cancellation support. The ordinary player provides audio output; terminal presentation may synchronize artwork. Validate tempo, octave, notes, rests, accidentals, lengths and articulation for each selected dialect. Creation adds macro editing and audition. Filename alone must not enable music parsing. |
 | **Binary VGA / XBin / iCE Draw / Tundra / PCBoard** | `.bin`, `.xb`, `.idf`, `.tnd`, `.pcb`, `.avt` | **Tier 2–3 (Low–Medium)** | **Tier 3–4 (Medium–High)** | **Prerequisites**: Same CP437 bitmap font cell blitter + format-specific grid readers: `.bin` reads raw `[char, attr]` pairs (160 bytes per 80-col row); `.xb` (`XBIN\x1a` header) supports custom embedded 16-color palettes, custom 8×N VGA fonts, and RLE compression; `.idf` has a 12-byte header + RLE + custom palette/font; `.tnd` uses 24-bit RGB cells; `.pcb` parses `@X<bg><fg>` hex color codes. |
 | **PETSCII / ATASCII / Teletext** | `.pet`, `.seq`, `.ata`, `.ep1`, `.tti` | **Tier 2–3 (Low–Medium)** | **Tier 3–4 (Medium–High)** | **Prerequisites**: Commodore 64 PETSCII (shifted/unshifted) or Atari 8-bit ATASCII or Teletext Mode 7 (`40×25` 2×3 sixel mosaic) glyph tables + control-code color/reverse-video state machine. |
 | **Terminal Session Recordings** | `.ttyrec`, `.cast` (asciinema) | **Tier 3 (Medium)** | **Tier 2 (Low)** (session recorder) | **Prerequisites**: Virtual terminal screen buffer + timestamped packet reader (`[sec, usec, len]` header in `.ttyrec`; newline-delimited JSON `[time, "o", data]` in `.cast` v2) + play/pause/speed timeline scrubber. |
@@ -116,7 +124,7 @@ Text-based art and terminal music are stored inside plain-text or terminal byte 
 | **Rich Text Format (RTF)** | `.rtf` | **Tier 3 (Medium)** | **Tier 2 (Low)** | **Prerequisites**: RTF group (`{...}`) and control-word (`\b`, `\i`, `\ul`, `\fsN`, `\cfN`, `\colortbl`, `\fonttbl`, `\par`, `\'hh` hex escapes, `\uN` Unicode) parser converting to sandboxed HTML for `HtmlViewerActivity`. Creation serializes styled text or HTML spans into RTF control words. |
 | **MIME HTML Web Archives** | `.mht`, `.mhtml` | **Tier 2 (Low)** | **Tier 2 (Low)** | **Prerequisites**: `WebView.saveWebArchive` (creation) and multipart MIME boundary parser (`Content-Type: multipart/related`, `Content-Location`, `Content-Transfer-Encoding: quoted-printable / base64`) feeding `WebViewClient.shouldInterceptRequest` in `HtmlViewerActivity`. |
 | **reStructuredText, AsciiDoc & Org-mode** | `.rst`, `.adoc`, `.org` | **Tier 3 (Medium)** | **Tier 1 (Trivial)** (plain text editor) | **Prerequisites**: Block/inline parser in `:viewer-markdown` converting directives, tables, and headings into HTML for the existing `WebView` previewer. |
-| **LaTeX / TeX Documents** | `.tex`, `.ltx`, `.bib` | **Tier 3 (Math/Subset HTML)** / **Tier 5 (Full TeX Engine)** | **Tier 1 (Trivial)** (source editor) | **Prerequisites**: Source editing works directly in `:viewer-text`. Rendered preview requires a LaTeX-to-HTML+MathML/SVG translator (or bundled offline KaTeX/MathJax in `:viewer-html`). |
+| **LaTeX / TeX Documents** | `.tex`, `.ltx`, `.bib` | **Tier 3 (Math/Subset HTML)** / **Tier 5 (Full TeX Engine)** | **Tier 1 (Trivial)** (source editor) | Planned Scribe typesetting backend with explicit related resources, fonts, bounded execution and platform packaging. A math/HTML subset must be described as a subset. Guarded source editing can use the text viewer when explicitly opened as text; it is not typeset rendering. See the two-page equations fixture and [roadmap](roadmap.md#paged-documents-and-office-formats). |
 | **AmigaGuide** | `.guide` | **Tier 2 (Low)** | **Tier 2 (Low)** | **Prerequisites**: `@database`, `@node`, `@endnode`, and `@{"label" link "node"}` hypertext parser rendering interactive node pages in `:viewer-html` or `:viewer-text`. |
 | **Compiled HTML Help (CHM)** | `.chm` | **Tier 4 (High)** | **Tier 4 (High)** | **Prerequisites**: MS ITSS (`ITSF` / `ITSP`) header parser + LZX (`LZXC`) reset-table decompression stream (can share LZX code with the native CAB archive reader) + internal `#SYSTEM` / `.hhc` / HTML page routing into `HtmlViewerActivity`. |
 
@@ -126,8 +134,9 @@ Text-based art and terminal music are stored inside plain-text or terminal byte 
 
 | Format | Extensions | Viewer Difficulty | Creation Difficulty | Prerequisites |
 | --- | --- | --- | --- | --- |
-| **PDF Creation / Export (from Text, HTML, Markdown, Images)** | `.pdf` | *Already implemented* | **Tier 2 (Low)** | **Prerequisites**: Android's built-in `android.graphics.pdf.PdfDocument` API or `WebView.createPrintDocumentAdapter()` allows exporting plain text, ANSI art canvases, Markdown/HTML pages, and images directly to `.pdf` with zero third-party dependencies. |
-| **OpenDocument & OOXML Word / Spreadsheets** | `.odt`, `.docx`, `.ods`, `.xlsx` | **Tier 3 (Medium)** | **Tier 3 (Medium)** | **Prerequisites**: ZIP package reader (already in `storage-engine`) + `XmlPullParser` transforming `content.xml` (`.odt`/`.ods`) or `word/document.xml` / `xl/worksheets/sheet1.xml` + `sharedStrings.xml` (`.docx`/`.xlsx`) into HTML (`:viewer-html`) or grid rows (`:viewer-csv`). |
+| **PDF Creation / Export (from Text, HTML, Markdown, Images)** | `.pdf` | PDF viewing implemented | **Tier 2 (Low)** | General export is planned separately; the New File PDF template does not establish arbitrary-document export. Platform printing/PDF generation can be an explicit backend. |
+| **OpenDocument & OOXML Documents / Spreadsheets / Presentations** | `.odt`, `.docx`, `.ods`, `.xlsx`, `.odp`, `.pptx` | **Tier 3–5 (Fidelity-dependent)** | **Tier 3–5 (Fidelity-dependent)** | Planned Scribe backends for structural parsing and document/table/slide outputs, with fonts, relationships, styles, pagination, images, equations and spreadsheet semantics tested explicitly. Container ZIP access alone does not supply faithful Office rendering. See [roadmap](roadmap.md#paged-documents-and-office-formats). |
+| **PostScript / EPS documents** | `.ps`, `.eps` | **Tier 4–5 (Full interpreter)** | **Tier 3–5** | Existing Canvas decoding handles specific raster/preview encodings. Full vector interpretation and multi-page document viewing are planned through Scribe backends. New vector and two-page fixtures exercise this distinction. |
 | **FictionBook eBooks** | `.fb2`, `.fb2.zip` | **Tier 2 (Low)** | **Tier 2 (Low)** | **Prerequisites**: Single-file XML (`<FictionBook>`, `<body>`, `<section>`, `<binary>` base64 cover/images) to HTML chapter converter in `:viewer-epub` / `:viewer-html`. |
 | **Mobipocket / Kindle (Unencrypted)** | `.mobi`, `.prc`, `.azw`, `.azw3` | **Tier 3–4 (Medium–High)** | **Tier 3 (Medium)** | **Prerequisites**: PalmDB (`.pdb`) record-offset header parser + PalmDOC LZ77 or Huff/CDIC decompressor + MOBI HTML / KF8 chapter extractor feeding `:viewer-epub`. |
 | **DjVu Documents** | `.djvu`, `.djv` | **Tier 5 (Very High)** | **Tier 5 (Very High)** | **Prerequisites**: `AT&TFORM....DJVU`/`DJVM` chunk parser + ZP-coder arithmetic entropy decoder + JB2 bi-level mask decoder + IW44 wavelet background/foreground decoder (`DjVuLibre` JNI). |

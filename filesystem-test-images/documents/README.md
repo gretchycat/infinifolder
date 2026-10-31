@@ -58,3 +58,24 @@ python3 filesystem-test-images/generate-document-fixtures.py
 
 The generator preserves every existing file, including your edited samples.
 Existing image and audio smoke samples are under ../images/ and ../audio/.
+
+## Paged documents
+
+Run `python3 filesystem-test-images/generate-paged-document-fixtures.py` from the
+repository root to create missing samples; it preserves every existing file.
+`paged-expected.json` records the original hashes and expected contents.
+
+| Sample | What to check |
+| --- | --- |
+| sample-pages.pdf | Two pages: portrait then landscape, blue/red rectangles, headings and END OF PAGE ONE/TWO; next/previous, jump, fit, zoom and back during loading |
+| invalid-document.pdf | Deliberately corrupt; clear open error without a crash or stuck spinner |
+| sample-pages.ps | Two PostScript pages matching the PDF shapes and markers; full document rendering is planned |
+| sample-vector.eps | Vector blue rectangle, red circle and heading, 300x200; full vector rendering is planned |
+| sample-equations.tex | Self-contained two-page LaTeX article, equations, formatting, table and footnote; typeset rendering is planned |
+| paged-document-checks.zip | Same five documents under documents/; test PDF staging from the archive |
+
+The existing image decoder supports specific PostScript raster/preview encodings;
+these new PS/EPS fixtures require full vector interpretation. LaTeX source is
+different from a rendered document. Their presence does not imply rendering
+support has been implemented. The LaTeX sample requires only a standard LaTeX
+article installation and no external files or commands.

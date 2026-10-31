@@ -1,5 +1,5 @@
 {
-  "source": "Checkpoint 14 expected cases; original 458-case pre-migration snapshot is infinistream-baseline.json",
+  "source": "Checkpoint 15 expected cases; original 458-case pre-migration snapshot is infinistream-baseline.json",
   "recorded": "2026-10-31",
   "cases": {
     "com.infinifolder.FileNameEllipsizerTest.testCompoundDiscAndArchiveExtensionTruncation": "passed",
@@ -622,6 +622,14 @@
     "io.github.gretchycat.infiniscribe.DocumentChunksTest.sparseRowFilteringFindsLaterRecordsWithoutReturningAnEmptyPage": "passed",
     "io.github.gretchycat.infiniscribe.DocumentChunksTest.textSearchScansDiscreteWindowsAndFindsCrossBoundaryMatchesWithoutRepeatingOldOnes": "passed",
     "io.github.gretchycat.infiniscribe.DocumentChunksTest.utf8AndUtf16CharactersSurviveChunkBoundariesAndArbitraryJumps": "passed",
+    "io.github.gretchycat.infiniscribe.PageRasterSizeTest.callerCanSetSmallerRasterBudget": "passed",
+    "io.github.gretchycat.infiniscribe.PageRasterSizeTest.extremeSizesDoNotOverflowOrAllocateZeroPixels": "passed",
+    "io.github.gretchycat.infiniscribe.PageRasterSizeTest.invalidDimensionsFailBeforeAllocation": "passed",
+    "io.github.gretchycat.infiniscribe.PageRasterSizeTest.landscapeRetainsExistingTwoTimesRendering": "passed",
+    "io.github.gretchycat.infiniscribe.PageRasterSizeTest.oversizedLandscapeKeepsAspectRatio": "passed",
+    "io.github.gretchycat.infiniscribe.PageRasterSizeTest.oversizedPortraitKeepsAspectRatio": "passed",
+    "io.github.gretchycat.infiniscribe.PageRasterSizeTest.portraitRetainsExistingTwoTimesRendering": "passed",
+    "io.github.gretchycat.infiniscribe.PageRasterSizeTest.wideViewportRaisesResolution": "passed",
     "io.github.gretchycat.infiniscribe.SyntaxHighlightingTest.blockCommentStateContinuesAcrossChunks": "passed",
     "io.github.gretchycat.infiniscribe.SyntaxHighlightingTest.cancellationPlainTextAndUnknownLanguagesDoNotInventTokens": "passed",
     "io.github.gretchycat.infiniscribe.SyntaxHighlightingTest.escapedStringAndTripleQuoteStatesSurviveBoundaries": "passed",

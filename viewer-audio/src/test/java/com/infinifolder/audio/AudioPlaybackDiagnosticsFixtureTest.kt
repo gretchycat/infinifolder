@@ -22,7 +22,7 @@ class AudioPlaybackDiagnosticsFixtureTest {
     @Test
     fun testInstrumentAndGenerateAuthoritativePlaybackReport() {
         val files = fixtureDir.listFiles()?.filter {
-            it.isFile && !it.name.endsWith(".ans") // ANSI music belongs in text renderer
+            it.isFile && !it.name.endsWith(".ans") // ANSI music playback through Sound is planned.
         }?.sortedBy { it.name } ?: emptyList()
 
         assertTrue("Audio fixture directory must contain files", files.isNotEmpty())

@@ -18,6 +18,11 @@ Audio output and analysis now share library-decoded PCM sources, with bounded st
 
 Current progress and known pre-existing failures belong in [migration checkpoints](infinistream-migration.md). The remaining product/safety work below continues alongside this architecture work; no language port is included.
 
+PDF now uses Scribe's optional Android backend with common document/frame metadata
+and explicit staged-file input. The host retains navigation, zoom and cache leases;
+page work and cleanup are serialized. The owner confirms the earlier PDF report
+was corrupt input, and the updated viewer still needs handset acceptance.
+
 ## Next: accept the new safety paths
 
 - Exercise external-edit source checks, durable unfinished sessions and conflict choices with real editors.
@@ -36,6 +41,45 @@ Broaden format-specific byte/metadata/edge checks, multipart ZIP/7z, advanced LV
 ## Requested future features
 
 Most-used sorting; torrent device acceptance and seekable piece reads; Downloads organization rules; handset acceptance for floating browser and home-screen shortcuts; later widget. NFS/cloud providers, broader search/recents/trash and portable metadata remain future scope. WebDAV is user-confirmed working.
+
+### Paged documents and Office formats
+
+Extend Scribe's document processing interfaces with replaceable backends for
+PostScript/EPS and LaTeX typesetting, followed by DOCX, XLSX, PPTX and OpenDocument
+(ODT/ODS/ODP) viewing. The host supplies sources and related resources; libraries
+own parsing, layout and rendering, with actual page/table/slide metadata. Android,
+Linux, Windows, macOS and iOS should share the public contracts while using
+appropriate platform backends. Existing Android PDF rendering remains supported.
+
+Choose source-buildable backends after checking licensing, Android packaging,
+font handling and layout fidelity. Render pages/slides on demand with bounded
+rasters, cancellation and explicit staging where the backend requires a file.
+Resolve embedded images, styles, equations, tables and related files through
+explicit resource inputs. Typesetting must have bounded execution and explicit
+file-access rules; opening a document must not enable macros or shell commands.
+Legacy binary DOC/XLS/PPT, encrypted documents, advanced spreadsheet calculations
+and editing are separate capability decisions; report unsupported cases clearly.
+
+PDF/PostScript/EPS/LaTeX fixtures are in `filesystem-test-images/documents/`, with
+page counts, expected markers and a ZIP for archive reads. Add Office fixtures
+before implementing their backends, covering pagination, Unicode/fonts, images,
+tables, equations, worksheet values/formulas and slides. Compare actual rendered
+results and document semantics on each supported backend. New formats remain
+planned until their backend and acceptance checks are complete.
+
+### ANSI music playback
+
+Add ANSI/BBS music parsing and tone synthesis to Sound, exposing timed events and
+PCM through the common interfaces for normal music-player playback. Terminal art
+may be presented alongside the music using the same clock. Keep synthesis out of
+the text viewer and Android output out of the library's portable parser/core.
+Choose explicit dialects for CSI M/N/| and PLAY-style tempo, octave, lengths,
+accidentals, rests and articulation; handle ambiguous terminal control sequences,
+malformed or unterminated macros, duration bounds, cancellation and seeking.
+Preserve static ANSI preview dispatch for files without music. The existing
+synthetic fixture is `filesystem-test-images/audio/c_major_piano_ansi_music.ans`;
+add dialect and malformed-input cases before enabling playback. ANSI music is
+not currently supported by the music player.
 
 ### Large text and CSV editing
 

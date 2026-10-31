@@ -20,6 +20,8 @@ Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) d
 - [ ] Extend the user-confirmed local MP3 seeking/gapless behavior to high-resolution FLAC, live remote/container sources and visualizer alignment. Encoded source staging remains a separate latency cost.
 - [x] Add exact portable FLAC positioning and validate real Android precision; use common positional inputs for normal/gapless audio where supported, retaining explicit staging fallbacks.
 - [x] Route the full image viewer through Canvas common-resource composition, preserving native decode/sampling and output frame metadata.
+- [x] Move Android PDF parsing/rendering into Scribe's optional Android backend, preserving host navigation/zoom/staging and serializing page lifetimes. Add valid/corrupt PDF, PostScript/EPS and LaTeX fixtures.
+- [ ] Accept PDF navigation/fit/zoom, rapid page requests, back during work and archive/remote opening after the backend migration.
 - [ ] Continue converting legacy callers to metadata-driven composition before removing compatibility APIs or exported dependencies.
 - [ ] Extend automatic planning for arbitrary multi-input/track graphs; current multi-port processors use explicit bindings.
 - [ ] Verify live remote providers, Android playback/seek/gapless/route behavior and editor/container write acceptance after these checkpoints.
@@ -32,6 +34,18 @@ Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) d
 - [ ] Accept begin/middle/end edits, scroll-away/back, undo/redo and save/reopen on disposable copies of fixtures 90/91, including untouched-content and interrupted-save checks.
 
 See the [large-file editing roadmap](roadmap.md#large-text-and-csv-editing). Current large-file read-only guards remain in place.
+
+## Paged documents and Office formats
+
+- [ ] Add full PostScript/EPS document rendering and LaTeX typesetting behind Scribe interfaces; retain existing raster-preview support and explicit platform capabilities.
+- [ ] Add DOCX/XLSX/PPTX and OpenDocument viewing with source-buildable backends; validate fonts, pagination, tables, images, equations, worksheet semantics and slides using format-specific fixtures.
+- [ ] Evaluate legacy DOC/XLS/PPT, encryption, calculations and editing separately; keep unsupported cases explicit.
+
+See [document rendering roadmap](roadmap.md#paged-documents-and-office-formats).
+
+## ANSI music
+
+- [ ] Add [ANSI music playback](roadmap.md#ansi-music-playback) through Sound's portable note parser/synthesizer and existing PCM player, with optional synchronized terminal art and explicit dialect detection.
 
 ## Cloud storage
 

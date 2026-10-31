@@ -6,6 +6,13 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Confirmed on the handset
 
+- Valid PDFs are user-confirmed working; the reported failure was corrupt input
+  (2026-10-31). Checkpoint 15 moves the existing Android PDF backend into Scribe
+  and adds serialized page work, bounded aspect-preserving rasters and explicit
+  resource cleanup. Its updated UI and archive/remote opening need acceptance.
+  Full PostScript/EPS, LaTeX, Office viewing and ANSI music playback are planned;
+  new document fixtures do not enable those formats.
+
 - Local MP3 seeking, including the previously slow copied songs, and linked gapless playback are user-confirmed working (2026-10-31, checkpoint 13). Checkpoint 14 adds exact high-resolution FLAC positioning, direct positional audio inputs and image common-source composition; its high-resolution/remote/image UI acceptance remains pending. The checkpoint records 683 cases with the same 30 known failures and 46 passing pipeline checks.
 
 - Directory/container artwork (`.icon.<ext>`, `.icon`, `cover.<ext>`, `cover`), arbitrary sibling `.icon-<full filename>.png` icon overrides, and sibling PNG program-icon caching inside remote directories (`sftp://`, `smb://`, `ftp://`, `webdav://`) and archive/disk-image containers (`archive://`) are user-confirmed working (2026-10-27). See [Resource icons](resource-icons.md).

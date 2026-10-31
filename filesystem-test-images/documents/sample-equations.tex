@@ -1,0 +1,30 @@
+\documentclass[12pt]{article}
+\title{InfiniStream LaTeX document check}
+\author{Synthetic test fixture}
+\date{}
+\begin{document}
+\maketitle
+\section{Text and formatting}
+Normal text, \textbf{bold}, \textit{italic}, and \texttt{monospace}.
+Escaped symbols: \% \& \_ \# \$ \{ \}.
+\begin{itemize}
+\item First list item.
+\item Second list item with a footnote.\footnote{A local footnote.}
+\end{itemize}
+\section{Equations}
+Inline math: $E=mc^2$. Display math:
+\[
+\sum_{k=1}^{n} k = \frac{n(n+1)}{2}, \qquad
+\int_0^1 x^2\,dx = \frac{1}{3}.
+\]
+\begin{tabular}{|l|r|}\hline
+Name & Value \\ \hline
+Alpha & 1 \\ Beta & 2 \\ \hline
+\end{tabular}
+\par END OF PAGE ONE
+\newpage
+\section{Second page}
+Navigation must reach this page and return to the first.
+This document needs no images, bibliography, shell commands or network access.
+\par END OF PAGE TWO
+\end{document}

@@ -1,25 +1,29 @@
 package com.infinifolder.viewer
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
-import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.ParcelFileDescriptor
 import android.view.Gravity
 import android.view.View
 import android.widget.*
-import java.io.File
+import io.github.gretchycat.infiniscribe.android.PdfDocument
+import io.github.gretchycat.infiniscribe.android.PdfDocuments
+import io.github.gretchycat.infinistream.ContentType
+import io.github.gretchycat.infinistream.Provenance
+import io.github.gretchycat.infinistream.StreamMetadata
+import com.infinifolder.storage.DiagnosticLog
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Native, zero-dependency PDF document viewer using Android's built-in PdfRenderer.
+ * PDF presentation; Scribe owns the Android PDF parsing and rasterization backend.
  * Supports pinch-to-zoom, page navigation, direct jump-to-page, and fit width/page modes.
  */
 class PdfViewerActivity : ViewerActivity() {
@@ -37,10 +41,13 @@ class PdfViewerActivity : ViewerActivity() {
     private lateinit var fitToggleBtn: Button
 
     private var stagedSource: MediaSourceAdapter.StagedSource? = null
-    private var stagedFile: File? = null
-    private var pfd: ParcelFileDescriptor? = null
-    private var pdfRenderer: PdfRenderer? = null
-    private var currentPage: PdfRenderer.Page? = null
+    // These handles are only accessed by the single document worker.
+    private var pdfDocument: PdfDocument? = null
+    private val pdfWorker = Executors.newSingleThreadExecutor { task -> Thread(task, "pdf-viewer") }
+    private var work: Future<*>? = null
+    private val generation = AtomicLong()
+    @Volatile private var destroyed = false
+    private var requestedPageIndex = 0
 
     private var currentPageIndex: Int = 0
     private var totalPages: Int = 0
@@ -219,22 +226,23 @@ class PdfViewerActivity : ViewerActivity() {
 
         progressBar.visibility = View.VISIBLE
 
-        Thread {
+        work = pdfWorker.submit {
+            var source: MediaSourceAdapter.StagedSource? = null
+            var document: PdfDocument? = null
             try {
-                val source = MediaSourceAdapter.stage(this, targetUri, "doc.pdf")
+                source = MediaSourceAdapter.stage(applicationContext, targetUri, "doc.pdf")
+                document = PdfDocuments.open(source.file, StreamMetadata(
+                    content = ContentType(mimeType = "application/pdf"), name = displayName,
+                    provenance = Provenance(source = targetUri.toString())))
+                val pages = document.pageCount
                 stagedSource = source
-                val file = source.file
-                if (file == null || !file.exists()) {
-                    throw java.io.IOException("Unable to stage PDF file for reading")
-                }
-                stagedFile = file
-                val fileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-                pfd = fileDescriptor
-                val renderer = PdfRenderer(fileDescriptor)
-                pdfRenderer = renderer
-                totalPages = renderer.pageCount
+                pdfDocument = document
+                source = null
+                document = null
 
                 mainHandler.post {
+                    if (destroyed) return@post
+                    totalPages = pages
                     progressBar.visibility = View.GONE
                     if (totalPages > 0) {
                         renderPage(0)
@@ -243,54 +251,55 @@ class PdfViewerActivity : ViewerActivity() {
                     }
                 }
             } catch (e: Exception) {
+                DiagnosticLog.record("pdf.open.failed", "Unable to open PDF $targetUri", e)
                 mainHandler.post {
+                    if (destroyed) return@post
                     progressBar.visibility = View.GONE
                     if (!CacheFailureUi.offerCopy(this, e, targetUri)) Toast.makeText(this, "Failed to open PDF: ${e.message}", Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                runCatching { document?.close() }
+                runCatching { source?.close() }
             }
-        }.start()
+        }
     }
 
     private fun renderPage(pageIndex: Int) {
-        val renderer = pdfRenderer ?: return
-        if (pageIndex !in 0 until totalPages) return
+        if (destroyed || pageIndex !in 0 until totalPages) return
 
+        val request = generation.incrementAndGet()
+        requestedPageIndex = pageIndex
+        work?.cancel(true)
         progressBar.visibility = View.VISIBLE
+        val viewportWidth = resources.displayMetrics.widthPixels.coerceAtLeast(1080)
 
-        Thread {
+        work = pdfWorker.submit {
             try {
-                currentPage?.close()
-                val page = renderer.openPage(pageIndex)
-                currentPage = page
-
-                // Calculate high-DPI rendering dimensions based on screen display metrics
-                val dm = resources.displayMetrics
-                val screenW = dm.widthPixels.coerceAtLeast(1080)
-                val screenH = dm.heightPixels.coerceAtLeast(1920)
-
-                // Scale factor for crisp text (at least 2x or screen width fit)
-                val scale = kotlin.math.max(2.0f, screenW.toFloat() / page.width.toFloat())
-                val bitmapWidth = (page.width * scale).toInt().coerceAtMost(4096)
-                val bitmapHeight = (page.height * scale).toInt().coerceAtMost(4096)
-
-                val bitmap = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888)
-                bitmap.eraseColor(Color.WHITE)
-                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                val document = pdfDocument ?: return@submit
+                val frame = document.renderPage(pageIndex, viewportWidth)
 
                 mainHandler.post {
-                    currentPageIndex = pageIndex
-                    pageImageView.setImageBitmap(bitmap)
-                    pageImageView.resetZoom()
-                    updateNavigationUI()
-                    progressBar.visibility = View.GONE
+                    frame.use {
+                        if (destroyed || request != generation.get()) return@post
+                        currentPageIndex = pageIndex
+                        // Transfer the bitmap to ImageView/GC; recycled stale frames are never displayed.
+                        pageImageView.setImageBitmap(frame.takeBitmap())
+                        pageImageView.resetZoom()
+                        updateNavigationUI()
+                        progressBar.visibility = View.GONE
+                    }
                 }
             } catch (e: Exception) {
+                if (e is java.io.InterruptedIOException) return@submit
+                DiagnosticLog.record("pdf.render.failed", "Unable to render page ${pageIndex + 1}", e)
                 mainHandler.post {
+                    if (destroyed || request != generation.get()) return@post
+                    requestedPageIndex = currentPageIndex
                     progressBar.visibility = View.GONE
                     Toast.makeText(this, "Error rendering page: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
-        }.start()
+        }
     }
 
     private fun updateNavigationUI() {
@@ -302,14 +311,14 @@ class PdfViewerActivity : ViewerActivity() {
     }
 
     private fun showPreviousPage() {
-        if (currentPageIndex > 0) {
-            renderPage(currentPageIndex - 1)
+        if (requestedPageIndex > 0) {
+            renderPage(requestedPageIndex - 1)
         }
     }
 
     private fun showNextPage() {
-        if (currentPageIndex < totalPages - 1) {
-            renderPage(currentPageIndex + 1)
+        if (requestedPageIndex < totalPages - 1) {
+            renderPage(requestedPageIndex + 1)
         }
     }
 
@@ -366,15 +375,17 @@ class PdfViewerActivity : ViewerActivity() {
     }
 
     override fun onDestroy() {
+        destroyed = true
+        generation.incrementAndGet()
+        work?.cancel(true)
+        pdfWorker.execute {
+            runCatching { pdfDocument?.close() }
+            pdfDocument = null
+            runCatching { stagedSource?.close() }
+            stagedSource = null
+        }
+        pdfWorker.shutdown()
         super.onDestroy()
-        runCatching { currentPage?.close() }
-        currentPage = null
-        runCatching { pdfRenderer?.close() }
-        pdfRenderer = null
-        runCatching { pfd?.close() }
-        pfd = null
-        stagedSource?.close()
-        stagedSource = null
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()

@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "files": {
+    "sample-pages.pdf": {
+      "bytes": 1147,
+      "sha256": "ea31abaac617671be5741ed794422bcf7add3ab796765d64c2d496658ea0f295",
+      "purpose": "Two pages: portrait 612x792 and landscape 792x612; blue/red rectangles, headings and end markers.",
+      "rendering_implemented": true
+    },
+    "sample-pages.ps": {
+      "bytes": 861,
+      "sha256": "591b0539510635792e1b4ae988e044095a5a9dedf1345cbc16e1565efc81d6d2",
+      "purpose": "Two PostScript pages matching the PDF shapes and markers; full vector/document rendering is planned.",
+      "rendering_implemented": false
+    },
+    "sample-vector.eps": {
+      "bytes": 350,
+      "sha256": "cf8efa06f3c0613624f99dde0cc7c8a6f0b112189236b50e68d6433e2f4fec55",
+      "purpose": "Single 300x200 vector EPS: blue rectangle, red circle and heading; full vector rendering is planned.",
+      "rendering_implemented": false
+    },
+    "sample-equations.tex": {
+      "bytes": 860,
+      "sha256": "e40f461368cc6eecdd895c0663ae098a0c1b487dbbebede849ae5be79eb9f9f6",
+      "purpose": "Self-contained two-page LaTeX article: formatting, equations, list, table and footnote; typeset rendering is planned.",
+      "rendering_implemented": false
+    },
+    "invalid-document.pdf": {
+      "bytes": 32,
+      "sha256": "df8088e6de6e266de2bcf72a2d1c9e8eee38b393c651184826be82da2877b65d",
+      "purpose": "Negative check: clear open error; no crash or stuck spinner.",
+      "rendering_implemented": false
+    }
+  }
+}

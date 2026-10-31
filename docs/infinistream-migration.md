@@ -13,7 +13,7 @@ All remote main hashes were checked against the local tested heads. Sound's exis
 | [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`aa41c5d`](https://github.com/gretchycat/libinfinivault/commit/aa41c5d4e2b6db06b83d29e889c04ec069e2bcd2) |
 | [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`61a4644`](https://github.com/gretchycat/libinfinisound/commit/61a4644bdfd216597bc3fe24ef3a55984bcc2363) |
 | [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`ed685ad`](https://github.com/gretchycat/libinfinicanvas/commit/ed685ad0dfeae0dbacd58f26ce2e41fcc577bdd5) |
-| [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`95c7e52`](https://github.com/gretchycat/libinfiniscribe/commit/95c7e52d3f7e0685db773932d9e890603bb004e2) |
+| [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`88299bf`](https://github.com/gretchycat/libinfiniscribe/commit/88299bf3e5e6b988076d49c046852f00d3af34c3) |
 | [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`447c92d`](https://github.com/gretchycat/libinfinivideo/commit/447c92d593876d40a39807b424c3e0fb35c23807) |
 
 ```text
@@ -22,7 +22,7 @@ Vault -> Store + Stream + Sound audio-api (playlist containers)
 Sound / Canvas / Scribe / Video -> Stream
 Host storage-engine -> Store + Vault (runtime/router/external-edit composition)
 viewer-common -> host storage-engine + Canvas + Scribe
-viewer-audio -> Sound; viewer-video -> Video; viewer-csv -> Scribe
+viewer-audio -> Sound; viewer-video -> Video; viewer-csv / viewer-pdf -> Scribe
 ```
 
 Ordinary files open through Store/Stream directly; Vault is used for containers. Family dependencies contain no Store/Vault cycle and no library depends on InfiniFolder's application or viewer UI. Legacy packages are retained as compatibility names. dependencies.json in each repository records tested sibling revisions; clone those dependencies beside the repository or set -PinfiniLibrariesDir for a standalone build.
@@ -195,11 +195,54 @@ Verification: 683 cases, 653 pass and the same 30 known failures, no regressions
 
 Final validation and handset boundaries are recorded below. Live remote latency is not established by a local positional-source harness. In particular, a cold exact MPEG seek still scans encoded packet headers; direct positional access is not a constant-time network-seek promise. Unsupported/sequential, CUE, companion-file and extraction-backed archive paths retain staging. Native iOS/desktop output and arbitrary multi-input planning remain follow-up.
 
+## Checkpoint 15: PDF backend and document fixtures
+
+The reported PDF regression was traced by the owner to corrupt input files; the
+owner confirms valid PDFs still work. The original Android renderer also renders
+the new known-good two-page fixture. This checkpoint continues the migration;
+it does not claim to have repaired those corrupt documents.
+
+Scribe's optional `scribe-android` module now owns the existing Android PDF
+backend. The viewer calls `PdfDocuments` and retains explicit file staging,
+cache leases, page navigation, fit/zoom and external-open UI. The library exposes
+document and rendered-page StreamHandles with actual page geometry/raster metadata,
+provenance and ownership. The host serializes/cancels page requests and discards
+stale results; document cleanup follows active work and precedes staging-lease
+release. Rendered pages close immediately, failed open closes its descriptor,
+and a presentation transfer keeps a displayed bitmap alive after frame close.
+One scale bounds both raster axes, preserving oversized-page aspect ratios.
+This backend still needs a seekable local file and uses Android's native parser;
+portable PDF backends and general document processor negotiation remain follow-up.
+
+Synthetic fixtures under `filesystem-test-images/documents/` include a portrait/
+landscape PDF, deliberately corrupt PDF, two-page PostScript, vector EPS, LaTeX
+equations article and ZIP copies. Their generator preserves edited/existing files.
+PDF structure and PS/EPS interpretation were independently checked with local
+Poppler/Ghostscript tools; LaTeX was not typeset here. Full PostScript/EPS, LaTeX,
+Office document rendering and ANSI music playback are requested roadmap work,
+not newly enabled formats. Existing ANSI music fixture bytes remain unchanged.
+
+Verification: 691 cases, 661 pass, the same 30 known failures and no regressions,
+skips or missing cases. Eight new portable tests cover page raster geometry and
+bounds. Full APK, standalone PDF host and independent Scribe core/Android builds
+pass. `scripts/verify-pdf-runtime.py` adds eight real Android checks covering
+metadata, pixels/pages, raster bounds, frame ownership/transfer, failed-request
+recovery, cancellation/close, corrupt-input descriptor cleanup and serialized
+render/close. PDF UI navigation, rapid requests, back during load/render and
+archive/live remote opening still need handset acceptance. Logs use
+`checkpoint15-*` under `build/infinistream-migration/`.
+
+All previous 46 audio/document/image/video pipeline checks also pass against the
+same full APK, including muted seeks on the three owner-supplied MP3s and linked
+gapless handoff. Together with the new PDF cases this is 54 runtime checks.
+Independent Scribe core also builds with both Android SDK environment variables
+unset; the optional Android module is not configured on that path.
+
 ## Final verification and reproducibility
 
-Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 683-case checkpoint.
+Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 691-case checkpoint.
 
-Current totals: **683 tests, 653 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
+Current totals: **691 tests, 661 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
 | Independent library | Tests | Failures |
 | --- | ---: | ---: |
@@ -208,7 +251,7 @@ Current totals: **683 tests, 653 pass, 30 pre-existing failures, no new failures
 | Vault | 3 | 0 |
 | Sound | 69 | 0 |
 | Canvas | 10 | 0 |
-| Scribe | 66 | 0 |
+| Scribe | 74 | 0 |
 | Video | 4 | 0 |
 
 All seven standalone source builds passed with the pinned sibling dependencies. Stream/Scribe and portable Sound builds need no Android runtime. Android modules were built with SDK 36, JDK 21 targeting Java 17, Kotlin 2.2.20 and AGP 8.9.2 using Gradle 9.7.1. The preceding checkpoint built full app and selected audio/text/image/video host debug APKs; checkpoints 5/6/7 rebuilt the full app and affected text/CSV hosts, and repeated the independent Scribe build. Checkpoint 8 repeats full/CSV-host and independent Scribe builds; checkpoint 9 repeats full/text/HTML/Markdown-host and independent Scribe builds. Checkpoint 10 rebuilds full/CSV-host APKs for the startup callback fix. Checkpoint 11 rebuilds full/audio-host and standalone Android/portable Sound artifacts for PCM pull output; checkpoint 12 repeats those builds for decoder frame positioning and playback policy; checkpoint 13 repeats them for trailing MP3 metadata and long seeks; checkpoint 14 repeats affected Sound/Stream/Canvas and audio/image host builds for common encoded inputs and exact FLAC positioning. Termux ARM64 native source builds passed; the standard NDK/CMake path and desktop/iOS runtime execution were not exercised.
@@ -224,4 +267,4 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. No opaque native blob or language port was introduced by this migration.
 
-Final full debug APK SHA-256: `6ca53561e0776239e159e43f005af3ed138adb30bf3c6b188324b31ec9613297`.
+Final full debug APK SHA-256: `4bf24e477ea79c20197f078b30389f90932e792b33c62528ee4b2cabb3458691`.

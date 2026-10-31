@@ -331,6 +331,34 @@
     "bytes": 11482,
     "sha256": "cc63c7b4c66bfd20a6282b67e867c657b744a338326ff6dad31fa029108db502"
   },
+  "documents/invalid-document.pdf": {
+    "bytes": 32,
+    "sha256": "df8088e6de6e266de2bcf72a2d1c9e8eee38b393c651184826be82da2877b65d"
+  },
+  "documents/paged-document-checks.zip": {
+    "bytes": 2280,
+    "sha256": "264f191053c21d374447c0689881d5d9ad325ae7eda53e3d56d8684aa51c08f2"
+  },
+  "documents/paged-expected.json": {
+    "bytes": 1491,
+    "sha256": "01debcbf8ee7dea3b930545d11dff75777fb5fd6491b85a6cbf8900ee0194afd"
+  },
+  "documents/sample-equations.tex": {
+    "bytes": 860,
+    "sha256": "e40f461368cc6eecdd895c0663ae098a0c1b487dbbebede849ae5be79eb9f9f6"
+  },
+  "documents/sample-pages.pdf": {
+    "bytes": 1147,
+    "sha256": "ea31abaac617671be5741ed794422bcf7add3ab796765d64c2d496658ea0f295"
+  },
+  "documents/sample-pages.ps": {
+    "bytes": 861,
+    "sha256": "591b0539510635792e1b4ae988e044095a5a9dedf1345cbc16e1565efc81d6d2"
+  },
+  "documents/sample-vector.eps": {
+    "bytes": 350,
+    "sha256": "cf8efa06f3c0613624f99dde0cc7c8a6f0b112189236b50e68d6433e2f4fec55"
+  },
   "documents/sample.html": {
     "bytes": 491,
     "sha256": "b7b2b79ff05eccf995b28061d0efcfe89a1d1d2bb48d7d6ae0fb4f08b9c5521d"
