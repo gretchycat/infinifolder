@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Termux/device check of the built APK's PCM sources; prepares a player without starting audio.
+"""Termux/device check of the built APK's PCM sources and seeks; no audio is started.
 
 Requires a built full debug APK/library JARs, JDK, SDK 36/build-tools 36.0.0,
 cached Kotlin stdlib 2.2.20, ffmpeg with libmp3lame, and Android app_process64.
@@ -9,6 +9,7 @@ from pathlib import Path
 import os
 import shutil
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'build/infinistream-migration'
@@ -26,12 +27,14 @@ classpath = [ANDROID, kotlin,
     ROOT / 'libraries/libinfinistream/stream-core/build/libs/stream-core-0.1.0.jar',
     ROOT / 'libraries/libinfinisound/audio-processing/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar',
     ROOT / 'viewer-audio/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar']
+for path in classes.glob('AudioPullRuntimeCheck*.class'):
+    path.unlink()
 subprocess.run(['javac', '-classpath', ':'.join(map(str, classpath)), '-d', str(classes),
     str(ROOT / 'scripts/runtime/AudioPullRuntimeCheck.java')], check=True)
 if (dex / 'classes.dex').exists():
     (dex / 'classes.dex').chmod(0o644)
 subprocess.run([str(SDK / 'build-tools/36.0.0/d8'), '--lib', str(ANDROID), '--classpath', str(kotlin),
-    '--output', str(dex), str(classes / 'AudioPullRuntimeCheck.class')], check=True)
+    '--output', str(dex)] + [str(path) for path in sorted(classes.glob('AudioPullRuntimeCheck*.class'))], check=True)
 (dex / 'classes.dex').chmod(0o444)
 apk = OUT / 'audio-pull-runtime.apk'
 if apk.exists():
@@ -45,8 +48,11 @@ subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '
     'sine=frequency=440:sample_rate=44100:duration=120', '-ac', '2', '-c:a', 'libmp3lame',
     '-q:a', '4', '-y', str(OUT / 'audio-pull-long.mp3')], env=env, check=True)
 env['CLASSPATH'] = str(dex / 'classes.dex') + ':' + str(apk)
-for name in ['chord.mp3', 'chord.aac', 'chord.m4a', 'chord.wav', 'chord.flac',
-             'high-resolution.flac', 'full-resolution.flac', 'long']:
+names = ['chord.mp3', 'chord.aac', 'chord.m4a', 'chord.wav', 'chord.flac', 'high-resolution.flac', 'full-resolution.flac', 'long']
+selected = sys.argv[1:] or names
+if set(selected) - set(names):
+    raise SystemExit('Unknown runtime case')
+for name in selected:
     log_path = OUT / ('audio-pull-' + name + '-runtime.log')
     with log_path.open('w') as log:
         result = subprocess.run(['/system/bin/app_process64', '/system/bin', 'AudioPullRuntimeCheck',

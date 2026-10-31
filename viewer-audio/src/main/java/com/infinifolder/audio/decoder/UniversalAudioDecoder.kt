@@ -46,7 +46,7 @@ object UniversalAudioDecoder {
 
     fun openWaveSource(source: File, destination: File, reportDiagnostics: Boolean = true,
         cancelled: () -> Boolean = { false }): com.infinifolder.audio.AudioWaveSource =
-        AudioProcessing.openWaveSource(source, destination, observer = if (reportDiagnostics) object : com.infinifolder.audio.AudioPreparationObserver {
+        AudioProcessing.openPlaybackSource(source, destination, observer = if (reportDiagnostics) object : com.infinifolder.audio.AudioPreparationObserver {
             override fun warning(decoder: String, error: Throwable) {
                 if (!cancelled()) diagnostics.warning(decoder, error)
             }

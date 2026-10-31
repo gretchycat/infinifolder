@@ -15,6 +15,7 @@ Updated: 2026-10-24. [Current confirmations and priorities](project-status.md) d
 - [x] Use positional document chunks and bounded text/grid presentation; handle Android CSV MIME aliases and preserve complete-file save guards.
 - [x] Share bounded source syntax highlighting and TextMate/VS Code-style descriptors across text viewing/editing and HTML/Markdown source modes; retain save guards. See [scope and controls](syntax-highlighting.md).
 - [x] Migrate normal/gapless audio output and visualizer analysis to a shared PCM ByteSource, pulling exact-length decoded prefixes instead of preparing every complete track before playback. Retain unknown-length preparation, decoder fallback and source leases.
+- [x] Add optional decoder frame positioning and independent PCM cache blocks; select the existing fast portable MPEG backend for validated playback content while retaining Android fallback. Check actual seek-complete callbacks and sample-exact seek windows.
 - [ ] Accept audible startup, playback seeking, gapless transitions and visualizer alignment with the new PCM source, including remote/container sources. Encoded source staging remains a separate latency cost.
 - [ ] Continue converting legacy callers to metadata-driven composition before removing compatibility APIs or exported dependencies.
 - [ ] Extend automatic planning for arbitrary multi-input/track graphs; current multi-port processors use explicit bindings.

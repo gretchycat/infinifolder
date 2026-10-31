@@ -698,7 +698,8 @@ class AudioPlayerService : Service() {
                 com.infinifolder.storage.DiagnosticLog.record("audio.load.prepared",
                     "load=$thisLoadId sourceStageMs=${stagedAt - loadStarted} metadataMs=${metadataAt - stagedAt} " +
                         "pcmOpenMs=${decodedAt - metadataAt} playerPrepareMs=${android.os.SystemClock.elapsedRealtime() - decodedAt} " +
-                        "progressive=${waveSource.progressive} cachedPcmBytes=${output.length()} totalPcmBytes=${waveSource.metadata.length}")
+                        "progressive=${waveSource.progressive} cachedPcmBytes=${waveSource.metadata.attributes["cachedPcmBytes"] ?: output.length()} " +
+                        "totalPcmBytes=${waveSource.metadata.length} access=${waveSource.metadata.attributes["access"]}")
                 decodedInfo.let { (rate, channels, duration) ->
                     formatInfo = formatInfo.copy(sampleRate = rate, channels = channels, isSampleRateRelevant = true)
                     enriched = enriched.copy(sampleRateHz = rate.takeIf { it > 0 }, channels = channels.takeIf { it > 0 },
