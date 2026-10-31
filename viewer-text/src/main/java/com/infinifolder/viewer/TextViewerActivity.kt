@@ -21,11 +21,27 @@ import com.infinifolder.viewer.common.R
 import com.infinifolder.model.ProviderResult
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
+import io.github.gretchycat.infiniscribe.TextChunk
+import io.github.gretchycat.infiniscribe.TextChunkReader
+import io.github.gretchycat.infinistream.CancellationToken
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 class TextViewerActivity : ViewerActivity() {
     private var loadedRevision: com.infinifolder.storage.ContentRevision? = null
 
     private var documentFullyLoaded = false
+    private val documentWorker = Executors.newSingleThreadExecutor()
+    private var documentTask: Future<*>? = null
+    @Volatile private var documentGeneration = 0
+    @Volatile private var chunkReader: TextChunkReader? = null
+    private var currentChunk: TextChunk? = null
+    private val chunkOffsets = mutableListOf(0L)
+    private var chunkIndex = 0
+    private lateinit var chunkBar: LinearLayout
+    private lateinit var previousChunk: Button
+    private lateinit var nextChunk: Button
+    private lateinit var jumpChunk: Button
 
 
     private lateinit var contentEditText: EditText
@@ -327,6 +343,15 @@ class TextViewerActivity : ViewerActivity() {
         editActionBar.addView(saveBtn)
         root.addView(editActionBar)
 
+        chunkBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
+        previousChunk = Button(this).apply { text = "Previous"; setOnClickListener { moveChunk(-1) } }
+        nextChunk = Button(this).apply { text = "Next"; setOnClickListener { moveChunk(1) } }
+        jumpChunk = Button(this).apply { text = "Go to…"; setOnClickListener { promptChunkOffset() } }
+        chunkBar.addView(previousChunk, LinearLayout.LayoutParams(0, -2, 1f))
+        chunkBar.addView(nextChunk, LinearLayout.LayoutParams(0, -2, 1f))
+        chunkBar.addView(jumpChunk, LinearLayout.LayoutParams(0, -2, 1f))
+        root.addView(chunkBar)
+
         // Content Area with Line Numbers
         val textContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -409,32 +434,131 @@ class TextViewerActivity : ViewerActivity() {
     private fun loadText() {
         documentFullyLoaded = false
         val uri = currentUri ?: return
+        val request = ++documentGeneration
+        documentTask?.cancel(true)
         subtitleView.text = "Loading…"
-        Thread {
+        chunkOffsets.clear(); chunkOffsets += 0L; chunkIndex = 0
+        documentTask = documentWorker.submit {
             try {
-                val document = MediaSourceAdapter.readDocument(this, uri, maxBytes = 4 * 1024 * 1024, charset = currentCharset)
-                val text = document.text
-                val hasMore = document.hasMore
+                chunkReader?.close()
+                val reader = TextChunkReader(MediaSourceAdapter.openDocumentSource(this, uri), currentCharset,
+                    CancellationToken { isDestroyed || isFinishing })
+                chunkReader = reader
+                val chunk = reader.read()
                 runOnUiThread {
-                    loadedRevision = document.revision
-                    documentFullyLoaded = !hasMore
-                    originalText = text
-                    undoStack.clear()
-                    redoStack.clear()
-                    pushUndo(text)
-                    contentEditText.setText(text)
-                    val lines = text.count { it == '\n' } + 1
-                    val sizeFormatted = android.text.format.Formatter.formatShortFileSize(this, text.length.toLong())
-                    subtitleView.text = "${currentCharset.name()} · $lines lines · $sizeFormatted${if (hasMore) " (truncated to 4MB)" else ""}"
-                    updateLineNumbers()
+                    if (request != documentGeneration || isDestroyed) return@runOnUiThread
+                    showChunk(chunk)
+                    if (ViewerLaunch.requestsEdit(intent)) toggleEditMode()
                 }
-            } catch (t: Throwable) {
+            } catch (error: Exception) { showReadError(request, error) }
+        }
+    }
+
+    private fun showChunk(chunk: TextChunk) {
+        currentChunk = chunk
+        documentFullyLoaded = !chunk.document.hasMore
+        loadedRevision = if (documentFullyLoaded) com.infinifolder.storage.ContentRevision.of(chunk.document.bytes) else null
+        if (!documentFullyLoaded) {
+            isEditMode = false; hasUnsavedEdits = false; editActionBar.visibility = View.GONE
+            contentEditText.isFocusable = false; contentEditText.isFocusableInTouchMode = false; contentEditText.isCursorVisible = false
+        }
+        originalText = chunk.document.text
+        undoStack.clear(); redoStack.clear()
+        if (documentFullyLoaded) pushUndo(originalText)
+        contentEditText.setText(originalText)
+        subtitleView.text = if (documentFullyLoaded) "${currentCharset.name()} · ${originalText.count { it == '\n' } + 1} lines"
+            else "${currentCharset.name()} · bytes ${chunk.start}–${chunk.nextOffset} / ${chunkReader?.sourceMetadata?.length ?: "?"} · read-only chunk"
+        chunkBar.visibility = if (documentFullyLoaded) View.GONE else View.VISIBLE
+        previousChunk.isEnabled = chunkIndex > 0 && chunkReader?.canRead(chunkOffsets[chunkIndex - 1]) == true
+        nextChunk.isEnabled = chunk.hasNext
+        jumpChunk.isEnabled = chunkReader?.supportsRandomAccess == true
+        updateLineNumbers()
+        scrollView.scrollTo(0, 0)
+    }
+
+    private fun showReadError(request: Int, error: Exception) = runOnUiThread {
+        if (request != documentGeneration || isDestroyed) return@runOnUiThread
+        subtitleView.text = "Error reading text"
+        Toast.makeText(this, error.message ?: "Cannot read document", Toast.LENGTH_LONG).show()
+    }
+
+    private fun moveChunk(direction: Int) {
+        val chunk = currentChunk ?: return
+        val offset = if (direction < 0) {
+            if (chunkIndex == 0) return
+            chunkOffsets[--chunkIndex]
+        } else {
+            if (!chunk.hasNext) return
+            while (chunkOffsets.size > chunkIndex + 1) chunkOffsets.removeAt(chunkOffsets.lastIndex)
+            chunkOffsets += chunk.nextOffset; chunkIndex++
+            chunk.nextOffset
+        }
+        readChunk(offset)
+    }
+
+    private fun readChunk(offset: Long) {
+        val reader = chunkReader ?: return
+        val request = ++documentGeneration
+        documentTask?.cancel(true)
+        subtitleView.text = "Loading…"
+        previousChunk.isEnabled = false; nextChunk.isEnabled = false
+        documentTask = documentWorker.submit {
+            try {
+                val chunk = reader.read(offset)
                 runOnUiThread {
-                    subtitleView.text = "Error reading text"
-                    contentEditText.setText("Error loading file: ${t.message}")
+                    if (request != documentGeneration || isDestroyed) return@runOnUiThread
+                    searchMatches.clear(); currentMatchIndex = -1; searchStatus.text = ""
+                    showChunk(chunk)
+                    if (searchInput.text.isNotEmpty()) performSearch(searchInput.text.toString())
                 }
-            }
-        }.start()
+            } catch (error: Exception) { showReadError(request, error) }
+        }
+    }
+
+    private fun promptChunkOffset() {
+        val input = EditText(this).apply { inputType = android.text.InputType.TYPE_CLASS_NUMBER; setText((currentChunk?.start ?: 0).toString()) }
+        AlertDialog.Builder(this).setTitle("Go to byte offset").setView(input)
+            .setPositiveButton("Go") { _, _ ->
+                val offset = input.text.toString().toLongOrNull()
+                if (offset != null && offset >= 0 && (chunkReader?.sourceMetadata?.length?.let { offset < it } != false)) {
+                    chunkOffsets.clear(); chunkOffsets += offset; chunkIndex = 0; readChunk(offset)
+                }
+            }.setNegativeButton("Cancel", null).show()
+    }
+
+    /** Existing complete-document editor is materialized only on explicit edit, within its original 4 MiB guard. */
+    private fun loadForEditing() {
+        if (chunkReader?.sourceMetadata?.length?.let { it > 4L * 1024 * 1024 } == true) {
+            Toast.makeText(this, "Large documents are read-only; use the chunk controls to browse", Toast.LENGTH_LONG).show(); return
+        }
+        val uri = currentUri ?: return
+        val request = ++documentGeneration
+        documentTask?.cancel(true); subtitleView.text = "Loading document for editing…"
+        documentTask = documentWorker.submit {
+            try {
+                val loaded = MediaSourceAdapter.readDocument(this, uri, 4 * 1024 * 1024, currentCharset)
+                runOnUiThread {
+                    if (request != documentGeneration || isDestroyed) return@runOnUiThread
+                    if (loaded.hasMore) {
+                        currentChunk?.let(::showChunk)
+                        Toast.makeText(this, "Only fully loaded documents can be edited or saved", Toast.LENGTH_LONG).show()
+                    } else {
+                        documentFullyLoaded = true; loadedRevision = loaded.revision; currentChunk = null
+                        originalText = loaded.text; undoStack.clear(); redoStack.clear(); pushUndo(originalText)
+                        contentEditText.setText(originalText); chunkBar.visibility = View.GONE
+                        subtitleView.text = "${currentCharset.name()} · ${originalText.count { it == '\n' } + 1} lines"
+                        updateLineNumbers(); toggleEditMode()
+                    }
+                }
+            } catch (error: Exception) { showReadError(request, error) }
+        }
+    }
+
+    override fun onDestroy() {
+        documentGeneration++; documentTask?.cancel(true)
+        documentWorker.execute { runCatching { chunkReader?.close() }; chunkReader = null }
+        documentWorker.shutdown()
+        super.onDestroy()
     }
 
     private fun updateLineNumbers() {
@@ -452,10 +576,7 @@ class TextViewerActivity : ViewerActivity() {
     }
 
     private fun toggleEditMode() {
-        if (!isEditMode && !documentFullyLoaded) {
-            Toast.makeText(this, "Only fully loaded documents can be edited or saved", Toast.LENGTH_LONG).show()
-            return
-        }
+        if (!isEditMode && !documentFullyLoaded) { loadForEditing(); return }
 
         isEditMode = !isEditMode
         if (isEditMode) {
@@ -551,7 +672,7 @@ class TextViewerActivity : ViewerActivity() {
             idx = fullText.indexOf(query, idx + query.length, ignoreCase = true)
         }
 
-        searchStatus.text = "${searchMatches.size} found"
+        searchStatus.text = "${searchMatches.size} found${if (currentChunk?.document?.hasMore == true) " in chunk" else ""}"
         if (searchMatches.isNotEmpty()) {
             currentMatchIndex = 0
             highlightSearchMatch(query)
@@ -560,7 +681,38 @@ class TextViewerActivity : ViewerActivity() {
         }
     }
 
+    private fun searchFollowingChunks(query: String) {
+        if (query.isEmpty()) return
+        val reader = chunkReader ?: return
+        val current = currentChunk ?: return
+        if (!current.hasNext) { searchStatus.text = "End of file"; return }
+        val selected = searchMatches.getOrNull(currentMatchIndex)
+        val afterByte = selected?.let { current.start + current.document.text.substring(0, it + 1).toByteArray(currentCharset).size }
+        val request = ++documentGeneration
+        documentTask?.cancel(true); searchStatus.text = "Searching…"
+        documentTask = documentWorker.submit {
+            try {
+                val found = reader.findNext(query, current.nextOffset, current)
+                runOnUiThread {
+                    if (request != documentGeneration || isDestroyed) return@runOnUiThread
+                    if (found == null) { searchStatus.text = "No further match"; return@runOnUiThread }
+                    while (chunkOffsets.size > chunkIndex + 1) chunkOffsets.removeAt(chunkOffsets.lastIndex)
+                    chunkOffsets += found.start; chunkIndex++
+                    showChunk(found); performSearch(query)
+                    if (afterByte != null) {
+                        val match = searchMatches.indexOfFirst { found.start + found.document.text.substring(0, it).toByteArray(currentCharset).size >= afterByte }
+                        if (match >= 0) { currentMatchIndex = match; highlightSearchMatch(query) }
+                    }
+                }
+            } catch (error: Exception) { showReadError(request, error) }
+        }
+    }
+
     private fun navigateSearchMatch(delta: Int) {
+        if (currentChunk?.document?.hasMore == true && delta > 0 &&
+            (searchMatches.isEmpty() || currentMatchIndex == searchMatches.lastIndex)) {
+            searchFollowingChunks(searchInput.text.toString()); return
+        }
         if (searchMatches.isEmpty()) return
         currentMatchIndex = (currentMatchIndex + delta + searchMatches.size) % searchMatches.size
         searchStatus.text = "${currentMatchIndex + 1}/${searchMatches.size}"

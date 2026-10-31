@@ -1,0 +1,12 @@
+{
+  "title": "InfiniStream document check",
+  "edit": "Edit me",
+  "unicode": "Café — 日本語 — 🎵",
+  "values": [
+    1,
+    2,
+    3
+  ],
+  "quoted": "Comma, and \"quotes\"",
+  "multiline": "first\nsecond"
+}

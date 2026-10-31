@@ -1,0 +1,427 @@
+{
+  "schema": 1,
+  "generator": "generate-document-fixtures.py",
+  "notice": "Expected original synthetic bytes; existing edited files are preserved on regeneration.",
+  "files": {
+    "01-edit-roundtrip.csv": {
+      "bytes": 370,
+      "sha256": "e7dcb69ce11ef59e86a43edf880aaaeb57657160f712095b8ebbf646302df9ab",
+      "purpose": "Main edit/save/reopen check; six columns, eight rows including the header. Change Edit me to Edited on Android.",
+      "delimiter": ",",
+      "encoding": "UTF-8",
+      "row_count_including_header": 8,
+      "maximum_columns": 6,
+      "expected_rows": [
+        [
+          "ID",
+          "Name",
+          "City",
+          "Notes",
+          "Amount",
+          "Status"
+        ],
+        [
+          "1",
+          "Alice",
+          "Paris",
+          "Edit me",
+          "12.50",
+          "ready"
+        ],
+        [
+          "2",
+          "Bob",
+          "New York",
+          "Comma, stays inside this cell",
+          "0",
+          "ready"
+        ],
+        [
+          "3",
+          "Chloé",
+          "Québec",
+          "He said \"hello\"",
+          "-7.25",
+          "ready"
+        ],
+        [
+          "4",
+          "美咲 🎵",
+          "東京",
+          "Café — Ελληνικά — العربية",
+          "00123",
+          "ready"
+        ],
+        [
+          "5",
+          "Multiline",
+          "London",
+          "Line one\nLine two",
+          "3.14",
+          "ready"
+        ],
+        [
+          "6",
+          "Empty fields",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "7",
+          "Literal text",
+          "Test",
+          "=1+1",
+          "1e3",
+          "not evaluated"
+        ]
+      ],
+      "editable": true
+    },
+    "02-tabs.tsv": {
+      "bytes": 128,
+      "sha256": "a0bda55064108bc2d18f29f25f8e0f0b95a6b1bffc7efbecd083da57906c699b",
+      "purpose": "TSV detection, quoted embedded tabs/newlines and UTF-8 roundtrip.",
+      "delimiter": "\t",
+      "encoding": "UTF-8",
+      "row_count_including_header": 5,
+      "maximum_columns": 3,
+      "expected_rows": [
+        [
+          "ID",
+          "Name",
+          "Notes"
+        ],
+        [
+          "1",
+          "Alice",
+          "Edit me"
+        ],
+        [
+          "2",
+          "Embedded tab",
+          "left\tright"
+        ],
+        [
+          "3",
+          "Embedded newline",
+          "first\nsecond"
+        ],
+        [
+          "4",
+          "Unicode",
+          "naïve — 日本語 🎵"
+        ]
+      ],
+      "editable": true
+    },
+    "03-semicolon.csv": {
+      "bytes": 126,
+      "sha256": "090f1411146a4ce01a57a685163255077eb91583f213eab21048e34c05b3fe4c",
+      "purpose": "Semicolon auto-detection; decimal commas stay inside their cells.",
+      "delimiter": ";",
+      "encoding": "UTF-8",
+      "row_count_including_header": 4,
+      "maximum_columns": 4,
+      "expected_rows": [
+        [
+          "ID",
+          "Name",
+          "Notes",
+          "Amount"
+        ],
+        [
+          "1",
+          "Alice",
+          "Edit me",
+          "12,50"
+        ],
+        [
+          "2",
+          "Bob",
+          "Semicolon; stays inside this cell",
+          "0,25"
+        ],
+        [
+          "3",
+          "Chloé",
+          "Quoted \"word\"",
+          "3,14"
+        ]
+      ],
+      "editable": true
+    },
+    "04-pipe.csv": {
+      "bytes": 91,
+      "sha256": "8f2d0127f966cbecd34b06eb7d4aa9a05ae898a9bb1f29020542f3eab81e2ae2",
+      "purpose": "Pipe auto-detection and quoting; use .csv so the existing spreadsheet dispatch opens it.",
+      "delimiter": "|",
+      "encoding": "UTF-8",
+      "row_count_including_header": 4,
+      "maximum_columns": 3,
+      "expected_rows": [
+        [
+          "ID",
+          "Name",
+          "Notes"
+        ],
+        [
+          "1",
+          "Alice",
+          "Edit me"
+        ],
+        [
+          "2",
+          "Pipe character",
+          "left|right"
+        ],
+        [
+          "3",
+          "Multiline",
+          "first\nsecond"
+        ]
+      ],
+      "editable": true
+    },
+    "05-unicode.csv": {
+      "bytes": 277,
+      "sha256": "4ceab8f9091eada7cbc854818c83783999c5d43401aaaa04b56cf4185ebc6f84",
+      "purpose": "Unicode display and save/reopen; text must retain its characters.",
+      "delimiter": ",",
+      "encoding": "UTF-8",
+      "row_count_including_header": 7,
+      "maximum_columns": 3,
+      "expected_rows": [
+        [
+          "Script",
+          "Text",
+          "Notes"
+        ],
+        [
+          "Latin",
+          "Café, naïve, Straße",
+          "Accents"
+        ],
+        [
+          "Greek",
+          "Ελληνικά",
+          "Greek"
+        ],
+        [
+          "Japanese",
+          "日本語 東京",
+          "Japanese"
+        ],
+        [
+          "Arabic",
+          "العربية",
+          "Right-to-left text"
+        ],
+        [
+          "Emoji",
+          "🎵 🎧 🌍",
+          "Supplementary characters"
+        ],
+        [
+          "Combining",
+          "é",
+          "Combining accent, not a replacement character"
+        ]
+      ],
+      "editable": true
+    },
+    "06-no-final-newline.csv": {
+      "bytes": 29,
+      "sha256": "e97f467cf431a1917b58d65987fc9d69248e09f7c346bd635b65b2252e8dc1ef",
+      "purpose": "Last row has no newline; saving uses the existing LF-terminated serialization.",
+      "delimiter": ",",
+      "encoding": "UTF-8",
+      "row_count_including_header": 2,
+      "maximum_columns": 2,
+      "expected_rows": [
+        [
+          "ID",
+          "Notes"
+        ],
+        [
+          "1",
+          "Final row survives"
+        ]
+      ],
+      "editable": true
+    },
+    "07-parser-compatibility.csv": {
+      "bytes": 81,
+      "sha256": "0b3be3354cc671ba9f99113bed53f0eba90c0cc008a11153dd06d24f7a3cacf2",
+      "purpose": "Existing behavior: trim fields, skip empty newline-terminated rows, accept ragged rows and preserve quoted CRLF.",
+      "delimiter": ",",
+      "encoding": "UTF-8",
+      "row_count_including_header": 4,
+      "maximum_columns": 3,
+      "editable": true,
+      "expected_rows": [
+        [
+          "ID",
+          "Notes",
+          "Extra"
+        ],
+        [
+          "1",
+          "padded value",
+          "keep"
+        ],
+        [
+          "2",
+          "first\r\nsecond",
+          ""
+        ],
+        [
+          "3",
+          "short"
+        ]
+      ]
+    },
+    "08-unclosed-quote.csv": {
+      "bytes": 41,
+      "sha256": "1b0cddd0f4182a0c3c36e9b056eab98b1dfa60ef75694d79e3964b4389f1af1c",
+      "purpose": "Deliberately malformed input. Existing permissive parser accepts the quoted remainder as one multiline cell; it should not crash.",
+      "delimiter": ",",
+      "encoding": "UTF-8",
+      "row_count_including_header": 2,
+      "maximum_columns": 2,
+      "editable": true,
+      "expected_rows": [
+        [
+          "ID",
+          "Notes"
+        ],
+        [
+          "1",
+          "Unclosed quote\ncontinues here"
+        ]
+      ]
+    },
+    "09-empty.csv": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "purpose": "Empty spreadsheet: no records; no crash.",
+      "delimiter": ",",
+      "encoding": "UTF-8",
+      "row_count_including_header": 0,
+      "maximum_columns": 0,
+      "expected_rows": [],
+      "editable": true
+    },
+    "10-header-only.csv": {
+      "bytes": 14,
+      "sha256": "d5b75a5be872245fbcadcb72e5673951d6ee0efd18e6331645decf8a04f857e7",
+      "purpose": "Header only: one row, three columns.",
+      "delimiter": ",",
+      "encoding": "UTF-8",
+      "row_count_including_header": 1,
+      "maximum_columns": 3,
+      "expected_rows": [
+        [
+          "ID",
+          "Name",
+          "Notes"
+        ]
+      ],
+      "editable": true
+    },
+    "11-cr-line-endings.csv": {
+      "bytes": 42,
+      "sha256": "82caa20c9d9aed0f41ed9bf131910cea8f35e8d0733c609e1a6c4838de8f5675",
+      "purpose": "Classic CR-only line endings; saving still uses the existing LF convention.",
+      "delimiter": ",",
+      "encoding": "UTF-8",
+      "row_count_including_header": 3,
+      "maximum_columns": 2,
+      "expected_rows": [
+        [
+          "ID",
+          "Notes"
+        ],
+        [
+          "1",
+          "CR-only line endings"
+        ],
+        [
+          "2",
+          "Edit me"
+        ]
+      ],
+      "editable": true
+    },
+    "sample.txt": {
+      "bytes": 129,
+      "sha256": "4b7b526b5be8a7b518e00d9dd8794ae03dd9b44474c251922befe37ed4f19ccd",
+      "purpose": "Plain text editing/save/reopen; Unicode and the end marker remain visible.",
+      "editable": true,
+      "encoding": "UTF-8"
+    },
+    "sample.md": {
+      "bytes": 193,
+      "sha256": "35881d5fb9e147f31965c391f4da0e88e7f91996317f4ab4964e3d8217baad8d",
+      "purpose": "Markdown rendering and source editing; check heading, emphasis, list and fenced code.",
+      "editable": true,
+      "encoding": "UTF-8"
+    },
+    "sample.html": {
+      "bytes": 491,
+      "sha256": "b7b2b79ff05eccf995b28061d0efcfe89a1d1d2bb48d7d6ae0fb4f08b9c5521d",
+      "purpose": "Self-contained HTML rendering/source editing; no network resources required.",
+      "editable": true,
+      "encoding": "UTF-8"
+    },
+    "sample.json": {
+      "bytes": 219,
+      "sha256": "9698f688b88151e548800f7bab2941a83f5f4868b3e53f5628ce0cd1b9b57c54",
+      "purpose": "JSON through the text viewer; edit/save/reopen without changing Unicode or escaped strings.",
+      "editable": true,
+      "encoding": "UTF-8"
+    },
+    "90-large-read-only.csv": {
+      "bytes": 9437384,
+      "sha256": "8a35915deea2a20896de2179206300f41681bfc471429e259a29d4afbbf8cb4d",
+      "purpose": "Over 8 MiB: read-only chunk browsing must stay responsive. Next/Previous load discrete record windows, and saving must not overwrite the source.",
+      "delimiter": ",",
+      "encoding": "UTF-8",
+      "row_count_including_header": 31670,
+      "maximum_columns": 4,
+      "preview_limit_bytes": 8388608,
+      "editable": false
+    },
+    "91-large-text-read-only.txt": {
+      "bytes": 4718681,
+      "sha256": "c2f3827e2cd1a4b57109c1d7fda914a93aaaf1bf25fc3fc0027ffa6797047164",
+      "purpose": "Over 4 MiB: read-only chunk browsing must stay responsive. Use Next/Previous or Go to a byte offset near the end to reach the end marker; saving must not overwrite the source.",
+      "encoding": "UTF-8",
+      "preview_limit_bytes": 4194304,
+      "editable": false
+    },
+    "document-viewer-checks.zip": {
+      "bytes": 3831,
+      "sha256": "df781a06db666378edba89e1e6f7508aaf9da1aa699989068a4bc9ad967369a0",
+      "purpose": "Browse documents/ inside the ZIP and repeat CSV/TSV/text opening and guarded-save tests on a copy. Contains the small samples; large previews stay outside the archive.",
+      "members": [
+        "documents/01-edit-roundtrip.csv",
+        "documents/02-tabs.tsv",
+        "documents/03-semicolon.csv",
+        "documents/04-pipe.csv",
+        "documents/05-unicode.csv",
+        "documents/06-no-final-newline.csv",
+        "documents/07-parser-compatibility.csv",
+        "documents/08-unclosed-quote.csv",
+        "documents/09-empty.csv",
+        "documents/10-header-only.csv",
+        "documents/11-cr-line-endings.csv",
+        "documents/sample.txt",
+        "documents/sample.md",
+        "documents/sample.html",
+        "documents/sample.json"
+      ]
+    }
+  }
+}

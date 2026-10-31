@@ -16,6 +16,11 @@ import android.widget.*
 import io.github.gretchycat.infiniscribe.DelimitedText
 import io.github.gretchycat.infiniscribe.TableDocument
 import io.github.gretchycat.infiniscribe.TableDocuments
+import io.github.gretchycat.infiniscribe.TableChunk
+import io.github.gretchycat.infiniscribe.TableChunkReader
+import io.github.gretchycat.infinistream.CancellationToken
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 /**
  * Interactive CSV / TSV spreadsheet viewer and editor.
@@ -27,12 +32,30 @@ class CsvViewerActivity : ViewerActivity() {
 
     private var tableMetadata: io.github.gretchycat.infinistream.StreamMetadata? = null
     private var documentFullyLoaded = false
+    private val documentWorker = Executors.newSingleThreadExecutor()
+    private var documentTask: Future<*>? = null
+    @Volatile private var documentGeneration = 0
+    @Volatile private var chunkReader: TableChunkReader? = null
+    private var currentChunk: TableChunk? = null
+    private var headerRow: List<String>? = null
+    private val chunkOffsets = mutableListOf(0L to 0L)
+    private var chunkIndex = 0
+    private var renderOffset = 0
+    private var columnOffset = 0
+    private lateinit var columnsBar: LinearLayout
+    private lateinit var previousColumns: Button
+    private lateinit var nextColumns: Button
+    private lateinit var columnsLabel: TextView
+    private lateinit var pageBar: LinearLayout
+    private lateinit var previousPage: Button
+    private lateinit var nextPage: Button
+    private lateinit var pageLabel: TextView
 
 
     private var uri: Uri? = null
     private var displayName: String = "spreadsheet.csv"
     private var originalData: MutableList<MutableList<String>> = mutableListOf()
-    private var filteredData: List<Pair<Int, List<String>>> = emptyList() // Pair<OriginalRowIndex, RowData>
+    private var filteredData: List<Pair<Long, List<String>>> = emptyList() // Pair<OriginalRowIndex, RowData>
     private var delimiter: Char = ','
     private var isDirty = false
 
@@ -178,6 +201,23 @@ class CsvViewerActivity : ViewerActivity() {
 
         mainColumn.addView(filterRow)
 
+        pageBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
+        previousPage = Button(this).apply { text = "Previous"; setOnClickListener { movePage(-1) } }
+        nextPage = Button(this).apply { text = "Next"; setOnClickListener { movePage(1) } }
+        pageLabel = TextView(this).apply { textSize = 12f; setTextColor(if (isDark) Color.WHITE else Color.BLACK) }
+        pageBar.addView(previousPage)
+        pageBar.addView(pageLabel, LinearLayout.LayoutParams(0, -2, 1f))
+        pageBar.addView(nextPage)
+        mainColumn.addView(pageBar)
+        columnsBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
+        previousColumns = Button(this).apply { text = "◀ Columns"; setOnClickListener { columnOffset = (columnOffset - 16).coerceAtLeast(0); renderTable() } }
+        nextColumns = Button(this).apply { text = "Columns ▶"; setOnClickListener { columnOffset += 16; renderTable() } }
+        columnsLabel = TextView(this).apply { textSize = 12f; setTextColor(if (isDark) Color.WHITE else Color.BLACK) }
+        columnsBar.addView(previousColumns)
+        columnsBar.addView(columnsLabel, LinearLayout.LayoutParams(0, -2, 1f))
+        columnsBar.addView(nextColumns)
+        mainColumn.addView(columnsBar)
+
         // Content Area: HorizontalScrollView wrapping ScrollView wrapping TableLayout
         val contentFrame = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
@@ -213,54 +253,139 @@ class CsvViewerActivity : ViewerActivity() {
 
     private fun loadSpreadsheet() {
         documentFullyLoaded = false
-        val targetUri = uri ?: run {
-            Toast.makeText(this, "No spreadsheet URI provided", Toast.LENGTH_SHORT).show()
-            finish()
-            return
-        }
-
-        progressBar.visibility = View.VISIBLE
-
-        Thread {
+        val targetUri = uri ?: run { Toast.makeText(this, "No spreadsheet URI provided", Toast.LENGTH_SHORT).show(); finish(); return }
+        val request = ++documentGeneration
+        documentTask?.cancel(true); progressBar.visibility = View.VISIBLE
+        chunkOffsets.clear(); chunkOffsets += (0L to 0L); chunkIndex = 0; renderOffset = 0
+        val query = searchInput.text.toString().trim()
+        documentTask = documentWorker.submit {
             try {
-                val document = MediaSourceAdapter.readTable(this, targetUri, displayName, maxBytes = 8 * 1024 * 1024)
-                delimiter = document.table.delimiter
-                val rows = document.table.rows
+                chunkReader?.close()
+                val reader = TableChunkReader(MediaSourceAdapter.openDocumentSource(this, targetUri), displayName,
+                    CancellationToken { isDestroyed || isFinishing })
+                chunkReader = reader
+                val chunk = reader.findRows(filter = query)
+                runOnUiThread {
+                    if (request != documentGeneration || isDestroyed) return@runOnUiThread
+                    headerRow = reader.firstRow
+                    showChunk(chunk)
+                }
+            } catch (error: Exception) { showReadError(request, error) }
+        }
+    }
 
-                runOnUiThread {
-                    tableMetadata = document.table.metadata
-                    documentFullyLoaded = !document.hasMore
-                    loadedRevision = document.revision
-                    if (!documentFullyLoaded) Toast.makeText(this, "Large spreadsheet: partial preview is read-only", Toast.LENGTH_LONG).show()
-                    originalData = rows.map { it.toMutableList() }.toMutableList()
-                    applyFilter(searchInput.text.toString())
-                    progressBar.visibility = View.GONE
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    progressBar.visibility = View.GONE
-                    Toast.makeText(this, "Failed to load CSV: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            }
-        }.start()
+    private fun showReadError(request: Int, error: Exception) = runOnUiThread {
+        if (request != documentGeneration || isDestroyed) return@runOnUiThread
+        progressBar.visibility = View.GONE
+        Toast.makeText(this, "Failed to load CSV: ${error.message}", Toast.LENGTH_LONG).show()
+    }
+
+    private fun showChunk(chunk: TableChunk) {
+        currentChunk = chunk; delimiter = chunk.table.delimiter; tableMetadata = chunk.table.metadata
+        documentFullyLoaded = chunk.table.metadata.attributes["complete"] == "true"
+        loadedRevision = chunk.originalBytes?.let { com.infinifolder.storage.ContentRevision.of(it) }
+        originalData = chunk.table.rows.map { it.toMutableList() }.toMutableList()
+        filteredData = chunk.rowIndices.zip(chunk.table.rows)
+        if (chunk.rowIndices.firstOrNull() != 0L) headerRow?.let { filteredData = listOf(0L to it) + filteredData }
+        statsTextView.text = "${chunk.table.rows.size} rows${if (!documentFullyLoaded) " in chunk" else ""}"
+        renderOffset = 0; renderTable(); progressBar.visibility = View.GONE
+    }
+
+    private fun movePage(direction: Int) {
+        if (documentFullyLoaded) {
+            renderOffset = (renderOffset + direction * 50).coerceIn(0, (filteredData.size - 1).coerceAtLeast(0))
+            renderTable(); return
+        }
+        val chunk = currentChunk ?: return
+        val bookmark = if (direction < 0) {
+            if (chunkIndex == 0) return
+            chunkOffsets[--chunkIndex]
+        } else {
+            if (!chunk.hasNext) return
+            while (chunkOffsets.size > chunkIndex + 1) chunkOffsets.removeAt(chunkOffsets.lastIndex)
+            (chunk.nextOffset to chunk.nextRowIndex).also { chunkOffsets += it; chunkIndex++ }
+        }
+        val reader = chunkReader ?: return
+        val request = ++documentGeneration
+        val query = searchInput.text.toString().trim()
+        documentTask?.cancel(true); progressBar.visibility = View.VISIBLE
+        previousPage.isEnabled = false; nextPage.isEnabled = false
+        documentTask = documentWorker.submit {
+            try {
+                val next = reader.findRows(bookmark.first, bookmark.second, filter = query)
+                runOnUiThread { if (request == documentGeneration && !isDestroyed) showChunk(next) }
+            } catch (error: Exception) { showReadError(request, error) }
+        }
     }
 
     private fun applyFilter(query: String) {
+        if (!documentFullyLoaded) { loadSpreadsheet(); return }
         val q = query.trim().lowercase()
-        filteredData = if (q.isEmpty()) {
-            originalData.mapIndexed { idx, row -> idx to row }
-        } else {
-            originalData.mapIndexedNotNull { idx, row ->
-                if (idx == 0) idx to row // Keep header
-                else if (row.any { it.lowercase().contains(q) }) idx to row else null
-            }
+        filteredData = originalData.mapIndexedNotNull { idx, row ->
+            if (idx == 0 || q.isEmpty() || row.any { it.contains(q, ignoreCase = true) }) idx.toLong() to row else null
         }
-        statsTextView.text = "${filteredData.size} rows"
-        renderTable()
+        statsTextView.text = "${filteredData.size} rows"; renderOffset = 0; renderTable()
+    }
+
+    private fun loadForEditing(row: Long, column: Int) {
+        if (chunkReader?.sourceMetadata?.length?.let { it > 8L * 1024 * 1024 } == true) {
+            Toast.makeText(this, "Large spreadsheets are read-only; use the chunk controls to browse", Toast.LENGTH_LONG).show(); return
+        }
+        val targetUri = uri ?: return
+        val request = ++documentGeneration
+        documentTask?.cancel(true); progressBar.visibility = View.VISIBLE
+        documentTask = documentWorker.submit {
+            try {
+                val loaded = MediaSourceAdapter.readTable(this, targetUri, displayName, 8 * 1024 * 1024)
+                runOnUiThread {
+                    if (request != documentGeneration || isDestroyed) return@runOnUiThread
+                    progressBar.visibility = View.GONE
+                    if (loaded.hasMore) Toast.makeText(this, "Only fully loaded documents can be edited or saved", Toast.LENGTH_LONG).show()
+                    else {
+                        documentFullyLoaded = true; loadedRevision = loaded.revision; tableMetadata = loaded.table.metadata
+                        originalData = loaded.table.rows.map { it.toMutableList() }.toMutableList()
+                        applyFilter(searchInput.text.toString())
+                        renderOffset = ((filteredData.indexOfFirst { it.first == row } - 1).coerceAtLeast(0) / 50) * 50
+                        renderTable()
+                        if (row <= Int.MAX_VALUE && row.toInt() in originalData.indices) {
+                            val value = originalData[row.toInt()].getOrNull(column).orEmpty()
+                            promptEditCell(row.toInt(), column, value)
+                        }
+                    }
+                }
+            } catch (error: Exception) { showReadError(request, error) }
+        }
+    }
+
+    override fun onDestroy() {
+        documentGeneration++; documentTask?.cancel(true)
+        documentWorker.execute { runCatching { chunkReader?.close() }; chunkReader = null }
+        documentWorker.shutdown()
+        super.onDestroy()
     }
 
     private fun renderTable() {
         tableContainer.removeAllViews()
+        val columnCount = filteredData.maxOfOrNull { it.second.size } ?: 0
+        columnOffset = columnOffset.coerceAtMost(((columnCount - 1).coerceAtLeast(0) / 16) * 16)
+        val columnEnd = (columnOffset + 16).coerceAtMost(columnCount)
+        columnsBar.visibility = if (columnCount > 16) View.VISIBLE else View.GONE
+        previousColumns.isEnabled = columnOffset > 0; nextColumns.isEnabled = columnEnd < columnCount
+        columnsLabel.text = "${columnOffset + 1}–$columnEnd / $columnCount"
+
+        // Only one page gets Android views; record bytes are loaded separately by Scribe.
+        val hasHeader = filteredData.firstOrNull()?.first == 0L
+        val dataStart = if (hasHeader) 1 else 0
+        val start = if (documentFullyLoaded) (dataStart + renderOffset).coerceAtMost(filteredData.size) else dataStart
+        val end = (start + 50).coerceAtMost(filteredData.size)
+        val renderList = (if (hasHeader) listOf(filteredData.first()) else emptyList()) + filteredData.subList(start, end)
+        val chunk = currentChunk
+        pageBar.visibility = if (!documentFullyLoaded || filteredData.size > 51) View.VISIBLE else View.GONE
+        previousPage.isEnabled = if (documentFullyLoaded) renderOffset > 0 else chunkIndex > 0 && chunkReader?.canRead(chunkOffsets[chunkIndex - 1].first) == true
+        nextPage.isEnabled = if (documentFullyLoaded) end < filteredData.size else chunk?.hasNext == true
+        pageLabel.text = if (documentFullyLoaded) "Rows ${start + 1}–$end / ${filteredData.size}"
+            else "Bytes ${chunk?.start ?: 0}–${chunk?.nextOffset ?: 0} / ${chunkReader?.sourceMetadata?.length ?: "?"}"
+
         if (filteredData.isEmpty()) {
             val emptyNotice = TextView(this).apply {
                 text = "No matching records"
@@ -271,14 +396,9 @@ class CsvViewerActivity : ViewerActivity() {
             return
         }
 
-        val columnCount = filteredData.maxOfOrNull { it.second.size } ?: 0
-
-        // Render each row (capped at 500 rows for smooth UI performance)
-        val maxRenderRows = 500
-        val renderList = filteredData.take(maxRenderRows)
-
+        tableContainer.post { (tableContainer.parent as? ScrollView)?.scrollTo(0, 0) }
         renderList.forEachIndexed { displayIndex, (originalRowIndex, rowData) ->
-            val isHeader = displayIndex == 0 && originalRowIndex == 0
+            val isHeader = displayIndex == 0 && originalRowIndex == 0L
             val rowView = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setBackgroundColor(
@@ -302,10 +422,10 @@ class CsvViewerActivity : ViewerActivity() {
             rowView.addView(rowNumView)
 
             // Columns
-            for (col in 0 until columnCount) {
+            for (col in columnOffset until columnEnd) {
                 val cellText = rowData.getOrNull(col).orEmpty()
                 val cellView = TextView(this).apply {
-                    text = cellText
+                    text = cellText.take(512)
                     textSize = if (isHeader) 13f else 12f
                     typeface = if (isHeader) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
                     setTextColor(
@@ -320,7 +440,10 @@ class CsvViewerActivity : ViewerActivity() {
                         setStroke(1, if (isDark) 0xFF333333.toInt() else 0xFFD0D0D0.toInt())
                     }
                     if (!isHeader) {
-                        setOnClickListener { promptEditCell(originalRowIndex, col, cellText) }
+                        setOnClickListener {
+                            if (documentFullyLoaded) promptEditCell(originalRowIndex.toInt(), col, cellText)
+                            else loadForEditing(originalRowIndex, col)
+                        }
                     }
                 }
                 rowView.addView(cellView)
@@ -329,14 +452,6 @@ class CsvViewerActivity : ViewerActivity() {
             tableContainer.addView(rowView)
         }
 
-        if (filteredData.size > maxRenderRows) {
-            val truncatedNotice = TextView(this).apply {
-                text = "… Showing first $maxRenderRows of ${filteredData.size} rows"
-                setTextColor(0xFF888888.toInt())
-                setPadding(dp(16), dp(12), dp(16), dp(12))
-            }
-            tableContainer.addView(truncatedNotice)
-        }
     }
 
     private fun promptEditCell(rowIndex: Int, colIndex: Int, currentValue: String) {

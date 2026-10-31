@@ -1,0 +1,4 @@
+ID;Name;Notes;Amount
+1;Alice;Edit me;12,50
+2;Bob;"Semicolon; stays inside this cell";0,25
+3;Chloé;"Quoted ""word""";3,14

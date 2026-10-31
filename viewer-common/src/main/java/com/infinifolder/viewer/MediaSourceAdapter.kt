@@ -62,6 +62,35 @@ object MediaSourceAdapter {
         throw IOException("No provider owns $uri")
     }
 
+    /** Prefer demonstrated positional handles. Archive seek adapters may extract whole entries, so use their stream path. */
+    fun openDocumentSource(context: Context, uri: Uri): ByteSource {
+        val provider = com.infinifolder.storage.StorageRuntime.get(context).provider
+        val ref = provider?.refForUri(uri)
+        if (provider != null && ref != null) return openDocumentSource(provider, ref, uri.toString(),
+            allowPositional = !com.infinifolder.archive.ArchiveUri.isArchiveUri(uri))
+        return openSource(context, uri)
+    }
+
+    fun openDocumentSource(provider: com.infinifolder.storage.StorageProvider,
+        ref: com.infinifolder.model.ResourceRef, identity: String, allowPositional: Boolean = true): ByteSource {
+        if (allowPositional) {
+            when (val result = com.infinifolder.storage.validateSeekableResult(provider.openSeekable(ref, false), false)) {
+                is ProviderResult.Success -> {
+                    try {
+                        return com.infinifolder.storage.BlockDeviceSource(result.value,
+                            StreamMetadata(provenance = Provenance(source = identity)))
+                    } catch (error: Throwable) {
+                        try { result.value.close() } catch (close: Throwable) { error.addSuppressed(close) }
+                        throw error
+                    }
+                }
+                is ProviderResult.Failure -> throw IOException(result.message, result.cause)
+                is ProviderResult.Unsupported -> Unit
+            }
+        }
+        return com.infinifolder.storage.ProviderStreams.openRead(provider, ref, sourceIdentity = identity)
+    }
+
     fun readAllBytes(context: Context, uri: Uri): ByteArray {
         return openStream(context, uri).use { it.readBytes() }
     }

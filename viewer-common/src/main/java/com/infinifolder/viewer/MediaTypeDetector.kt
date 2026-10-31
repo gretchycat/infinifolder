@@ -67,13 +67,18 @@ object MediaTypeDetector {
         when {
             lowerMime == "application/pdf" -> return MediaType.PDF
             lowerMime == "application/epub+zip" -> return MediaType.EPUB
-            lowerMime in setOf("text/csv", "text/tab-separated-values") -> return MediaType.SPREADSHEET
+            lowerMime in setOf("text/csv", "text/tab-separated-values", "text/comma-separated-values", "text/x-comma-separated-values", "text/x-csv", "application/csv", "application/x-csv") -> return MediaType.SPREADSHEET
             lowerMime == "text/markdown" -> return MediaType.MARKDOWN
             lowerMime in setOf("text/html", "application/xhtml+xml") -> return MediaType.HTML
             lowerMime.startsWith("image/") -> return MediaType.IMAGE
             lowerMime.startsWith("audio/") -> return MediaType.AUDIO
             lowerMime.startsWith("video/") -> return MediaType.VIDEO
-            lowerMime.startsWith("text/") || lowerMime in TEXT_MIME_TYPES -> return MediaType.TEXT
+            lowerMime.startsWith("text/") || lowerMime in TEXT_MIME_TYPES -> return when {
+                ext in setOf("csv", "tsv") -> MediaType.SPREADSHEET
+                ext in MARKDOWN_EXTENSIONS -> MediaType.MARKDOWN
+                ext in HTML_EXTENSIONS -> MediaType.HTML
+                else -> MediaType.TEXT
+            }
         }
 
         // 1. Packaged formats (e.g. apk) should not be treated as generic archives/media

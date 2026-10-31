@@ -1,0 +1,6 @@
+InfiniStream document smoke test
+
+Edit me
+Unicode: Café — 日本語 — 🎵
+Quotes: "hello"; commas, tabs	here.
+End of file.

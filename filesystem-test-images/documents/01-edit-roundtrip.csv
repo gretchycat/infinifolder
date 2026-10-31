@@ -1,0 +1,9 @@
+ID,Name,City,Notes,Amount,Status
+1,Alice,Paris,Edit me,12.50,ready
+2,Bob,New York,"Comma, stays inside this cell",0,ready
+3,Chloé,Québec,"He said ""hello""",-7.25,ready
+4,美咲 🎵,東京,Café — Ελληνικά — العربية,00123,ready
+5,Multiline,London,"Line one
+Line two",3.14,ready
+6,Empty fields,,,,
+7,Literal text,Test,=1+1,1e3,not evaluated

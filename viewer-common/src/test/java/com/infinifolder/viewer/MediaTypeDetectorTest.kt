@@ -121,4 +121,14 @@ class MediaTypeDetectorTest {
         assertFalse(MediaTypeDetector.isEditable(MediaType.VIDEO))
         assertFalse(MediaTypeDetector.isEditable(MediaType.ARCHIVE_OR_CONTAINER))
     }
+
+    @Test fun looseCsvMimeAliasesReachTheSameGridAsArchiveEntries() {
+        for (mime in listOf("text/comma-separated-values", "text/x-comma-separated-values", "text/x-csv", "application/csv", "application/x-csv", "text/plain", "application/vnd.ms-excel")) {
+            assertEquals(mime, MediaType.SPREADSHEET, MediaTypeDetector.detect("01-edit-roundtrip.csv", mime))
+        }
+        assertEquals(MediaType.SPREADSHEET, MediaTypeDetector.detect("02-tabs.tsv", "text/plain"))
+        assertEquals(MediaType.IMAGE, MediaTypeDetector.detect("misnamed.csv", "image/png"))
+        assertEquals(MediaType.HTML, MediaTypeDetector.detect("misnamed.csv", "text/html"))
+        assertEquals(MediaType.TEXT, MediaTypeDetector.detect("notes.txt", "text/plain"))
+    }
 }

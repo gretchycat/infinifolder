@@ -49,6 +49,7 @@ The original `fat*.img`, `ext*.img`, `hfs.img`, `ntfs.img`, and archive files ar
 | `disks/` | Complete MBR, GPT and Apple Partition Map disks and gzip wrappers |
 | `images/` | 80 image format fixtures rendered from the InfiniFolder app icon (`generate-media-fixtures.py`) |
 | `audio/` | 75 audio/sound format fixtures synthesized as a C-major piano chord (`C4`–`E4`–`G4`–`C5`, `generate-media-fixtures.py`) |
+| `documents/` | CSV/TSV delimiter/quoting/Unicode/edit fixtures, text/Markdown/HTML/JSON, large read-only previews and an archive-access ZIP (`generate-document-fixtures.py`) |
 
 The OS groups are organizational labels; these formats can be used by other operating systems. Existing fixture names and bytes were retained during the move. `layout-migration.json` maps old paths to current paths. All generators use the shared layout resolver; `manifest.json` now records relative paths.
 
@@ -210,3 +211,24 @@ python3 filesystem-test-images/generate-media-fixtures.py
 ```
 
 Explicit partial recovery now has `fat16-magic-partial.img` and `fat16-partial-tail.img` fixtures in the recovery safety folder. They exercise retained uncertain bytes, NUL-filled missing/reused ranges and companion byte-range reports with shared magic/MIME hints. The new partial-export handset checks remain pending; see [behavior and evidence](../docs/partial-fat-recovery.md).
+
+## Document viewer and spreadsheet checks
+
+Start in [documents/](documents/README.md) with `01-edit-roundtrip.csv`, then
+`02-tabs.tsv`, `03-semicolon.csv` and `04-pipe.csv`. Edit **Edit me** to
+**Edited on Android**, save and reopen. Exact original small-table cells,
+byte sizes and hashes are in [documents/expected.json](documents/expected.json).
+The folder also contains Unicode, newline, empty/header-only and existing
+permissive-parser cases; plain text, Markdown, HTML and JSON; a CSV over 9 MiB
+and text over 4 MiB for random-access chunk navigation and read-only checks; and a ZIP containing
+the small samples for opening/editing through an archive. Copy that ZIP or a
+small fixture for repeatable edit tests, and upload copies to your normal remote
+provider when checking network access. Existing image/audio samples remain in
+their own folders.
+
+```sh
+python3 filesystem-test-images/generate-document-fixtures.py
+```
+
+All document fixture contents are synthetic. The generator creates missing files
+and preserves existing samples, including edits made during handset testing.

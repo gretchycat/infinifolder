@@ -25,3 +25,25 @@ Shared UI/resources, image codecs, network backends, and themes currently remain
 ## Stream architecture checkpoint
 
 The full app and standalone host compose pinned Stream/Store/Vault/Sound/Canvas/Scribe/Video source repositories. viewer-common retains Android contracts, source leases and icon/theme policy; image codecs are provided by Canvas and text/Markdown processing by Scribe. The image viewer requests a BitmapFrame with actual output metadata; text/HTML/CSV/Markdown loads keep complete original bytes for revision checks; CSV parsing and save serialization execute Scribe table processors while preserving the 8 MiB preview and guarded-save policy; video binds its staged source through the Video library while retaining current listeners and surfaces. Dependencies are still exported for compatibility: this checkpoint makes no APK-size or minimal-host claim.
+
+### Discrete text and CSV viewing
+
+Text and CSV viewers now request Scribe windows through common sources. Local,
+SAF and protocol handles use real positional reads when available; Unsupported
+can fall back to a bounded sequential stream, while genuine errors propagate.
+Archive entries stay sequential because the legacy archive seek adapter can
+extract a whole entry. No hidden document spool was added.
+
+Text windows default to 16 KiB/256 newlines with Next/Previous and positional
+byte jumps. CSV windows stop at complete quoted records, default to 50 rows,
+retain the header and expose byte/record bookmarks for later reads. The grid
+renders at most 50 data rows plus its header and 16 columns, with navigation for
+wider tables. Filters and forward search can scan windows on the worker; stale
+loads are ignored and handles close off the UI thread. Loose Android CSV MIME
+aliases now select the grid, matching archive CSV behavior.
+
+Only a complete source obtains an edit/save revision. Explicit editing keeps
+the existing complete-document 4 MiB text/8 MiB CSV loading and publication path;
+paged editing remains follow-up. The large delivered fixtures remain read-only
+and can now be browsed beyond the former prefix instead of laying out that whole
+prefix in one Android widget. See the updated [fixture guide](../filesystem-test-images/documents/README.md).
