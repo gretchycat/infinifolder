@@ -34,13 +34,18 @@ can fall back to a bounded sequential stream, while genuine errors propagate.
 Archive entries stay sequential because the legacy archive seek adapter can
 extract a whole entry. No hidden document spool was added.
 
-Text windows default to 16 KiB/256 newlines with Next/Previous and positional
-byte jumps. CSV windows stop at complete quoted records, default to 50 rows,
-retain the header and expose byte/record bookmarks for later reads. The grid
-renders at most 50 data rows plus its header and 16 columns, with navigation for
-wider tables. Filters and forward search can scan windows on the worker; stale
-loads are ignored and handles close off the UI thread. Loose Android CSV MIME
-aliases now select the grid, matching archive CSV behavior.
+Text and CSV load previous/next windows automatically near the vertical scroll
+edges. Text retains at most three adjacent 16 KiB/256-newline windows, preserves
+a character/pixel anchor and resumes a fling after reflow. CSV retains at most
+five 50-record windows, uses recycled native rows with stable source row IDs and
+a fixed header, and restores the visible row/pixel offset when inserting or
+trimming off-screen windows. The grid shows 16 columns at a time, with controls
+for wider tables. Backward reads start at known character/record boundaries;
+no unbounded page history or prefix scan is needed. Text keeps Go to byte offset
+for positional sources. Forward-only inputs can revisit only cached ranges.
+Filters and forward search run on the worker; stale loads are ignored and handles
+close off the UI thread. Loose Android CSV MIME aliases select the grid, matching
+archive CSV behavior. UI smoothness still requires handset acceptance.
 
 Only a complete source obtains an edit/save revision. Explicit editing keeps
 the existing complete-document 4 MiB text/8 MiB CSV loading and publication path;

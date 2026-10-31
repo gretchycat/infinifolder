@@ -119,13 +119,13 @@ def main():
         large.write(f'{rows:06d},Large preview row,BEGIN-{rows:06d}-'.encode("ascii") + b"x" * 240 + b",read-only preview\r\n")
         rows += 1
     add("90-large-read-only.csv", large.getvalue(),
-        "Over 8 MiB: read-only chunk browsing must stay responsive. Next/Previous load discrete record windows, and saving must not overwrite the source.",
+        "Over 8 MiB: read-only chunk browsing must stay responsive. Scrolling automatically loads previous/next record windows, and saving must not overwrite the source.",
         delimiter=",", encoding="UTF-8", row_count_including_header=rows, maximum_columns=4,
         preview_limit_bytes=8 * MIB, editable=False)
     large_text = ("Large text preview: " + "x" * 100 + "\n").encode("ascii")
     large_text = large_text * ((4 * MIB + MIB // 2) // len(large_text) + 1) + b"END OF ORIGINAL FILE - beyond preview limit\n"
     add("91-large-text-read-only.txt", large_text,
-        "Over 4 MiB: read-only chunk browsing must stay responsive. Use Next/Previous or Go to a byte offset near the end to reach the end marker; saving must not overwrite the source.",
+        "Over 4 MiB: read-only chunk browsing must stay responsive. Scroll both ways or Go to a byte offset near the end to reach the end marker; saving must not overwrite the source.",
         encoding="UTF-8", preview_limit_bytes=4 * MIB, editable=False)
 
     archive = io.BytesIO()
@@ -165,8 +165,8 @@ two lines per cell; tap an editable cell to inspect its complete contents.
 | 10-header-only.csv | One header row with 3 columns |
 | 11-cr-line-endings.csv | 3 rows, 2 columns; CR-only input opens normally |
 | sample.txt / sample.md / sample.html / sample.json | Text/Markdown/HTML/JSON smoke checks; edit/save/reopen where supported |
-| 90-large-read-only.csv | Over 9 MiB; responsive chunk navigation, read-only cells, no overwrite |
-| 91-large-text-read-only.txt | Over 4 MiB; responsive chunk navigation; Go to near the end to see the end marker |
+| 90-large-read-only.csv | Over 9 MiB; automatic bidirectional scrolling, read-only cells, no overwrite |
+| 91-large-text-read-only.txt | Over 4 MiB; automatic bidirectional scrolling; Go to near the end to see the end marker |
 | document-viewer-checks.zip | Open small samples under documents/ inside the archive; repeat on a disposable archive copy |
 
 For repeatable edits, copy a small sample first. Upload copies to your normal
@@ -176,10 +176,14 @@ samples and can supply a fresh copy if you have edited a loose file.
 Saving CSV/TSV keeps the existing behavior: fields are trimmed on load, blank
 newline-terminated rows are skipped, and serialization uses UTF-8 and LF line
 endings. These samples test the current parser, not strict CSV conformance.
-The spreadsheet view renders at most 50 data rows plus its header, and 16 columns
-at a time. Next/Previous read discrete record windows; wide tables also have
-column controls. Text viewing uses bounded byte windows with Next/Previous and
-Go to byte offset. Sources that cannot seek use a bounded sequential cache.
+Scroll down and back up through 90/91, including a fast fling and a direction
+change while loading. Rows/text should remain in order without jumping to the
+top or duplicating content. Both viewers automatically load near the scroll
+edges and discard only off-screen windows. The grid recycles visible rows,
+retains up to five 50-record windows plus a fixed header, and shows 16 columns
+at a time with controls for wider tables. Text retains up to three bounded
+byte windows and keeps Go to byte offset. Sources that cannot seek use a bounded
+sequential cache, so evicted ranges cannot be revisited on those sources.
 Large files remain read-only. Explicit editing retains the existing complete-file
 limits (8 MiB for spreadsheets, 4 MiB for text) and original revision checks.
 

@@ -10,7 +10,6 @@ import android.os.Build
 import android.os.Bundle
 import android.text.Editable
 import android.text.Spannable
-import android.text.SpannableString
 import android.text.TextWatcher
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
@@ -36,17 +35,19 @@ class TextViewerActivity : ViewerActivity() {
     @Volatile private var documentGeneration = 0
     @Volatile private var chunkReader: TextChunkReader? = null
     private var currentChunk: TextChunk? = null
-    private val chunkOffsets = mutableListOf(0L)
-    private var chunkIndex = 0
+    private val textWindow = ScrollWindow<TextChunk>(3, { it.start }, { it.document.text.length })
+    private var firstWindowLine: Long? = 1L
+    private var edgeLoading = false
+    private var adjustingWindow = false
+    private var blockedEdge: Pair<Int, Long>? = null
+    private data class TextAnchor(val character: Int, val withinLine: Int, val horizontal: Int)
     private lateinit var chunkBar: LinearLayout
-    private lateinit var previousChunk: Button
-    private lateinit var nextChunk: Button
     private lateinit var jumpChunk: Button
 
 
     private lateinit var contentEditText: EditText
     private lateinit var lineNumbersView: TextView
-    private lateinit var scrollView: ScrollView
+    private lateinit var scrollView: AnchoredScrollView
     private lateinit var topBar: LinearLayout
     private lateinit var titleView: TextView
     private lateinit var subtitleView: TextView
@@ -76,6 +77,7 @@ class TextViewerActivity : ViewerActivity() {
     // Search state
     private val searchMatches = mutableListOf<Int>()
     private var currentMatchIndex = -1
+    private var pendingSearchPosition: Int? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -344,11 +346,7 @@ class TextViewerActivity : ViewerActivity() {
         root.addView(editActionBar)
 
         chunkBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
-        previousChunk = Button(this).apply { text = "Previous"; setOnClickListener { moveChunk(-1) } }
-        nextChunk = Button(this).apply { text = "Next"; setOnClickListener { moveChunk(1) } }
         jumpChunk = Button(this).apply { text = "Go to…"; setOnClickListener { promptChunkOffset() } }
-        chunkBar.addView(previousChunk, LinearLayout.LayoutParams(0, -2, 1f))
-        chunkBar.addView(nextChunk, LinearLayout.LayoutParams(0, -2, 1f))
         chunkBar.addView(jumpChunk, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(chunkBar)
 
@@ -365,6 +363,7 @@ class TextViewerActivity : ViewerActivity() {
         lineNumbersView = TextView(this).apply {
             textSize = 13f
             typeface = Typeface.MONOSPACE
+            minWidth = dp(80)
             setTextColor(0xFF5A6658.toInt())
             setBackgroundColor(0xFF101210.toInt())
             setPadding(dp(8), dp(10), dp(8), dp(10))
@@ -399,7 +398,8 @@ class TextViewerActivity : ViewerActivity() {
             })
         }
 
-        scrollView = ScrollView(this).apply {
+        scrollView = AnchoredScrollView(this).apply {
+            setOnScrollChangeListener { _, _, _, _, _ -> maybeLoadTextEdge() }
             isFillViewport = true
             layoutParams = LinearLayout.LayoutParams(
                 0,
@@ -437,7 +437,7 @@ class TextViewerActivity : ViewerActivity() {
         val request = ++documentGeneration
         documentTask?.cancel(true)
         subtitleView.text = "Loading…"
-        chunkOffsets.clear(); chunkOffsets += 0L; chunkIndex = 0
+        textWindow.clear(); edgeLoading = false; blockedEdge = null
         documentTask = documentWorker.submit {
             try {
                 chunkReader?.close()
@@ -455,45 +455,122 @@ class TextViewerActivity : ViewerActivity() {
     }
 
     private fun showChunk(chunk: TextChunk) {
-        currentChunk = chunk
-        documentFullyLoaded = !chunk.document.hasMore
-        loadedRevision = if (documentFullyLoaded) com.infinifolder.storage.ContentRevision.of(chunk.document.bytes) else null
-        if (!documentFullyLoaded) {
+        textWindow.reset(chunk); firstWindowLine = if (chunk.start == 0L) 1L else null
+        edgeLoading = false; blockedEdge = null
+        renderTextWindow()
+    }
+
+    private fun textAnchor(): TextAnchor {
+        val layout = contentEditText.layout ?: return TextAnchor(0, 0, scrollView.scrollX)
+        val localY = scrollView.scrollY - contentEditText.top - contentEditText.totalPaddingTop
+        val line = layout.getLineForVertical(localY.coerceAtLeast(0))
+        return TextAnchor(layout.getLineStart(line), localY - layout.getLineTop(line), scrollView.scrollX)
+    }
+
+    private fun lastVisibleCharacter(): Int {
+        val layout = contentEditText.layout ?: return 0
+        val localY = scrollView.scrollY + scrollView.height - contentEditText.top - contentEditText.totalPaddingTop
+        return (layout.getLineEnd(layout.getLineForVertical(localY.coerceAtLeast(0))) - 1).coerceAtLeast(0)
+    }
+
+    private fun renderTextWindow(anchor: TextAnchor? = null, shift: ScrollWindow.Shift = ScrollWindow.Shift()) {
+        val pages = textWindow.pages
+        if (pages.isEmpty()) return
+        adjustingWindow = true; pendingSearchPosition = null
+        val chunk = TextWindowPresentation.combine(pages)
+        val text = chunk.document.text; val bytes = chunk.document.bytes; val whole = !chunk.document.hasMore
+        currentChunk = chunk; documentFullyLoaded = whole
+        loadedRevision = if (whole) com.infinifolder.storage.ContentRevision.of(bytes) else null
+        if (!whole) {
             isEditMode = false; hasUnsavedEdits = false; editActionBar.visibility = View.GONE
             contentEditText.isFocusable = false; contentEditText.isFocusableInTouchMode = false; contentEditText.isCursorVisible = false
         }
-        originalText = chunk.document.text
-        undoStack.clear(); redoStack.clear()
-        if (documentFullyLoaded) pushUndo(originalText)
-        contentEditText.setText(originalText)
-        subtitleView.text = if (documentFullyLoaded) "${currentCharset.name()} · ${originalText.count { it == '\n' } + 1} lines"
-            else "${currentCharset.name()} · bytes ${chunk.start}–${chunk.nextOffset} / ${chunkReader?.sourceMetadata?.length ?: "?"} · read-only chunk"
-        chunkBar.visibility = if (documentFullyLoaded) View.GONE else View.VISIBLE
-        previousChunk.isEnabled = chunkIndex > 0 && chunkReader?.canRead(chunkOffsets[chunkIndex - 1]) == true
-        nextChunk.isEnabled = chunk.hasNext
+        originalText = text; undoStack.clear(); redoStack.clear()
+        if (whole) pushUndo(text)
+        if (anchor != null) scrollView.beginAnchorChange() else scrollView.cancelAnchorChange()
+        contentEditText.setText(text)
+        subtitleView.text = if (whole) "${currentCharset.name()} · ${text.count { it == '\n' } + 1} lines"
+            else "${currentCharset.name()} · Read-only · ${chunkReader?.sourceMetadata?.length?.let { android.text.format.Formatter.formatShortFileSize(this, it) } ?: "stream"}"
+        chunkBar.visibility = if (whole) View.GONE else View.VISIBLE
         jumpChunk.isEnabled = chunkReader?.supportsRandomAccess == true
         updateLineNumbers()
-        scrollView.scrollTo(0, 0)
+        val request = documentGeneration
+        val observer = contentEditText.viewTreeObserver
+        observer.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (observer.isAlive) observer.removeOnPreDrawListener(this)
+                if (request != documentGeneration || isDestroyed) { scrollView.cancelAnchorChange(); return true }
+                val layout = contentEditText.layout
+                val searchPosition = pendingSearchPosition
+                pendingSearchPosition = null
+                if (searchPosition != null && layout != null) {
+                    scrollView.cancelAnchorChange()
+                    scrollView.scrollTo(0, contentEditText.totalPaddingTop + layout.getLineTop(layout.getLineForOffset(searchPosition.coerceAtMost(text.length))))
+                } else if (anchor != null && layout != null) {
+                    val position = shift.anchor(anchor.character).coerceIn(0, text.length)
+                    val line = layout.getLineForOffset(position)
+                    scrollView.restoreAnchor(anchor.horizontal, contentEditText.top + contentEditText.totalPaddingTop + layout.getLineTop(line) + anchor.withinLine)
+                } else scrollView.scrollTo(0, 0)
+                adjustingWindow = false
+                scrollView.post { maybeLoadTextEdge() }
+                return true
+            }
+        })
+    }
+
+    private fun maybeLoadTextEdge() {
+        if (isDestroyed || isFinishing || isEditMode || documentFullyLoaded || edgeLoading || adjustingWindow) return
+        val reader = chunkReader ?: return
+        val pages = textWindow.pages; if (pages.isEmpty() || scrollView.height == 0) return
+        val first = pages.first(); val last = pages.last()
+        val anchor = textAnchor()
+        val remaining = (scrollView.getChildAt(0)?.height ?: 0) - scrollView.scrollY - scrollView.height
+        val direction = when {
+            remaining < scrollView.height * 2 && last.hasNext && textWindow.canAppend(anchor.character) && blockedEdge != (1 to last.nextOffset) -> 1
+            scrollView.scrollY < scrollView.height * 2 && first.start > 0 && reader.canRead((first.start - 16 * 1024).coerceAtLeast(0)) &&
+                textWindow.canPrepend(lastVisibleCharacter()) && blockedEdge != (-1 to first.start) -> -1
+            else -> return
+        }
+        val request = documentGeneration
+        val edge = if (direction > 0) last.nextOffset else first.start
+        edgeLoading = true
+        documentTask = documentWorker.submit {
+            try {
+                val next = if (direction > 0) reader.read(edge) else reader.readPrevious(edge)
+                runOnUiThread {
+                    if (request != documentGeneration || isDestroyed) return@runOnUiThread
+                    edgeLoading = false
+                    if ((direction > 0 && next.start != edge) || (direction < 0 && next.nextOffset != edge)) {
+                        blockedEdge = direction to edge
+                        Toast.makeText(this, "The source changed; reopen the document", Toast.LENGTH_LONG).show()
+                        return@runOnUiThread
+                    }
+                    val latest = textAnchor()
+                    val shift = if (direction > 0) textWindow.append(next, latest.character) else textWindow.prepend(next, lastVisibleCharacter())
+                    if (shift != null) {
+                        if (direction < 0) firstWindowLine = firstWindowLine?.minus(next.document.text.count { it == '\n' })
+                        else if (shift.removedBefore > 0) firstWindowLine = firstWindowLine?.plus(first.document.text.count { it == '\n' })
+                        if (textWindow.pages.first().start == 0L) firstWindowLine = 1L
+                        renderTextWindow(latest, shift)
+                        if (searchInput.text.isNotEmpty()) performSearch(searchInput.text.toString(), followMatch = false)
+                    }
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    if (request != documentGeneration || isDestroyed) return@runOnUiThread
+                    edgeLoading = false; blockedEdge = direction to edge
+                    Toast.makeText(this, error.message ?: "Cannot load more text", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun showReadError(request: Int, error: Exception) = runOnUiThread {
         if (request != documentGeneration || isDestroyed) return@runOnUiThread
+        edgeLoading = false; adjustingWindow = false
+        scrollView.cancelAnchorChange()
         subtitleView.text = "Error reading text"
         Toast.makeText(this, error.message ?: "Cannot read document", Toast.LENGTH_LONG).show()
-    }
-
-    private fun moveChunk(direction: Int) {
-        val chunk = currentChunk ?: return
-        val offset = if (direction < 0) {
-            if (chunkIndex == 0) return
-            chunkOffsets[--chunkIndex]
-        } else {
-            if (!chunk.hasNext) return
-            while (chunkOffsets.size > chunkIndex + 1) chunkOffsets.removeAt(chunkOffsets.lastIndex)
-            chunkOffsets += chunk.nextOffset; chunkIndex++
-            chunk.nextOffset
-        }
-        readChunk(offset)
     }
 
     private fun readChunk(offset: Long) {
@@ -501,7 +578,7 @@ class TextViewerActivity : ViewerActivity() {
         val request = ++documentGeneration
         documentTask?.cancel(true)
         subtitleView.text = "Loading…"
-        previousChunk.isEnabled = false; nextChunk.isEnabled = false
+        edgeLoading = true; blockedEdge = null
         documentTask = documentWorker.submit {
             try {
                 val chunk = reader.read(offset)
@@ -521,7 +598,7 @@ class TextViewerActivity : ViewerActivity() {
             .setPositiveButton("Go") { _, _ ->
                 val offset = input.text.toString().toLongOrNull()
                 if (offset != null && offset >= 0 && (chunkReader?.sourceMetadata?.length?.let { offset < it } != false)) {
-                    chunkOffsets.clear(); chunkOffsets += offset; chunkIndex = 0; readChunk(offset)
+                    readChunk(offset)
                 }
             }.setNegativeButton("Cancel", null).show()
     }
@@ -529,21 +606,23 @@ class TextViewerActivity : ViewerActivity() {
     /** Existing complete-document editor is materialized only on explicit edit, within its original 4 MiB guard. */
     private fun loadForEditing() {
         if (chunkReader?.sourceMetadata?.length?.let { it > 4L * 1024 * 1024 } == true) {
-            Toast.makeText(this, "Large documents are read-only; use the chunk controls to browse", Toast.LENGTH_LONG).show(); return
+            Toast.makeText(this, "Large documents are read-only; scroll to browse", Toast.LENGTH_LONG).show(); return
         }
         val uri = currentUri ?: return
         val request = ++documentGeneration
-        documentTask?.cancel(true); subtitleView.text = "Loading document for editing…"
+        documentTask?.cancel(true); edgeLoading = true; subtitleView.text = "Loading document for editing…"
         documentTask = documentWorker.submit {
             try {
                 val loaded = MediaSourceAdapter.readDocument(this, uri, 4 * 1024 * 1024, currentCharset)
                 runOnUiThread {
                     if (request != documentGeneration || isDestroyed) return@runOnUiThread
                     if (loaded.hasMore) {
-                        currentChunk?.let(::showChunk)
+                        edgeLoading = false
+                        renderTextWindow(textAnchor())
                         Toast.makeText(this, "Only fully loaded documents can be edited or saved", Toast.LENGTH_LONG).show()
                     } else {
                         documentFullyLoaded = true; loadedRevision = loaded.revision; currentChunk = null
+                        textWindow.clear(); edgeLoading = false
                         originalText = loaded.text; undoStack.clear(); redoStack.clear(); pushUndo(originalText)
                         contentEditText.setText(originalText); chunkBar.visibility = View.GONE
                         subtitleView.text = "${currentCharset.name()} · ${originalText.count { it == '\n' } + 1} lines"
@@ -565,8 +644,9 @@ class TextViewerActivity : ViewerActivity() {
         val text = contentEditText.text?.toString() ?: ""
         val count = text.count { it == '\n' } + 1
         val sb = StringBuilder()
-        for (i in 1..count) {
-            sb.append(i).append('\n')
+        val base = if (currentChunk == null) 1L else firstWindowLine
+        for (i in 0 until count) {
+            sb.append(base?.plus(i) ?: "·").append('\n')
         }
         lineNumbersView.text = sb.toString()
     }
@@ -657,7 +737,7 @@ class TextViewerActivity : ViewerActivity() {
         }
     }
 
-    private fun performSearch(query: String) {
+    private fun performSearch(query: String, followMatch: Boolean = true) {
         searchMatches.clear()
         currentMatchIndex = -1
         if (query.isEmpty()) {
@@ -675,7 +755,7 @@ class TextViewerActivity : ViewerActivity() {
         searchStatus.text = "${searchMatches.size} found${if (currentChunk?.document?.hasMore == true) " in chunk" else ""}"
         if (searchMatches.isNotEmpty()) {
             currentMatchIndex = 0
-            highlightSearchMatch(query)
+            highlightSearchMatch(query, followMatch)
         } else {
             clearSearchHighlight()
         }
@@ -689,15 +769,14 @@ class TextViewerActivity : ViewerActivity() {
         val selected = searchMatches.getOrNull(currentMatchIndex)
         val afterByte = selected?.let { current.start + current.document.text.substring(0, it + 1).toByteArray(currentCharset).size }
         val request = ++documentGeneration
-        documentTask?.cancel(true); searchStatus.text = "Searching…"
+        documentTask?.cancel(true); edgeLoading = true; searchStatus.text = "Searching…"
         documentTask = documentWorker.submit {
             try {
                 val found = reader.findNext(query, current.nextOffset, current)
                 runOnUiThread {
                     if (request != documentGeneration || isDestroyed) return@runOnUiThread
+                    edgeLoading = false
                     if (found == null) { searchStatus.text = "No further match"; return@runOnUiThread }
-                    while (chunkOffsets.size > chunkIndex + 1) chunkOffsets.removeAt(chunkOffsets.lastIndex)
-                    chunkOffsets += found.start; chunkIndex++
                     showChunk(found); performSearch(query)
                     if (afterByte != null) {
                         val match = searchMatches.indexOfFirst { found.start + found.document.text.substring(0, it).toByteArray(currentCharset).size >= afterByte }
@@ -719,26 +798,31 @@ class TextViewerActivity : ViewerActivity() {
         highlightSearchMatch(searchInput.text.toString())
     }
 
-    private fun highlightSearchMatch(query: String) {
+    private fun highlightSearchMatch(query: String, followMatch: Boolean = true) {
         if (currentMatchIndex !in searchMatches.indices) return
         val pos = searchMatches[currentMatchIndex]
-        val spannable = SpannableString(contentEditText.text.toString())
+        val spannable = contentEditText.text
+        spannable.getSpans(0, spannable.length, BackgroundColorSpan::class.java).forEach { spannable.removeSpan(it) }
+        spannable.getSpans(0, spannable.length, ForegroundColorSpan::class.java).forEach { spannable.removeSpan(it) }
         for (m in searchMatches) {
             val bg = if (m == pos) 0xFFFF9800.toInt() else 0xFF4CAF50.toInt()
             spannable.setSpan(BackgroundColorSpan(bg), m, m + query.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
             spannable.setSpan(ForegroundColorSpan(Color.BLACK), m, m + query.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        isUndoRedoOperation = true
-        contentEditText.setText(spannable)
-        contentEditText.setSelection(pos, pos + query.length)
-        isUndoRedoOperation = false
+        if (followMatch) {
+            contentEditText.setSelection(pos, pos + query.length)
+            if (adjustingWindow) pendingSearchPosition = pos
+            else contentEditText.post {
+                contentEditText.layout?.let { scrollView.scrollTo(0, contentEditText.totalPaddingTop + it.getLineTop(it.getLineForOffset(pos.coerceAtMost(contentEditText.length())))) }
+            }
+        }
     }
 
     private fun clearSearchHighlight() {
-        val plain = contentEditText.text.toString()
-        isUndoRedoOperation = true
-        contentEditText.setText(plain)
-        isUndoRedoOperation = false
+        pendingSearchPosition = null
+        val text = contentEditText.text
+        text.getSpans(0, text.length, BackgroundColorSpan::class.java).forEach { text.removeSpan(it) }
+        text.getSpans(0, text.length, ForegroundColorSpan::class.java).forEach { text.removeSpan(it) }
     }
 
     private fun showReplaceDialog() {

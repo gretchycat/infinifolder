@@ -385,7 +385,7 @@
     "90-large-read-only.csv": {
       "bytes": 9437384,
       "sha256": "8a35915deea2a20896de2179206300f41681bfc471429e259a29d4afbbf8cb4d",
-      "purpose": "Over 8 MiB: read-only chunk browsing must stay responsive. Next/Previous load discrete record windows, and saving must not overwrite the source.",
+      "purpose": "Over 8 MiB: read-only chunk browsing must stay responsive. Scrolling automatically loads previous/next record windows, and saving must not overwrite the source.",
       "delimiter": ",",
       "encoding": "UTF-8",
       "row_count_including_header": 31670,
@@ -396,7 +396,7 @@
     "91-large-text-read-only.txt": {
       "bytes": 4718681,
       "sha256": "c2f3827e2cd1a4b57109c1d7fda914a93aaaf1bf25fc3fc0027ffa6797047164",
-      "purpose": "Over 4 MiB: read-only chunk browsing must stay responsive. Use Next/Previous or Go to a byte offset near the end to reach the end marker; saving must not overwrite the source.",
+      "purpose": "Over 4 MiB: read-only chunk browsing must stay responsive. Scroll both ways or Go to a byte offset near the end to reach the end marker; saving must not overwrite the source.",
       "encoding": "UTF-8",
       "preview_limit_bytes": 4194304,
       "editable": false
