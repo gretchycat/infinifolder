@@ -62,6 +62,21 @@ object MediaSourceAdapter {
         throw IOException("No provider owns $uri")
     }
 
+    /** Reopenable viewer input. Metadata discovery never reads the encoded body. */
+    fun resource(context: Context, uri: Uri): SourceResource {
+        val provider = com.infinifolder.storage.StorageRuntime.get(context).provider
+        val details = runCatching { provider.refForUri(uri)?.let { ref ->
+            (provider.stat(ref) as? ProviderResult.Success)?.value?.metadata
+        } }.getOrNull()
+        val info = StreamMetadata(content = ContentType(mimeType = details?.mimeType), name = details?.name,
+            length = details?.sizeBytes, capabilities = setOf(Capability.READ, Capability.REOPEN),
+            provenance = Provenance(source = uri.toString()), warnings = listOfNotNull(details?.readError, details?.recoveryNote))
+        return object : SourceResource {
+            override val metadata = info
+            override fun open() = openSource(context, uri)
+        }
+    }
+
     /** Prefer demonstrated positional handles. Archive seek adapters may extract whole entries, so use their stream path. */
     fun openDocumentSource(context: Context, uri: Uri): ByteSource {
         val provider = com.infinifolder.storage.StorageRuntime.get(context).provider
@@ -73,22 +88,34 @@ object MediaSourceAdapter {
 
     fun openDocumentSource(provider: com.infinifolder.storage.StorageProvider,
         ref: com.infinifolder.model.ResourceRef, identity: String, allowPositional: Boolean = true): ByteSource {
-        if (allowPositional) {
-            when (val result = com.infinifolder.storage.validateSeekableResult(provider.openSeekable(ref, false), false)) {
-                is ProviderResult.Success -> {
-                    try {
-                        return com.infinifolder.storage.BlockDeviceSource(result.value,
-                            StreamMetadata(provenance = Provenance(source = identity)))
-                    } catch (error: Throwable) {
-                        try { result.value.close() } catch (close: Throwable) { error.addSuppressed(close) }
-                        throw error
-                    }
-                }
-                is ProviderResult.Failure -> throw IOException(result.message, result.cause)
-                is ProviderResult.Unsupported -> Unit
-            }
-        }
+        if (allowPositional) openPositionalSource(provider, ref, identity)?.let { return it }
         return com.infinifolder.storage.ProviderStreams.openRead(provider, ref, sourceIdentity = identity)
+    }
+
+    /** Audio can stage an unsupported source without opening and abandoning a sequential download. */
+    fun openPositionalSource(context: Context, uri: Uri): ByteSource? {
+        if (com.infinifolder.archive.ArchiveUri.isArchiveUri(uri)) return null
+        val provider = com.infinifolder.storage.StorageRuntime.get(context).provider
+        val ref = provider.refForUri(uri) ?: return null
+        return openPositionalSource(provider, ref, uri.toString())
+    }
+
+    fun openPositionalSource(provider: com.infinifolder.storage.StorageProvider,
+        ref: com.infinifolder.model.ResourceRef, identity: String): ByteSource? {
+        when (val result = com.infinifolder.storage.validateSeekableResult(provider.openSeekable(ref, false), false)) {
+            is ProviderResult.Success -> {
+                try {
+                    return com.infinifolder.storage.BlockDeviceSource(result.value,
+                        StreamMetadata(provenance = Provenance(source = identity)))
+                } catch (error: Throwable) {
+                    try { result.value.close() } catch (close: Throwable) { error.addSuppressed(close) }
+                    throw error
+                }
+            }
+            is ProviderResult.Failure -> throw IOException(result.message, result.cause)
+            is ProviderResult.Unsupported -> Unit
+        }
+        return null
     }
 
     fun readAllBytes(context: Context, uri: Uri): ByteArray {

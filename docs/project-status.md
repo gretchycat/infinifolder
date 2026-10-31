@@ -2,9 +2,11 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
-Updated 2026-10-27. This is the current status reference. Checked implementation work is not automatically device acceptance. Dated audits, build counts and dump reports describe the revisions they examined.
+Updated 2026-10-31. This is the current status reference. Checked implementation work is not automatically device acceptance. Dated audits, build counts and dump reports describe the revisions they examined.
 
 ## Confirmed on the handset
+
+- Local MP3 seeking, including the previously slow copied songs, and linked gapless playback are user-confirmed working (2026-10-31, checkpoint 13). Checkpoint 14 adds exact high-resolution FLAC positioning, direct positional audio inputs and image common-source composition; its high-resolution/remote/image UI acceptance remains pending. The checkpoint records 683 cases with the same 30 known failures and 46 passing pipeline checks.
 
 - Directory/container artwork (`.icon.<ext>`, `.icon`, `cover.<ext>`, `cover`), arbitrary sibling `.icon-<full filename>.png` icon overrides, and sibling PNG program-icon caching inside remote directories (`sftp://`, `smb://`, `ftp://`, `webdav://`) and archive/disk-image containers (`archive://`) are user-confirmed working (2026-10-27). See [Resource icons](resource-icons.md).
 

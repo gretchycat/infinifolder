@@ -20,6 +20,22 @@ class DocumentSourceTest {
             }
         } as StorageProvider
 
+    @Test fun unsupportedPositionalAudioDoesNotStartASequentialDownload() {
+        val provider = provider({ ProviderResult.Unsupported(ResourceCapability.SEEK) }, {
+            throw AssertionError("Staging owns the single sequential download")
+        })
+        assertNull(MediaSourceAdapter.openPositionalSource(provider, ref, "fixture://audio"))
+    }
+
+    @Test fun positionalAudioFailurePreservesItsCauseWithoutSequentialFallback() {
+        val cause = IOException("connection lost")
+        val provider = provider({ ProviderResult.Failure("cannot open", cause) }, {
+            throw AssertionError("A failed positional open is not Unsupported")
+        })
+        val error = assertThrows(IOException::class.java) { MediaSourceAdapter.openPositionalSource(provider, ref, "fixture://audio") }
+        assertSame(cause, error.cause)
+    }
+
     @Test fun documentSourceUsesActualPositionalReadsWithoutOpeningAStreamOrStat() {
         var closes = 0
         val device = object : BlockDevice {

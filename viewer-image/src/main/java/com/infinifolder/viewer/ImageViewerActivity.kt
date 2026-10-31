@@ -14,7 +14,6 @@ import android.widget.*
 import com.infinifolder.viewer.common.R
 import com.infinifolder.model.ProviderResult
 import com.infinifolder.model.ResourceEntry
-import com.infinifolder.preview.ThumbnailDecoder
 import java.io.ByteArrayOutputStream
 import kotlin.math.roundToInt
 
@@ -38,6 +37,7 @@ class ImageViewerActivity : ViewerActivity() {
     private var imageLoadGeneration = 0
     private var imageLoadThread: Thread? = null
     private var originalBitmap: Bitmap? = null
+    private var decodedImageMetadata: io.github.gretchycat.infinistream.StreamMetadata? = null
     private var isBarsVisible = true
     private var isEditMode = false
     private var hasUnsavedEdits = false
@@ -609,15 +609,14 @@ class ImageViewerActivity : ViewerActivity() {
         val generation = ++imageLoadGeneration
         imageLoadThread?.interrupt()
         imageLoadThread = Thread {
-            val bmp = try {
-                val decoder = ThumbnailDecoder(contentResolver) { u ->
-                    MediaSourceAdapter.openStream(this, u)
-                }
+            val frame = try {
                 // Decode at high screen resolution (up to 2560px max side) without unbounded RAM exhaustion
-                decoder.decodeViewerFrame(uri, 2560)?.bitmap
+                com.infinifolder.preview.CanvasStreams.decodeViewer(contentResolver,
+                    MediaSourceAdapter.resource(this, uri), uri, 2560)
             } catch (t: Throwable) {
                 null
             }
+            val bmp = frame?.bitmap
 
             runOnUiThread {
                 if (isFinishing || isDestroyed || generation != imageLoadGeneration) {
@@ -625,6 +624,7 @@ class ImageViewerActivity : ViewerActivity() {
                     return@runOnUiThread
                 }
                 if (bmp != null) {
+                    decodedImageMetadata = frame?.metadata
                     originalBitmap = bmp
                     zoomImageView.setImageBitmap(bmp)
                     zoomImageView.resetZoom()
@@ -650,6 +650,7 @@ class ImageViewerActivity : ViewerActivity() {
             val mp = (bmp.width.toDouble() * bmp.height.toDouble() / 1_000_000.0)
             infoList += "Resolution: %.1f Megapixels".format(mp)
             infoList += "Config: ${bmp.config}"
+            com.infinifolder.preview.BitmapFrame(bmp, provenance = decodedImageMetadata?.provenance ?: io.github.gretchycat.infinistream.Provenance()).metadata.attributes["colorSpace"]?.let { infoList += "Color space: $it" }
         }
 
         Thread {

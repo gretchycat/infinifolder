@@ -2,7 +2,7 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
-Updated: 2026-10-24. [Current confirmations and priorities](project-status.md) distinguish implementation from handset acceptance. Unchecked items below are remaining work, unless explicitly described as historical evidence.
+Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) distinguish implementation from handset acceptance. Unchecked items below are remaining work, unless explicitly described as historical evidence.
 
 ## InfiniStream architecture migration
 
@@ -17,7 +17,9 @@ Updated: 2026-10-24. [Current confirmations and priorities](project-status.md) d
 - [x] Migrate normal/gapless audio output and visualizer analysis to a shared PCM ByteSource, pulling exact-length decoded prefixes instead of preparing every complete track before playback. Retain unknown-length preparation, decoder fallback and source leases.
 - [x] Add optional decoder frame positioning and independent PCM cache blocks; select the existing fast portable MPEG backend for validated playback content while retaining Android fallback. Check actual seek-complete callbacks and sample-exact seek windows.
 - [x] Preserve tagged MP3 final frames to prevent seek-triggered full-file recovery; cover long seeks and muted linked-player handoff. User reports gapless playback working.
-- [ ] Accept audible startup, playback seeking, gapless transitions and visualizer alignment with the new PCM source, including remote/container sources. Encoded source staging remains a separate latency cost.
+- [ ] Extend the user-confirmed local MP3 seeking/gapless behavior to high-resolution FLAC, live remote/container sources and visualizer alignment. Encoded source staging remains a separate latency cost.
+- [x] Add exact portable FLAC positioning and validate real Android precision; use common positional inputs for normal/gapless audio where supported, retaining explicit staging fallbacks.
+- [x] Route the full image viewer through Canvas common-resource composition, preserving native decode/sampling and output frame metadata.
 - [ ] Continue converting legacy callers to metadata-driven composition before removing compatibility APIs or exported dependencies.
 - [ ] Extend automatic planning for arbitrary multi-input/track graphs; current multi-port processors use explicit bindings.
 - [ ] Verify live remote providers, Android playback/seek/gapless/route behavior and editor/container write acceptance after these checkpoints.

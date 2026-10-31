@@ -26,7 +26,8 @@ classpath = [ANDROID, kotlin,
     ROOT / 'libraries/libinfinisound/audio-core/build/libs/audio-core-0.2.0.jar',
     ROOT / 'libraries/libinfinistream/stream-core/build/libs/stream-core-0.1.0.jar',
     ROOT / 'libraries/libinfinisound/audio-processing/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar',
-    ROOT / 'viewer-audio/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar']
+    ROOT / 'viewer-audio/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar',
+    ROOT / 'viewer-common/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar']
 for path in classes.glob('AudioPullRuntimeCheck*.class'):
     path.unlink()
 subprocess.run(['javac', '-classpath', ':'.join(map(str, classpath)), '-d', str(classes),
@@ -44,7 +45,7 @@ env = os.environ.copy()
 env.pop('LD_LIBRARY_PATH', None)
 env.pop('LD_PRELOAD', None)
 env['CLASSPATH'] = str(dex / 'classes.dex') + ':' + str(apk)
-names = ['chord.mp3', 'chord.aac', 'chord.m4a', 'chord.wav', 'chord.flac', 'high-resolution.flac', 'full-resolution.flac', 'long', 'long-cbr', 'gapless']
+names = ['chord.mp3', 'chord.aac', 'chord.m4a', 'chord.wav', 'chord.flac', 'high-resolution.flac', 'full-resolution.flac', 'long', 'long-cbr', 'long-flac24', 'gapless', 'source-mp3', 'source-flac24', 'source-m4a', 'source-fallback', 'source-gapless']
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('cases', nargs='*')
 parser.add_argument('--file', action='append', type=Path, default=[], help='Check a local MP3 of at least 32 seconds without copying it into the repository')
@@ -52,13 +53,21 @@ args = parser.parse_args()
 selected = args.cases or ([] if args.file else names)
 if set(selected) - set(names):
     raise SystemExit('Unknown runtime case')
-for name in selected:
-    if name not in ('long', 'long-cbr'):
+profiles = dict.fromkeys({'source-mp3': 'long-cbr', 'source-flac24': 'long-flac24'}.get(name, name) for name in selected)
+for name in profiles:
+    if name not in ('long', 'long-cbr', 'long-flac24'):
+
         continue
-    codec = ['-c:a', 'libmp3lame', '-q:a', '4'] if name == 'long' else ['-c:a', 'libmp3lame', '-b:a', '320k']
-    target = OUT / ('audio-pull-long.mp3' if name == 'long' else 'audio-pull-long-cbr.mp3')
+    codec = ['-c:a', 'flac', '-sample_fmt', 's32'] if name == 'long-flac24' else ['-c:a', 'libmp3lame', '-q:a', '4'] if name == 'long' else ['-c:a', 'libmp3lame', '-b:a', '320k']
+    target = OUT / ('audio-pull-long-flac24.flac' if name == 'long-flac24' else 'audio-pull-long.mp3' if name == 'long' else 'audio-pull-long-cbr.mp3')
     subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i',
         'anoisesrc=color=pink:sample_rate=44100:duration=900:seed=47', '-ac', '2'] + codec + ['-y', str(target)], env=env, check=True)
+    if name != 'long-flac24':
+        tag = bytearray(128)
+        tag[:3] = b'TAG'
+        tag[3:25] = b'InfiniSound seek probe'
+        with target.open('ab') as output:
+            output.write(tag)
 runs = [(name, []) for name in selected] + [('provided-' + str(index), ['provided', str(path.resolve())]) for index, path in enumerate(args.file)]
 for name, extra in runs:
     log_path = OUT / ('audio-pull-' + name + '-runtime.log')

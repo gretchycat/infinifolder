@@ -54,4 +54,15 @@ object UniversalAudioDecoder {
                 if (!cancelled()) AudioPlaybackDiagnostics.recordPreparationResult(result)
             }
         } else null, cancelled = cancelled)
+
+    fun openWaveSource(source: io.github.gretchycat.infinistream.SourceResource, destination: File,
+        reportDiagnostics: Boolean = true, cancelled: () -> Boolean = { false }): com.infinifolder.audio.AudioWaveSource =
+        AudioProcessing.openPlaybackSource(source, destination, observer = if (reportDiagnostics) object : com.infinifolder.audio.AudioPreparationObserver {
+            override fun warning(decoder: String, error: Throwable) {
+                if (!cancelled()) diagnostics.warning(decoder, error)
+            }
+            override fun prepared(result: com.infinifolder.audio.AudioPreparation) {
+                if (!cancelled()) AudioPlaybackDiagnostics.recordPreparationResult(result)
+            }
+        } else null, cancelled = cancelled)
 }
