@@ -1,0 +1,30 @@
+{
+  "dimensions": [
+    320,
+    180
+  ],
+  "shortDurationMs": 12000,
+  "longDurationMs": 360000,
+  "toneHz": 440,
+  "shorts": [
+    "01-avc-aac.mp4",
+    "02-vp8-vorbis.webm",
+    "03-avc-aac-subtitles.mkv"
+  ],
+  "seekPositionsMs": [
+    10000,
+    240000,
+    300000,
+    350000
+  ],
+  "subtitleTimesSeconds": [
+    [
+      1,
+      5
+    ],
+    [
+      6,
+      10
+    ]
+  ]
+}

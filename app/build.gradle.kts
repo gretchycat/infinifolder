@@ -40,6 +40,9 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
+    // Sound and libVLC both provide the shared C++ runtime. Validate the packaged
+    // runtime with both native backends; never ship two copies at the same path.
+    packaging.jniLibs.pickFirsts += "**/libc++_shared.so"
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

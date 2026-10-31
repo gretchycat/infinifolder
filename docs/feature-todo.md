@@ -32,6 +32,8 @@ Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) d
 - [x] Move EPUB package/chapter/NCX parsing into Scribe's portable core over related common resources, and leased ZIP expansion into Vault. Retain the host's WebView, navigation, themes and font controls.
 - [x] Confirm EPUB viewing after the Scribe/Vault migration; user confirmation follows the checkpoint 16 fixture/test handoff (2026-10-31).
 - [ ] Extend EPUB acceptance to interruption/back during loading and live remote/provider staging. EPUB 3 NAV-label interpretation remains follow-up; current HTML-title fallback is retained.
+- [x] Add the requested libVLC backend behind libinfinivideo's backend-neutral controls, preserving local/staged inputs and common metadata. Retain the Android platform compatibility adapter.
+- [ ] Accept libVLC video surfaces/sound, seeking, aspect/speed, embedded subtitles, playlists/repeat, PiP and rapid navigation from local/ZIP/live remote inputs. See [video checks](video-formats.md#handset-checks).
 - [ ] Continue converting legacy callers to metadata-driven composition before removing compatibility APIs or exported dependencies.
 - [ ] Extend automatic planning for arbitrary multi-input/track graphs; current multi-port processors use explicit bindings.
 - [ ] Verify live remote providers, Android playback/seek/gapless/route behavior and editor/container write acceptance after these checkpoints.

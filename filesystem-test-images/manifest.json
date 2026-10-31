@@ -710,5 +710,41 @@
   "syntax/custom-text-theme.json": {
     "bytes": 854,
     "sha256": "8bf508bfcc85ddb1c56d3a28c2f4efb51142a5635594b9e6ca70b487a6664ac0"
+  },
+  "video/01-avc-aac.mp4": {
+    "bytes": 315562,
+    "sha256": "a2fae798351aa90ce14398e4df4aa7cb8f7678a5349325c4d12a38f1d0dd9fe4"
+  },
+  "video/02-vp8-vorbis.webm": {
+    "bytes": 265113,
+    "sha256": "fcf55792233efc5035d5595224c4c8ecbd07f0c4b451828f2567c9083e536523"
+  },
+  "video/03-avc-aac-subtitles.mkv": {
+    "bytes": 314658,
+    "sha256": "98c613c8caa81a669229f0cde92b630cb49e9323a4910360abc2f8e8ff4f2204"
+  },
+  "video/03-embedded-subtitles.srt": {
+    "bytes": 128,
+    "sha256": "88cafd9afcf900fa72cc93b4c1d13206f1ee35424f6572bc888d51f59a5767e1"
+  },
+  "video/90-six-minute-seek.mp4": {
+    "bytes": 1127370,
+    "sha256": "3808388dafb05cf4c86bd0d8bda900803b108c9e67015fd0977b4b3242fd8a47"
+  },
+  "video/README.md": {
+    "bytes": 646,
+    "sha256": "6d30c645799a54def84b0f1b619b81ec067151c6aac84ad504bc764573120e6f"
+  },
+  "video/invalid-video.mp4": {
+    "bytes": 24,
+    "sha256": "754ed2f212d495ae30ef2f68f8ab18b0ab162ce669f768373d79f72f1ba3c3bd"
+  },
+  "video/video-checks.zip": {
+    "bytes": 1957107,
+    "sha256": "322ab4e484952008cea5cc0236346c1738fce297984a6f77279260e1d7934ff6"
+  },
+  "video/video-expected.json": {
+    "bytes": 381,
+    "sha256": "b6aa830e3e8b36fdeee33f70aaa405c6ecdb50ca291a2abf9472dd429bc57dbf"
   }
 }

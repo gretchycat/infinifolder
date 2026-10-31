@@ -1,5 +1,5 @@
 {
-  "source": "Checkpoint 19 expected cases; original 458-case pre-migration snapshot is infinistream-baseline.json",
+  "source": "Checkpoint 20 expected cases; original 458-case pre-migration snapshot is infinistream-baseline.json",
   "recorded": "2026-10-31",
   "cases": {
     "com.infinifolder.FileNameEllipsizerTest.testCompoundDiscAndArchiveExtensionTruncation": "passed",
@@ -791,6 +791,14 @@
     "io.github.gretchycat.infinivideo.VideoMetadataTest.originalResourceSurvivesFileAdaptationAndDecodeMetadata": "passed",
     "io.github.gretchycat.infinivideo.VideoMetadataTest.presentationMetadataDescribesActualSurfaceWithoutInventedByteAccess": "passed",
     "io.github.gretchycat.infinivideo.VideoMetadataTest.timeFormattingPreservesExistingControls": "passed",
-    "io.github.gretchycat.infinivideo.VideoMetadataTest.unknownFieldsStayUnknown": "passed"
+    "io.github.gretchycat.infinivideo.VideoMetadataTest.unknownFieldsStayUnknown": "passed",
+    "io.github.gretchycat.infinivideo.VideoPlaybackTest.invalidSpeedsAreRejected": "passed",
+    "io.github.gretchycat.infinivideo.VideoPlaybackTest.libVlcDescriptorExposesEncodedInputAndSurfaceOutput": "passed",
+    "io.github.gretchycat.infinivideo.VideoPlaybackTest.longDurationLabelsDoNotOverflowInt": "passed",
+    "io.github.gretchycat.infinivideo.VideoPlaybackTest.seeksUseLongOffsetsAndKnownBounds": "passed",
+    "io.github.gretchycat.infinivideo.VideoPlaybackTest.speedPreservesAllPickerValues": "passed",
+    "io.github.gretchycat.infinivideo.VideoPlaybackTest.stagedInputUsesActualFileCapabilitiesAndLength": "passed",
+    "io.github.gretchycat.infinivideo.VideoPlaybackTest.surfaceMetadataDoesNotClaimEncodedByteCapabilities": "passed",
+    "io.github.gretchycat.infinivideo.VideoPlaybackTest.unknownDurationAndDimensionsStayUnknown": "passed"
   }
 }

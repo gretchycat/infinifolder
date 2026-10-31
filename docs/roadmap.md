@@ -42,6 +42,12 @@ user-confirmed after the checkpoint 16 handoff. Broader interruption and live
 remote/provider acceptance remain. EPUB 3 NAV labels and on-demand package resource
 serving remain follow-up. PostScript/LaTeX and Office rendering are still planned.
 
+Video now uses the requested libVLC Android backend behind libinfinivideo's
+common playback controls and typed input/output metadata. The host retains
+controls, PiP/playlist policy and explicit local/staged source leases. Accept
+[video playback](video-formats.md#handset-checks), then extend direct common-source
+transport and portable platform backends incrementally.
+
 ## Next: accept the new safety paths
 
 - Exercise external-edit source checks, durable unfinished sessions and conflict choices with real editors.

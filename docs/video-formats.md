@@ -2,9 +2,74 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
-Current implementation ownership: libinfinivideo/video-android wraps the existing VideoView/MediaPlayer input binding, with typed input/output surface metadata and timing utilities in video-api. VideoPlayerActivity retains controls, surface/listeners and staged-source ownership. The backend and supported platform codecs are unchanged; this checkout has no libVLC backend to replace.
+Updated 2026-10-31.
 
-Updated 2026-10-27. This document tracks video format support across MIME/magic classification (`MediaTypeDetector`, `MimeRegistry`, `FileMagicDetector`) and the standalone/integrated video player (`:viewer-video` / `VideoPlayerActivity`), along with difficulty ratings and prerequisites for implementing players and creators/muxers for currently unsupported formats.
+## Current backend: libVLC
+
+At the owner's request, `libinfinivideo/video-android` now implements video
+playback with VideoLAN's pinned `libvlc-all:3.7.7` Android binding. Its packaged
+native engine reports 3.0.25 Vetinari. `video-api` exposes backend-neutral
+`VideoPlayback` controls/events, scale modes and long millisecond positions.
+The app imports library types, with no direct libVLC dependency or player calls.
+The library owns native decoding, video/subtitle surfaces and audio focus;
+the host owns controls, playlists, repeat/PiP decisions and staged-source leases.
+The old Android platform adapter remains available for compatibility.
+
+Local files are borrowed directly; remote/archive sources retain the existing
+explicit cache staging. Common input metadata preserves logical identity,
+name/type/warnings while actual length/access capabilities describe the local
+file. Presentation output carries actual dimensions/duration when available,
+backend and negotiated seekability, without claiming raw CPU frame bytes.
+Native readers stop/release before their source lease closes. Stale asynchronous
+loads and native callbacks cannot replace a newer selection or reopen a closed
+activity. Background load completion does not start hidden playback.
+
+Fit, aspect-preserving fill, 16:9/4:3, 0.5×–2× speed, seeking, playlist controls,
+repeat, operation progress and external opening remain. Embedded subtitle
+surfaces are enabled; automatic external/sibling subtitle discovery is disabled.
+External subtitle selection, audio/subtitle track menus, direct arbitrary Stream
+callbacks, desktop/iOS packaging and encoding remain future work. A backend swap
+does not establish app support for every format compiled into libVLC: routing,
+container/codec variants and UI behavior must each be checked.
+
+See [libVLC dependency/source-build notes](../libraries/libinfinivideo/docs/libvlc.md)
+for the AAR pin, source-built override, notices and shared C++ packaging.
+
+## Handset checks
+
+Original synthetic fixtures are in `filesystem-test-images/video/`:
+
+- `01-avc-aac.mp4`: 12-second moving test pattern and 440 Hz tone.
+- `02-vp8-vorbis.webm`: the same duration/pattern/tone with different codecs.
+- `03-avc-aac-subtitles.mkv`: the MP4 video/audio with embedded subtitles at
+  1–5 seconds and 6–10 seconds; check the Unicode text.
+- `90-six-minute-seek.mp4`: silent six-minute pattern; seek to 4:00, 5:00,
+  5:50, then back to 0:10. Confirm the moving image resumes at each position.
+- `invalid-video.mp4`: deliberately incomplete header; expect failure and
+  successful opening of a valid clip afterward.
+- `video-checks.zip`: byte-identical fixture copies for archive playback.
+
+Check sound/sync, pause/resume, progress dragging and ±10 seconds, all speed
+and aspect modes, next/previous/repeat, orientation, PiP and returning from
+another app. Switch files quickly and go Back during loading. Check at least
+one existing video, ZIP and live remote input. Interactive acceptance of this
+backend remains pending.
+
+`scripts/verify-libvlc-runtime.py` checks actual APK native linkage with Sound,
+MP4/WebM/MKV tracks/dimensions/duration, embedded subtitle detection, native
+software decode, long forward/back seek positions with decoder progress,
+pause/speed/resume, malformed input and cleanup. Dummy outputs keep it headless
+and silent; it does not verify audible sound, hardware surfaces, subtitle pixels
+or PiP. The runner requires all seven completion markers because libVLC redirects
+standard output/error into logcat. Exit zero alone is not treated as success.
+
+## Historical platform-backend inventory (2026-10-27)
+
+The remaining sections record the previous Android VideoView/MediaPlayer
+implementation and implementation estimates made before libVLC was selected.
+Their platform-codec restrictions and custom-decoder prerequisites are historical,
+not a current libVLC capability list. Registered extensions below remain relevant;
+additional formats require routing and fixture verification before support claims.
 
 ## Implemented
 
@@ -25,7 +90,7 @@ Recognized in `MediaTypeDetector.VIDEO_EXTENSIONS` and `MimeRegistry`, staged or
 
 ### Video & audio codecs supported in `:viewer-video`
 
-Because `VideoPlayerActivity` uses Android's platform `VideoView` / `MediaPlayer`, supported codecs follow Android platform `MediaCodec` decoders:
+Before checkpoint 20, `VideoPlayerActivity` used Android's platform `VideoView` / `MediaPlayer`, so supported codecs followed Android platform `MediaCodec` decoders:
 
 - **Video codecs**: H.264 / AVC, H.265 / HEVC, VP8, VP9, AV1 (Android 10+ software / hardware), MPEG-4 Part 2 (Simple Profile), H.263
 - **Audio tracks**: AAC, MP3, Opus, Vorbis, FLAC, PCM
@@ -45,7 +110,7 @@ Because `VideoPlayerActivity` uses Android's platform `VideoView` / `MediaPlayer
 ### Core Architectural Prerequisites for Custom Video Formats
 
 1. **Software Frame-Clock & `Surface` Blitter (for Retro/Animation Video)**:
-   - `VideoPlayerActivity` currently delegates rendering to `android.widget.VideoView` (`MediaPlayer`). Playing retro animation/video formats (`.fli`/`.flc`, `.anim`, `.roq`, `.smk`, `.bik`) requires an alternative `SurfaceView` / `TextureView` frame loop that blits decoded `Bitmap` frames at the file's frame rate while synchronizing optional PCM audio on an `AudioTrack`.
+   - `VideoPlayerActivity` previously delegated rendering to `android.widget.VideoView` (`MediaPlayer`). Playing retro animation/video formats (`.fli`/`.flc`, `.anim`, `.roq`, `.smk`, `.bik`) requires an alternative `SurfaceView` / `TextureView` frame loop that blits decoded `Bitmap` frames at the file's frame rate while synchronizing optional PCM audio on an `AudioTrack`.
 2. **Indexed 8-Bit Frame Accumulator**:
    - Retro animation formats (`.fli`/`.flc`, `.anim`) encode delta changes against the previous indexed 8-bit frame buffer (or two pages ago for Amiga double-buffered `.anim`) and mutate entries in a 256-color palette between frames.
 3. **Hardware `MediaCodec` + `MediaMuxer` Pipeline (for Video Creation/Export)**:

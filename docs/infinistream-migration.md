@@ -14,7 +14,7 @@ All remote main hashes were checked against the local tested heads. Sound's exis
 | [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`61a4644`](https://github.com/gretchycat/libinfinisound/commit/61a4644bdfd216597bc3fe24ef3a55984bcc2363) |
 | [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`ae706d7`](https://github.com/gretchycat/libinfinicanvas/commit/ae706d70d84a3d6e635d96347bc5c0fe26e5346b) |
 | [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`084e9de`](https://github.com/gretchycat/libinfiniscribe/commit/084e9de5ab5335c79ae88fdf2c297314cfd664e3) |
-| [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`447c92d`](https://github.com/gretchycat/libinfinivideo/commit/447c92d593876d40a39807b424c3e0fb35c23807) |
+| [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`9484caf`](https://github.com/gretchycat/libinfinivideo/commit/9484caffe2fa3005fe6a1fe6a20b3f53759d3710) |
 
 ```text
 Store -> Stream
@@ -39,7 +39,7 @@ Ordinary files open through Store/Stream directly; Vault is used for containers.
 | libinfinisound (reuse) | audio-api, portable audio-core, Android audio-processing | Add Stream wrappers; preserve codecs, PCM precision, timing and output lifetimes |
 | libinfinicanvas | ThumbnailDecoder, image codecs and transformations in viewer-common/preview | Keep icon policy/UI in host; Android Bitmap and ContentResolver are explicit adapters |
 | libinfiniscribe | MarkdownRenderer, bounded text reading/encoding and CSV/TSV parsing/formatting | Retain WebView/editor UI and revision-checked saves in host |
-| libinfinivideo | Existing Android VideoView/MediaPlayer presentation input/timing integration | Preserve this backend; this checkout has no libVLC implementation to replace |
+| libinfinivideo | Original Android presentation adapter retained for compatibility; libVLC selected by the current host at the owner's request | Library owns backend/surfaces/focus behind common controls; host retains UI/policy and source leases |
 
 At the baseline, `storage-engine` mixed Store/Vault/runtime responsibilities; it now retains only host runtime/router/external-edit orchestration. `StorageRuntime` and `RoutingStorageProvider` enumerate concrete providers and stay in the host composition layer until injection replaces those references. Existing archive-package names may temporarily survive as source/binary compatibility namespaces; their ownership must be documented rather than creating dependency cycles.
 
@@ -53,7 +53,7 @@ Running full app build and existing storage/common/audio/text/Markdown/image/vid
 
 ## Licensing and F-Droid
 
-The baseline has no top-level original-code license in InfiniFolder or libinfinisound. A license choice has been requested from the owner; do not silently relicense extracted code. Preserve third-party source notices and dependencies. Existing native ext/lwext4 and libopenmpt source build scripts remain; 7-Zip, JPEG XL and JPEG2000 binary dependency packaging needs F-Droid review. New repositories must record provenance, dependencies and any pending licensing rather than implying distribution clearance.
+The baseline has no top-level original-code license in InfiniFolder or libinfinisound. A license choice has been requested from the owner; do not silently relicense extracted code. Preserve third-party source notices and dependencies. Existing native ext/lwext4 and libopenmpt source build scripts remain; 7-Zip, JPEG XL and JPEG2000 binary dependency packaging needs F-Droid review. New repositories must record provenance, dependencies and any pending licensing rather than implying distribution clearance. Checkpoint 20 intentionally adds the requested libVLC Maven native dependency, with its pin, LGPL assets and source-build override documented; the upstream VLC/contrib build and release review remain pending.
 
 ## Remaining sequence
 
@@ -430,11 +430,62 @@ pixels, rotated pan/crop and density-aware inverse mapping. The five viewport,
 works as expected after retesting (2026-10-31). Broader live provider/export
 acceptance remains separate.
 
+## Checkpoint 20: requested libVLC video backend
+
+At the owner's explicit request, the actual video player now uses libVLC behind
+libinfinivideo's backend-neutral `VideoPlayback` controls/events and scale modes.
+The Android module owns native player creation/release, video/subtitle surfaces,
+rate/seek/aspect translation and audio focus. The host retains controls,
+playlist/repeat/PiP decisions, operation progress and source leases. Positions
+and durations use long milliseconds. The old Android platform adapter and its
+metadata APIs remain for compatibility.
+
+Local files stay direct; remote/archive inputs keep the existing explicit staging
+route. Common source metadata supplies logical origin, name/type and warnings;
+actual input length/access capabilities describe the borrowed local view. Output
+reports native dimensions/duration when known, backend and seekability, without
+claiming CPU frame bytes. Native readers are released before their cache lease.
+Stale staged loads and native events are rejected. Loading completion while
+hidden does not start playback; onStop/onStart manage pause/resume while visible
+PiP continues through onPause.
+
+The Android binding is pinned to `org.videolan.android:libvlc-all:3.7.7`; its
+packaged engine identifies as 3.0.25 Vetinari. This intentionally replaces the
+platform codec backend with the requested native dependency. No AAR/.so is
+committed. LGPL notices/license are bundled as assets, and a `libVlcAar` property
+accepts an upstream source-built replacement. Native VLC/contrib source builds
+and release/F-Droid license/build review remain outstanding; see the library's
+[dependency notes](../libraries/libinfinivideo/docs/libvlc.md).
+The app selects one shared C++ runtime per ABI; the checked ARM64 package retains
+Sound's exact prior runtime and loads both Sound and VLC in one native process.
+
+Nine fixture entries add original MP4/WebM/subtitled MKV, a silent six-minute
+seek file, invalid input, expected values and ZIP copies with a non-overwriting
+FFmpeg generator. See [video checks](video-formats.md#handset-checks).
+
+Verification: 798 JVM cases, 768 pass and the same 30 known failures; all eight
+new Video API cases pass (12 Video API cases in total). Seven native groups check
+packaged Sound/VLC linkage, MP4/WebM/MKV track metadata, embedded subtitle
+detection, the long-file index, software decoding, forward/back seek positions
+with decoder progress, pause/speed/resume, malformed input and reopen cleanup.
+Dummy outputs keep these checks silent and headless. Exit zero without all seven
+markers fails the runner because libVLC redirects stdout/stderr to logcat.
+The full app's five viewport, 12 edit/PNG, 10 EXIF and eight PDF groups also
+pass against the final APK: 42 focused groups including video. The video-only
+host passes its own seven native groups with its separately packaged VLC C++
+runtime. Full APK, video-only host and standalone Video build/API tests pass.
+Logs use `checkpoint20-*` under `build/infinistream-migration`. An initial
+80-ms pause assumption failed in the host harness; the final check awaits actual
+pause/resume state with a two-second bound. That attempt is retained separately.
+Actual sound/sync, hardware surfaces, subtitle pixels, PiP and live provider
+acceptance remain handset work. Direct arbitrary ByteSource callbacks, track
+selection UI, new format routing, desktop/iOS adapters and encoding are follow-up.
+
 ## Final verification and reproducibility
 
-Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 790-case checkpoint.
+Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 798-case checkpoint.
 
-Current totals: **790 tests, 760 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
+Current totals: **798 tests, 768 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
 | Independent library | Tests | Failures |
 | --- | ---: | ---: |
@@ -444,7 +495,7 @@ Current totals: **790 tests, 760 pass, 30 pre-existing failures, no new failures
 | Sound | 69 | 0 |
 | Canvas | 52 | 0 |
 | Scribe | 99 | 0 |
-| Video | 4 | 0 |
+| Video | 12 | 0 |
 
 All seven standalone source builds passed with the pinned sibling dependencies. Stream/Scribe and portable Sound builds need no Android runtime. Android modules were built with SDK 36, JDK 21 targeting Java 17, Kotlin 2.2.20 and AGP 8.9.2 using Gradle 9.7.1. The preceding checkpoint built full app and selected audio/text/image/video host debug APKs; checkpoints 5/6/7 rebuilt the full app and affected text/CSV hosts, and repeated the independent Scribe build. Checkpoint 8 repeats full/CSV-host and independent Scribe builds; checkpoint 9 repeats full/text/HTML/Markdown-host and independent Scribe builds. Checkpoint 10 rebuilds full/CSV-host APKs for the startup callback fix. Checkpoint 11 rebuilds full/audio-host and standalone Android/portable Sound artifacts for PCM pull output; checkpoint 12 repeats those builds for decoder frame positioning and playback policy; checkpoint 13 repeats them for trailing MP3 metadata and long seeks; checkpoint 14 repeats affected Sound/Stream/Canvas and audio/image host builds for common encoded inputs and exact FLAC positioning. Termux ARM64 native source builds passed; the standard NDK/CMake path and desktop/iOS runtime execution were not exercised.
 
@@ -457,6 +508,6 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 - Legacy UI dispatch, remaining inspector/editor-specific helpers and some parser/storage adapters remain for incremental migration. Common-source Vault identification prefers headers/offsets/footers and safely replays sequential prefixes, but this does not claim every old filename dispatch was rewritten. Existing signature/format limits and writable restrictions still apply.
 - [Large text/CSV editing](roadmap.md#large-text-and-csv-editing) is planned; default viewing is chunked, while explicitly requested complete-document editing still uses the legacy guarded materialization path.
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
-- Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. No opaque native blob or language port was introduced by this migration.
+- Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. The requested libVLC backend adds a pinned published native AAR with source/override details; no native binary is committed and no language port is introduced.
 
-Final full debug APK SHA-256: `9e3c6bb156a78e5b3a94130a6e003c2fd4e3e09b375bdc59951aef982ac1870f`.
+Final full debug APK SHA-256: `cf18eb8809120a8af1a43c6b741891b918d408d0fbbb02de0fd01401371c5257`.

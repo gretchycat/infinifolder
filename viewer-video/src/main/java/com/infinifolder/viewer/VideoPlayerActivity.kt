@@ -1,12 +1,9 @@
 package com.infinifolder.viewer
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.media.MediaPlayer
-import android.media.PlaybackParams
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -17,7 +14,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
-import android.view.WindowInsetsController
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -25,9 +21,12 @@ import android.widget.ProgressBar
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
-import android.widget.VideoView
-import java.io.File
-import java.util.Locale
+import io.github.gretchycat.infinivideo.LibVlcVideoBackend
+import io.github.gretchycat.infinivideo.VideoPlayback
+import io.github.gretchycat.infinivideo.VideoScaleMode
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicInteger
 
 enum class VideoAspectMode { FIT, FILL, RATIO_16_9, RATIO_4_3 }
 
@@ -36,11 +35,16 @@ class VideoPlayerActivity : ViewerActivity() {
     private var targetUri: Uri? = null
     private var displayName: String = "Video"
     private var stagedSource: MediaSourceAdapter.StagedSource? = null
-    private var stagedFile: File? = null
+    private val loadGeneration = AtomicInteger()
+    private val sourceExecutor = Executors.newSingleThreadExecutor()
+    private var sourceJob: Future<*>? = null
+    private var pausedForBackground = false
+    private var activityStopped = false
 
     private lateinit var rootLayout: FrameLayout
     private lateinit var videoContainer: FrameLayout
-    private lateinit var videoView: VideoView
+    private lateinit var videoView: View
+    private lateinit var videoPlayer: LibVlcVideoBackend
     private lateinit var controlsOverlay: LinearLayout
     private lateinit var topBar: LinearLayout
     private lateinit var titleText: TextView
@@ -58,7 +62,6 @@ class VideoPlayerActivity : ViewerActivity() {
 
     private var videoInputMetadata = io.github.gretchycat.infinistream.StreamMetadata()
     private var videoOutputMetadata = io.github.gretchycat.infinistream.StreamMetadata()
-    private var mediaPlayerRef: MediaPlayer? = null
     private var isUserSeeking = false
     private var isControlsVisible = true
     private var aspectMode = VideoAspectMode.FIT
@@ -73,9 +76,9 @@ class VideoPlayerActivity : ViewerActivity() {
     private val progressHandler = Handler(Looper.getMainLooper())
     private val progressRunnable = object : Runnable {
         override fun run() {
-            if (videoView.isPlaying && !isUserSeeking) {
-                val cur = videoView.currentPosition
-                val dur = videoView.duration
+            if (videoPlayer.isPlaying && !isUserSeeking) {
+                val cur = videoPlayer.positionMs
+                val dur = (videoPlayer.durationMs ?: 0L)
                 currentTimeText.text = formatTime(cur)
                 totalTimeText.text = formatTime(dur)
                 if (dur > 0) {
@@ -138,6 +141,7 @@ class VideoPlayerActivity : ViewerActivity() {
             val idx = list.indexOfFirst { it == u || it.toString() == uStr }.coerceAtLeast(0)
 
             runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 playlist.clear()
                 playlist.addAll(list)
                 currentIndex = idx
@@ -163,53 +167,46 @@ class VideoPlayerActivity : ViewerActivity() {
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
 
-        videoView = VideoView(this).apply {
+        videoPlayer = LibVlcVideoBackend(this)
+        videoView = videoPlayer.view.apply {
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
-            setOnPreparedListener { mp ->
-                mediaPlayerRef = mp
-                videoOutputMetadata = io.github.gretchycat.infinivideo.AndroidVideoBackend.negotiated(videoInputMetadata, mp)
+        }
+        videoPlayer.listener = object : VideoPlayback.Listener {
+            override fun onReady(metadata: io.github.gretchycat.infinistream.StreamMetadata) {
+                videoOutputMetadata = metadata
                 loadingIndicator.visibility = View.GONE
-                mp.isLooping = false
-                applySpeed()
-                videoView.start()
                 com.infinifolder.ops.AppOperations.coordinator.registerExternal(
-                    id = "playback_video",
-                    label = "Video: $displayName",
-                    totalBytes = videoView.duration.toLong().coerceAtLeast(0L),
-                    currentItem = displayName
-                )
-                playPauseBtn.text = "⏸"
-                totalTimeText.text = formatTime(videoView.duration)
-                adjustAspectRatio()
+                    id = "playback_video", label = "Video: $displayName",
+                    totalBytes = videoPlayer.durationMs, currentItem = displayName)
+                totalTimeText.text = formatTime(videoPlayer.durationMs ?: 0L)
+                progressHandler.removeCallbacks(progressRunnable)
                 progressHandler.post(progressRunnable)
                 scheduleControlsHide()
             }
-            setOnCompletionListener {
+            override fun onMetadataChanged(metadata: io.github.gretchycat.infinistream.StreamMetadata) {
+                videoOutputMetadata = metadata
+                totalTimeText.text = formatTime(videoPlayer.durationMs ?: 0L)
+            }
+            override fun onBuffering(percent: Float) {
+                loadingIndicator.visibility = if (percent < 100f) View.VISIBLE else View.GONE
+            }
+            override fun onPlayingChanged(playing: Boolean) {
+                playPauseBtn.text = if (playing) "⏸" else "▶"
+            }
+            override fun onEnded() {
                 playPauseBtn.text = "▶"
                 if (currentIndex < playlist.size - 1) {
                     playNext()
-                } else {
-                    when (repeatMode) {
-                        VideoRepeatMode.ALL -> {
-                            currentIndex = 0
-                            loadVideoAtIndex(currentIndex)
-                        }
-                        VideoRepeatMode.ONE -> {
-                            videoView.seekTo(0)
-                            videoView.start()
-                            playPauseBtn.text = "⏸"
-                        }
-                        VideoRepeatMode.NONE -> {
-                            // Finished playing through with repeat off: auto close!
-                            finish()
-                        }
-                    }
+                } else when (repeatMode) {
+                    VideoRepeatMode.ALL -> { currentIndex = 0; loadVideoAtIndex(currentIndex) }
+                    VideoRepeatMode.ONE -> { videoPlayer.seekTo(0); videoPlayer.play() }
+                    VideoRepeatMode.NONE -> finish()
                 }
             }
-            setOnErrorListener { _, what, extra ->
+            override fun onError(message: String) {
                 loadingIndicator.visibility = View.GONE
-                Toast.makeText(this@VideoPlayerActivity, "Error playing video ($what, $extra)", Toast.LENGTH_SHORT).show()
-                true
+                com.infinifolder.storage.DiagnosticLog.record("viewer.video.error", message)
+                Toast.makeText(this@VideoPlayerActivity, message, Toast.LENGTH_SHORT).show()
             }
         }
         videoContainer.addView(videoView)
@@ -354,8 +351,8 @@ class VideoPlayerActivity : ViewerActivity() {
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                     if (fromUser) {
-                        val dur = videoView.duration
-                        val target = (progress / 1000f * dur).toInt()
+                        val dur = (videoPlayer.durationMs ?: 0L)
+                        val target = (progress / 1000.0 * dur).toLong()
                         currentTimeText.text = formatTime(target)
                     }
                 }
@@ -365,9 +362,9 @@ class VideoPlayerActivity : ViewerActivity() {
                 }
                 override fun onStopTrackingTouch(sb: SeekBar?) {
                     isUserSeeking = false
-                    val dur = videoView.duration
-                    val target = (progressBar.progress / 1000f * dur).toInt()
-                    videoView.seekTo(target)
+                    val dur = (videoPlayer.durationMs ?: 0L)
+                    val target = (progressBar.progress / 1000.0 * dur).toLong()
+                    videoPlayer.seekTo(target)
                     scheduleControlsHide()
                 }
             })
@@ -398,7 +395,7 @@ class VideoPlayerActivity : ViewerActivity() {
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.TRANSPARENT)
             setOnClickListener {
-                videoView.seekTo((videoView.currentPosition - 10000).coerceAtLeast(0))
+                videoPlayer.seekTo((videoPlayer.positionMs - 10000).coerceAtLeast(0))
                 scheduleControlsHide()
             }
         }
@@ -452,7 +449,7 @@ class VideoPlayerActivity : ViewerActivity() {
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.TRANSPARENT)
             setOnClickListener {
-                videoView.seekTo((videoView.currentPosition + 10000).coerceAtMost(videoView.duration))
+                videoPlayer.seekTo(videoPlayer.positionMs + 10000)
                 scheduleControlsHide()
             }
         }
@@ -489,47 +486,68 @@ class VideoPlayerActivity : ViewerActivity() {
         progressBar.progress = 0
         currentTimeText.text = "00:00"
         totalTimeText.text = "00:00"
-        videoView.stopPlayback()
-
-        Thread {
-            cleanupStagedFile()
-            var loadError: Exception? = null
-            val file = try {
-                MediaSourceAdapter.stage(this, uri).also { stagedSource = it }.file
-            } catch (e: Exception) {
-                loadError = e
-                null
-            }
-            stagedFile = file
-
-            runOnUiThread {
-                if (file != null && file.exists()) {
-                    videoInputMetadata = io.github.gretchycat.infinivideo.AndroidVideoBackend.bind(videoView, file, uri.toString())
-                } else {
-                    loadingIndicator.visibility = View.GONE
-                    val error = loadError
-                    if (error == null || !CacheFailureUi.offerCopy(this, error, uri))
-                        Toast.makeText(this, "Failed to load video source", Toast.LENGTH_SHORT).show()
+        val generation = loadGeneration.incrementAndGet()
+        sourceJob?.cancel(true)
+        progressHandler.removeCallbacks(progressRunnable)
+        videoPlayer.stop()
+        cleanupStagedFile()
+        sourceJob = sourceExecutor.submit {
+            var source: MediaSourceAdapter.StagedSource? = null
+            try {
+                val metadata = MediaSourceAdapter.resource(this, uri).metadata
+                source = MediaSourceAdapter.stage(this, uri)
+                val loaded = source
+                runOnUiThread {
+                    if (generation != loadGeneration.get() || isFinishing || isDestroyed) {
+                        loaded.close()
+                        return@runOnUiThread
+                    }
+                    stagedSource = loaded
+                    try {
+                        applySpeed()
+                        adjustAspectRatio()
+                        videoPlayer.open(loaded.file, metadata, autoPlay = !activityStopped)
+                        if (activityStopped) pausedForBackground = true
+                        videoInputMetadata = videoPlayer.inputMetadata
+                        com.infinifolder.storage.DiagnosticLog.record("viewer.video.open",
+                            "backend=libvlc bytes=${videoInputMetadata.length} staged=true")
+                    } catch (error: Exception) {
+                        videoPlayer.stop()
+                        cleanupStagedFile()
+                        loadingIndicator.visibility = View.GONE
+                        com.infinifolder.storage.DiagnosticLog.record("viewer.video.open.failed", error = error)
+                        Toast.makeText(this, "Failed to open video with libVLC", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                source = null // The posted callback now owns the lease, including stale-load cleanup.
+            } catch (error: Exception) {
+                source?.close()
+                runOnUiThread {
+                    if (generation == loadGeneration.get() && !isFinishing && !isDestroyed) {
+                        loadingIndicator.visibility = View.GONE
+                        if (!CacheFailureUi.offerCopy(this, error, uri))
+                            Toast.makeText(this, "Failed to load video source", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
-        }.start()
+        }
     }
 
     private fun togglePlayPause() {
-        if (videoView.isPlaying) {
-            videoView.pause()
+        if (videoPlayer.isPlaying) {
+            videoPlayer.pause()
             playPauseBtn.text = "▶"
             com.infinifolder.ops.AppOperations.coordinator.updateExternal(
                 id = "playback_video",
-                bytes = videoView.currentPosition.toLong(),
+                bytes = videoPlayer.positionMs.toLong(),
                 message = "Paused"
             )
         } else {
-            videoView.start()
+            videoPlayer.play()
             playPauseBtn.text = "⏸"
             com.infinifolder.ops.AppOperations.coordinator.updateExternal(
                 id = "playback_video",
-                bytes = videoView.currentPosition.toLong(),
+                bytes = videoPlayer.positionMs.toLong(),
                 message = null
             )
         }
@@ -563,8 +581,8 @@ class VideoPlayerActivity : ViewerActivity() {
                     loadVideoAtIndex(currentIndex)
                 }
                 VideoRepeatMode.ONE -> {
-                    videoView.seekTo(0)
-                    videoView.start()
+                    videoPlayer.seekTo(0)
+                    videoPlayer.play()
                     playPauseBtn.text = "⏸"
                 }
                 VideoRepeatMode.NONE -> {
@@ -575,15 +593,15 @@ class VideoPlayerActivity : ViewerActivity() {
     }
 
     private fun playPrevious() {
-        if (videoView.currentPosition > 3000) {
-            videoView.seekTo(0)
+        if (videoPlayer.positionMs > 3000) {
+            videoPlayer.seekTo(0)
             return
         }
         if (currentIndex > 0) {
             currentIndex--
             loadVideoAtIndex(currentIndex)
         } else {
-            videoView.seekTo(0)
+            videoPlayer.seekTo(0)
         }
     }
 
@@ -626,42 +644,7 @@ class VideoPlayerActivity : ViewerActivity() {
     }
 
     private fun adjustAspectRatio() {
-        val rootW = rootLayout.width
-        val rootH = rootLayout.height
-        if (rootW == 0 || rootH == 0) return
-
-        when (aspectMode) {
-            VideoAspectMode.FIT -> {
-                videoView.layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
-            }
-            VideoAspectMode.FILL -> {
-                // Scale so bounds fill screen
-                val mp = mediaPlayerRef
-                if (mp != null && mp.videoWidth > 0 && mp.videoHeight > 0) {
-                    val vw = mp.videoWidth.toFloat()
-                    val vh = mp.videoHeight.toFloat()
-                    val screenRatio = rootW.toFloat() / rootH
-                    val videoRatio = vw / vh
-                    if (screenRatio > videoRatio) {
-                        val targetH = (rootW / videoRatio).toInt()
-                        videoView.layoutParams = FrameLayout.LayoutParams(rootW, targetH, Gravity.CENTER)
-                    } else {
-                        val targetW = (rootH * videoRatio).toInt()
-                        videoView.layoutParams = FrameLayout.LayoutParams(targetW, rootH, Gravity.CENTER)
-                    }
-                } else {
-                    videoView.layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
-                }
-            }
-            VideoAspectMode.RATIO_16_9 -> {
-                val targetH = (rootW * 9) / 16
-                videoView.layoutParams = FrameLayout.LayoutParams(rootW, targetH, Gravity.CENTER)
-            }
-            VideoAspectMode.RATIO_4_3 -> {
-                val targetH = (rootW * 3) / 4
-                videoView.layoutParams = FrameLayout.LayoutParams(rootW, targetH, Gravity.CENTER)
-            }
-        }
+        videoPlayer.setAspect(VideoScaleMode.valueOf(aspectMode.name))
     }
 
     private fun showSpeedPicker() {
@@ -679,15 +662,7 @@ class VideoPlayerActivity : ViewerActivity() {
     }
 
     private fun applySpeed() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            mediaPlayerRef?.let { mp ->
-                try {
-                    val wasPlaying = mp.isPlaying
-                    mp.playbackParams = PlaybackParams().apply { speed = playbackSpeed }
-                    if (!wasPlaying) mp.pause()
-                } catch (_: Exception) {}
-            }
-        }
+        videoPlayer.setSpeed(playbackSpeed)
     }
 
     private fun openExternally() {
@@ -706,26 +681,23 @@ class VideoPlayerActivity : ViewerActivity() {
     private fun cleanupStagedFile() {
         stagedSource?.close()
         stagedSource = null
-        stagedFile = null
     }
 
-    private fun formatTime(ms: Int): String = io.github.gretchycat.infinivideo.VideoMetadata.formatTime(ms)
+    private fun formatTime(ms: Long): String = io.github.gretchycat.infinivideo.VideoMetadata.formatTime(ms)
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (videoView.isPlaying) {
+        if (videoPlayer.isPlaying) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 try {
-                    val mp = mediaPlayerRef
-                    val ratio = if (mp != null && mp.videoWidth > 0 && mp.videoHeight > 0) {
-                        val w = mp.videoWidth.coerceIn(1, 239)
-                        val h = mp.videoHeight.coerceIn(1, 239)
-                        android.util.Rational(w, h)
-                    } else {
-                        android.util.Rational(16, 9)
-                    }
+                    val width = videoOutputMetadata.attributes["width"]?.toIntOrNull()
+                    val height = videoOutputMetadata.attributes["height"]?.toIntOrNull()
+                    val ratio = if (width != null && height != null && width > 0 && height > 0 &&
+                        width.toDouble() / height in (1.0 / 2.39)..2.39) {
+                        android.util.Rational(width, height)
+                    } else android.util.Rational(16, 9)
                     val params = android.app.PictureInPictureParams.Builder()
                         .setAspectRatio(ratio)
                         .build()
@@ -744,11 +716,32 @@ class VideoPlayerActivity : ViewerActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        activityStopped = false
+        if (pausedForBackground && ::videoPlayer.isInitialized) {
+            pausedForBackground = false
+            videoPlayer.play()
+        }
+    }
+
+    override fun onStop() {
+        activityStopped = true
+        if (::videoPlayer.isInitialized) {
+            pausedForBackground = videoPlayer.isPlayRequested
+            videoPlayer.pause()
+        }
+        super.onStop()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         progressHandler.removeCallbacks(progressRunnable)
         hideControlsHandler.removeCallbacks(hideControlsRunnable)
-        videoView.stopPlayback()
+        loadGeneration.incrementAndGet()
+        sourceJob?.cancel(true)
+        sourceExecutor.shutdownNow()
+        if (::videoPlayer.isInitialized) videoPlayer.close()
         cleanupStagedFile()
         com.infinifolder.ops.AppOperations.coordinator.completeExternal("playback_video")
     }

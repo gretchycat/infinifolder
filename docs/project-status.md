@@ -59,6 +59,19 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Implemented; focused acceptance still needed
 
+Checkpoint 20 selects the owner-requested libVLC backend in libinfinivideo. The
+host uses common playback controls and metadata; the library owns native
+video/subtitle surfaces and audio focus. Local files remain direct and remote/
+archive files keep explicit staging. Settings, controls, playlist/repeat and PiP
+remain; source-load/native callback generations and lease cleanup are guarded.
+The new MP4/WebM/subtitled MKV and six-minute seek fixtures are in
+`filesystem-test-images/video/`. [Video handset checks](video-formats.md#handset-checks)
+remain pending; arbitrary provider read callbacks and desktop/iOS backends remain
+future work. The full gate reports 798 cases, 768 passing and the same 30 known
+failures. Forty-two focused native groups pass against the full APK, plus seven
+video groups against the video-only host's runtime. Full/host and standalone
+Video builds pass.
+
 Checkpoint 18 moves image bitmap rotation/flip/crop/resize and PNG encoding into
 Canvas processors, retaining host controls, resize-dialog snapshots, sampled
 editing and PNG-copy publication. Outputs carry actual geometry/format metadata
