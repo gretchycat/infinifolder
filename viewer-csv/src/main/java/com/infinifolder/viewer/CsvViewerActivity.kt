@@ -233,14 +233,15 @@ class CsvViewerActivity : ViewerActivity() {
             divider = null
             adapter = rowAdapter
             isFastScrollEnabled = false
-            setOnScrollListener(object : AbsListView.OnScrollListener {
-                override fun onScrollStateChanged(view: AbsListView?, scrollState: Int) { maybeLoadRows() }
-                override fun onScroll(view: AbsListView?, firstVisibleItem: Int, visibleItemCount: Int, totalItemCount: Int) {
-                    if (!adjustingWindow) updateRowStats()
-                    maybeLoadRows()
-                }
-            })
         }
+        // Registration invokes onScroll synchronously: publish the ListView field first.
+        rowList.setOnScrollListener(object : AbsListView.OnScrollListener {
+            override fun onScrollStateChanged(view: AbsListView?, scrollState: Int) { maybeLoadRows() }
+            override fun onScroll(view: AbsListView?, firstVisibleItem: Int, visibleItemCount: Int, totalItemCount: Int) {
+                if (!adjustingWindow) updateRowStats()
+                maybeLoadRows()
+            }
+        })
         tableColumn.addView(headerContainer, LinearLayout.LayoutParams(-1, -2))
         tableColumn.addView(rowList, LinearLayout.LayoutParams(-1, 0, 1f))
         horizontalScroll.addView(tableColumn, FrameLayout.LayoutParams(dp(44), -1))
@@ -344,7 +345,7 @@ class CsvViewerActivity : ViewerActivity() {
     }
 
     private fun updateRowStats() {
-        if (adjustingWindow) return
+        if (adjustingWindow || !::rowList.isInitialized || !::statsTextView.isInitialized || !::searchInput.isInitialized) return
         val first = filteredData.getOrNull(rowList.firstVisiblePosition)?.first
         val last = filteredData.getOrNull(rowList.lastVisiblePosition)?.first
         statsTextView.text = CsvRowStats.label(first, last, totalDataRows, rowCountRunning,

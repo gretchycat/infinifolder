@@ -1,5 +1,5 @@
 {
-  "source": "Checkpoint 9 expected cases; original 458-case pre-migration snapshot is infinistream-baseline.json",
+  "source": "Checkpoint 10 expected cases; original 458-case pre-migration snapshot is infinistream-baseline.json",
   "recorded": "2026-10-30",
   "cases": {
     "com.infinifolder.FileNameEllipsizerTest.testCompoundDiscAndArchiveExtensionTruncation": "passed",
@@ -479,6 +479,8 @@
     "com.infinifolder.viewer.CsvRowStatsTest.sparseFiltersUseSourceRowNumbersAndNameTheirScope": "passed",
     "com.infinifolder.viewer.CsvRowStatsTest.unknownTotalsAreExplicitUntilTheCountCompletes": "passed",
     "com.infinifolder.viewer.CsvRowStatsTest.visibleSourceRowsReplaceTheCacheSizeAndMoveWithScrolling": "passed",
+    "com.infinifolder.viewer.CsvStartupTest.statisticsWaitForAllViewsDuringPartialSetup": "passed",
+    "com.infinifolder.viewer.CsvStartupTest.synchronousScrollCallbackBeforeRowListAssignmentDoesNotCrash": "passed",
     "com.infinifolder.viewer.DocumentSourceTest.anAdapterConstructionFailureClosesTheOpenedDevice": "passed",
     "com.infinifolder.viewer.DocumentSourceTest.documentSourceUsesActualPositionalReadsWithoutOpeningAStreamOrStat": "passed",
     "com.infinifolder.viewer.DocumentSourceTest.onlyUnsupportedSeekMayFallBackAndArchiveReadsNeverRequestStaging": "passed",
