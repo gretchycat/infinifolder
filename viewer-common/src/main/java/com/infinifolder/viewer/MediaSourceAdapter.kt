@@ -87,6 +87,22 @@ object MediaSourceAdapter {
             if (document.hasMore) null else com.infinifolder.storage.ContentRevision.of(document.bytes), document.metadata)
     }
 
+    data class LoadedTable(val table: io.github.gretchycat.infiniscribe.TableDocument, val hasMore: Boolean,
+        val revision: com.infinifolder.storage.ContentRevision?)
+
+    fun readTable(context: Context, uri: Uri, fileName: String = "", maxBytes: Int = 8 * 1024 * 1024,
+        charset: Charset = Charsets.UTF_8): LoadedTable = openSource(context, uri).use { source ->
+        readTable(source, fileName, maxBytes, charset)
+    }
+
+    /** Parse through Scribe, retaining the exact original bytes for the existing guarded save path. Input is borrowed. */
+    fun readTable(source: ByteSource, fileName: String = "", maxBytes: Int = 8 * 1024 * 1024,
+        charset: Charset = Charsets.UTF_8): LoadedTable {
+        val document = io.github.gretchycat.infiniscribe.TextDocuments.read(source, maxBytes, charset)
+        return LoadedTable(io.github.gretchycat.infiniscribe.TableDocuments.parse(document, fileName), document.hasMore,
+            if (document.hasMore) null else com.infinifolder.storage.ContentRevision.of(document.bytes))
+    }
+
     fun readText(context: Context, uri: Uri, maxBytes: Int = 4 * 1024 * 1024, charset: Charset = Charsets.UTF_8): Pair<String, Boolean> {
         openSource(context, uri).use { source ->
             val document = io.github.gretchycat.infiniscribe.TextDocuments.read(source, maxBytes, charset)

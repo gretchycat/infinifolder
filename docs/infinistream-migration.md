@@ -1,6 +1,6 @@
 # InfiniStream migration checkpoints
 
-Design authority: [implementation assignment](infinistream_architecture_codex.md). Baseline: InfiniFolder `9233495`, libinfinisound `c6137cd`, 2026-10-30. The user supplied the assignment as an untracked file; preserve it intact. No AGENTS.md was found in the workspace or its project/home ancestors. No source code has been moved at this documentation checkpoint.
+Design authority: [implementation assignment](infinistream_architecture_codex.md). Baseline: InfiniFolder `9233495`, libinfinisound `c6137cd`, 2026-10-30. The user supplied the assignment as an untracked file; preserve it intact. No AGENTS.md was found in the workspace or its project/home ancestors. The initial documentation checkpoint preceded all source moves; the implementation checkpoints below record the current state.
 
 ## Published repositories and pinned dependency graph
 
@@ -13,7 +13,7 @@ All remote main hashes were checked against the local tested heads. Sound's exis
 | [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`aa41c5d`](https://github.com/gretchycat/libinfinivault/commit/aa41c5d4e2b6db06b83d29e889c04ec069e2bcd2) |
 | [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`0e7a9c9`](https://github.com/gretchycat/libinfinisound/commit/0e7a9c9803ef2c86bd4e88d0e501444a1713b2a3) |
 | [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`c3e8aaa`](https://github.com/gretchycat/libinfinicanvas/commit/c3e8aaab4fa52f5212a2c3f59f7c2af390c7b54c) |
-| [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`5c98077`](https://github.com/gretchycat/libinfiniscribe/commit/5c980775a8f1d097848cf2ddd844814e0baebb6e) |
+| [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`acfee28`](https://github.com/gretchycat/libinfiniscribe/commit/acfee28cb9c956e124d7d65f9aa8ade36a1feb76) |
 | [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`447c92d`](https://github.com/gretchycat/libinfinivideo/commit/447c92d593876d40a39807b424c3e0fb35c23807) |
 
 ```text
@@ -22,7 +22,7 @@ Vault -> Store + Stream + Sound audio-api (playlist containers)
 Sound / Canvas / Scribe / Video -> Stream
 Host storage-engine -> Store + Vault (runtime/router/external-edit composition)
 viewer-common -> host storage-engine + Canvas + Scribe
-viewer-audio -> Sound; viewer-video -> Video
+viewer-audio -> Sound; viewer-video -> Video; viewer-csv -> Scribe
 ```
 
 Ordinary files open through Store/Stream directly; Vault is used for containers. Family dependencies contain no Store/Vault cycle and no library depends on InfiniFolder's application or viewer UI. Legacy packages are retained as compatibility names. dependencies.json in each repository records tested sibling revisions; clone those dependencies beside the repository or set -PinfiniLibrariesDir for a standalone build.
@@ -36,10 +36,10 @@ Ordinary files open through Store/Stream directly; Vault is used for containers.
 | libinfinivault | ArchiveReader/Writer, archive mounts, partitions, VM disks, FAT/ext/NTFS/HFS/UFS, compression and JNI | Consume Store contracts and Stream; no Store implementation dependency back to Vault |
 | libinfinisound (reuse) | audio-api, portable audio-core, Android audio-processing | Add Stream wrappers; preserve codecs, PCM precision, timing and output lifetimes |
 | libinfinicanvas | ThumbnailDecoder, image codecs and transformations in viewer-common/preview | Keep icon policy/UI in host; Android Bitmap and ContentResolver are explicit adapters |
-| libinfiniscribe | MarkdownRenderer and bounded text reading/encoding | Retain WebView/editor UI and revision-checked saves in host |
+| libinfiniscribe | MarkdownRenderer, bounded text reading/encoding and CSV/TSV parsing/formatting | Retain WebView/editor UI and revision-checked saves in host |
 | libinfinivideo | Existing Android VideoView/MediaPlayer presentation input/timing integration | Preserve this backend; this checkout has no libVLC implementation to replace |
 
-`storage-engine` currently mixes all Store/Vault/runtime responsibilities. `StorageRuntime` and `RoutingStorageProvider` enumerate concrete providers and stay in the host composition layer until injection replaces those references. Existing archive-package names may temporarily survive as source/binary compatibility namespaces; their ownership must be documented rather than creating dependency cycles.
+At the baseline, `storage-engine` mixed Store/Vault/runtime responsibilities; it now retains only host runtime/router/external-edit orchestration. `StorageRuntime` and `RoutingStorageProvider` enumerate concrete providers and stay in the host composition layer until injection replaces those references. Existing archive-package names may temporarily survive as source/binary compatibility namespaces; their ownership must be documented rather than creating dependency cycles.
 
 ## Checkpoint rules
 
@@ -99,11 +99,23 @@ Domain metadata propagation was checked explicitly: the Sound stream processor p
 
 Document loads now stay on ByteSource through MediaSourceAdapter.openSource, Scribe's negotiated pull decoder and LoadedText.metadata. Source identity is supplied from the known URI without an extra stat request; the original byte revision and truncation guard remain unchanged. StreamMetadataCarrier preserves metadata through legacy InputStream adapters as well, recalculating the demonstrated sequential capabilities/ownership. A contract test exercises the exact document helper used by Android viewers. Canvas's generic source adapter also retains known input warnings in frame metadata.
 
+## Checkpoint 5: CSV/TSV document consumers
+
+Moved the activity's existing delimiter/parser/formatter methods into Scribe's JVM DelimitedText implementation; compatibility companion methods now delegate. The four original host parser tests remain, and the same expectations run without Android in the library. Existing permissive behavior is retained, including filename TSV preference, heuristic tie ordering, trimming, blank-row handling, quoted newlines, CRLF and unmatched quotes.
+
+The actual CSV load now passes a borrowed ByteSource through the text decoder and registered table parser. The host fingerprints the original bytes, before trimming/line-ending normalization. The viewer retains table metadata and editable rows; it does not keep a duplicate original table. Save serialization now uses the registered table-to-text formatter and its UTF-8 bytes, with the existing revision-checked save/Save As paths unchanged. Partial previews keep their read-only guard and lack a save revision. No source is reopened or implicitly staged, and no provider write/recovery API changed.
+
+Both pull processors publish typed ports and actual metadata: table delimiter/format, Unicode representation, row/maximum-column counts, completeness, ownership, provenance/warnings, then actual serialized text counts/encoding/line endings. Output verification does not inherit verification of input bytes. Cancellation is cooperative, and processor sessions borrow their inputs.
+
+Verification: the pre-edit 538-case gate and post-edit 552-case gate both report the same 30 existing failures, with no new failures/skips or missing cases. Four original parser expectations plus eight new library cases bring Scribe to 25 JVM tests; two additional host cases exercise the actual consumer. The full app and standalone CSV host build successfully; Scribe's standalone JVM build passes. All 120,000 seeded comparisons of delimiter detection/parsing/formatting against the pre-move methods match. A 5.4-million-character, 200,000-row sample measured median parsing times of 321 ms before and 324 ms after (five samples after warmup on this host; this is a local sanity check, not a cross-device performance guarantee).
+
+The existing 15 packaged-APK Android checks still pass. Two more app_process checks exercise the real MediaSourceAdapter table consumer: original-byte revision, metadata, edited serialization/UTF-8/borrowed ownership, and incomplete-preview/no-save-revision propagation. Logs, extracted oracle, seeded comparison harness and runtime harnesses are under build/infinistream-migration. Interactive spreadsheet UI and live provider write acceptance remain manual checks.
+
 ## Final verification and reproducibility
 
-Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 538-case checkpoint.
+Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 552-case checkpoint.
 
-Current totals: **538 tests, 508 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
+Current totals: **552 tests, 522 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
 | Independent library | Tests | Failures |
 | --- | ---: | ---: |
@@ -112,12 +124,12 @@ Current totals: **538 tests, 508 pass, 30 pre-existing failures, no new failures
 | Vault | 3 | 0 |
 | Sound | 20 | 0 |
 | Canvas | 7 | 0 |
-| Scribe | 13 | 0 |
+| Scribe | 25 | 0 |
 | Video | 4 | 0 |
 
-All seven standalone source builds passed with the pinned sibling dependencies. Stream/Scribe and portable Sound builds need no Android runtime. Android modules were built with SDK 36, JDK 21 targeting Java 17, Kotlin 2.2.20 and AGP 8.9.2 using Gradle 9.7.1. Full app and selected audio/text/image/video host debug APKs built. Termux ARM64 native source builds passed; the standard NDK/CMake path and desktop/iOS runtime execution were not exercised.
+All seven standalone source builds passed with the pinned sibling dependencies. Stream/Scribe and portable Sound builds need no Android runtime. Android modules were built with SDK 36, JDK 21 targeting Java 17, Kotlin 2.2.20 and AGP 8.9.2 using Gradle 9.7.1. The preceding checkpoint built full app and selected audio/text/image/video host debug APKs; checkpoint 5 rebuilt the full app and affected CSV host, and repeated the independent Scribe build. Termux ARM64 native source builds passed; the standard NDK/CMake path and desktop/iOS runtime execution were not exercised.
 
-The Android app_process harness loaded the current full APK and passed 12 portable/platform audio decode cases plus real TGA BitmapFrame metadata/borrowed lifetime, bounded Scribe Unicode-text pipeline and Video surface-metadata checks. PCM frame counts/precision match across policies; FLAC samples are exact through 32 bits. Ext/tracker JNI, new library classes and JAAD's bundled license are present in the full APK. These 15 checks do not exercise audible playback, playback surfaces, UI, seeking/gapless, casting or live remote servers. Those require device/backend acceptance and remain explicitly unclaimed. Logs and harness outputs are under build/infinistream-migration.
+The Android app_process harness loaded the current full APK and passed 12 portable/platform audio decode cases plus real TGA BitmapFrame metadata/borrowed lifetime, bounded Scribe Unicode-text pipeline and Video surface-metadata checks. PCM frame counts/precision match across policies; FLAC samples are exact through 32 bits. Ext/tracker JNI, new library classes and JAAD's bundled license are present in the full APK. These 15 checks do not exercise audible playback, playback surfaces, UI, seeking/gapless, casting or live remote servers. Checkpoint 5 also passes two actual CSV consumer checks, bringing current Android harness coverage to 17 checks. Interactive playback and UI require device/backend acceptance and remain explicitly unclaimed. Logs and harness outputs are under build/infinistream-migration.
 
 ## Next migration work and intentional compatibility
 
@@ -127,4 +139,4 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. No opaque native blob or language port was introduced by this migration.
 
-Final full debug APK SHA-256: `b751357d3e2c8c77257d7247afd7d0ecf9cc16ee82937b16bb37cb7899ca7cfe`.
+Final full debug APK SHA-256: `ead6cc541b071d0bc79a3d160383c630aafd2570302f26a253da76c5a3e1ef58`.

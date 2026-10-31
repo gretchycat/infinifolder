@@ -13,7 +13,9 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.*
-import java.nio.charset.StandardCharsets
+import io.github.gretchycat.infiniscribe.DelimitedText
+import io.github.gretchycat.infiniscribe.TableDocument
+import io.github.gretchycat.infiniscribe.TableDocuments
 
 /**
  * Interactive CSV / TSV spreadsheet viewer and editor.
@@ -23,6 +25,7 @@ import java.nio.charset.StandardCharsets
 class CsvViewerActivity : ViewerActivity() {
     private var loadedRevision: com.infinifolder.storage.ContentRevision? = null
 
+    private var tableMetadata: io.github.gretchycat.infinistream.StreamMetadata? = null
     private var documentFullyLoaded = false
 
 
@@ -220,12 +223,12 @@ class CsvViewerActivity : ViewerActivity() {
 
         Thread {
             try {
-                val document = MediaSourceAdapter.readDocument(this, targetUri, maxBytes = 8 * 1024 * 1024)
-                val rawText = document.text
-                delimiter = detectDelimiter(rawText, displayName)
-                val rows = parseCsv(rawText, delimiter)
+                val document = MediaSourceAdapter.readTable(this, targetUri, displayName, maxBytes = 8 * 1024 * 1024)
+                delimiter = document.table.delimiter
+                val rows = document.table.rows
 
                 runOnUiThread {
+                    tableMetadata = document.table.metadata
                     documentFullyLoaded = !document.hasMore
                     loadedRevision = document.revision
                     if (!documentFullyLoaded) Toast.makeText(this, "Large spreadsheet: partial preview is read-only", Toast.LENGTH_LONG).show()
@@ -382,15 +385,17 @@ class CsvViewerActivity : ViewerActivity() {
         }
 
         val u = uri ?: return
-        val csvText = formatCsv(originalData, delimiter)
+        val metadata = tableMetadata ?: return
+        val formatted = TableDocuments.format(TableDocument(originalData, delimiter, metadata))
+        val csvText = formatted.text
 
         progressBar.visibility = View.VISIBLE
         Thread {
-            val res = MediaSourceAdapter.saveContent(this, u, csvText.toByteArray(StandardCharsets.UTF_8), loadedRevision)
+            val res = MediaSourceAdapter.saveContent(this, u, formatted.bytes, loadedRevision)
             runOnUiThread {
                 progressBar.visibility = View.GONE
                 if (res is com.infinifolder.model.ProviderResult.Success) {
-                    loadedRevision = com.infinifolder.storage.ContentRevision.of(csvText.toByteArray(StandardCharsets.UTF_8))
+                    loadedRevision = com.infinifolder.storage.ContentRevision.of(formatted.bytes)
                     isDirty = false
                     saveBtn.visibility = View.GONE
                     Toast.makeText(this, "Spreadsheet saved successfully", Toast.LENGTH_SHORT).show()
@@ -479,80 +484,9 @@ class CsvViewerActivity : ViewerActivity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     companion object {
-        fun detectDelimiter(sample: String, fileName: String = ""): Char {
-            if (fileName.endsWith(".tsv", ignoreCase = true)) return '\t'
-            val firstLine = sample.lineSequence().firstOrNull() ?: return ','
-            val commaCount = firstLine.count { it == ',' }
-            val tabCount = firstLine.count { it == '\t' }
-            val semiCount = firstLine.count { it == ';' }
-            val pipeCount = firstLine.count { it == '|' }
-
-            return when {
-                tabCount > commaCount && tabCount > semiCount -> '\t'
-                semiCount > commaCount && semiCount > tabCount -> ';'
-                pipeCount > commaCount && pipeCount > semiCount -> '|'
-                else -> ','
-            }
-        }
-
-        fun parseCsv(text: String, delim: Char = ','): List<List<String>> {
-            val rows = mutableListOf<List<String>>()
-            val currentRow = mutableListOf<String>()
-            val currentField = StringBuilder()
-            var insideQuotes = false
-            var i = 0
-            val len = text.length
-
-            while (i < len) {
-                val c = text[i]
-                when {
-                    c == '"' -> {
-                        if (insideQuotes && i + 1 < len && text[i + 1] == '"') {
-                            currentField.append('"')
-                            i++ // Skip escaped quote
-                        } else {
-                            insideQuotes = !insideQuotes
-                        }
-                    }
-                    c == delim && !insideQuotes -> {
-                        currentRow.add(currentField.toString().trim())
-                        currentField.clear()
-                    }
-                    (c == '\r' || c == '\n') && !insideQuotes -> {
-                        if (c == '\r' && i + 1 < len && text[i + 1] == '\n') i++ // Skip CRLF
-                        currentRow.add(currentField.toString().trim())
-                        currentField.clear()
-                        if (currentRow.isNotEmpty() && currentRow.any { it.isNotEmpty() }) {
-                            rows.add(currentRow.toList())
-                        }
-                        currentRow.clear()
-                    }
-                    else -> {
-                        currentField.append(c)
-                    }
-                }
-                i++
-            }
-            if (currentField.isNotEmpty() || currentRow.isNotEmpty()) {
-                currentRow.add(currentField.toString().trim())
-                rows.add(currentRow.toList())
-            }
-            return rows
-        }
-
-        fun formatCsv(rows: List<List<String>>, delimiter: Char = ','): String {
-            return buildString {
-                rows.forEach { row ->
-                    val line = row.joinToString(delimiter.toString()) { field ->
-                        if (field.contains(delimiter) || field.contains('"') || field.contains('\n') || field.contains('\r')) {
-                            "\"" + field.replace("\"", "\"\"") + "\""
-                        } else {
-                            field
-                        }
-                    }
-                    append(line).append("\n")
-                }
-            }
-        }
+        // Compatibility entry points; parsing and formatting are owned by the JVM Scribe library.
+        fun detectDelimiter(sample: String, fileName: String = ""): Char = DelimitedText.detectDelimiter(sample, fileName)
+        fun parseCsv(text: String, delim: Char = ','): List<List<String>> = DelimitedText.parseCsv(text, delim)
+        fun formatCsv(rows: List<List<String>>, delimiter: Char = ','): String = DelimitedText.formatCsv(rows, delimiter)
     }
 }
