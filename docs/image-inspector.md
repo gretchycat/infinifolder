@@ -28,7 +28,8 @@ copy export are unchanged by this checkpoint.
 
 This is extraction of the existing Android adapter. A portable EXIF parser,
 metadata writing, new metadata fields and a portable image editor remain future
-work. EXIF values describe the original encoded resource, while displayed pixel
+work. The subsequent [image-processing checkpoint](image-processing.md) moves
+Android bitmap edits/PNG encoding into Canvas and retains their actual output metadata. EXIF values describe the original encoded resource, while displayed pixel
 dimensions describe the current sampled/edited bitmap, as before.
 
 ## Fixture checks

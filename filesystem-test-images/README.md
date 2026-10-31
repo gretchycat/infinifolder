@@ -47,7 +47,7 @@ The original `fat*.img`, `ext*.img`, `hfs.img`, `ntfs.img`, and archive files ar
 | `archives/legacy/` | RAR/ARJ single, multipart, missing-volume and damaged cases, with provenance/licenses |
 | `compression/zstandard/` | Standalone compressed-file fixture |
 | `disks/` | Complete MBR, GPT and Apple Partition Map disks and gzip wrappers |
-| `images/` | 80 image format fixtures rendered from the InfiniFolder app icon, plus synthetic EXIF JPEGs/invalid input and ZIP copies (`generate-media-fixtures.py`, `generate-image-metadata-fixtures.py`) |
+| `images/` | 80 image format fixtures rendered from the InfiniFolder app icon, plus synthetic EXIF/edit images, independent transformation references, invalid input and ZIP copies (`generate-media-fixtures.py`, `generate-image-metadata-fixtures.py`, `generate-image-edit-fixtures.py`) |
 | `audio/` | 75 audio/sound format fixtures synthesized as a C-major piano chord (`C4`–`E4`–`G4`–`C5`, `generate-media-fixtures.py`) |
 | `documents/` | CSV/TSV, text/Markdown/HTML/JSON, large read-only previews, paged PDF/PostScript/EPS/LaTeX, EPUB 2/3/fallback/invalid books and archive-access ZIPs (`generate-document-fixtures.py`, `generate-paged-document-fixtures.py`, `generate-epub-fixtures.py`) |
 
@@ -248,3 +248,13 @@ camera information is included. The deliberately malformed
 `invalid-metadata.jpg` checks graceful failure. See [inspector checks](../docs/image-inspector.md).
 The standard-library generator preserves existing files and unrelated manifest
 entries, including edited document fixtures.
+
+
+## Image edit fixtures
+
+`images/sample-image-edits.png` labels four colored corners. Independent expected
+clockwise/counterclockwise/flip/crop PNGs, hashes and ZIP copies accompany it.
+Use copies for editing and PNG export; see [image-processing checks](../docs/image-processing.md).
+The standard-library generator preserves existing files and unrelated manifest
+entries. Reference orientation/crop pixels are array remaps, independent of the
+Android Bitmap backend used by the app.

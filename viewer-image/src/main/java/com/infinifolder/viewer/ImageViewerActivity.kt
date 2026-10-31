@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.Matrix
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
@@ -13,7 +12,13 @@ import android.widget.*
 import com.infinifolder.viewer.common.R
 import com.infinifolder.model.ProviderResult
 import com.infinifolder.model.ResourceEntry
-import java.io.ByteArrayOutputStream
+import java.io.IOException
+import com.infinifolder.preview.BitmapFrame
+import com.infinifolder.preview.ImageTransform
+import com.infinifolder.preview.ImageTransforms
+import com.infinifolder.preview.ImageOrientationChange
+import com.infinifolder.preview.ImageEncoding
+import io.github.gretchycat.infinistream.StreamMetadata
 import kotlin.math.roundToInt
 
 class ImageViewerActivity : ViewerActivity() {
@@ -412,10 +417,9 @@ class ImageViewerActivity : ViewerActivity() {
                     2 -> { zoomImageView.isCropMode = true; zoomImageView.setCropAspectRatio(4f, 3f) }
                     3 -> { zoomImageView.isCropMode = true; zoomImageView.setCropAspectRatio(16f, 9f) }
                     4 -> {
-                        val currentBmp = originalBitmap ?: return@setItems
-                        val cropped = zoomImageView.getCroppedBitmap(currentBmp)
+                        if (originalBitmap == null) return@setItems
+                        val cropped = zoomImageView.getCropBounds()?.let { transformBitmap(ImageTransform.Crop(it)) }
                         if (cropped != null) {
-                            originalBitmap = cropped
                             zoomImageView.setImageBitmap(cropped)
                             hasUnsavedEdits = true
                         }
@@ -432,16 +436,13 @@ class ImageViewerActivity : ViewerActivity() {
         AlertDialog.Builder(this)
             .setTitle("Rotate & Flip")
             .setItems(items) { _, which ->
-                val bmp = originalBitmap ?: return@setItems
-                val m = Matrix()
-                when (which) {
-                    0 -> m.postRotate(90f)
-                    1 -> m.postRotate(-90f)
-                    2 -> m.postScale(-1f, 1f)
-                    3 -> m.postScale(1f, -1f)
+                val change = when (which) {
+                    0 -> ImageOrientationChange.ROTATE_CLOCKWISE
+                    1 -> ImageOrientationChange.ROTATE_COUNTERCLOCKWISE
+                    2 -> ImageOrientationChange.FLIP_HORIZONTAL
+                    else -> ImageOrientationChange.FLIP_VERTICAL
                 }
-                val transformed = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
-                originalBitmap = transformed
+                val transformed = transformBitmap(ImageTransform.Orient(change)) ?: return@setItems
                 zoomImageView.setImageBitmap(transformed)
                 zoomImageView.resetZoom()
                 hasUnsavedEdits = true
@@ -503,6 +504,7 @@ class ImageViewerActivity : ViewerActivity() {
 
     private fun showResizeDialog() {
         val bmp = originalBitmap ?: return
+        val resizeMetadata = decodedImageMetadata
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(10), dp(20), dp(10))
@@ -546,8 +548,7 @@ class ImageViewerActivity : ViewerActivity() {
             .setPositiveButton("Resize") { _, _ ->
                 val newW = wInput.text.toString().toIntOrNull()?.coerceIn(1, 10000) ?: return@setPositiveButton
                 val newH = hInput.text.toString().toIntOrNull()?.coerceIn(1, 10000) ?: return@setPositiveButton
-                val scaled = Bitmap.createScaledBitmap(bmp, newW, newH, true)
-                originalBitmap = scaled
+                val scaled = transformBitmap(ImageTransform.Resize(newW, newH), bmp, resizeMetadata) ?: return@setPositiveButton
                 zoomImageView.setImageBitmap(scaled)
                 zoomImageView.resetZoom()
                 hasUnsavedEdits = true
@@ -578,18 +579,33 @@ class ImageViewerActivity : ViewerActivity() {
         if (requestCode == 901 && resultCode == RESULT_OK) data?.data?.let(::performSave)
     }
 
+    private fun currentFrame(bitmap: Bitmap, metadata: StreamMetadata? = decodedImageMetadata): BitmapFrame = BitmapFrame(bitmap,
+        provenance = metadata?.provenance ?: io.github.gretchycat.infinistream.Provenance(),
+        warnings = metadata?.warnings ?: emptyList())
+
+    private fun transformBitmap(transform: ImageTransform, bitmap: Bitmap? = originalBitmap,
+        metadata: StreamMetadata? = decodedImageMetadata): Bitmap? {
+        val source = bitmap ?: return null
+        return currentFrame(source, metadata).use { input ->
+            ImageTransforms.apply(input, transform).use { output ->
+                decodedImageMetadata = output.metadata
+                output.takeBitmap().also { originalBitmap = it }
+            }
+        }
+    }
+
     private fun performSave(targetUri: Uri) {
         val bmp = originalBitmap ?: return
-        val baos = ByteArrayOutputStream()
         if (targetUri.toString() == currentUri?.toString()) {
             Toast.makeText(this, "Choose a new file to preserve the original image", Toast.LENGTH_LONG).show()
             return
         }
-        if (!bmp.compress(Bitmap.CompressFormat.PNG, 100, baos)) {
+        val data = try {
+            currentFrame(bmp).use { input -> ImageEncoding.png(input).use { it.takeBytes() } }
+        } catch (_: IOException) {
             Toast.makeText(this, "Could not encode image; original retained", Toast.LENGTH_LONG).show()
             return
         }
-        val data = baos.toByteArray()
 
         Thread {
             val res = MediaSourceAdapter.saveContent(this, targetUri, data)

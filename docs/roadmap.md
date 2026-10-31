@@ -19,7 +19,9 @@ Audio output and analysis now share library-decoded PCM sources, with bounded st
 The [image inspector](image-inspector.md) also uses a Canvas common-source EXIF
 processor with the existing Android backend. Host labels/formatting remain;
 source ownership, cancellation and legal short reads are covered at the boundary.
-Portable EXIF parsing and image-editor processing remain future migration work.
+Canvas also owns [bitmap edits and PNG encoding](image-processing.md) through
+registered processors. Host gestures, preview controls and save policy remain.
+Portable EXIF/image processing and streamed PNG publication remain future work.
 
 Current progress and known pre-existing failures belong in [migration checkpoints](infinistream-migration.md). The remaining product/safety work below continues alongside this architecture work; no language port is included.
 

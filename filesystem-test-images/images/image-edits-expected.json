@@ -1,0 +1,41 @@
+{
+  "files": {
+    "sample-image-edits.png": {
+      "width": 320,
+      "height": 200,
+      "sha256": "3c762bd8a01fe7b03c953c3d9cb59e2480e396b5cef246711113493ab8557c63"
+    },
+    "expected-image-cw.png": {
+      "width": 200,
+      "height": 320,
+      "sha256": "a1cfaff63723bfd20b1037e73e3992d78be266fbc19c8145ae7dedb20c364597"
+    },
+    "expected-image-ccw.png": {
+      "width": 200,
+      "height": 320,
+      "sha256": "42df24b8255d2f5844583f60d5f946588be129c5706177ff6988c6250c843981"
+    },
+    "expected-image-flip-horizontal.png": {
+      "width": 320,
+      "height": 200,
+      "sha256": "c0769b6831128e3ba5703dba0f10a2952432e8ea417bdbbb268d2c07cd8bbe06"
+    },
+    "expected-image-flip-vertical.png": {
+      "width": 320,
+      "height": 200,
+      "sha256": "5308c8d2665d49870d68bd48ec1d298a71d3823868eab2abb6e6e3b2391494e3"
+    },
+    "expected-image-crop.png": {
+      "width": 160,
+      "height": 100,
+      "sha256": "48aef10258fe922866c4318aba98009acf3bbcda3d14b134fa36aa0d721442ed"
+    }
+  },
+  "crop": [
+    80,
+    50,
+    240,
+    150
+  ],
+  "notes": "Original synthetic RGB corner labels; compare orientation pixels exactly. Resize uses the retained Android filtered backend."
+}

@@ -52,13 +52,22 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Implemented; focused acceptance still needed
 
+Checkpoint 18 moves image bitmap rotation/flip/crop/resize and PNG encoding into
+Canvas processors, retaining host controls, resize-dialog snapshots, sampled
+editing and PNG-copy publication. Outputs carry actual geometry/format metadata
+and explicit ownership for copies/aliases/transfers. Asymmetric reference images
+and ZIP copies are in the image fixture directory. Current evidence is 774 cases
+with the same 30 known failures and 86 passing device pipeline checks.
+[Image edit/export acceptance](image-processing.md) remains; portable processing
+and streamed PNG publication remain future work.
+
 Checkpoint 17 moves image-inspector EXIF parsing behind a Canvas common-source
 processor with the existing Android backend. Host fields/formatting remain;
 source cancellation, ownership, short reads and stale-dialog suppression are
 explicit. Synthetic tagged JPEGs and ZIP copies are in the image fixture folder.
-Current evidence is 748 cases with the same 30 known failures and 74 passing
+Checkpoint 17 recorded 748 cases with the same 30 known failures and 74 passing
 packaged-APK pipeline checks. [Image inspector UI/provider checks](image-inspector.md)
-remain acceptance work; image editor processing remains a later migration.
+remain acceptance work; bitmap edit processing is implemented in checkpoint 18.
 
 Checkpoint 16 moves EPUB structural parsing into Scribe's portable core and ZIP
 resource expansion into Vault, retaining the host's full staging/cache leases,

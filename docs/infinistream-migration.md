@@ -12,7 +12,7 @@ All remote main hashes were checked against the local tested heads. Sound's exis
 | [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | [`faee836`](https://github.com/gretchycat/libinfinistore/commit/faee836518fca09d2c9ba8cedb174b1a80779809) |
 | [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`0522412`](https://github.com/gretchycat/libinfinivault/commit/0522412d226a8171afa10da04b338cb5b38470c8) |
 | [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`61a4644`](https://github.com/gretchycat/libinfinisound/commit/61a4644bdfd216597bc3fe24ef3a55984bcc2363) |
-| [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`3db2437`](https://github.com/gretchycat/libinfinicanvas/commit/3db243787754781862c36cafd751d80c5a75f09e) |
+| [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`ae706d7`](https://github.com/gretchycat/libinfinicanvas/commit/ae706d70d84a3d6e635d96347bc5c0fe26e5346b) |
 | [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`084e9de`](https://github.com/gretchycat/libinfiniscribe/commit/084e9de5ab5335c79ae88fdf2c297314cfd664e3) |
 | [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`447c92d`](https://github.com/gretchycat/libinfinivideo/commit/447c92d593876d40a39807b424c3e0fb35c23807) |
 
@@ -342,11 +342,66 @@ also confirms the 20-byte truncated invalid JPEG remains listed and shows the
 without picture data. Other malformed input, UI and live provider acceptance
 remains; see the inspector fixture notes.
 
+## Checkpoint 18: image edits and PNG encoding
+
+Canvas now owns the image editor's existing rotate/flip Matrix transforms,
+source-pixel crop clamping/allocation, filtered resize and PNG compression behind
+registered Stream pull processors. The live editor uses typed ImageTransform
+requests and an actual-output BitmapFrame, preserving the original Android
+algorithms. The view still maps its screen crop rectangle with the inverse
+display matrix; its legacy getCroppedBitmap method delegates to Canvas. Edit
+steps use explicit registry execution, avoiding an unchanged zero-step route
+for a frame-to-frame target. PNG also works through ordinary pull composition.
+
+Input frames are borrowed. New Bitmap objects are output-owned; exact-object
+aliases are borrowed. Closing a result recycles only owned pixels, and
+BitmapFrame.takeBitmap transfers them to the host without copying. Device
+checks showed that mutable no-op resize can allocate a copy, while immutable
+no-op resize/full crop can alias. Tests cover both actual ownership paths; the
+initial incorrect mutable-alias test assumption is retained in
+checkpoint18-mutable-noop-assumption-attempt.log. Each output publishes actual
+dimensions/config/color space, source provenance/warnings and operation trace.
+
+PNG output is an owned sequential/positional EncodedImage ByteSource with exact
+encoded length, image/png type and width/height. It clears raw-frame attributes,
+input filename and verification. takeBytes transfers storage to the unchanged
+host byte-array publication path. PNG remains fully materialized. Native pixel
+operations check cooperative cancellation before/after allocation; fresh
+cancelled results are recycled. PNG checks during writes and preserves original
+write exceptions if native compression catches them or clears the flag. The
+native cancellation test can print expected InterruptedIOException diagnostics;
+it requires cancellation to propagate without publishing partial bytes.
+
+Host gestures, crop presets, viewport rotation, color-filter previews, dialogs,
+slideshow and save/provider policy remain. Resize retains the image/metadata
+captured when its dialog opened, preserving behavior if slideshow navigation
+changes the current item. The host keeps sampled single-frame editing, resize
+limits, original-URI protection and PNG-copy export. Richer edit history,
+portable image processing and streamed publication remain future work.
+
+Eight new fixture entries add a labeled asymmetric PNG, independent rotation/
+flip/crop references, expected hashes and ZIP copies. The standard-library
+generator preserves existing files and unrelated manifest entries. See
+[image processing](image-processing.md) for contracts and handset checks.
+
+Verification: 774 cases, 744 pass, the same 30 pre-existing failures and no new
+failures/skips/missing cases. The 26 additions are Canvas geometry/options and
+encoded-source tests; Canvas now has 52 JVM cases. Full APK, independent Canvas
+build/tests and the image-only host build pass. Twelve new actual-APK groups
+check independent and legacy pixels, transformed metadata, mapped/clamped crops,
+filtered resize, owned/aliased/session/transferred lifetime, PNG bytes/alpha,
+positional sources, pull composition, invalid input, cancellation and ZIP
+fixtures. The preceding 74 device cases also pass against the same final APK:
+86 total, including MP3/FLAC seek samples/callbacks and gapless. Logs use
+checkpoint18-* under build/infinistream-migration. Earlier audio results before
+the dialog-snapshot review are retained separately; final results use the final
+APK. Interactive edit/export controls and live providers remain handset checks.
+
 ## Final verification and reproducibility
 
-Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 748-case checkpoint.
+Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 774-case checkpoint.
 
-Current totals: **748 tests, 718 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
+Current totals: **774 tests, 744 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
 | Independent library | Tests | Failures |
 | --- | ---: | ---: |
@@ -354,7 +409,7 @@ Current totals: **748 tests, 718 pass, 30 pre-existing failures, no new failures
 | Store | 6 | 0 |
 | Vault | 9 | 0 |
 | Sound | 69 | 0 |
-| Canvas | 26 | 0 |
+| Canvas | 52 | 0 |
 | Scribe | 99 | 0 |
 | Video | 4 | 0 |
 
@@ -371,4 +426,4 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. No opaque native blob or language port was introduced by this migration.
 
-Final full debug APK SHA-256: `5a82863107980163c0593751010611c99867f4410414874e79e2912a7ec5bb18`.
+Final full debug APK SHA-256: `dede67c31304c368b139345f23d797d6e7380c6fbc13604a685b3f9d95271ac9`.

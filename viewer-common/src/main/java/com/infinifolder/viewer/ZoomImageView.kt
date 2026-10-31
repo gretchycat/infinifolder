@@ -266,24 +266,21 @@ class ZoomImageView @JvmOverloads constructor(
         invalidate()
     }
 
-    fun getCroppedBitmap(sourceBitmap: Bitmap): Bitmap? {
-        val d = drawable ?: return null
+    /** UI maps the display rectangle; Canvas owns source-pixel clamping and cropping. */
+    fun getCropBounds(): com.infinifolder.preview.ImageCropBounds? {
+        if (drawable == null) return null
         val inv = Matrix()
         if (!drawMatrix.invert(inv)) return null
-
         val mappedCrop = RectF()
         inv.mapRect(mappedCrop, cropRect)
+        return com.infinifolder.preview.ImageCropBounds(mappedCrop.left, mappedCrop.top, mappedCrop.right, mappedCrop.bottom)
+    }
 
-        val left = mappedCrop.left.toInt().coerceIn(0, sourceBitmap.width - 1)
-        val top = mappedCrop.top.toInt().coerceIn(0, sourceBitmap.height - 1)
-        val right = mappedCrop.right.toInt().coerceIn(left + 1, sourceBitmap.width)
-        val bottom = mappedCrop.bottom.toInt().coerceIn(top + 1, sourceBitmap.height)
-
-        val cropW = right - left
-        val cropH = bottom - top
-        if (cropW <= 0 || cropH <= 0) return null
-
-        return Bitmap.createBitmap(sourceBitmap, left, top, cropW, cropH)
+    /** Compatibility for existing callers; new consumers keep the resulting frame metadata. */
+    fun getCroppedBitmap(sourceBitmap: Bitmap): Bitmap? {
+        val bounds = getCropBounds() ?: return null
+        return com.infinifolder.preview.ImageTransforms.apply(com.infinifolder.preview.BitmapFrame(sourceBitmap),
+            com.infinifolder.preview.ImageTransform.Crop(bounds)).use { it.takeBitmap() }
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
