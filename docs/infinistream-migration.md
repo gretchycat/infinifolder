@@ -578,6 +578,19 @@ Video-only checkpoint 22 APK SHA-256: `0c3cc55b34b1cdc8f861207146246b8c6dd16cac3
 Actual owner-file picture/sound, UI error handling and live-provider acceptance
 remain handset checks; no substituted stream is acceptable.
 
+## Follow-up: RealMedia acceptance and file handler audit
+
+The owner confirms the checkpoint 22 correction working (2026-10-31). The requested
+[cross-format audit](file-handler-stub-audit.md) subsequently reproduces 22 problem
+cases in 45 native observations against the same APK, with all 21 valid controls
+decoding and two malformed probes correctly rejected. Findings cover ignored
+codec identifiers, fabricated ANSI glyphs, unsupported compression and incomplete
+raster data reported as successful output. Vendored ALAC also has source-confirmed
+unfinished branches. Production decoder corrections remain follow-up work; the
+audit adds repeatable observation tooling and evidence, not a conformance pass or
+new frozen regression expectations. The recorded 830-case migration gate remains
+the checkpoint 22 gate; audit findings are tracked separately.
+
 ## Final verification and reproducibility
 
 Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 830-case checkpoint.

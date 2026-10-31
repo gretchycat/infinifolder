@@ -39,6 +39,11 @@ Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) d
 - [ ] Implement real chiptune emulators and additional portable codecs; keep unsupported input from generating audio.
 - [ ] Accept updated remote/ZIP streaming startup and seeks, activity-shortcut return and the audible companion on the handset.
 - [ ] Accept libVLC video surfaces/sound, seeking, aspect/speed, embedded subtitles, playlists/repeat, PiP and rapid navigation from local/ZIP/live remote inputs. See [video checks](video-formats.md#handset-checks).
+- [x] Audit file handlers for remaining placeholders and false success; record native reproductions and distinguish active paths from test support. See [file handler audit](file-handler-stub-audit.md).
+- [ ] Reject unknown codecs/packing in AU, AIFC, CAF, Wave64/RF64, 8SVX/MAUD and VOC; preserve valid decoding and real backend fallback.
+- [ ] Replace ANSI ASCII/box-drawing glyph stipple with actual CP437 glyphs.
+- [ ] Reject unsupported image compression and incomplete raster/chunk/tile data instead of returning blank or padded successful frames; preserve working custom formats and explicit embedded-preview limits.
+- [ ] Harden vendored ALAC EOF/prediction handling; isolate legacy PCM output simulation and mark unavailable permissions as unknown or inferred.
 - [ ] Continue converting legacy callers to metadata-driven composition before removing compatibility APIs or exported dependencies.
 - [ ] Extend automatic planning for arbitrary multi-input/track graphs; current multi-port processors use explicit bindings.
 - [ ] Verify live remote providers, Android playback/seek/gapless/route behavior and editor/container write acceptance after these checkpoints.

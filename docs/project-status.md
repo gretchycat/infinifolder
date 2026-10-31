@@ -6,9 +6,14 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Confirmed on the handset
 
+- The checkpoint 22 RealMedia association/substitute-audio correction is
+  user-confirmed working (2026-10-31). The subsequent cross-format stub audit
+  identifies additional defects separately; see the
+  [file handler audit](file-handler-stub-audit.md).
+
 - The checkpoint 21 video shortcut/streaming correction is user-reported working
   (2026-10-31). The subsequently reported `.rm` association and substitute-audio
-  defect is addressed separately in checkpoint 22; its handset check is pending.
+  defect is addressed separately in checkpoint 22 and is now user-confirmed.
 
 - The checkpoint 19 image viewport/crop correction is user-confirmed working
   (2026-10-31). The owner reports everything works as expected after retesting
@@ -63,6 +68,15 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Implemented; focused acceptance still needed
 
+The [cross-format audit](file-handler-stub-audit.md) reproduces 22 problem cases
+in the checkpoint 22 APK, with 21 valid controls decoding and two bad inputs
+correctly rejected (45 observations). Active defects include unknown audio codecs
+being interpreted as PCM, ANSI glyph stipple, and blank/partial image success for
+unsupported compression or missing pixels. Vendored ALAC has source-confirmed
+unfinished EOF/prediction branches. The legacy PCM timing simulation has only a
+JVM-test caller in the reviewed tree. These findings are unresolved; the audit
+records existing behavior and is not a passing conformance gate.
+
 Checkpoint 22 routes `.rm`/`.rmvb` to Video/libVLC even with a RealAudio MIME.
 Sound's old advanced-audio, WMA, telephony and chiptune stubs no longer generate
 substitute chords. Real registered codecs must decode the selected stream or
@@ -71,9 +85,9 @@ soundbank previews remain; missing/invalid SFZ samples and empty GUS patches
 fail explicitly. Six core rejection/sample tests, three routing cases and one
 MIME case bring the gate to 830 tests: 800 pass and the same 30 known failures.
 The new original RV20/AC-3 `.rm` fixture decodes actual video/audio in native
-local/streamed checks; ZIP copies are added for handset checks. Invalid streams fail, and actual Android AMR-NB/WB
-still decode. Reopen the owner's `.rm` files and verify their picture/sound; no
-invalid/unsupported input should emit a replacement tone. The generated JVM
+local/streamed checks; ZIP copies are added for handset checks. Invalid streams fail,
+and actual Android AMR-NB/WB still decode. The owner confirms the correction;
+broader malformed-input/provider coverage remains. The generated JVM
 fixture report corrects the former false successful-decoding claims.
 
 Checkpoint 21 corrects the Activity-bar video shortcut and replaces whole-video
