@@ -13,6 +13,8 @@ android {
 dependencies {
     api("androidx.core:core:1.15.0")
     api(project(":viewer-common"))
+    implementation("io.github.gretchycat.libinfiniscribe:scribe-core:0.1.0")
+    implementation("io.github.gretchycat.libinfinivault:vault-android:0.1.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }

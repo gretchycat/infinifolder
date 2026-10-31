@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "files": {
+    "sample-book.epub": {
+      "bytes": 3117,
+      "sha256": "8fac36f50ff146ffeb3000c1a411d152dfcf628c276f3002e6ad03e2a9668093",
+      "title": "Café — EPUB migration",
+      "author": "Synthetic Author",
+      "chapters": [
+        "First chapter (NCX)",
+        "Second chapter (NCX)"
+      ],
+      "valid": true
+    },
+    "sample-fallback-book.epub": {
+      "bytes": 964,
+      "sha256": "2b8221b59edad2d0d34d15b5622f4a7253ea9c9ae5de1addaf74e8d2ab5a9459",
+      "title": "EPUB Reader",
+      "author": "",
+      "chapters": [
+        "Heading fallback",
+        "Chapter 3"
+      ],
+      "valid": true
+    },
+    "sample-epub3.epub": {
+      "bytes": 1541,
+      "sha256": "9c8c23cc0d12123f086620a6542335ce246df62ffa6e36070d05ec1ba13ea443",
+      "title": "EPUB 3 smoke check",
+      "author": "Synthetic Author",
+      "chapters": [
+        "EPUB 3 first title",
+        "EPUB 3 second heading"
+      ],
+      "valid": true
+    },
+    "invalid-book.epub": {
+      "bytes": 174,
+      "sha256": "443dbc1a993ff556d89441c6b62d34a65ceb7f04b9bb3876fef7727c8453b621",
+      "title": null,
+      "author": null,
+      "chapters": [],
+      "valid": false
+    }
+  }
+}

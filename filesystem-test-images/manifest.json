@@ -327,9 +327,21 @@
     "bytes": 3831,
     "sha256": "df781a06db666378edba89e1e6f7508aaf9da1aa699989068a4bc9ad967369a0"
   },
+  "documents/epub-checks.zip": {
+    "bytes": 5045,
+    "sha256": "70445c6310910e47f7e32c2c4cb89a03e2f381ff5988a65ff429c45d39792fe1"
+  },
+  "documents/epub-expected.json": {
+    "bytes": 1203,
+    "sha256": "e02f3c41d09ba7cdb08236d39a3f4805cef454fdba861d39029af929f6d932b6"
+  },
   "documents/expected.json": {
     "bytes": 11482,
     "sha256": "cc63c7b4c66bfd20a6282b67e867c657b744a338326ff6dad31fa029108db502"
+  },
+  "documents/invalid-book.epub": {
+    "bytes": 174,
+    "sha256": "443dbc1a993ff556d89441c6b62d34a65ceb7f04b9bb3876fef7727c8453b621"
   },
   "documents/invalid-document.pdf": {
     "bytes": 32,
@@ -343,9 +355,21 @@
     "bytes": 1491,
     "sha256": "01debcbf8ee7dea3b930545d11dff75777fb5fd6491b85a6cbf8900ee0194afd"
   },
+  "documents/sample-book.epub": {
+    "bytes": 3117,
+    "sha256": "8fac36f50ff146ffeb3000c1a411d152dfcf628c276f3002e6ad03e2a9668093"
+  },
+  "documents/sample-epub3.epub": {
+    "bytes": 1541,
+    "sha256": "9c8c23cc0d12123f086620a6542335ce246df62ffa6e36070d05ec1ba13ea443"
+  },
   "documents/sample-equations.tex": {
     "bytes": 860,
     "sha256": "e40f461368cc6eecdd895c0663ae098a0c1b487dbbebede849ae5be79eb9f9f6"
+  },
+  "documents/sample-fallback-book.epub": {
+    "bytes": 964,
+    "sha256": "2b8221b59edad2d0d34d15b5622f4a7253ea9c9ae5de1addaf74e8d2ab5a9459"
   },
   "documents/sample-pages.pdf": {
     "bytes": 1147,

@@ -43,6 +43,15 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Implemented; focused acceptance still needed
 
+Checkpoint 16 moves EPUB structural parsing into Scribe's portable core and ZIP
+resource expansion into Vault, retaining the host's full staging/cache leases,
+WebView, themes and font/navigation controls. Synthetic EPUB 2/3, fallback and
+invalid samples are in `filesystem-test-images/documents/`. Current evidence is
+727 cases with the same 30 known failures and 64 passing device pipeline checks.
+EPUB images/CSS, fragment links, themes/font size, back during loading and live
+remote opening still need handset acceptance. EPUB 3 NAV-label interpretation
+and lazy package serving remain future work; PostScript/LaTeX rendering is planned.
+
 | Area | Remaining acceptance |
 | --- | --- |
 | Shared disk cache | 200 MiB total, separate file limit, LRU before prompting, active leases, copy/raise choices, six-hour expiry, restart cleanup and themed dialogs |

@@ -10,10 +10,10 @@ All remote main hashes were checked against the local tested heads. Sound's exis
 | --- | --- | --- |
 | [libinfinistream](https://github.com/gretchycat/libinfinistream) | Created | [`e86167f`](https://github.com/gretchycat/libinfinistream/commit/e86167f2fd0c2c19d24140f05478099fdb1a693b) |
 | [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | [`faee836`](https://github.com/gretchycat/libinfinistore/commit/faee836518fca09d2c9ba8cedb174b1a80779809) |
-| [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`aa41c5d`](https://github.com/gretchycat/libinfinivault/commit/aa41c5d4e2b6db06b83d29e889c04ec069e2bcd2) |
+| [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`0522412`](https://github.com/gretchycat/libinfinivault/commit/0522412d226a8171afa10da04b338cb5b38470c8) |
 | [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`61a4644`](https://github.com/gretchycat/libinfinisound/commit/61a4644bdfd216597bc3fe24ef3a55984bcc2363) |
 | [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`ed685ad`](https://github.com/gretchycat/libinfinicanvas/commit/ed685ad0dfeae0dbacd58f26ce2e41fcc577bdd5) |
-| [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`88299bf`](https://github.com/gretchycat/libinfiniscribe/commit/88299bf3e5e6b988076d49c046852f00d3af34c3) |
+| [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`084e9de`](https://github.com/gretchycat/libinfiniscribe/commit/084e9de5ab5335c79ae88fdf2c297314cfd664e3) |
 | [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`447c92d`](https://github.com/gretchycat/libinfinivideo/commit/447c92d593876d40a39807b424c3e0fb35c23807) |
 
 ```text
@@ -23,6 +23,7 @@ Sound / Canvas / Scribe / Video -> Stream
 Host storage-engine -> Store + Vault (runtime/router/external-edit composition)
 viewer-common -> host storage-engine + Canvas + Scribe
 viewer-audio -> Sound; viewer-video -> Video; viewer-csv / viewer-pdf -> Scribe
+viewer-epub -> Scribe + Vault (host retains Store cache/staging leases)
 ```
 
 Ordinary files open through Store/Stream directly; Vault is used for containers. Family dependencies contain no Store/Vault cycle and no library depends on InfiniFolder's application or viewer UI. Legacy packages are retained as compatibility names. dependencies.json in each repository records tested sibling revisions; clone those dependencies beside the repository or set -PinfiniLibrariesDir for a standalone build.
@@ -238,20 +239,67 @@ gapless handoff. Together with the new PDF cases this is 54 runtime checks.
 Independent Scribe core also builds with both Android SDK environment variables
 unset; the optional Android module is not configured on that path.
 
+## Checkpoint 16: EPUB structure and leased ZIP expansion
+
+Scribe's JVM core now owns EPUB container.xml/OPF/NCX parsing over borrowed
+`DocumentResources` and common `SourceResource` handles. The actual viewer calls
+its registered pull processor and consumes typed book/chapter metadata. First
+title/author, spine ordering/non-linear exclusion, manifest/OPF fallback, NCX title
+priority and bounded HTML title/heading rules remain. URI resolution preserves
+literal plus signs, percent-decodes once, handles fragments and resolves NCX
+references against the NCX directory. Related resource lookups are confined to
+the host-owned directory and advertise demonstrated positional file handles.
+
+Vault owns the former viewer's Java ZipFile expansion through host-supplied
+capacity-checked output streams. The host still explicitly stages the ZIP and
+expands all resources under its existing cache policy. It retains resource/source
+leases, WebView presentation, themes, font controls and TOC/Previous/Next UI.
+Loading is cancellable; cleanup runs after the worker and discarded completions
+cannot update a destroyed viewer. Internal links use exact chapter paths and
+retain fragment anchors, avoiding basename collisions and jumps to chapter one.
+
+Platform SAX APIs provide the portable parser without a new dependency. Device
+checks exposed different internal-entity callbacks on JVM/Android; a constant-
+memory streaming guard now rejects internal DTD subsets before either parser can
+expand them, while retaining external NCX DOCTYPE identifiers, comments, CDATA
+and encoding detection. No external entity/DTD resources are loaded. Optional
+XML/search work limits are explicit; defaults preserve valid-book size behavior,
+and the viewer derives its byte limit from the existing cache budget and already
+accepted expanded bytes, preserving active leases if the budget is lowered. The failed
+device attempt remains in checkpoint16-epub-entity-check.log; corrected checks pass.
+
+Four new synthetic books cover EPUB 2, EPUB 3 spine/HTML-title fallback, missing
+metadata/spine/OPF-path fallback and invalid container metadata. An outer ZIP,
+expected hashes and non-overwriting generator accompany them. Full EPUB 3 NAV-label
+interpretation, lazy package serving, other Office formats, PostScript/EPS and
+LaTeX rendering remain planned. The latter fixtures are not newly enabled formats.
+
+Verification: 727 cases, 697 pass, the same 30 pre-existing failures and no new
+failures/skips/missing cases. The 36 additions comprise 25 Scribe resource/XML/book
+checks, six Vault extraction checks and five host chapter-link checks. Full APK,
+standalone EPUB host, independent Scribe core (without SDK), Scribe Android and
+Vault builds/tests pass. Ten new device cases check actual packaged Vault/Scribe
+classes, structure/titles, related positional resources, invalid input, XML policy
+and limits, cancellation and an EPUB nested in ZIP. The prior 54 runtime cases
+also pass against the same APK: 64 total, including muted MP3 seeks and gapless.
+Helper DEX targets API 26, matching the app's minimum API. Logs use checkpoint16-*.
+WebView rendering, images/CSS, fragment navigation, themes/font controls, back
+during loading and live remote/provider opening still require handset acceptance.
+
 ## Final verification and reproducibility
 
-Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 691-case checkpoint.
+Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 727-case checkpoint.
 
-Current totals: **691 tests, 661 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
+Current totals: **727 tests, 697 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
 | Independent library | Tests | Failures |
 | --- | ---: | ---: |
 | Stream | 26 | 0 |
 | Store | 6 | 0 |
-| Vault | 3 | 0 |
+| Vault | 9 | 0 |
 | Sound | 69 | 0 |
 | Canvas | 10 | 0 |
-| Scribe | 74 | 0 |
+| Scribe | 99 | 0 |
 | Video | 4 | 0 |
 
 All seven standalone source builds passed with the pinned sibling dependencies. Stream/Scribe and portable Sound builds need no Android runtime. Android modules were built with SDK 36, JDK 21 targeting Java 17, Kotlin 2.2.20 and AGP 8.9.2 using Gradle 9.7.1. The preceding checkpoint built full app and selected audio/text/image/video host debug APKs; checkpoints 5/6/7 rebuilt the full app and affected text/CSV hosts, and repeated the independent Scribe build. Checkpoint 8 repeats full/CSV-host and independent Scribe builds; checkpoint 9 repeats full/text/HTML/Markdown-host and independent Scribe builds. Checkpoint 10 rebuilds full/CSV-host APKs for the startup callback fix. Checkpoint 11 rebuilds full/audio-host and standalone Android/portable Sound artifacts for PCM pull output; checkpoint 12 repeats those builds for decoder frame positioning and playback policy; checkpoint 13 repeats them for trailing MP3 metadata and long seeks; checkpoint 14 repeats affected Sound/Stream/Canvas and audio/image host builds for common encoded inputs and exact FLAC positioning. Termux ARM64 native source builds passed; the standard NDK/CMake path and desktop/iOS runtime execution were not exercised.
@@ -267,4 +315,4 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. No opaque native blob or language port was introduced by this migration.
 
-Final full debug APK SHA-256: `4bf24e477ea79c20197f078b30389f90932e792b33c62528ee4b2cabb3458691`.
+Final full debug APK SHA-256: `e3aae318e79841b6b2218979f617986550a6f40535905e1cd1c48c7ab936860d`.

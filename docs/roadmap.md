@@ -23,6 +23,13 @@ and explicit staged-file input. The host retains navigation, zoom and cache leas
 page work and cleanup are serialized. The owner confirms the earlier PDF report
 was corrupt input, and the updated viewer still needs handset acceptance.
 
+EPUB now composes Vault ZIP resource expansion and Scribe's portable structured
+book processor over related common resources. The host retains full explicit
+staging, cache policy, WebView, themes and font/navigation controls. EPUB 2/3,
+fallback and invalid fixtures cover the migrated boundaries; handset WebView and
+remote acceptance remain. EPUB 3 NAV labels and on-demand package resource
+serving remain follow-up. PostScript/LaTeX and Office rendering are still planned.
+
 ## Next: accept the new safety paths
 
 - Exercise external-edit source checks, durable unfinished sessions and conflict choices with real editors.

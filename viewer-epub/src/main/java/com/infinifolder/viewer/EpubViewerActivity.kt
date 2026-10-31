@@ -1,7 +1,6 @@
 package com.infinifolder.viewer
 
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
@@ -11,7 +10,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.util.Xml
 import android.view.Gravity
 import android.view.View
 import android.webkit.WebResourceRequest
@@ -19,19 +17,22 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.*
-import org.xmlpull.v1.XmlPullParser
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.io.InputStream
-import java.net.URLDecoder
 import java.util.Locale
-import java.util.zip.ZipEntry
-import java.util.zip.ZipFile
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import io.github.gretchycat.infiniscribe.DirectoryDocumentResources
+import io.github.gretchycat.infiniscribe.EpubDocuments
+import io.github.gretchycat.infiniscribe.EpubReadLimits
+import io.github.gretchycat.infinistream.ContentType
+import io.github.gretchycat.infinistream.Provenance
+import io.github.gretchycat.infinistream.StreamMetadata
+import com.infinifolder.archive.VaultZipExtraction
+import com.infinifolder.storage.DiagnosticLog
 
 /**
  * Free, native EPUB document reader.
- * Extracts EPUB packages without third-party dependencies, parses OPF/NCX manifests,
+ * Vault expands the package and Scribe parses OPF/NCX structure; the host leases resources
  * and renders chapters with font scaling, dark/sepia/light themes, and chapter navigation.
  */
 class EpubViewerActivity : ViewerActivity() {
@@ -52,9 +53,10 @@ class EpubViewerActivity : ViewerActivity() {
     private var uri: Uri? = null
     private var displayName: String = "Book.epub"
     private var stagedSource: MediaSourceAdapter.StagedSource? = null
-    private var stagedFile: File? = null
-    private var extractDir: File? = null
     private var resourceLease: com.infinifolder.storage.DiskCache.Lease? = null
+    private val bookWorker = Executors.newSingleThreadExecutor { task -> Thread(task, "epub-viewer") }
+    private var loadWork: Future<*>? = null
+    @Volatile private var destroyed = false
 
     private var bookTitle: String = "EPUB Reader"
     private var bookAuthor: String = ""
@@ -303,11 +305,9 @@ class EpubViewerActivity : ViewerActivity() {
 
         // Relative internal anchor or chapter file link
         val path = navUri.path ?: ""
-        val matchedIndex = chapters.indexOfFirst {
-            it.file.absolutePath.endsWith(path) || path.endsWith(it.href.substringBefore('#'))
-        }
-        if (matchedIndex != -1) {
-            loadChapter(matchedIndex)
+        val matchedIndex = EpubLinks.chapterIndex(chapters.map { it.file }, currentChapterIndex, path)
+        if (matchedIndex != null) {
+            loadChapter(matchedIndex, navUri.fragment)
             return true
         }
         return false
@@ -321,26 +321,38 @@ class EpubViewerActivity : ViewerActivity() {
         }
 
         progressBar.visibility = View.VISIBLE
-        Thread {
+        loadWork = bookWorker.submit {
+            var source: MediaSourceAdapter.StagedSource? = null
+            var resources: com.infinifolder.storage.DiskCache.Lease? = null
             try {
-                val source = MediaSourceAdapter.stage(this, targetUri)
+                source = MediaSourceAdapter.stage(applicationContext, targetUri)
+                if (!source.file.isFile || source.file.length() == 0L) throw java.io.IOException("Failed to stage EPUB file")
+                val cache = com.infinifolder.storage.DiskCache.get(applicationContext)
+                resources = cache.allocate("epub-resources")
+                val lease = resources
+                val outDir = lease.file
+                if (!outDir.isDirectory && !outDir.mkdirs()) throw java.io.IOException("Cannot create EPUB resource directory")
+                val expanded = VaultZipExtraction.extract(source.file, outDir, { lease.output(it) })
+                val input = StreamMetadata(content = ContentType(mimeType = "application/epub+zip"), name = displayName,
+                    provenance = Provenance(source = targetUri.toString()),
+                    warnings = if (expanded.skippedUnsafeEntries > 0) listOf("Skipped ${expanded.skippedUnsafeEntries} unsafe ZIP entries") else emptyList())
+                // A lowered cache setting must not invalidate resources already accepted by this active lease.
+                val book = EpubDocuments.read(DirectoryDocumentResources(outDir, input),
+                    limits = EpubReadLimits(maxXmlBytes = maxOf(cache.budgetBytes, expanded.bytes)))
+                val loadedChapters = book.chapters.map { ChapterItem(it.id, it.href, it.title, File(outDir, it.path)) }
+                lease.complete()
                 stagedSource = source
-                val file = source.file
-                if (file == null || !file.exists() || file.length() == 0L) {
-                    throw IllegalStateException("Failed to stage EPUB file")
-                }
-                stagedFile = file
-
-                val resources = com.infinifolder.storage.DiskCache.get(this).allocate("epub-resources")
                 resourceLease = resources
-                val outDir = resources.file.apply { mkdirs() }
-                extractDir = outDir
-
-                extractZip(file, outDir, resources)
-                parseEpubPackage(outDir)
-                resources.complete()
+                source = null
+                resources = null
+                book.metadata.warnings.forEach { DiagnosticLog.record("epub.warning", it) }
 
                 mainHandler.post {
+                    if (destroyed) return@post
+                    bookTitle = book.title
+                    bookAuthor = book.author
+                    chapters.clear()
+                    chapters.addAll(loadedChapters)
                     progressBar.visibility = View.GONE
                     if (chapters.isEmpty()) {
                         Toast.makeText(this, "No readable chapters found in EPUB", Toast.LENGTH_LONG).show()
@@ -349,263 +361,21 @@ class EpubViewerActivity : ViewerActivity() {
                     titleTextView.text = if (bookAuthor.isNotEmpty()) "$bookTitle • $bookAuthor" else bookTitle
                     loadChapter(0)
                 }
-            } catch (e: Exception) {
+            } catch (error: Exception) {
+                if (error !is java.io.InterruptedIOException) DiagnosticLog.record("epub.open.failed", "$targetUri", error)
                 mainHandler.post {
+                    if (destroyed) return@post
                     progressBar.visibility = View.GONE
-                    resourceLease?.close(); resourceLease = null
-                    stagedSource?.close(); stagedSource = null
-                    if (!CacheFailureUi.offerCopy(this, e, targetUri)) Toast.makeText(this, "Failed to load EPUB: ${e.message}", Toast.LENGTH_LONG).show()
+                    if (!CacheFailureUi.offerCopy(this, error, targetUri)) Toast.makeText(this, "Failed to load EPUB: ${error.message}", Toast.LENGTH_LONG).show()
                 }
-            }
-        }.start()
-    }
-
-    private fun extractZip(zipFile: File, destDir: File, lease: com.infinifolder.storage.DiskCache.Lease) {
-        ZipFile(zipFile).use { zip ->
-        val entries = zip.entries()
-        val destCanonicalPath = destDir.canonicalPath + File.separator
-        while (entries.hasMoreElements()) {
-            val entry: ZipEntry = entries.nextElement()
-            val file = File(destDir, entry.name)
-            // Path traversal protection
-            if (!file.canonicalPath.startsWith(destCanonicalPath)) {
-                continue
-            }
-            if (entry.isDirectory) {
-                file.mkdirs()
-            } else {
-                file.parentFile?.mkdirs()
-                zip.getInputStream(entry).use { input ->
-                    lease.output(file).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            }
-        }
-        }
-    }
-
-    private fun parseEpubPackage(extractedDir: File) {
-        // 1. Locate container.xml
-        val containerFile = File(extractedDir, "META-INF/container.xml")
-        if (!containerFile.exists()) {
-            throw IllegalStateException("Invalid EPUB: META-INF/container.xml not found")
-        }
-
-        var opfRelativePath = ""
-        val parser = Xml.newPullParser()
-        FileInputStream(containerFile).use { fis ->
-            parser.setInput(fis, "UTF-8")
-            var eventType = parser.eventType
-            while (eventType != XmlPullParser.END_DOCUMENT) {
-                if (eventType == XmlPullParser.START_TAG && parser.name.equals("rootfile", ignoreCase = true)) {
-                    val fullPath = parser.getAttributeValue(null, "full-path")
-                    if (!fullPath.isNullOrEmpty()) {
-                        opfRelativePath = fullPath
-                        break
-                    }
-                }
-                eventType = parser.next()
-            }
-        }
-
-        if (opfRelativePath.isEmpty()) {
-            // Fallback search for any .opf file
-            val foundOpf = extractedDir.walkTopDown().firstOrNull { it.extension.equals("opf", ignoreCase = true) }
-            if (foundOpf != null) {
-                opfRelativePath = foundOpf.relativeTo(extractedDir).path
-            } else {
-                throw IllegalStateException("Package metadata (OPF) not found")
-            }
-        }
-
-        val opfFile = File(extractedDir, opfRelativePath)
-        val opfDir = opfFile.parentFile ?: extractedDir
-
-        // 2. Parse OPF file
-        val manifestItems = mutableMapOf<String, String>() // id -> href
-        val spineItems = mutableListOf<String>() // idref list
-        val tocMap = mutableMapOf<String, String>() // href -> title
-        var parsedTitle: String? = null
-        var parsedAuthor: String? = null
-
-        FileInputStream(opfFile).use { fis ->
-            parser.setInput(fis, null)
-            var eventType = parser.eventType
-            var inMetadata = false
-            var inManifest = false
-            var inSpine = false
-            var currentTag = ""
-
-            while (eventType != XmlPullParser.END_DOCUMENT) {
-                when (eventType) {
-                    XmlPullParser.START_TAG -> {
-                        currentTag = parser.name.lowercase(Locale.ROOT)
-                        when (currentTag) {
-                            "metadata" -> inMetadata = true
-                            "manifest" -> inManifest = true
-                            "spine" -> inSpine = true
-                            "item" -> {
-                                if (inManifest) {
-                                    val id = parser.getAttributeValue(null, "id")
-                                    val href = parser.getAttributeValue(null, "href")
-                                    if (!id.isNullOrEmpty() && !href.isNullOrEmpty()) {
-                                        manifestItems[id] = href
-                                    }
-                                }
-                            }
-                            "itemref" -> {
-                                if (inSpine) {
-                                    val idref = parser.getAttributeValue(null, "idref")
-                                    val linear = parser.getAttributeValue(null, "linear")
-                                    if (!idref.isNullOrEmpty() && linear != "no") {
-                                        spineItems.add(idref)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    XmlPullParser.TEXT -> {
-                        val text = parser.text?.trim() ?: ""
-                        if (inMetadata && text.isNotEmpty()) {
-                            if (currentTag.endsWith("title") && parsedTitle == null) {
-                                parsedTitle = text
-                            } else if (currentTag.endsWith("creator") && parsedAuthor == null) {
-                                parsedAuthor = text
-                            }
-                        }
-                    }
-                    XmlPullParser.END_TAG -> {
-                        val tagName = parser.name.lowercase(Locale.ROOT)
-                        when (tagName) {
-                            "metadata" -> inMetadata = false
-                            "manifest" -> inManifest = false
-                            "spine" -> inSpine = false
-                        }
-                        currentTag = ""
-                    }
-                }
-                eventType = parser.next()
-            }
-        }
-
-        if (!parsedTitle.isNullOrEmpty()) bookTitle = parsedTitle ?: displayName
-        if (!parsedAuthor.isNullOrEmpty()) bookAuthor = parsedAuthor ?: ""
-
-        // 3. Try to parse TOC (NCX or NAV) for chapter titles
-        val ncxHref = manifestItems.values.firstOrNull { it.endsWith(".ncx", ignoreCase = true) }
-        if (ncxHref != null) {
-            val ncxFile = File(opfDir, URLDecoder.decode(ncxHref, "UTF-8"))
-            if (ncxFile.exists()) {
-                parseNcx(ncxFile, tocMap)
-            }
-        }
-
-        // 4. Build ordered list of chapters from spine
-        chapters.clear()
-        for (idref in spineItems) {
-            val href = manifestItems[idref] ?: continue
-            val decodedHref = try {
-                URLDecoder.decode(href, "UTF-8")
-            } catch (_: Exception) {
-                href
-            }
-            val chapterFile = File(opfDir, decodedHref)
-            if (chapterFile.exists()) {
-                val cleanHref = href.substringBefore('#')
-                val title = tocMap[cleanHref]
-                    ?: tocMap[decodedHref.substringBefore('#')]
-                    ?: extractTitleFromHtml(chapterFile)
-                    ?: "Chapter ${chapters.size + 1}"
-                chapters.add(ChapterItem(idref, href, title, chapterFile))
-            }
-        }
-
-        // Fallback: if spine is empty, load all HTML/XHTML files in manifest
-        if (chapters.isEmpty()) {
-            val htmlItems = manifestItems.values.filter {
-                it.endsWith(".html", true) || it.endsWith(".xhtml", true) || it.endsWith(".htm", true)
-            }
-            for ((index, href) in htmlItems.withIndex()) {
-                val file = File(opfDir, URLDecoder.decode(href, "UTF-8"))
-                if (file.exists()) {
-                    chapters.add(ChapterItem("item_$index", href, extractTitleFromHtml(file) ?: "Chapter ${index + 1}", file))
-                }
+            } finally {
+                runCatching { resources?.close() }
+                runCatching { source?.close() }
             }
         }
     }
 
-    private fun parseNcx(ncxFile: File, tocMap: MutableMap<String, String>) {
-        try {
-            val parser = Xml.newPullParser()
-            FileInputStream(ncxFile).use { fis ->
-                parser.setInput(fis, null)
-                var eventType = parser.eventType
-                var currentLabel = ""
-                var inText = false
-
-                while (eventType != XmlPullParser.END_DOCUMENT) {
-                    when (eventType) {
-                        XmlPullParser.START_TAG -> {
-                            val name = parser.name.lowercase(Locale.ROOT)
-                            if (name == "text") {
-                                inText = true
-                            } else if (name == "content") {
-                                val src = parser.getAttributeValue(null, "src")
-                                if (!src.isNullOrEmpty() && currentLabel.isNotEmpty()) {
-                                    val cleanSrc = src.substringBefore('#')
-                                    tocMap[cleanSrc] = currentLabel
-                                    currentLabel = ""
-                                }
-                            }
-                        }
-                        XmlPullParser.TEXT -> {
-                            if (inText) {
-                                val text = parser.text?.trim()
-                                if (!text.isNullOrEmpty()) {
-                                    currentLabel = text
-                                }
-                            }
-                        }
-                        XmlPullParser.END_TAG -> {
-                            if (parser.name.equals("text", ignoreCase = true)) {
-                                inText = false
-                            }
-                        }
-                    }
-                    eventType = parser.next()
-                }
-            }
-        } catch (_: Exception) {
-            // Ignore NCX parsing errors, fallback titles will be used
-        }
-    }
-
-    private fun extractTitleFromHtml(file: File): String? {
-        try {
-            val headerText = file.bufferedReader().use { reader ->
-                val buffer = CharArray(2048)
-                val read = reader.read(buffer, 0, buffer.size)
-                if (read > 0) String(buffer, 0, read) else ""
-            }
-            val titleMatch = Regex("<title[^>]*>(.*?)</title>", RegexOption.IGNORE_CASE).find(headerText)
-            if (titleMatch != null) {
-                val title = titleMatch.groupValues[1].trim()
-                if (title.isNotEmpty() && !title.equals("untitled", true)) {
-                    return title
-                }
-            }
-            val h1Match = Regex("<h[1-2][^>]*>(.*?)</h[1-2]>", RegexOption.IGNORE_CASE).find(headerText)
-            if (h1Match != null) {
-                val clean = h1Match.groupValues[1].replace(Regex("<[^>]*>"), "").trim()
-                if (clean.isNotEmpty()) return clean
-            }
-        } catch (_: Exception) {
-        }
-        return null
-    }
-
-    private fun loadChapter(index: Int) {
+    private fun loadChapter(index: Int, fragment: String? = null) {
         if (index !in chapters.indices) return
         currentChapterIndex = index
         val chapter = chapters[index]
@@ -617,7 +387,7 @@ class EpubViewerActivity : ViewerActivity() {
         nextBtn.alpha = if (index < chapters.size - 1) 1.0f else 0.35f
 
         progressBar.visibility = View.VISIBLE
-        val fileUri = Uri.fromFile(chapter.file)
+        val fileUri = Uri.fromFile(chapter.file).buildUpon().fragment(fragment).build()
         webView.loadUrl(fileUri.toString())
     }
 
@@ -718,16 +488,19 @@ class EpubViewerActivity : ViewerActivity() {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
+        destroyed = true
+        loadWork?.cancel(true)
         try {
             webView.stopLoading()
             webView.destroy()
         } catch (_: Exception) {}
-        try {
-            resourceLease?.close()
+        bookWorker.execute {
+            runCatching { resourceLease?.close() }
             resourceLease = null
-        } catch (_: Exception) {}
-        stagedSource?.close()
-        stagedSource = null
+            runCatching { stagedSource?.close() }
+            stagedSource = null
+        }
+        bookWorker.shutdown()
+        super.onDestroy()
     }
 }

@@ -52,7 +52,14 @@ and document destruction releases the renderer before the staging lease.
 
 ### 5. EPUB eBooks (`:viewer-epub`)
 
-`EpubViewerActivity` extracts EPUB containers into a leased disk-cache directory, parses `META-INF/container.xml`, OPF package manifests/spines, and NCX/nav tables of contents, and renders chapters with Dark, Sepia, and Light themes and adjustable font scaling:
+`EpubViewerActivity` composes Vault's explicit leased-directory ZIP expansion and
+Scribe's portable EPUB pull processor. Scribe reads container.xml, OPF metadata,
+manifest/spine order and NCX chapter titles through common related-resource
+sources. Existing manifest/HTML-title fallback is retained, including EPUB 3
+spines; EPUB 3 NAV-label interpretation remains follow-up. The host renders
+chapters with Dark/Sepia/Light themes, adjustable font scaling, TOC/Previous/Next
+and fragment-preserving internal links. Cache leases remain active through
+presentation, and loading cancels before worker cleanup releases them.
 
 - **Extensions & MIME**: `.epub` (`application/epub+zip`)
 

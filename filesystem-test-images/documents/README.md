@@ -79,3 +79,26 @@ these new PS/EPS fixtures require full vector interpretation. LaTeX source is
 different from a rendered document. Their presence does not imply rendering
 support has been implemented. The LaTeX sample requires only a standard LaTeX
 article installation and no external files or commands.
+
+## EPUB reader
+
+`python3 filesystem-test-images/generate-epub-fixtures.py` creates missing EPUB
+samples and preserves every existing file. `epub-expected.json` records original
+hashes, title/author and chapter labels. All content is original synthetic data.
+
+| Sample | Expected result |
+| --- | --- |
+| sample-book.epub | Title Café — EPUB migration, author Synthetic Author, two linear chapters titled First chapter (NCX) / Second chapter (NCX) |
+| sample-fallback-book.epub | Title EPUB Reader, two chapters: Heading fallback / Chapter 3; tests absent rootfile path, missing metadata/spine, a missing resource and HTML-title fallback |
+| sample-epub3.epub | Two chapters titled EPUB 3 first title / EPUB 3 second heading; retains current HTML-title fallback rather than interpreting EPUB 3 NAV labels |
+| invalid-book.epub | ZIP without container.xml; clear error without a crash or stuck spinner |
+| epub-checks.zip | Same four EPUBs under documents/; repeat opening from an outer archive |
+
+For the main book, check Previous/Next and TOC order, the internal footnote and
+return links, cross-chapter links with a fragment, Unicode, the blue rectangle/red
+circle image, the CSS border, and the non-linear appendix link (literal `+` in its
+filename). The appendix remains outside the linear chapter list. Cycle Dark,
+Sepia and Light themes; change font size and confirm it persists between chapters.
+Try Back while loading and repeat open/close. Copy these same files to a remote
+provider for provider/staging acceptance. The native runtime harness checks
+structure/resources; WebView rendering and these controls need handset testing.

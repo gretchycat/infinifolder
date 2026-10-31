@@ -49,7 +49,7 @@ The original `fat*.img`, `ext*.img`, `hfs.img`, `ntfs.img`, and archive files ar
 | `disks/` | Complete MBR, GPT and Apple Partition Map disks and gzip wrappers |
 | `images/` | 80 image format fixtures rendered from the InfiniFolder app icon (`generate-media-fixtures.py`) |
 | `audio/` | 75 audio/sound format fixtures synthesized as a C-major piano chord (`C4`–`E4`–`G4`–`C5`, `generate-media-fixtures.py`) |
-| `documents/` | CSV/TSV, text/Markdown/HTML/JSON, large read-only previews, paged PDF/corrupt PDF/PostScript/EPS/LaTeX and archive-access ZIPs (`generate-document-fixtures.py`, `generate-paged-document-fixtures.py`) |
+| `documents/` | CSV/TSV, text/Markdown/HTML/JSON, large read-only previews, paged PDF/PostScript/EPS/LaTeX, EPUB 2/3/fallback/invalid books and archive-access ZIPs (`generate-document-fixtures.py`, `generate-paged-document-fixtures.py`, `generate-epub-fixtures.py`) |
 
 The OS groups are organizational labels; these formats can be used by other operating systems. Existing fixture names and bytes were retained during the move. `layout-migration.json` maps old paths to current paths. All generators use the shared layout resolver; `manifest.json` now records relative paths.
 
