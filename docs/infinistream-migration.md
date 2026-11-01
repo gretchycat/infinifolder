@@ -11,7 +11,7 @@ All remote main hashes were checked against the local tested heads. Sound's exis
 | [libinfinistream](https://github.com/gretchycat/libinfinistream) | Created | [`e86167f`](https://github.com/gretchycat/libinfinistream/commit/e86167f2fd0c2c19d24140f05478099fdb1a693b) |
 | [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | [`d49e57c`](https://github.com/gretchycat/libinfinistore/commit/d49e57c4a4520d7f559da3080d48759f3e92afb0) |
 | [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`14a7908`](https://github.com/gretchycat/libinfinivault/commit/14a7908ffb8cd1af7d9a5400621d91ea1626f4f0) |
-| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`925f388`](https://github.com/gretchycat/libinfinisound/commit/925f388cd4e832a616c14f225bb855d2ce6166f6) |
+| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`4b0f49f`](https://github.com/gretchycat/libinfinisound/commit/4b0f49f910f723dfd7cfb0c8acb0a5fda9c69907) |
 | [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`0fcedae`](https://github.com/gretchycat/libinfinicanvas/commit/0fcedae408385fa95ef816247ba4861108c933ff) |
 | [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`084e9de`](https://github.com/gretchycat/libinfiniscribe/commit/084e9de5ab5335c79ae88fdf2c297314cfd664e3) |
 | [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`091e10a`](https://github.com/gretchycat/libinfinivideo/commit/091e10a6c06b73fb1828ba75348d09338ac89116) |
@@ -838,11 +838,45 @@ Owner follow-up (2026-10-31): playlist lengths for playable files now appear
 consistently. This accepts the reported timing workflow; it does not imply new
 Cast/live-provider, instrument-fidelity or NSF endpoint verification.
 
+## Checkpoint 28: Cast sources and explicit PCM output packing
+
+After the owner accepts consistent playlist lengths, the next consumer migration
+removes Cast's active whole-track host buffering. Receiver-native formats keep the
+existing encoded whitelist/byte-slice policy, but use common positional sources
+where available. Unsupported inputs still stage explicitly. Other formats obtain
+Sound's AudioWaveSource with explicit 16-bit packing and mono duplication. Source
+rate and existing surround channels are retained; no resampler/new receiver codec
+is added. Cast MIME selection now uses track.fileName, including archive entries.
+
+Sound adds PcmOutputOptions and additive openWaveSource/prepare overloads. Existing
+entry points/default precision and channel behavior remain. The bounded PCM
+adapter retains frame totals and optional exact positioning. Known totals use the
+existing lazy cache, unknown totals retain full disk preparation, and fallback
+negotiates the same output policy. Networking/output devices remain outside Sound.
+
+HTTP GET/HEAD/ranges borrow independent positional views with exact metadata and
+64-bit bounds. Four prepared sources are retained; active requests pin evicted
+owners, and prior session URLs can reopen their sources. Preparation failures are
+not cached permanently. Four workers, sixteen pending connections, bounded request
+headers and 64 KiB transfer buffers provide backpressure. Stop closes sockets,
+interrupts work and releases leases/scratch files. Client/close exceptions are
+contained at the worker boundary. Incomplete reads close the response rather than
+publishing synthetic content or a second successful status.
+
+Full app and audio-host APK builds pass, as does standalone Sound API/core/Android
+assembly. No automated tests or new runtime/receiver checks were run. The frozen
+checkpoint 24 gate remains historical. Receiver-native/converted playback,
+seeking/ranges, old-URL reopening, stop/reconnect, provider/archive inputs and
+normal local playback need focused handset acceptance. Existing transcoded CUE
+slice and legacy renderer/staging limits remain; no complete format conformance
+or live-provider performance claim is added.
+[Build and migration record](validation/cast-source-migration-checkpoint28.json).
+
 ## Final verification and reproducibility
 
 Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 885-case checkpoint.
 
-Current totals: **885 tests, 855 pass, 30 pre-existing failures, no new failures or missing cases**. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
+Last full gate (checkpoint 24): **885 tests, 855 pass, 30 pre-existing failures, no new failures or missing cases**. Later checkpoints record their builds and owner checks separately; that full automated gate has not been rerun for checkpoints 25–28. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
 | Independent library | Tests | Failures |
 | --- | ---: | ---: |
@@ -867,4 +901,4 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. The requested libVLC backend adds a pinned published native AAR with source/override details; no native binary is committed and no language port is introduced.
 
-Final full debug APK SHA-256: `3f82368b5b940d3d12577167f378c469005ce2474d52e0c9b6893f5849e33cec`.
+Final full debug APK SHA-256: `a20e9a1cf3595a6221ec0045ce700582046bd0ceb6169f5ca03d5b5c5d1f50d4`.

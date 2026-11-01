@@ -1,0 +1,53 @@
+{
+  "recorded": "2026-10-31",
+  "scope": "Cast consumer migration after owner acceptance of consistent playlist lengths. Compilation/source review only; no new automated or runtime/receiver checks.",
+  "soundRevision": "4b0f49f910f723dfd7cfb0c8acb0a5fda9c69907",
+  "builds": {
+    "fullAndAudioHost": "BUILD SUCCESSFUL in 1m 35s; 412 tasks",
+    "standaloneSound": "BUILD SUCCESSFUL in 1m 2s; 35 tasks; audio-api/core assemble and audio-processing assembleDebug",
+    "fullDebugApkSha256": "a20e9a1cf3595a6221ec0045ce700582046bd0ceb6169f5ca03d5b5c5d1f50d4",
+    "audioHostDebugApkSha256": "87f4c37c5a345738f1106cfc416b841b2096fffb89cc483462caeb2476f4405d"
+  },
+  "convertedCallPaths": [
+    "CastMediaServer HTTP GET/HEAD/ranges borrow common positional source views.",
+    "Receiver-native formats use the existing encoded whitelist and byte-slice policy, with source access through AudioPlaybackInput.",
+    "Other formats request library PcmOutputOptions(bitsPerSample=16,duplicateMono=true) and share AudioWaveSource across requests.",
+    "CastManager uses original track.fileName for receiver MIME selection, including archive entries."
+  ],
+  "resourcePolicy": {
+    "preparedSourceCacheEntries": 4,
+    "activeEvictedOwners": "Retained until HTTP leases finish.",
+    "sessionUrls": "Track metadata retained for session lifetime; evicted prepared sources reopen on later requests.",
+    "workers": 4,
+    "pendingConnections": 16,
+    "httpTransferBufferBytes": 65536,
+    "maxRequestHeaderBytes": 65536,
+    "maxRequestLineBytes": 8192,
+    "preparationFailure": "Entry removed so later requests can retry.",
+    "stop": "Close sockets, interrupt workers/preparation, retire cache entries and release source/scratch owners.",
+    "clientExceptions": "Contained by worker boundary, including socket-close failures."
+  },
+  "libraryPolicy": {
+    "newApi": "PcmOutputOptions and additive WaveSource/prepare overloads.",
+    "retainedApi": "Existing library signatures and default precision/channel behavior.",
+    "packing": "16-bit Cast output; duplicate mono; retain source rate and existing surround channel count.",
+    "knownTotals": "Lazy PCM disk cache.",
+    "unknownTotals": "Full PCM disk preparation; no complete host encoded/PCM/WAV arrays.",
+    "positioning": "Preserved for frame-seekable decoder adapters.",
+    "fallback": "Same output policy applied during recovery."
+  },
+  "automatedTestsRun": false,
+  "runtimeDiagnosticsRun": false,
+  "realCastReceiverChecked": false,
+  "remainingAcceptance": [
+    "Receiver-native and converted formats, including MIDI/NSF and archive/provider inputs.",
+    "Repeated ranges and seeks, old-URL reopening, stop/reconnect and preparation failure retry.",
+    "Regular local playback/seek/gapless confirmation after the additive output API."
+  ],
+  "limits": [
+    "Receiver codec policy is unchanged; no new format support or resampling is claimed.",
+    "Transcoded CUE time-slice limitations remain; encoded byte slices retain the existing policy.",
+    "Legacy codec materialization limits, unknown-total PCM disk preparation and unsupported-source staging remain.",
+    "Source-provider timeouts govern already blocked reads; these builds are not runtime/latency verification."
+  ]
+}

@@ -150,7 +150,7 @@ object CastManager {
         val mediaServer = server ?: CastMediaServer(player.applicationContext).also { server = it }
         if (!mediaServer.start()) { player.onCastError("Could not start audio stream"); if (initial) castContext?.sessionManager?.endCurrentSession(true); return }
         val url = mediaServer.getStreamUrl(track) ?: run { player.onCastError("Connect to Wi-Fi to cast audio"); if (initial) castContext?.sessionManager?.endCurrentSession(true); return }
-        val name = track.uri.lastPathSegment ?: track.title
+        val name = track.fileName
         val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MUSIC_TRACK).apply {
             putString(MediaMetadata.KEY_TITLE, track.title)
             track.artist?.let { putString(MediaMetadata.KEY_ARTIST, it) }

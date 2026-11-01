@@ -73,6 +73,13 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
 
 ## Implemented; focused acceptance still needed
 
+Checkpoint 28 migrates Cast's remaining whole-track host buffers to common
+positional sources and library-produced PCM WAVE. Explicit output packing retains
+16-bit output, mono duplication, source rate and surround channels. Prepared
+sources have bounded retention and active-request leases; older session URLs can
+be reopened. Native encoded forwarding and HTTP ranges remain host policy. Real
+receiver/provider acceptance is pending; automated tests were not run.
+
 Checkpoint 27 addresses owner-reported missing CDDA/DFF/MLP/SF2/THD timing,
 the NSF chord's untimed cap, and ZIP playback resetting lengths. Sound adds
 portable timing/audition inspection and optional appended NSF timing metadata;

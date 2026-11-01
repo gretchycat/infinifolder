@@ -40,6 +40,8 @@ Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) d
 - [x] Apply music-player theme selections across the app; install/apply WSZ on tap and offer explicit ZIP archive browsing.
 - [x] Keep a resident FluidLite bank with independent streaming MIDI synthesizers; inspect playlist timing without full-track rendering.
 - [x] Confirm consistent automatic playlist lengths for playable files after portable timing and archive URI/queue corrections; owner confirmation 2026-10-31.
+- [x] Move Cast conversion and HTTP ranges onto common positional sources and explicit library PCM packing; replace whole-track host arrays with leased sources.
+- [ ] Accept Cast playback/seek/repeated ranges, stop/reconnect and older-URL reopening after the source migration, including archive/provider sources.
 - [x] Use finite GME game-music playback windows and optional unclocked FFmpeg PCM pulling from the existing libVLC binary.
 - [x] Bundle FluidR3_GM as lossless bz2 assets with verified cached extraction and original notices; use FluidLite for MIDI programs/percussion.
 - [x] Silently skip unreadable audio entries while preserving their playlist rows with `--` duration; bound all-unreadable queues and guard metadata races.

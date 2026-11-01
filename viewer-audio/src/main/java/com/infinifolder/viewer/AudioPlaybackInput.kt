@@ -33,11 +33,17 @@ class AudioPlaybackInput private constructor(
     }
 
     fun openWaveSource(output: File, fileOverride: File? = null, reportDiagnostics: Boolean = true,
-        cancelled: () -> Boolean = { false }): AudioWaveSource {
+        cancelled: () -> Boolean = { false }, outputOptions: com.infinifolder.audio.PcmOutputOptions? = null): AudioWaveSource {
         checkOpen()
+        fun decode(file: File?): AudioWaveSource = when {
+            outputOptions != null && file != null -> AudioProcessing.openWaveSource(file,output,outputOptions,cancelled)
+            outputOptions != null -> AudioProcessing.openWaveSource(resource,output,outputOptions,cancelled)
+            file != null -> UniversalAudioDecoder.openWaveSource(file,output,reportDiagnostics,cancelled)
+            else -> UniversalAudioDecoder.openWaveSource(resource,output,reportDiagnostics,cancelled)
+        }
         val local = fileOverride ?: file
-        if (local != null) return UniversalAudioDecoder.openWaveSource(local, output, reportDiagnostics, cancelled)
-        try { return UniversalAudioDecoder.openWaveSource(resource, output, reportDiagnostics, cancelled) }
+        if (local != null) return decode(local)
+        try { return decode(null) }
         catch (cancel: InterruptedIOException) { throw cancel }
         catch (error: Exception) {
             checkOpen()
@@ -56,7 +62,7 @@ class AudioPlaybackInput private constructor(
                 }
                 staged = replacement
             }
-            return UniversalAudioDecoder.openWaveSource(replacement.file, output, reportDiagnostics, cancelled)
+            return decode(replacement.file)
         }
     }
 

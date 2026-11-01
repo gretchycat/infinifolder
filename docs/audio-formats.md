@@ -102,6 +102,12 @@ durations, including decoded timing when MediaPlayer supplies zero.
 
 All local parsing/decoding is selected inside libinfinisound. Its Android MediaExtractor/MediaCodec backend and portable MP3/AAC/FLAC/WAVE plus existing composite codecs share library contracts. InfiniStream compatibility wraps encoded positional sources and actual typed PCM outputs. AudioPlayerService opens a canonical PCM WAVE source through the library for MediaPlayer to pull, including preload; it does not pass original compressed sources directly to MediaPlayer. Output surfaces, routing, Cast and queue lifetimes remain Android host responsibilities. Existing composite render limits remain; only actual decoder implementations may produce PCM.
 
+Cast's non-native formats also use Sound's common WAVE output with explicit
+16-bit packing/mono duplication, retaining source rate and surround channels.
+Receiver-native encoded formats keep their previous forwarding policy. HTTP
+range requests borrow shared positional sources; the host no longer caches whole
+encoded/decoded track arrays. Real receiver acceptance remains pending.
+
 Seek-capable decoders fill independent PCM disk-cache blocks on demand. Unknown-length and legacy buffered renderers retain full preparation, which can add startup/preload latency. The RIFF output limit is 4 GiB. Audio output still consumes only library-decoded PCM.
 
 Successfully decoded formats integrate with `AudioPlayerService` background playback, lock screen media notifications, audio focus management, the segmented 16-band animated spectrum visualizer (`VisualizerView`), and playlist navigation.

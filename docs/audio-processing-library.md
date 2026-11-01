@@ -13,7 +13,7 @@ Updated 2026-10-31. The independent [libinfinisound repository](https://github.c
 | `audio-processing` | Android extractor/codec backend, metadata and analysis adapters, default composition, tracker JNI packaging |
 | `viewer-audio` | Source staging and leases, queue and gapless handoff, MediaPlayer PCM output, routing/focus, UI and Cast |
 
-The player service sends original encoded sources to `AudioProcessing.openPlaybackSource` and gives only the resulting common PCM WAVE ByteSource to the existing host MediaDataSource output adapter. Normal loads and gapless preload use the same library policy. Visualizer analysis borrows the same PCM resource, sharing the decoder/cache. Source-duration discovery also uses the library; the service no longer constructs a MediaPlayer for metadata decoding or decodes a complete track just to enrich metadata before playback. The buffered Cast conversion API uses the same library backend selection. Remote Cast renderers still own their own output handling.
+The player service sends original encoded sources to `AudioProcessing.openPlaybackSource` and gives only the resulting common PCM WAVE ByteSource to the existing host MediaDataSource output adapter. Normal loads and gapless preload use the same library policy. Visualizer analysis borrows the same PCM resource, sharing the decoder/cache. Source-duration discovery also uses the library; the service no longer constructs a MediaPlayer for metadata decoding or decodes a complete track just to enrich metadata before playback. Cast conversion requests explicit PCM packing through the same library source/cache path, and HTTP requests borrow positional views. Remote Cast renderers still own their own output handling.
 
 The library has portable MP3 via JLayer, AAC via its ADTS/MP4 parsers and JAAD synthesis, and its own FLAC and WAVE stream decoders. The Android composition registers MediaExtractor/MediaCodec behind `PcmDecoder`; players never select a native codec directly. `PLATFORM_FIRST`, `PORTABLE_FIRST` and `PORTABLE_ONLY` policy belongs to the library. Existing specialized formats retain their renderer priority and limits.
 
@@ -153,3 +153,21 @@ chunks are parsed in the core and applied by the native adapter's common PCM
 stream. The updated chord fixture carries a 1.5-second endpoint. Archive identity,
 relative playlists, known-duration retention and gapless promotion are corrected
 in the host; those queue policies remain outside Sound.
+
+## Cast source migration (checkpoint 28)
+
+Receiver-native formats retain their encoded-byte policy and range slicing;
+positional provider/container sources avoid unnecessary staging. Other formats
+use `PcmOutputOptions(bitsPerSample = 16, duplicateMono = true)` with Sound's
+WAVE source, retaining source rate and existing multichannel behavior. The host
+does not hold entire encoded, PCM or serialized-WAV buffers. Existing legacy
+codec buffers and unsupported-source staging remain explicit compatibility paths.
+
+The server retains four prepared sources, pins active HTTP consumers through
+eviction, and reopens older session URLs on demand. Requests have independent
+cursors, bounded transfer/header buffers, four workers and a bounded pending
+queue. Stop closes sockets, cancels preparation and releases source/cache owners.
+HTTP HEAD/range semantics are retained; short/failed reads cannot be presented as
+complete data. Existing transcoded CUE-slice limitations remain; this checkpoint
+does not introduce compressed-file time slicing or new receiver codec support.
+Compilation is separate from real receiver playback/seek/reconnect acceptance.
