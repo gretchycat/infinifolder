@@ -1,5 +1,5 @@
 {
-  "source": "Checkpoint 30 expected cases (897); retains every checkpoint 24 case and adds 12 reparser cases; original baseline remains infinistream-baseline.json",
+  "source": "Checkpoint 30 plus focused highlighting fix expected cases (900); original baseline remains infinistream-baseline.json",
   "recorded": "2026-11-01",
   "cases": {
     "com.beatofthedrum.alacdecoder.AlacInputBoundaryTest.forwardPositioningHandlesStreamsThatCannotSkip": "passed",
@@ -723,6 +723,9 @@
     "com.infinifolder.viewer.SourceDocumentTest.actualTablePathUsesLibraryCellsAndOriginalByteRevision": "passed",
     "com.infinifolder.viewer.SourceDocumentTest.partialTableHasNoSaveRevisionAndErrorsAreNotEmptyTables": "passed",
     "com.infinifolder.viewer.StagedSourceTest.borrowedOriginalSurvivesCleanup": "passed",
+    "com.infinifolder.viewer.SyntaxLanguageSelectionTest.explicitLanguageAndRecognizedFileTypeRemainAuthoritative": "passed",
+    "com.infinifolder.viewer.SyntaxLanguageSelectionTest.extensionlessJsonKeepsHighlightingAfterReparseAddsNewlines": "passed",
+    "com.infinifolder.viewer.SyntaxLanguageSelectionTest.missingOrUnsupportedHintsRemainPlain": "passed",
     "com.infinifolder.viewer.TextWindowPresentationTest.aGapOrOverlapIsRejectedRatherThanDisplayedAsAContinuousSource": "passed",
     "com.infinifolder.viewer.TextWindowPresentationTest.adjacentWindowsComposeWithoutArtificialLineBreaksOrFalsePartialSaveRevisions": "passed",
     "com.infinifolder.viewer.UnreadablePlaylistTest.allUnreadableStopsEvenWithRepeatAll": "passed",

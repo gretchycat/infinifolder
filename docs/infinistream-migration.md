@@ -933,9 +933,18 @@ workspace edits remain outside the parser checkpoint. This completes the reparse
 consumer extraction; remaining copy/write and legacy-adapter migration is separate.
 [Build and verification record](validation/scribe-reparser-migration-checkpoint30.json).
 
+Owner acceptance: the reparser workflow is confirmed, with an intermittent
+syntax-highlighting loss after toggling. The follow-up resets span bookkeeping
+when EditText replaces its buffer, carries a document-format hint for untyped
+files, and explicitly refreshes highlighting after the replacement viewport's
+layout. Viewer-common tests, text-viewer compilation and the full APK build pass,
+including three new selection cases. These bring the expected snapshot to 900 cases; the full
+899-case gate above predates this focused fix. Interactive confirmation of the
+highlighting correction is pending.
+
 ## Final verification and reproducibility
 
-Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 897-case checkpoint.
+Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 900-case checkpoint (including three focused highlighting follow-up cases).
 
 Last full gate (checkpoint 30 workspace): **899 tests, 869 pass, 30 pre-existing failures, no new failures or missing cases**. The expected-case snapshot contains 897 protected cases; two additional passing Cast cases belong to pending workspace edits. Checkpoint 24 previously recorded 885 cases; the new run covers the current changes through checkpoint 30. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 

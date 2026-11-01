@@ -130,5 +130,22 @@
     "The 899-case workspace gate includes two passing Cast tests from unrelated pending edits; the pinned expected snapshot adds only the 12 reparser cases (897 protected cases).",
     "The host checkpoint includes the preceding text-viewer caching/wrap/handle work and its required shared syntax controller/span updates; unrelated app, audio, back-navigation and cache edits remain unstaged."
   ],
-  "protectedExpectedCases": 897
+  "protectedExpectedCases": 897,
+  "highlightFollowup": {
+    "ownerAcceptance": "Reparse workflow confirmed, except intermittent syntax loss after toggling",
+    "changes": [
+      "Invalidate retired Editable span bookkeeping on replacement",
+      "Use document format as an automatic-language fallback for extensionless files",
+      "Explicitly refresh highlighting after the replacement viewport finishes layout"
+    ],
+    "verification": "viewer-common tests and viewer-text Kotlin compilation passed; 3 new language-selection cases pass",
+    "expectedCasesAfterFollowup": 900,
+    "apkBuild": "passed (:app:assembleDebug)",
+    "interactiveFixAcceptance": "pending",
+    "appDebugApkSha256": "78c81d8650b1fb76be382cb7ae6f309842b8000655810e6bedca6cb8ed1d8287",
+    "localEvidence": [
+      "build/reparse-highlighting-fix.log",
+      "build/reparse-highlighting-apk.log"
+    ]
+  }
 }

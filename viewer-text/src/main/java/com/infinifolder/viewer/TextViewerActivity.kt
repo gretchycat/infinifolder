@@ -38,6 +38,7 @@ class TextViewerActivity : ViewerActivity(), DebugDumpObserver {
     private var cachedCharset: Charset? = null
     private var reparseEnabled = false
     private var displayLogicalLineCount: Int? = null
+    private var syntaxLanguageHint: String? = null
     private lateinit var reparseCheck: CheckBox
     private val documentWorker = Executors.newSingleThreadExecutor()
     private var documentTask: Future<*>? = null
@@ -630,6 +631,7 @@ class TextViewerActivity : ViewerActivity(), DebugDumpObserver {
                     if (request != documentGeneration || isDestroyed) return@runOnUiThread
                     reparseCheck.isEnabled = reparser != null && cachedDocument != null && cachedCharset == currentCharset
                     displayLogicalLineCount = logicalLineCount
+                    syntaxLanguageHint = reparser?.name?.lowercase(java.util.Locale.ROOT)
                     showChunk(chunk)
                     if (ViewerLaunch.requestsEdit(intent)) toggleEditMode()
                 }
@@ -730,6 +732,9 @@ class TextViewerActivity : ViewerActivity(), DebugDumpObserver {
                         layout.getPrimaryHorizontal(position).toInt() + anchor.horizontal, 0)
                 } else scrollView.scrollTo(0, 0)
                 adjustingWindow = false
+                // setText can change both layout and scroll position. Highlight the final
+                // viewport explicitly rather than relying on incidental layout callbacks.
+                if (::syntax.isInitialized) syntax.refreshDocument(syntaxLanguageHint)
                 DiagnosticLog.record("text.viewer.render",
                     "id=$renderId generation=$request pages=${pages.size} start=${chunk.start} next=${chunk.nextOffset} " +
                         "chars=${text.length} bytes=${bytes.size} lines=$renderLineCount hasMore=${chunk.document.hasMore} " +

@@ -33,6 +33,8 @@ class SyntaxTextController(private val activity: Activity, private val edit: Edi
     private val worker = Executors.newSingleThreadExecutor()
     private var task: Future<*>? = null
     private val appliedSpans = ArrayDeque<Any>()
+    private var spanText: Editable? = null
+    private var documentLanguage: String? = null
     private var applySerial = 0
     @Volatile private var disposed = false
     @Volatile private var generation = 0
@@ -46,6 +48,12 @@ class SyntaxTextController(private val activity: Activity, private val edit: Edi
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
             generation++; requested = null; applySerial++; task?.cancel(true)
+            // setText() replaces the Editable; spans owned by its retired buffer cannot
+            // be removed from the replacement and must not delay its first highlight.
+            if (s !== spanText) {
+                appliedSpans.clear()
+                spanText = s as? Editable
+            }
         }
         override fun afterTextChanged(s: Editable?) { schedule() }
     }
@@ -57,6 +65,18 @@ class SyntaxTextController(private val activity: Activity, private val edit: Edi
         edit.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
         applyDefaults(); schedule()
     }
+    /** Called after a replacement document's viewport/layout is ready. Manual language choices win. */
+    fun refreshDocument(languageHint: String? = null) {
+        if (disposed) return
+        documentLanguage = languageHint?.takeIf { it in SyntaxHighlighting.languages }
+        generation++; requested = null; applySerial++; task?.cancel(true)
+        if (spanText !== edit.text) {
+            appliedSpans.clear()
+            spanText = edit.text
+        }
+        schedule()
+    }
+
     private fun readTheme(): TextTheme = runCatching { preferences.getString("theme", null)?.let(TextThemeJson::parse) }.getOrNull() ?: TextThemeJson.DARK
     fun refreshPreferences() {
         val next = readTheme()
@@ -133,7 +153,8 @@ class SyntaxTextController(private val activity: Activity, private val edit: Edi
         var end = maxOf(visibleEnd + 1024, start + 4096).coerceAtMost(start + 8192).coerceAtMost(text.length)
         if (end < text.length && end > start && Character.isHighSurrogate(text[end - 1])) end--
         val snapshot = text.subSequence(start, end).toString()
-        val language = if (languageChoice == "auto") SyntaxHighlighting.detect(fileName, mime, text.take(256).toString().substringBefore('\n')) else languageChoice
+        val language = syntaxLanguage(languageChoice, fileName, mime,
+            text.take(256).toString().substringBefore('\n'), documentLanguage)
         val version = generation
         val key = "$version:$start:$end:$language:${theme.hashCode()}"
         if (requested == key) return
@@ -283,7 +304,7 @@ class SyntaxTextController(private val activity: Activity, private val edit: Edi
         return true
     }
     fun close() {
-        disposed = true; applySerial++; appliedSpans.clear(); task?.cancel(true); handler.removeCallbacksAndMessages(null)
+        disposed = true; applySerial++; appliedSpans.clear(); spanText = null; task?.cancel(true); handler.removeCallbacksAndMessages(null)
         edit.removeTextChangedListener(watcher)
         if (edit.viewTreeObserver.isAlive) { edit.viewTreeObserver.removeOnScrollChangedListener(scrollListener); edit.viewTreeObserver.removeOnGlobalLayoutListener(layoutListener) }
         worker.shutdownNow()
