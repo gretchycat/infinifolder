@@ -43,7 +43,10 @@ class SyntaxTextController(private val activity: Activity, private val edit: Edi
     @Volatile private var lastHighlightSummary = "none"
     var theme: TextTheme = readTheme(); private set
     private var languageChoice = preferences.getString("language:$fileName", "auto")?.takeIf { it == "auto" || it in SyntaxHighlighting.languages } ?: "auto"
-    private val refresh = Runnable { prepare() }
+    private val refresh = SyntaxRefreshScheduler(
+        post = { callback, delay -> handler.postDelayed(callback, delay); Unit },
+        remove = { handler.removeCallbacks(it) },
+        refresh = ::prepare)
     private val watcher = object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -74,7 +77,8 @@ class SyntaxTextController(private val activity: Activity, private val edit: Edi
             appliedSpans.clear()
             spanText = edit.text
         }
-        schedule()
+        DiagnosticLog.record("text.syntax.refresh", "generation=$generation chars=${edit.length()} languageHint=${documentLanguage ?: "auto"}")
+        schedule(immediate = true)
     }
 
     private fun readTheme(): TextTheme = runCatching { preferences.getString("theme", null)?.let(TextThemeJson::parse) }.getOrNull() ?: TextThemeJson.DARK
@@ -122,9 +126,8 @@ class SyntaxTextController(private val activity: Activity, private val edit: Edi
         return true
     }
 
-    private fun schedule() {
-        if (disposed) return
-        handler.removeCallbacks(refresh); handler.postDelayed(refresh, 160)
+    private fun schedule(immediate: Boolean = false) {
+        if (!disposed) refresh.request(immediate)
     }
     private fun prepare() {
         if (disposed || activity.isDestroyed) return
@@ -304,7 +307,7 @@ class SyntaxTextController(private val activity: Activity, private val edit: Edi
         return true
     }
     fun close() {
-        disposed = true; applySerial++; appliedSpans.clear(); spanText = null; task?.cancel(true); handler.removeCallbacksAndMessages(null)
+        disposed = true; applySerial++; appliedSpans.clear(); spanText = null; task?.cancel(true); refresh.cancel(); handler.removeCallbacksAndMessages(null)
         edit.removeTextChangedListener(watcher)
         if (edit.viewTreeObserver.isAlive) { edit.viewTreeObserver.removeOnScrollChangedListener(scrollListener); edit.viewTreeObserver.removeOnGlobalLayoutListener(layoutListener) }
         worker.shutdownNow()

@@ -146,6 +146,15 @@
     "localEvidence": [
       "build/reparse-highlighting-fix.log",
       "build/reparse-highlighting-apk.log"
-    ]
+    ],
+    "ownerRetest": "First refresh fix did not resolve loss on Reparse enable, and disabling did not restore highlighting.",
+    "schedulingCorrection": {
+      "change": "Coalesce layout/scroll refresh requests without postponing the pending deadline; schedule document refresh immediately after layout.",
+      "tests": "3 scheduler tests passed; viewer-common suite and full debug APK build passed",
+      "expectedCases": 903,
+      "interactiveAcceptance": "pending",
+      "localEvidence": "build/reparse-highlight-scheduling.log",
+      "appDebugApkSha256": "832c620a04df98536aceba1644186c645a6a8cbcb4eadd3dc47f8af7b26bab35"
+    }
   }
 }

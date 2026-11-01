@@ -942,9 +942,17 @@ including three new selection cases. These bring the expected snapshot to 900 ca
 899-case gate above predates this focused fix. Interactive confirmation of the
 highlighting correction is pending.
 
+Owner retest reports that the first refresh change did not restore highlighting
+when toggling Reparse in either direction. Refresh scheduling now coalesces
+layout/scroll callbacks without resetting the pending deadline, and replacement
+documents request an immediate highlighting pass after layout. Three scheduler
+regressions, the viewer-common suite and the full debug APK build pass. The
+expected snapshot now protects 903 cases; the full 899-case gate above remains
+historical. Handset confirmation of this scheduling correction is pending.
+
 ## Final verification and reproducibility
 
-Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 900-case checkpoint (including three focused highlighting follow-up cases).
+Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 903-case checkpoint (including six focused highlighting follow-up cases).
 
 Last full gate (checkpoint 30 workspace): **899 tests, 869 pass, 30 pre-existing failures, no new failures or missing cases**. The expected-case snapshot contains 897 protected cases; two additional passing Cast cases belong to pending workspace edits. Checkpoint 24 previously recorded 885 cases; the new run covers the current changes through checkpoint 30. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
