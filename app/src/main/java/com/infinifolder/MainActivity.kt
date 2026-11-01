@@ -1,5 +1,11 @@
 package com.infinifolder
 
+import io.github.gretchycat.infinistream.copy as copyStream
+import io.github.gretchycat.infinistream.readBytes as readStreamBytes
+import io.github.gretchycat.infinistream.CancellationToken as StreamCancellationToken
+import io.github.gretchycat.infinistream.ProgressObserver as StreamProgressObserver
+import io.github.gretchycat.infinistream.StreamLimitExceededException
+
 import android.app.Activity
 import android.app.ProgressDialog
 import android.app.NotificationChannel
@@ -5636,17 +5642,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                     is ProviderResult.Unsupported -> throw java.io.IOException("This storage provider cannot read torrent files")
                 }
                 val bytes = input.use { stream ->
-                    val output = java.io.ByteArrayOutputStream()
-                    val buffer = ByteArray(32 * 1024)
-                    while (true) {
-                        val count = stream.read(buffer)
-                        if (count < 0) break
-                        if (output.size() + count > 16 * 1024 * 1024) {
-                            throw java.io.IOException("Torrent file is larger than the supported 16 MiB limit")
-                        }
-                        output.write(buffer, 0, count)
+                    try { readStreamBytes(stream, 16 * 1024 * 1024) }
+                    catch (error: StreamLimitExceededException) {
+                        throw java.io.IOException("Torrent file is larger than the supported 16 MiB limit", error)
                     }
-                    output.toByteArray()
                 }
                 val torrentUri = com.infinifolder.storage.StorageRuntime.get(this).torrents.registerTorrentFile(bytes)
                 runOnUiThread {
@@ -8587,15 +8586,12 @@ class MainActivity : Activity(), DebugDumpObserver {
                             val output = target.openWrite(created.ref)
                             if (output !is ProviderResult.Success) throw java.io.IOException((output as? ProviderResult.Failure)?.message ?: "Cannot write file")
                             output.value.use { out -> staged.inputStream().use { inputStream ->
-                                val buffer = ByteArray(65536)
-                                var copied = 0L
-                                while (true) {
-                                    if (cancelled()) throw java.io.InterruptedIOException("Creation cancelled")
-                                    val read = inputStream.read(buffer); if (read < 0) break
-                                    out.write(buffer, 0, read); copied += read
-                                    update(OperationUpdate(bytes = copied, totalBytes = staged.length(), currentItem = name,
-                                        currentItemBytes = copied, currentItemTotalBytes = staged.length()))
-                                }
+                                copyStream(inputStream, out,
+                                    cancellation = StreamCancellationToken { cancelled() },
+                                    progress = StreamProgressObserver {
+                                        update(OperationUpdate(bytes = it.completed, totalBytes = staged.length(), currentItem = name,
+                                            currentItemBytes = it.completed, currentItemTotalBytes = staged.length()))
+                                    })
                             } }
                             val readBack = target.openRead(created.ref)
                             if (readBack !is ProviderResult.Success) throw java.io.IOException("Cannot verify new file")
@@ -11576,7 +11572,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         }
                         inStream.use { input ->
                             writeRes.value.use { output ->
-                                input.copyTo(output, bufferSize = 128 * 1024)
+                                copyStream(input, output, bufferSize = 128 * 1024)
                                 output.flush()
                             }
                         }

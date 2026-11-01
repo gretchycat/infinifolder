@@ -59,6 +59,24 @@ public class ImageEditRuntimeCheck {
                 }
                 dispose(old,source);
             }
+            byte[] cachedBytes;
+            try (EncodedImage encoded = ImageEncoding.png(frame(source), CancellationToken.Companion.getNONE())) {
+                cachedBytes = encoded.takeBytes();
+            }
+            kotlin.Pair<Integer,Integer> dimensions = CachedImageCodec.INSTANCE.dimensions(cachedBytes);
+            check(dimensions.getFirst()==source.getWidth() && dimensions.getSecond()==source.getHeight(), "cached source dimensions");
+            CachedImageCodec.Decoded cached = CachedImageCodec.INSTANCE.decode(cachedBytes, 2);
+            check(cached != null && cached.getSourceWidth()==source.getWidth(), "cached decoded metadata");
+            Bitmap cachedBitmap = cached.getFrame().takeBitmap();
+            check(Math.max(cachedBitmap.getWidth(), cachedBitmap.getHeight())<=2, "cached target size");
+            cached.getFrame().close();
+            check(!cachedBitmap.isRecycled(), "cached bitmap transferred to host");
+            Bitmap cacheExpected = Bitmap.createScaledBitmap(source, 2, 1, true);
+            equal(cachedBitmap, cacheExpected, "cached legacy pixels");
+            cacheExpected.recycle();
+            cachedBitmap.recycle();
+            check(CachedImageCodec.INSTANCE.decode(new byte[] {1,2,3}, 16)==null, "invalid cache rejected");
+            pass("cached-artwork-dimensions-sampling-and-ownership");
             check(!source.isRecycled(),"orientation keeps input");pass("four-orientations-pixels-and-metadata");
             for(float[] bounds:new float[][]{{1.9f,0.8f,3.9f,2.7f},{-50,-40,60,70},{20,20,30,30},{3,2,1,0}}) {
                 int left=Math.max(0,Math.min((int)bounds[0],3)),top=Math.max(0,Math.min((int)bounds[1],2));

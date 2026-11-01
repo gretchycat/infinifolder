@@ -454,7 +454,7 @@ class IconThemeManager(private val context: Context) {
                         } else {
                             destFile.parentFile?.mkdirs()
                             FileOutputStream(destFile).use { out ->
-                                input.copyTo(out)
+                                io.github.gretchycat.infinistream.copy(input, out)
                             }
                         }
                     }
@@ -476,19 +476,15 @@ class IconThemeManager(private val context: Context) {
                             destFile.mkdirs()
                         } else if (entry.isUnixSymlink) {
                             destFile.parentFile?.mkdirs()
-                            val target = java.io.ByteArrayOutputStream()
-                            val buffer = ByteArray(1024)
-                            while (true) {
-                                val read = input.read(buffer)
-                                if (read < 0) break
-                                if (target.size() + read > 4096) throw java.io.IOException("Icon theme symlink target is too long")
-                                target.write(buffer, 0, read)
+                            val target = try { io.github.gretchycat.infinistream.readBytes(input, 4096) }
+                            catch (error: io.github.gretchycat.infinistream.StreamLimitExceededException) {
+                                throw java.io.IOException("Icon theme symlink target is too long", error)
                             }
-                            symlinks[destFile] = target.toString("UTF-8")
+                            symlinks[destFile] = target.toString(Charsets.UTF_8)
                         } else {
                             destFile.parentFile?.mkdirs()
                             FileOutputStream(destFile).use { out ->
-                                input.copyTo(out)
+                                io.github.gretchycat.infinistream.copy(input, out)
                             }
                         }
                     }

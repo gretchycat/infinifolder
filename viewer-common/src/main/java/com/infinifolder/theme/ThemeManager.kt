@@ -338,14 +338,9 @@ object ThemeManager {
         return try {
             MediaSourceAdapter.openStream(context, uri).use { input ->
                 destFile.outputStream().use { output ->
-                    val buffer = ByteArray(8192)
-                    var total = 0L
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        total += count
-                        if (total > 32 * 1024 * 1024) throw java.io.IOException("Skin archive exceeds 32 MiB")
-                        output.write(buffer, 0, count)
+                    try { io.github.gretchycat.infinistream.copy(input, output, maxBytes = 32L * 1024 * 1024) }
+                    catch (error: io.github.gretchycat.infinistream.StreamLimitExceededException) {
+                        throw java.io.IOException("Skin archive exceeds 32 MiB", error)
                     }
                 }
             }

@@ -282,14 +282,10 @@ class SyntaxTextController(private val activity: Activity, private val edit: Edi
             try {
                 if (request == IMPORT) {
                     val bytes = MediaSourceAdapter.openDocumentSource(activity, uri).use { source ->
-                        val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192)
-                        while (true) {
-                            val n = source.read(buffer, 0, buffer.size)
-                            if (n == -1) break
-                            require(n > 0 && out.size() + n <= 256 * 1024) { "Theme descriptor exceeds 256 KiB" }
-                            out.write(buffer, 0, n)
+                        try { io.github.gretchycat.infinistream.readBytes(source, 256 * 1024) }
+                        catch (error: io.github.gretchycat.infinistream.StreamLimitExceededException) {
+                            throw java.io.IOException("Theme descriptor exceeds 256 KiB", error)
                         }
-                        out.toByteArray()
                     }
                     val imported = TextThemeJson.parse(String(bytes, Charsets.UTF_8))
                     handler.post { if (!disposed) {

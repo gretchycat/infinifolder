@@ -17,10 +17,21 @@ class RevisionAndRecoveryTest {
         var writes = 0
         var nativeCalls = 0
         var native = false
+        var interruptFirstWrite = false
         override fun openRead(ref: ResourceRef): ProviderResult<InputStream> = ProviderResult.Success(ByteArrayInputStream(bytes))
         override fun openWrite(ref: ResourceRef): ProviderResult<OutputStream> {
             writes++
-            return ProviderResult.Success(object : ByteArrayOutputStream() { override fun close() { bytes = toByteArray() } })
+            return ProviderResult.Success(object : ByteArrayOutputStream() {
+                override fun write(buffer: ByteArray, offset: Int, length: Int) {
+                    if (interruptFirstWrite && writes == 1) {
+                        if (length > 0) super.write(buffer, offset, 1)
+                        Thread.currentThread().interrupt()
+                        throw InterruptedIOException("Interrupted save")
+                    }
+                    super.write(buffer, offset, length)
+                }
+                override fun close() { bytes = toByteArray() }
+            })
         }
         override fun replaceContent(ref: ResourceRef, data: ByteArray): ProviderResult<Unit> {
             nativeCalls++
@@ -54,6 +65,19 @@ class RevisionAndRecoveryTest {
         assertTrue(ContentReplacement.replace(backend, ref, "again".toByteArray(), temporary.root, second) is ProviderResult.Success)
         assertEquals("again", String(backend.bytes))
     }
+    @Test fun cancelledStreamingSaveStillRestoresAndRecordsTheOriginal() {
+        val backend = Backend().apply { interruptFirstWrite = true }
+        val baseline = ContentRevision.of(backend.bytes)
+        try {
+            val result = ContentReplacement.replace(backend, ref, "edited".toByteArray(), temporary.root, baseline)
+            assertTrue(result is ProviderResult.Failure)
+            assertTrue(Thread.currentThread().isInterrupted)
+            assertEquals("original", String(backend.bytes))
+            assertEquals(2, backend.writes)
+        } finally { Thread.interrupted() }
+        assertEquals("restored", SaveRecovery.pending(temporary.root).single().state)
+    }
+
     @Test fun pendingRecoveryRequiresAnIntactSnapshotAndHidesActiveSessions() {
         val session = temporary.newFolder("session")
         val original = File(session, "original.bin").apply { writeText("original") }

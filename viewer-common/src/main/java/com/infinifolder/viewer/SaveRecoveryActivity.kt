@@ -95,7 +95,7 @@ class SaveRecoveryActivity : ViewerActivity() {
                 val record = SaveRecovery.pending(recoveryRoot).firstOrNull { it.directory.name == session } ?: error("Recovery copy unavailable")
                 record.original.inputStream().use { input ->
                     val output = contentResolver.openOutputStream(destination, "wt") ?: error("Cannot create recovery export")
-                    output.use { input.copyTo(it) }
+                    output.use { io.github.gretchycat.infinistream.copy(input, it) }
                 }
             }
             runOnUiThread { Toast.makeText(this, if (result.isSuccess) "Backup exported; recovery copy retained" else result.exceptionOrNull()?.message, Toast.LENGTH_LONG).show() }

@@ -2,13 +2,14 @@ package com.infinifolder
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import com.infinifolder.preview.CachedImageCodec
+import com.infinifolder.preview.BitmapFrame
+import com.infinifolder.preview.ImageEncoding
 import android.net.Uri
 import com.infinifolder.apps.AppsUri
 import com.infinifolder.model.*
 import com.infinifolder.storage.DiagnosticLog
 import com.infinifolder.storage.StorageRuntime
-import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
@@ -148,15 +149,7 @@ class ResourceArtworkCache(context: Context) {
         val input = (runtime.provider.openRead(entry.ref) as? ProviderResult.Success)?.value
             ?: throw IOException("Cannot read icon ${entry.metadata.name}")
         return input.use {
-            val output = ByteArrayOutputStream()
-            val buffer = ByteArray(8192)
-            while (true) {
-                val count = it.read(buffer)
-                if (count < 0) break
-                if (output.size() + count > 8 * 1024 * 1024) throw IOException("Icon PNG exceeds 8 MiB")
-                output.write(buffer, 0, count)
-            }
-            output.toByteArray()
+            io.github.gretchycat.infinistream.readBytes(it, 8 * 1024 * 1024)
         }
     }
 
@@ -170,33 +163,15 @@ class ResourceArtworkCache(context: Context) {
         return runCatching {
             val bytes = bytes(sidecar)
             val readFinished = System.nanoTime()
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-            val target = size.coerceAtLeast(1).toLong() * 2
-            val options = BitmapFactory.Options().apply {
-                // Android initializes this field to zero; decoding treats zero as
-                // one, but our sampling arithmetic must explicitly start at one.
-                inSampleSize = 1
-                while (bounds.outWidth.toLong() / inSampleSize > target ||
-                    bounds.outHeight.toLong() / inSampleSize > target) inSampleSize *= 2
-            }
-            val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: return null
-            val maxSide = maxOf(decoded.width, decoded.height)
-            val targetSide = size.coerceAtLeast(1)
-            val bitmap = if (maxSide > targetSide) {
-                Bitmap.createScaledBitmap(decoded,
-                    (decoded.width.toLong() * targetSide / maxSide).toInt().coerceAtLeast(1),
-                    (decoded.height.toLong() * targetSide / maxSide).toInt().coerceAtLeast(1), true)
-                    .also { if (it !== decoded) decoded.recycle() }
-            } else decoded
+            val decoded = CachedImageCodec.decode(bytes, size) ?: return null
+            val bitmap = decoded.frame.takeBitmap()
             val decodedAt = System.nanoTime()
             val p = sidecar.uri.toString()
             val generated = provenance.getString("$p:source", null) == entry.uri.toString() &&
                 provenance.getString("$p:sha256", null) == digest(bytes)
             Saved(bitmap, if (generated) provenance.getString("$p:signature", "").orEmpty() else "custom:$stamp",
                 if (generated) provenance.getLong("$p:fetched", 0) else System.currentTimeMillis(),
-                generated, stamp, persisted = true, sourcePixels = maxOf(bounds.outWidth, bounds.outHeight),
+                generated, stamp, persisted = true, sourcePixels = maxOf(decoded.sourceWidth, decoded.sourceHeight),
                 program = generated && provenance.getBoolean("$p:program", false)).also {
                     memory.put(key, it)
                     DiagnosticLog.record("artwork.cache.loaded", "name=${sidecar.metadata.name} bytes=${bytes.size} pixels=${bitmap.width}x${bitmap.height} elapsedMs=${(System.nanoTime() - started) / 1_000_000} readMs=${(readFinished - started) / 1_000_000} decodeMs=${(decodedAt - readFinished) / 1_000_000} provenanceMs=${(System.nanoTime() - decodedAt) / 1_000_000} provider=${entry.ref.providerId}")
@@ -222,9 +197,9 @@ class ResourceArtworkCache(context: Context) {
             persistence.execute {
                 var created: ResourceEntry? = null
                 try {
-                    val png = ByteArrayOutputStream().also {
-                        if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) throw IOException("PNG encoding failed")
-                    }.toByteArray()
+                    val png = BitmapFrame(bitmap).use { frame ->
+                        ImageEncoding.png(frame).use { it.takeBytes() }
+                    }
                     val provider = runtime.provider
                     val current = sidecar(entry)
                     val published = if (current != null) {
@@ -235,13 +210,12 @@ class ResourceArtworkCache(context: Context) {
                             DiagnosticLog.record("artwork.cache.custom-preserved", "name=${current.metadata.name}")
                             return@execute
                         }
-                        val originalSize = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeByteArray(originalBytes, 0, originalBytes.size, originalSize)
+                        val originalSize = CachedImageCodec.dimensions(originalBytes)
                         if (provenance.getString("$p:signature", null) == signature &&
-                            maxOf(originalSize.outWidth, originalSize.outHeight) > maxOf(bitmap.width, bitmap.height)) {
+                            maxOf(originalSize.first, originalSize.second) > maxOf(bitmap.width, bitmap.height)) {
                             // A small floating-header image must not downgrade the full grid's cache.
                             memory.put(key, Saved(bitmap, signature, now, sidecarStamp = stamp(current), persisted = true,
-                                sourcePixels = maxOf(originalSize.outWidth, originalSize.outHeight), program = true))
+                                sourcePixels = maxOf(originalSize.first, originalSize.second), program = true))
                             return@execute
                         }
                         val replaceResult = when (val direct = provider.replaceContent(current.ref, png)) {

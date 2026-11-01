@@ -56,18 +56,13 @@ class ExternalEdits(private val context: Context) {
     }
     private fun open(ref: ResourceRef): InputStream = result(provider.openRead(ref))
     private fun fingerprint(input: InputStream, message: String, total: Long?, progress: (String, Long, Long?) -> Unit): ContentRevision {
-        var bytes = 0L
         var reported = 0L
-        return object : java.io.FilterInputStream(input) {
-            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-                val count = super.read(buffer, offset, length)
-                if (count > 0) bytes += count
+        return io.github.gretchycat.infinistream.InputStreamSource(input).use { source ->
+            ContentRevision.read(source, progress = io.github.gretchycat.infinistream.ProgressObserver {
                 val now = android.os.SystemClock.uptimeMillis()
-                if (now - reported >= 250) { reported = now; progress(message, bytes, total) }
-                if (Thread.currentThread().isInterrupted) throw java.io.InterruptedIOException("Check interrupted")
-                return count
-            }
-        }.use(ContentRevision::read)
+                if (now - reported >= 250) { reported = now; progress(message, it.completed, total) }
+            })
+        }
     }
     private fun stamp(ref: ResourceRef, message: String, progress: (String, Long, Long?) -> Unit): Stamp = runtime.archives.withFreshReads {
         val before = result(provider.stat(ref)).metadata
@@ -87,17 +82,15 @@ class ExternalEdits(private val context: Context) {
             lease.reserve(before.revision.size)
             progress("Preparing external working copy…", 0, before.revision.size)
             runtime.archives.withFreshReads { open(ref).use { input -> lease.output().use { output ->
-                val buffer = ByteArray(128 * 1024)
-                var bytes = 0L
                 var reported = 0L
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    if (Thread.currentThread().isInterrupted) throw java.io.InterruptedIOException("Opening interrupted")
-                    output.write(buffer, 0, count); bytes += count
-                    val now = android.os.SystemClock.uptimeMillis()
-                    if (now - reported >= 250) { reported = now; progress("Preparing external working copy…", bytes, before.revision.size) }
-                }
+                io.github.gretchycat.infinistream.copy(input, output,
+                    progress = io.github.gretchycat.infinistream.ProgressObserver {
+                        val now = android.os.SystemClock.uptimeMillis()
+                        if (now - reported >= 250) {
+                            reported = now
+                            progress("Preparing external working copy…", it.completed, before.revision.size)
+                        }
+                    }, bufferSize = 128 * 1024)
             } } }
             val grabbed = lease.file.inputStream().use(ContentRevision::read)
             val after = stamp(ref, "Checking source after opening…", progress)
@@ -175,7 +168,7 @@ class ExternalEdits(private val context: Context) {
             throw IOException("Not enough space to preserve the Termux edits. The working file is kept.")
         val staged = File(session.directory, "termux-import.tmp")
         try {
-            external.inputStream().use { input -> staged.outputStream().use { output -> input.copyTo(output); output.fd.sync() } }
+            external.inputStream().use { input -> staged.outputStream().use { output -> io.github.gretchycat.infinistream.copy(input, output); output.fd.sync() } }
             if (staged.inputStream().use(ContentRevision::read) != before ||
                 external.inputStream().use(ContentRevision::read) != before)
                 throw IOException("The Termux working file changed while it was being imported. It has been kept.")
@@ -220,7 +213,7 @@ class ExternalEdits(private val context: Context) {
         val before = revision ?: localRevision(session) { _, _, _ -> }
         val snapshot = File(session.directory, "publish.bin")
         if (before.size > session.directory.usableSpace - 1024 * 1024) throw IOException("Not enough space to preserve the edited file for saving. Your working copy is kept.")
-        session.working.inputStream().use { input -> snapshot.outputStream().use { output -> input.copyTo(output); output.fd.sync() } }
+        session.working.inputStream().use { input -> snapshot.outputStream().use { output -> io.github.gretchycat.infinistream.copy(input, output); output.fd.sync() } }
         if (snapshot.inputStream().use(ContentRevision::read) != before || session.working.inputStream().use(ContentRevision::read) != before)
             throw IOException("The external program changed the working copy while it was being checked. Close it and retry.")
         return snapshot to before

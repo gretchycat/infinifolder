@@ -75,16 +75,15 @@ private object TermuxEditFiles {
         val size = session.baseline.revision.size
         progress("Preparing the Termux working copy…", 0, size)
         session.working.inputStream().use { input -> target.outputStream().use { output ->
-            val buffer = ByteArray(128 * 1024)
-            var copied = 0L
             var lastUpdate = 0L
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                output.write(buffer, 0, count); copied += count
-                val now = android.os.SystemClock.uptimeMillis()
-                if (now - lastUpdate >= 250) { progress("Preparing the Termux working copy…", copied, size); lastUpdate = now }
-            }
+            io.github.gretchycat.infinistream.copy(input, output,
+                progress = io.github.gretchycat.infinistream.ProgressObserver {
+                    val now = android.os.SystemClock.uptimeMillis()
+                    if (now - lastUpdate >= 250) {
+                        progress("Preparing the Termux working copy…", it.completed, size)
+                        lastUpdate = now
+                    }
+                }, bufferSize = 128 * 1024)
             output.fd.sync()
         } }
         progress("Checking the Termux working copy…", 0, null)

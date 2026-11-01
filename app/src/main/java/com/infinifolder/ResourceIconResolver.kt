@@ -233,17 +233,10 @@ class ResourceIconResolver(context: Context) {
         val tempFile = runCatching { java.io.File.createTempFile("apk_", ".apk", stageDir) }.getOrNull() ?: return null
         return try {
             val stream = (runtime.provider.openRead(entry.ref) as? ProviderResult.Success)?.value ?: return null
-            var totalBytes = 0L
             stream.use { input ->
                 tempFile.outputStream().use { output ->
-                    val buffer = ByteArray(16 * 1024)
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        totalBytes += read
-                        if (totalBytes > maxApkStageBytes) return null
-                        output.write(buffer, 0, read)
-                    }
+                    io.github.gretchycat.infinistream.copy(input, output,
+                        bufferSize = 16 * 1024, maxBytes = maxApkStageBytes)
                     output.flush()
                 }
             }
@@ -266,15 +259,8 @@ class ResourceIconResolver(context: Context) {
         return runCatching {
         val stream = (runtime.provider.openRead(entry.ref) as? ProviderResult.Success)?.value ?: return null
         stream.use { input ->
-            val bytes = java.io.ByteArrayOutputStream()
-            val buffer = ByteArray(8192)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                if (bytes.size() + count > 1024 * 1024) return null
-                bytes.write(buffer, 0, count)
-            }
-            ShortcutInfo.fromJson(bytes.toString("UTF-8"))?.also { linkInfo.put(linkKey(entry), it) }
+            val bytes = io.github.gretchycat.infinistream.readBytes(input, 1024 * 1024)
+            ShortcutInfo.fromJson(bytes.toString(Charsets.UTF_8))?.also { linkInfo.put(linkKey(entry), it) }
         }
         }.getOrNull()
     }
