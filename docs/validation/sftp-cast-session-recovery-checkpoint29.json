@@ -1,0 +1,25 @@
+{
+  "recorded": "2026-11-01",
+  "scope": "Recover Cast HTTP reads from an SFTP provider after a pooled SSH session has gone stale.",
+  "evidence": {
+    "source": "Owner-provided debug dump in build/infinifolder-debug-20261101-035504-982.log",
+    "castLoad": "RemoteMediaClient load accepted (status 0); autoplay requested.",
+    "receiver": "Receiver entered IDLE with error reason after requesting the stream.",
+    "http": "Cast server received GET for an SFTP-hosted MP3 and resolved audio/mpeg with a known length.",
+    "failure": "SftpBlockDevice failed during opening-channel after JSch reported 'session is down'; local playback worked again after Cast disconnected."
+  },
+  "change": {
+    "rangeChannel": "On a known dead-session error, replace the pooled SFTP session and retry opening the independent range channel once.",
+    "metadataChannel": "When a metadata operation detects a dead session, evict that pooled client so later operations establish a fresh session. The failed callback is not replayed.",
+    "failurePolicy": "A failed reconnect or retry remains an explicit source read error."
+  },
+  "builds": {
+    "standaloneStoreAndroid": "BUILD SUCCESSFUL in 26s; 26 tasks; assembleDebug",
+    "integratedAppAndAudioHost": "BUILD SUCCESSFUL in 1m 43s; 412 tasks",
+    "fullDebugApkSha256": "b6ccfd48fb569dcdc4d2705ff52ce8900703288871ea576c828500736415f512",
+    "audioHostDebugApkSha256": "44c6cb67f46ffd9f1c89efb54bcdcc379ab416ae5195ed9a1476a052be500a86"
+  },
+  "automatedTestsRun": false,
+  "runtimeCastCheckAfterChange": false,
+  "acceptancePending": "Retry the same SFTP-hosted MP3 and inspect sftp.session.reconnect and cast.http.complete in the next diagnostic dump."
+}

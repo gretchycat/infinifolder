@@ -872,11 +872,33 @@ slice and legacy renderer/staging limits remain; no complete format conformance
 or live-provider performance claim is added.
 [Build and migration record](validation/cast-source-migration-checkpoint28.json).
 
+## Checkpoint 29: reconnect stale SFTP sessions for Cast ranges
+
+The owner-provided diagnostic dump shows Cast accepted the MP3 load and requested
+the HTTP stream. The receiver then reported an idle error because the first
+positional SFTP read failed while opening its channel with `JSchException: session
+is down`. Local playback resumed after Cast disconnected, consistent with its
+opening a fresh source/session.
+
+Store now recognizes an unavailable pooled SSH session when a positional read
+channel is opened, replaces that session if another request has not already done
+so, and retries opening the channel once. A metadata operation that encounters
+the same stale-session condition evicts the failed pooled client for the next
+operation; it does not replay the callback. The source still reports a read
+failure if fresh connection or retry fails.
+
+Standalone Store Android assembly and the integrated app/audio-host APK builds
+pass. No automated test or new Cast runtime check was run. Install the updated
+APK and retry the same SFTP-hosted MP3; `sftp.session.reconnect` and
+`cast.http.complete` in the next diagnostic dump will confirm recovery. The
+checkpoint 24 full test gate remains historical.
+[Build and migration record](validation/sftp-cast-session-recovery-checkpoint29.json).
+
 ## Final verification and reproducibility
 
 Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 885-case checkpoint.
 
-Last full gate (checkpoint 24): **885 tests, 855 pass, 30 pre-existing failures, no new failures or missing cases**. Later checkpoints record their builds and owner checks separately; that full automated gate has not been rerun for checkpoints 25–28. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
+Last full gate (checkpoint 24): **885 tests, 855 pass, 30 pre-existing failures, no new failures or missing cases**. Later checkpoints record their builds and owner checks separately; that full automated gate has not been rerun for checkpoints 25–29. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
 | Independent library | Tests | Failures |
 | --- | ---: | ---: |
