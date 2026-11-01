@@ -4,17 +4,17 @@ Design authority: [implementation assignment](infinistream_architecture_codex.md
 
 ## Published repositories and pinned dependency graph
 
-All remote main hashes were checked against the local tested heads. Sound's existing history is preserved; the other six repositories were created for this assignment. Each repository records standalone dependencies and source provenance. The workspace pins all seven as Git submodules and Gradle composite builds; no unpublished Maven artifact or vendored library tree is required.
+Repository publication was verified at the earlier checkpoints. The final revisions below are committed locally; this completion pass does not claim they were pushed. Sound's existing history is preserved; the other six repositories were created for this assignment. Each repository records standalone dependencies and source provenance. The workspace pins all seven as Git submodules and Gradle composite builds; no unpublished Maven artifact or vendored library tree is required.
 
 | Repository | Status | Pinned commit |
 | --- | --- | --- |
-| [libinfinistream](https://github.com/gretchycat/libinfinistream) | Created | [`e86167f`](https://github.com/gretchycat/libinfinistream/commit/e86167f2fd0c2c19d24140f05478099fdb1a693b) |
-| [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | [`d49e57c`](https://github.com/gretchycat/libinfinistore/commit/d49e57c4a4520d7f559da3080d48759f3e92afb0) |
-| [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | [`14a7908`](https://github.com/gretchycat/libinfinivault/commit/14a7908ffb8cd1af7d9a5400621d91ea1626f4f0) |
-| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | [`4b0f49f`](https://github.com/gretchycat/libinfinisound/commit/4b0f49f910f723dfd7cfb0c8acb0a5fda9c69907) |
-| [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | [`0fcedae`](https://github.com/gretchycat/libinfinicanvas/commit/0fcedae408385fa95ef816247ba4861108c933ff) |
-| [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | [`084e9de`](https://github.com/gretchycat/libinfiniscribe/commit/084e9de5ab5335c79ae88fdf2c297314cfd664e3) |
-| [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | [`091e10a`](https://github.com/gretchycat/libinfinivideo/commit/091e10a6c06b73fb1828ba75348d09338ac89116) |
+| [libinfinistream](https://github.com/gretchycat/libinfinistream) | Created | `16409e81edc68813816c2640d27fbd1c55098f5f` |
+| [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | `b1befd7e464bd5bc8a20b2066185cf033fe10066` |
+| [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | `14a7908ffb8cd1af7d9a5400621d91ea1626f4f0` |
+| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | `4b0f49f910f723dfd7cfb0c8acb0a5fda9c69907` |
+| [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | `c6f6d3927611ca391ad09eb29736d0889f9ceb17` |
+| [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | `2041c34c098fa8c4fa940d91e740291d3eecb9d1` |
+| [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | `091e10a6c06b73fb1828ba75348d09338ac89116` |
 
 ```text
 Store -> Stream
@@ -939,8 +939,7 @@ when EditText replaces its buffer, carries a document-format hint for untyped
 files, and explicitly refreshes highlighting after the replacement viewport's
 layout. Viewer-common tests, text-viewer compilation and the full APK build pass,
 including three new selection cases. These bring the expected snapshot to 900 cases; the full
-899-case gate above predates this focused fix. Interactive confirmation of the
-highlighting correction is pending.
+899-case gate above predates this focused fix. The first correction was superseded by the scheduling fix below.
 
 Owner retest reports that the first refresh change did not restore highlighting
 when toggling Reparse in either direction. Refresh scheduling now coalesces
@@ -948,33 +947,63 @@ layout/scroll callbacks without resetting the pending deadline, and replacement
 documents request an immediate highlighting pass after layout. Three scheduler
 regressions, the viewer-common suite and the full debug APK build pass. The
 expected snapshot now protects 903 cases; the full 899-case gate above remains
-historical. Handset confirmation of this scheduling correction is pending.
+historical. The owner confirmed this scheduling correction on the handset.
+
+## Checkpoint 31 — final transfer and host-boundary cleanup
+
+Remaining transfers and fingerprints now use the shared Stream copier, including
+Store file operations, cache staging, replacement/recovery and external working
+copies. Explicitly bounded in-memory reads retain existing import limits. Copy
+borrows endpoints, reports successful writes and propagates errors/cancellation;
+flush/sync, leases, publication and rollback remain explicit. Interrupted-save
+rollback defers the existing thread interrupt until the original and recovery
+record have been restored. Recovery uses the preserved file without reading the
+whole backup into RAM. The old compiled copy entry point remains available.
+
+The audit also moved sampled artwork-cache decoding into Canvas and uses its
+existing PNG processor. The host retains naming, freshness, provenance and safe
+publication. Used StorageProvider/BlockDevice/File APIs, runtime/router assembly,
+Android presentation, diagnostic forwarding, UI assets and HTTP framing remain
+intentional boundaries. They do not duplicate library codecs. Library dependencies
+remain acyclic with no dependency on app/viewer modules.
+
+[Completion audit and final evidence](library-migration-completion.md) records the
+acceptance checklist, tests/builds, repository revisions, retained interfaces and
+release limitations. The original failure baseline is unchanged. Unrelated dirty
+workspace edits are excluded from these migration commits.
+
+Final checkpoint 31 verification: **917 cases, 887 passed, the same 30 known
+failures, zero regressions/skips/missing cases**. All seven independent library
+builds, the full app and all ten viewer-host configurations pass packaging. The
+protected checkpoint contains 915 cases; two additional passing cases are from
+unrelated pending Cast work. See the completion record for exact commands and
+retained release constraints.
 
 ## Final verification and reproducibility
 
-Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 903-case checkpoint (including six focused highlighting follow-up cases).
+Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 915-case checkpoint (including six focused highlighting follow-up cases and twelve final migration cases).
 
-Last full gate (checkpoint 30 workspace): **899 tests, 869 pass, 30 pre-existing failures, no new failures or missing cases**. The expected-case snapshot contains 897 protected cases; two additional passing Cast cases belong to pending workspace edits. Checkpoint 24 previously recorded 885 cases; the new run covers the current changes through checkpoint 30. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
+Historical full gate (checkpoint 30 workspace): **899 tests, 869 pass, 30 pre-existing failures, no new failures or missing cases**. The then-current expected-case snapshot contained 897 protected cases; two additional passing Cast cases belong to pending workspace edits. Checkpoint 24 previously recorded 885 cases; the new run covers the current changes through checkpoint 30. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
 | Independent library | Tests | Failures |
 | --- | ---: | ---: |
-| Stream | 26 | 0 |
-| Store | 8 | 0 |
+| Stream | 33 | 0 |
+| Store | 10 | 0 |
 | Vault | 9 | 0 |
 | Sound | 100 | 0 |
-| Canvas | 67 | 0 |
+| Canvas | 69 | 0 |
 | Scribe (core and reparser JVM modules) | 111 | 0 |
 | Video | 31 | 0 |
 
-Standalone builds for all seven libraries are recorded in their respective checkpoints. Checkpoint 24 repeats the changed Sound/Store builds and audio host; the full composite gate exercises all seven source libraries. Stream/Scribe and portable Sound builds need no Android runtime. Android modules were built with SDK 36, JDK 21 targeting Java 17, Kotlin 2.2.20 and AGP 8.9.2 using Gradle 9.7.1. The preceding checkpoint built full app and selected audio/text/image/video host debug APKs; checkpoints 5/6/7 rebuilt the full app and affected text/CSV hosts, and repeated the independent Scribe build. Checkpoint 8 repeats full/CSV-host and independent Scribe builds; checkpoint 9 repeats full/text/HTML/Markdown-host and independent Scribe builds. Checkpoint 10 rebuilds full/CSV-host APKs for the startup callback fix. Checkpoint 11 rebuilds full/audio-host and standalone Android/portable Sound artifacts for PCM pull output; checkpoint 12 repeats those builds for decoder frame positioning and playback policy; checkpoint 13 repeats them for trailing MP3 metadata and long seeks; checkpoint 14 repeats affected Sound/Stream/Canvas and audio/image host builds for common encoded inputs and exact FLAC positioning. Termux ARM64 native source builds passed; the standard NDK/CMake path and desktop/iOS runtime execution were not exercised.
+Checkpoint 31 repeats standalone source builds for all seven libraries and every viewer host; earlier builds are recorded in their respective checkpoints. Checkpoint 24 repeats the changed Sound/Store builds and audio host; the full composite gate exercises all seven source libraries. Stream/Scribe and portable Sound builds need no Android runtime. Android modules were built with SDK 36, JDK 21 targeting Java 17, Kotlin 2.2.20 and AGP 8.9.2 using Gradle 9.7.1. The preceding checkpoint built full app and selected audio/text/image/video host debug APKs; checkpoints 5/6/7 rebuilt the full app and affected text/CSV hosts, and repeated the independent Scribe build. Checkpoint 8 repeats full/CSV-host and independent Scribe builds; checkpoint 9 repeats full/text/HTML/Markdown-host and independent Scribe builds. Checkpoint 10 rebuilds full/CSV-host APKs for the startup callback fix. Checkpoint 11 rebuilds full/audio-host and standalone Android/portable Sound artifacts for PCM pull output; checkpoint 12 repeats those builds for decoder frame positioning and playback policy; checkpoint 13 repeats them for trailing MP3 metadata and long seeks; checkpoint 14 repeats affected Sound/Stream/Canvas and audio/image host builds for common encoded inputs and exact FLAC positioning. Termux ARM64 native source builds passed; the standard NDK/CMake path and desktop/iOS runtime execution were not exercised.
 
 The Android app_process harness loaded the current full APK and passed 12 portable/platform audio decode cases plus real TGA BitmapFrame metadata/borrowed lifetime, bounded Scribe Unicode-text pipeline and Video surface-metadata checks. PCM frame counts/precision match across policies; FLAC samples are exact through 32 bits. Ext/tracker JNI, new library classes and JAAD's bundled license are present in the full APK. These 15 checks do not exercise audible playback, playback surfaces, UI, seeking/gapless, casting or live remote servers. Checkpoint 5 also passes two actual CSV consumer checks, bringing that checkpoint to 17 checks; checkpoint 6 repeats those and adds three positional-window/routing checks, bringing checkpoint 6 Android coverage to 20 checks. Checkpoint 7 repeats those checks and adds reverse CSV/text traversal checks, bringing checkpoint 7 Android coverage to 22 checks. Checkpoint 8 adds three row-total/independent-reader/label checks, bringing checkpoint 8 coverage to 25 checks. Checkpoint 9 adds two descriptor/span-data checks, bringing current non-rendering coverage to 27 checks; its separate font-rendering attempt was killed and is not counted as passed. Interactive playback and UI require device/backend acceptance and remain explicitly unclaimed. Checkpoint 11 repeats these 27 checks and adds seven PCM-source extractor checks and one MediaPlayer preparation check, bringing transport/non-audible runtime coverage to 35 checks. Checkpoint 12 repeats those checks and extends the long-track case with actual seek-complete callbacks, bounded indexed reads and byte-identical seek windows. Checkpoint 13 repeats the preceding 27 checks and adds two long-track cases, a tagged linked-player handoff, seven PCM extractor cases and three local affected-file cases: 40 pipeline checks in total. Checkpoint 14 expands this to 46 with high-resolution FLAC, direct encoded-source paths, explicit fallback and shared-source gapless handoff; final checks all use the recorded APK. Logs and harness outputs are under build/infinistream-migration.
 
-## Next migration work and intentional compatibility
+## Intentional compatibility and work outside the completed extraction
 
 - Legacy StorageProvider/BlockDevice/File APIs and transitive exports remain where callers still need them. Do not remove them before source/consumer and publication/recovery tests prove replacement safe. Store's current implementation module is Android-specific; pure model/platform splits can follow without changing current semantics.
-- The actual document path now negotiates a bounded pull route. Planning automatically finds single-resource routes; arbitrary multi-input/multi-track automatic search is not implemented. Multi-port descriptions and explicit registry bindings exist; general graph composition and further viewer/copy/write routing are subsequent checkpoints. Push is an optional synchronous, bounded/backpressured utility; no mandatory scheduler was added.
-- Legacy UI dispatch, remaining inspector/editor-specific helpers and some parser/storage adapters remain for incremental migration. Common-source Vault identification prefers headers/offsets/footers and safely replays sequential prefixes, but this does not claim every old filename dispatch was rewritten. Existing signature/format limits and writable restrictions still apply.
+- The actual document path now negotiates a bounded pull route. Planning automatically finds single-resource routes; arbitrary multi-input/multi-track automatic search is not implemented. Multi-port descriptions and explicit registry bindings exist; general graph composition remains future capability work. Checkpoint 31 finishes the existing copy/write consumer routing. Push is an optional synchronous, bounded/backpressured utility; no mandatory scheduler was added.
+- Android UI dispatch, inspector labels, theme configuration, application routing and used platform/storage adapters remain host responsibilities. Common-source Vault identification prefers headers/offsets/footers and safely replays sequential prefixes, but this does not claim every old filename dispatch was rewritten. Existing signature/format limits and writable restrictions still apply.
 - [Large text/CSV editing](roadmap.md#large-text-and-csv-editing) is planned; default viewing is chunked, while explicitly requested complete-document editing still uses the legacy guarded materialization path.
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. The requested libVLC backend adds a pinned published native AAR with source/override details; no native binary is committed and no language port is introduced.

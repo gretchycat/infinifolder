@@ -1,0 +1,238 @@
+{
+  "checkpoint": 31,
+  "recorded": "2026-11-01",
+  "scope": "Completion of Android library extraction and existing consumer migration",
+  "hostImplementationCommit": "6f13255c2ba22fd72d7c0ce531c033326b878c43",
+  "status": "complete",
+  "libraries": {
+    "libinfinistream": {
+      "url": "https://github.com/gretchycat/libinfinistream",
+      "commit": "16409e81edc68813816c2640d27fbd1c55098f5f",
+      "tests": 33,
+      "failures": 0,
+      "skipped": 0,
+      "standalone": "passed"
+    },
+    "libinfinistore": {
+      "url": "https://github.com/gretchycat/libinfinistore",
+      "commit": "b1befd7e464bd5bc8a20b2066185cf033fe10066",
+      "tests": 10,
+      "failures": 0,
+      "skipped": 0,
+      "standalone": "passed"
+    },
+    "libinfinivault": {
+      "url": "https://github.com/gretchycat/libinfinivault",
+      "commit": "14a7908ffb8cd1af7d9a5400621d91ea1626f4f0",
+      "tests": 9,
+      "failures": 0,
+      "skipped": 0,
+      "standalone": "passed"
+    },
+    "libinfinisound": {
+      "url": "https://github.com/gretchycat/libinfinisound",
+      "commit": "4b0f49f910f723dfd7cfb0c8acb0a5fda9c69907",
+      "tests": 100,
+      "failures": 0,
+      "skipped": 0,
+      "standalone": "passed"
+    },
+    "libinfinicanvas": {
+      "url": "https://github.com/gretchycat/libinfinicanvas",
+      "commit": "c6f6d3927611ca391ad09eb29736d0889f9ceb17",
+      "tests": 69,
+      "failures": 0,
+      "skipped": 0,
+      "standalone": "passed"
+    },
+    "libinfiniscribe": {
+      "url": "https://github.com/gretchycat/libinfiniscribe",
+      "commit": "2041c34c098fa8c4fa940d91e740291d3eecb9d1",
+      "tests": 111,
+      "failures": 0,
+      "skipped": 0,
+      "standalone": "passed"
+    },
+    "libinfinivideo": {
+      "url": "https://github.com/gretchycat/libinfinivideo",
+      "commit": "091e10a6c06b73fb1828ba75348d09338ac89116",
+      "tests": 31,
+      "failures": 0,
+      "skipped": 0,
+      "standalone": "passed"
+    }
+  },
+  "protectedCases": 915,
+  "originalBaselineFailures": 30,
+  "initialFullGate": {
+    "observed": 916,
+    "passed": 886,
+    "regressions": 0,
+    "missing": 0,
+    "skipped": 0
+  },
+  "viewerHosts": {
+    "image": "passed",
+    "text": "passed",
+    "markdown": "passed",
+    "html": "passed",
+    "pdf": "passed",
+    "csv": "passed",
+    "epub": "passed",
+    "audio": "passed",
+    "video": "passed",
+    "all": "passed"
+  },
+  "commands": {
+    "fullGate": "python3 scripts/verify-infinistream.py",
+    "stream": [
+      "gradle :stream-core:build --offline --console=plain"
+    ],
+    "store": [
+      "gradle :store-android:assembleDebug :store-android:testDebugUnitTest --offline --console=plain"
+    ],
+    "vault": [
+      "gradle :vault-android:assembleDebug :vault-android:testDebugUnitTest --offline --console=plain"
+    ],
+    "sound": [
+      "gradle :audio-api:build :audio-core:build :audio-processing:assembleDebug --offline --console=plain"
+    ],
+    "canvas": [
+      "gradle :canvas-android:assembleDebug :canvas-android:testDebugUnitTest --offline --console=plain"
+    ],
+    "scribe": [
+      "gradle build -x lint --offline --console=plain"
+    ],
+    "video": [
+      "gradle :video-api:build :video-android:assembleDebug :video-android:testDebugUnitTest --offline --console=plain"
+    ],
+    "viewerHosts": "gradle :viewer-host:assembleDebug -Pviewer=<kind> --offline --console=plain",
+    "androidRuntime": "python3 scripts/verify-image-edit-runtime.py",
+    "androidReparserRuntime": "python3 scripts/verify-text-reparser-runtime.py <owner-supplied-file>"
+  },
+  "notes": [
+    "Store first standalone attempt had no SDK configured; retry passed with ignored local.properties.",
+    "SDK 36, JDK 21 targeting Java 17, Kotlin 2.2.20, AGP 8.9.2, Gradle 9.7.1.",
+    "Workspace integration builds include unrelated dirty edits; the two additional Cast cases are not added to the protected source checkpoint.",
+    "Known pre-migration failures stay visible; original baseline is unchanged.",
+    "The final local commits have not been pushed.",
+    "No interactive UI/live remote/all-ABI acceptance is claimed by headless checks."
+  ],
+  "finalFullGate": {
+    "observed": 917,
+    "passed": 887,
+    "knownFailures": 30,
+    "regressions": 0,
+    "missing": 0,
+    "skipped": 0,
+    "perModule": {
+      ":app:testDebugUnitTest": {
+        "tests": 15,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":viewer-csv:testDebugUnitTest": {
+        "tests": 11,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":storage-engine:testDebugUnitTest": {
+        "tests": 350,
+        "failures": 30,
+        "skipped": 0
+      },
+      ":viewer-common:testDebugUnitTest": {
+        "tests": 98,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":viewer-audio:testDebugUnitTest": {
+        "tests": 70,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":viewer-image:testDebugUnitTest": {
+        "tests": 5,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":viewer-epub:testDebugUnitTest": {
+        "tests": 5,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":libinfinistream:stream-core:test": {
+        "tests": 33,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":libinfinisound:audio-core:test": {
+        "tests": 100,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":libinfinistore:store-android:testDebugUnitTest": {
+        "tests": 10,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":libinfinivault:vault-android:testDebugUnitTest": {
+        "tests": 9,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":libinfinicanvas:canvas-android:testDebugUnitTest": {
+        "tests": 69,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":libinfiniscribe:scribe-core:test": {
+        "tests": 99,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":libinfiniscribe:scribe-reparse-api:test": {
+        "tests": 6,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":libinfiniscribe:scribe-reparse-xml:test": {
+        "tests": 2,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":libinfiniscribe:scribe-reparse-yaml:test": {
+        "tests": 2,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":libinfiniscribe:scribe-reparse-toml:test": {
+        "tests": 2,
+        "failures": 0,
+        "skipped": 0
+      },
+      ":libinfinivideo:video-api:test": {
+        "tests": 31,
+        "failures": 0,
+        "skipped": 0
+      }
+    },
+    "gateExitCode": 0,
+    "gradleExitCode": 1
+  },
+  "apkSha256": "6db7a58274104e4be3cac5c833cb773e37ebb7950986a7a1691cce3b1ccabfcc",
+  "androidRuntime": {
+    "imageChecks": 13,
+    "imageStatus": "passed",
+    "reparserStatus": "passed",
+    "actualFile": {
+      "bytes": 903633,
+      "formattedCharacters": 912621,
+      "logicalLines": 1281,
+      "tokensUnchanged": true,
+      "sourceUnchanged": true,
+      "observedReparseMs": 129
+    },
+    "uiLaunched": false
+  }
+}
