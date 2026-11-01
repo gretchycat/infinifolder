@@ -43,6 +43,7 @@ object CastManager {
     private var resumeAfterFailure = false
     private var suppressResume = false
     private var loadSequence = 0L
+    private var lastRemoteState: Pair<Int, Int>? = null
 
     fun addListener(listener: Listener) { listeners.addIfAbsent(listener) }
     fun removeListener(listener: Listener) { listeners.remove(listener) }
@@ -62,6 +63,18 @@ object CastManager {
             isRemotePlaying = client.isPlaying || client.isBuffering
             positionMs = client.approximateStreamPosition.coerceAtLeast(0)
             durationMs = client.streamDuration.coerceAtLeast(0)
+            val state = client.playerState to client.idleReason
+            if (state != lastRemoteState) {
+                lastRemoteState = state
+                com.infinifolder.storage.DiagnosticLog.record(
+                    "cast.receiver.status",
+                    "state=${client.playerState} idleReason=${client.idleReason} playing=${client.isPlaying} buffering=${client.isBuffering} positionMs=$positionMs durationMs=$durationMs"
+                )
+                if (isCasting && client.playerState == MediaStatus.PLAYER_STATE_IDLE &&
+                    client.idleReason == MediaStatus.IDLE_REASON_ERROR) {
+                    service?.onCastError("Cast receiver could not start this track")
+                }
+            }
             listeners.forEach { it.onCastPlaybackStateChanged(isRemotePlaying) }
             if (isCasting) service?.onCastStateUpdate(isRemotePlaying)
             val key = lastLoadedKey
@@ -76,6 +89,7 @@ object CastManager {
         remote?.unregisterCallback(remoteCallback)
         remote?.removeProgressListener(progress)
         remote = session.remoteMediaClient
+        lastRemoteState = null
         remote?.registerCallback(remoteCallback)
         remote?.addProgressListener(progress, 1000)
         deviceName = session.castDevice?.friendlyName
@@ -161,6 +175,10 @@ object CastManager {
             .apply { if (track.durationMs > 0) setStreamDuration(track.durationMs) }.build()
         val request = MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(autoplay)
             .setCurrentTime(position.coerceAtLeast(0)).build()
+        com.infinifolder.storage.DiagnosticLog.record(
+            "cast.load.requested",
+            "file=${track.fileName} mime=${AudioTranscoder.getMimeType(track.uri, name)} autoplay=$autoplay positionMs=${position.coerceAtLeast(0)} durationMs=${track.durationMs}"
+        )
         val requestedKey = key(track)
         pendingLoad = true
         val sequence = ++loadSequence
@@ -168,11 +186,19 @@ object CastManager {
             if (sequence != loadSequence || remote !== client) return@setResultCallback
             pendingLoad = false
             if (result.status.isSuccess) {
+                com.infinifolder.storage.DiagnosticLog.record(
+                    "cast.load.accepted",
+                    "file=${track.fileName} status=${result.status.statusCode} message=${result.status.statusMessage} autoplay=$autoplay"
+                )
                 lastLoadedKey = requestedKey; completedKey = null
                 isCasting = true; isRemotePlaying = autoplay; positionMs = position
                 if (initial) player.pauseLocalForCast()
                 updateListeners(); player.onCastStateUpdate(isRemotePlaying)
             } else {
+                com.infinifolder.storage.DiagnosticLog.record(
+                    "cast.load.rejected",
+                    "file=${track.fileName} status=${result.status.statusCode} message=${result.status.statusMessage}"
+                )
                 player.onCastError("Cast device could not load this track")
                 if (initial) {
                     castContext?.sessionManager?.endCurrentSession(true)

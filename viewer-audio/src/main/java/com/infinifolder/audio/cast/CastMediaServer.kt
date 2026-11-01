@@ -95,6 +95,9 @@ class CastMediaServer(private val context: Context) {
     } catch (_: Exception) { null }
 
     private fun handle(client: Socket) {
+        var requestMethod = "unknown"
+        var requestRange: String? = null
+        var requestName: String? = null
         try { client.use { s ->
             val output = BufferedOutputStream(s.getOutputStream())
             var responseStarted = false
@@ -115,16 +118,23 @@ class CastMediaServer(private val context: Context) {
                 val parts = (readLine() ?: return).split(' ')
                 if (parts.size < 2) return
                 val method = parts[0]
+                requestMethod = method
                 var range: String? = null
                 while (true) {
                     val line = readLine() ?: throw IOException("Truncated HTTP headers")
                     if (line.isEmpty()) break
                     if (line.startsWith("Range:", true)) range = line.substringAfter(':').trim()
                 }
+                requestRange = range
                 if (method != "GET" && method != "HEAD") { error(output, 405, "Method Not Allowed"); return }
                 val token = parts[1].substringBefore('?').removePrefix("/")
                 val track = tracks[token]
                 if (track == null) { error(output,404,"Not Found"); return }
+                requestName = track.fileName
+                com.infinifolder.storage.DiagnosticLog.record(
+                    "cast.http.request",
+                    "file=${track.fileName} method=$method range=${range ?: "full"}"
+                )
                 val (acquire,retired) = synchronized(trackLock) {
                     if (!running.get()) throw InterruptedIOException("Cast stopped")
                     val selected = sources[token] ?: TrackSource(context,track) { !running.get() }.also { sources[token]=it }
@@ -146,12 +156,18 @@ class CastMediaServer(private val context: Context) {
                     val positional = source as? PositionalReadable ?: throw IOException("Cast source is not positional")
                     val size = source.metadata.length ?: throw IOException("Cast length is unknown")
                     val mime = source.metadata.content.mimeType ?: throw IOException("Cast content type is unknown")
+                    com.infinifolder.storage.DiagnosticLog.record(
+                        "cast.http.source",
+                        "file=${track.fileName} mime=$mime bytes=$size"
+                    )
                     responseStarted = true
                     val bounds = writeHeaders(output,mime,size,range) ?: return
+                    output.flush()
                     if (method == "GET") {
                         val buffer = ByteArray(65536)
                         var position = bounds.first
                         var remaining = if (size == 0L) 0L else bounds.last-bounds.first+1
+                        val requestedBytes = remaining
                         while (remaining > 0) {
                             if (!running.get() || Thread.currentThread().isInterrupted) throw InterruptedIOException("Cast stopped")
                             val wanted = minOf(buffer.size.toLong(),remaining).toInt()
@@ -159,12 +175,26 @@ class CastMediaServer(private val context: Context) {
                             if (count <= 0 || count > wanted) throw IOException("Cast source ended before its declared length")
                             output.write(buffer,0,count); position+=count; remaining-=count
                         }
+                        output.flush()
+                        com.infinifolder.storage.DiagnosticLog.record(
+                            "cast.http.complete",
+                            "file=${track.fileName} method=$method range=${range ?: "full"} bytes=$requestedBytes"
+                        )
+                    } else {
+                        com.infinifolder.storage.DiagnosticLog.record(
+                            "cast.http.complete",
+                            "file=${track.fileName} method=$method range=${range ?: "full"} bytes=0"
+                        )
                     }
-                    output.flush()
                 } }
             } catch (e: Exception) {
                 if (!responseStarted) runCatching { error(output,500,"Stream Failed") }
                 android.util.Log.w("CastMediaServer", "Stream request failed", e)
+                com.infinifolder.storage.DiagnosticLog.record(
+                    "cast.http.failed",
+                    "file=${requestName ?: "unknown"} method=$requestMethod range=${requestRange ?: "full"}",
+                    e
+                )
             }
         } } finally { clients.remove(client) }
     }
