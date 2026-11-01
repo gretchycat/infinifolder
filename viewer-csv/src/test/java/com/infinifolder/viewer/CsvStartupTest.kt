@@ -1,6 +1,5 @@
 package com.infinifolder.viewer
 
-import android.widget.ListView
 import android.widget.TextView
 import org.junit.Test
 import java.util.concurrent.ExecutorService
@@ -24,7 +23,7 @@ class CsvStartupTest {
         updateStats(activity)
     }
     @Test fun statisticsWaitForAllViewsDuringPartialSetup() = withActivity { activity ->
-        CsvViewerActivity::class.java.getDeclaredField("rowList").apply { isAccessible = true }.set(activity, ListView(activity))
+        CsvViewerActivity::class.java.getDeclaredField("rowList").apply { isAccessible = true }.set(activity, ScrollableListView(activity))
         updateStats(activity)
         CsvViewerActivity::class.java.getDeclaredField("statsTextView").apply { isAccessible = true }.set(activity, TextView(activity))
         updateStats(activity)

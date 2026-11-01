@@ -1,0 +1,134 @@
+{
+  "checkpoint": 30,
+  "recorded": "2026-11-01",
+  "scope": "Scribe optional structured-text reparser extraction and host integration",
+  "scribeCommit": "2041c34",
+  "fullGate": {
+    "cases": 899,
+    "passed": 869,
+    "knownFailures": 30,
+    "regressions": 0,
+    "missing": 0,
+    "skipped": 0,
+    "perModule": {
+      ":app:testDebugUnitTest": {
+        "tests": 15,
+        "failures": 0
+      },
+      ":viewer-csv:testDebugUnitTest": {
+        "tests": 11,
+        "failures": 0
+      },
+      ":storage-engine:testDebugUnitTest": {
+        "tests": 349,
+        "failures": 30
+      },
+      ":viewer-common:testDebugUnitTest": {
+        "tests": 92,
+        "failures": 0
+      },
+      ":viewer-audio:testDebugUnitTest": {
+        "tests": 70,
+        "failures": 0
+      },
+      ":viewer-image:testDebugUnitTest": {
+        "tests": 5,
+        "failures": 0
+      },
+      ":viewer-epub:testDebugUnitTest": {
+        "tests": 5,
+        "failures": 0
+      },
+      ":libinfinistream:stream-core:test": {
+        "tests": 26,
+        "failures": 0
+      },
+      ":libinfinisound:audio-core:test": {
+        "tests": 100,
+        "failures": 0
+      },
+      ":libinfinistore:store-android:testDebugUnitTest": {
+        "tests": 8,
+        "failures": 0
+      },
+      ":libinfinivault:vault-android:testDebugUnitTest": {
+        "tests": 9,
+        "failures": 0
+      },
+      ":libinfinicanvas:canvas-android:testDebugUnitTest": {
+        "tests": 67,
+        "failures": 0
+      },
+      ":libinfiniscribe:scribe-core:test": {
+        "tests": 99,
+        "failures": 0
+      },
+      ":libinfiniscribe:scribe-reparse-api:test": {
+        "tests": 6,
+        "failures": 0
+      },
+      ":libinfiniscribe:scribe-reparse-xml:test": {
+        "tests": 2,
+        "failures": 0
+      },
+      ":libinfiniscribe:scribe-reparse-yaml:test": {
+        "tests": 2,
+        "failures": 0
+      },
+      ":libinfiniscribe:scribe-reparse-toml:test": {
+        "tests": 2,
+        "failures": 0
+      },
+      ":libinfinivideo:video-api:test": {
+        "tests": 31,
+        "failures": 0
+      }
+    },
+    "observedAdditionalCases": [
+      "com.infinifolder.viewer.UnreadablePlaylistTest.castFailuresAreBoundedAndDoNotMarkLocalFilesUnreadable",
+      "com.infinifolder.viewer.UnreadablePlaylistTest.castQueueRespectsRepeatAndUnreadableEntries",
+      "io.github.gretchycat.infiniscribe.reparse.TextReparsingTest.alreadyReparsedDocumentsStillRunTheProcessor",
+      "io.github.gretchycat.infiniscribe.reparse.TextReparsingTest.cancellationAndParserFailuresPropagate",
+      "io.github.gretchycat.infiniscribe.reparse.TextReparsingTest.explicitFileTypeWinsOverContentHints",
+      "io.github.gretchycat.infiniscribe.reparse.TextReparsingTest.incompleteDocumentsAreRejected",
+      "io.github.gretchycat.infiniscribe.reparse.TextReparsingTest.transformedMetadataAndOriginalBytesRemainDistinct",
+      "io.github.gretchycat.infiniscribe.reparse.TextReparsingTest.unsupportedFlowAndOptionsAreRejected",
+      "io.github.gretchycat.infiniscribe.reparse.TomlTextReparserTest.rejectsMalformedToml",
+      "io.github.gretchycat.infiniscribe.reparse.TomlTextReparserTest.retainsTablesArraysInlineTablesAndTimestamps",
+      "io.github.gretchycat.infiniscribe.reparse.XmlTextReparserTest.keepsMixedContentAndWhitespaceAndNamespace",
+      "io.github.gretchycat.infiniscribe.reparse.XmlTextReparserTest.rejectsMalformedXmlAndDtd",
+      "io.github.gretchycat.infiniscribe.reparse.YamlTextReparserTest.preservesDocumentsAliasesCommentsAndScalarSpellings",
+      "io.github.gretchycat.infiniscribe.reparse.YamlTextReparserTest.rejectsMalformedYaml"
+    ]
+  },
+  "portableBuild": "passed without Android SDK environment",
+  "androidRuntime": "passed: JSON/XML/YAML/TOML, typed Scribe processor and actual owner file",
+  "ownerFixture": {
+    "sourceBytes": 903633,
+    "logicalLines": 1281,
+    "reparseMs": 69,
+    "tokensUnchanged": true,
+    "sourceUnchanged": true
+  },
+  "appDebugApkSha256": "70693d4b40d6601f4662c407bdb991947e79ca71015f49374df7cbd38b5b2f52",
+  "standaloneTextHost": "passed (-Pviewer=text)",
+  "limitations": [
+    "30 pre-existing storage/archive/torrent test failures remain",
+    "Interactive wrapping/gestures not verified by app_process",
+    "Original-code licensing remains pending owner selection"
+  ],
+  "localEvidence": [
+    "build/reparser-standalone.log",
+    "build/reparser-library-runtime.log",
+    "build/reparser-migration-gate-summary.log",
+    "build/infinistream-migration/verification-gate.log",
+    "build/reparser-text-host-build.log"
+  ],
+  "notes": [
+    "An obsolete CSV startup fixture was updated from ListView to the existing ScrollableListView field type; assertions retained.",
+    "Pre-existing unrelated workspace edits remain outside this checkpoint.",
+    "The 899-case workspace gate includes two passing Cast tests from unrelated pending edits; the pinned expected snapshot adds only the 12 reparser cases (897 protected cases).",
+    "The host checkpoint includes the preceding text-viewer caching/wrap/handle work and its required shared syntax controller/span updates; unrelated app, audio, back-navigation and cache edits remain unstaged."
+  ],
+  "protectedExpectedCases": 897
+}

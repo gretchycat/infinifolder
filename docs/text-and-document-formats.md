@@ -4,6 +4,16 @@
 
 Current implementation ownership: libinfiniscribe/scribe-core owns the existing MarkdownRenderer and bounded charset/text decoding. Text, Markdown, HTML and CSV viewers consume it through MediaSourceAdapter while retaining original complete bytes for revision checks. Android WebView, editing UI and guarded save/recovery remain host adapters. Input and actual text-output metadata distinguish encoding, completeness and warnings.
 
+Debug builds of the text viewer offer an optional **Reparse** checkbox for JSON,
+YAML, XML and TOML. Scribe's separate `scribe-reparse-*` modules reconstruct a display representation on
+the document worker before Android performs word wrapping. Files with a known
+size up to 4 MiB are cached in memory; paragraphs longer than 16 Ki characters
+use a bounded rendering window. Editing always restores the original source.
+Malformed input falls back to the original text. YAML reparsing retains scalar
+spelling and comments; TOML's reconstructed view can omit comments and normalize
+value spelling. XML preserves mixed content and `xml:space`, and declines DTDs.
+The source file changes only through an explicit editor save.
+
 Updated 2026-10-27. This document tracks plain text, source code, markup, paginated document, eBook, spreadsheet, and **text-based media** (such as ANSI art and ANSI music) across the six text/document viewer modules, along with difficulty ratings and prerequisites for implementing viewers/players and creators/editors for currently unsupported formats:
 
 1. **Plain Text & Code Viewer (`:viewer-text` / `TextViewerActivity`)**
@@ -19,7 +29,7 @@ Updated 2026-10-27. This document tracks plain text, source code, markup, pagina
 
 ### 1. Plain text & source code (`:viewer-text`)
 
-`TextViewerActivity` provides a monospace viewer and in-place editor with UTF-8 / UTF-16 BOM detection, line numbers, word-wrap toggle, find-in-page with match highlighting, undo/redo stacks, and source-revision-checked save/Save As:
+`TextViewerActivity` provides a monospace viewer and in-place editor with UTF-8 / UTF-16 BOM detection, line numbers, a word-wrap checkbox, find-in-page with match highlighting, undo/redo stacks, and source-revision-checked save/Save As. The optional Reparse checkbox runs JSON, YAML, XML or TOML reconstruction before word wrap:
 
 - **Plain text, logs & configuration**: `.txt`, `.log`, `.cfg`, `.conf`, `.ini`, `.properties`, `.toml`, `.env`, `.gitignore`, `.gitattributes`, `.editorconfig`, `.bashrc`, `.zshrc`, `.profile`
 - **Shell & automation scripts**: `.sh`, `.bash`, `.zsh`, `.fish`, `.bat`, `.cmd`, `.ps1`, `.tcl`, `dockerfile`, `makefile`, `.mk`, `.cmake`, `.gradle`

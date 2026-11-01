@@ -894,11 +894,50 @@ APK and retry the same SFTP-hosted MP3; `sftp.session.reconnect` and
 checkpoint 24 full test gate remains historical.
 [Build and migration record](validation/sftp-cast-session-recovery-checkpoint29.json).
 
+## Checkpoint 30: Scribe structured-text reparser modules
+
+The debug-only text-viewer Reparse option now consumes libinfiniscribe rather
+than host-owned parser modules. Scribe owns a portable backend API and registry,
+XML/YAML/TOML JVM modules, and the optional Android JsonReader backend. The host
+retains worker scheduling, in-memory source caching, bounded rendering, the
+checkbox, word wrapping, editing and revision-checked publication. The original
+source is restored before editing. Backend behavior and existing limits remain.
+
+TextReparsing invokes a registered pull processor over decoded TextDocument
+handles. Partial inputs are rejected; cancellation/errors propagate. Actual
+output metadata reports format, representation, charset, encoded-byte/UTF-16 and
+logical-line counts. Source provenance remains source information; source offsets,
+byte length, positional capabilities and verified-output claims do not become
+properties of the transformed display. Separate backend descriptors and optional
+dependencies keep Android JSON APIs out of the portable modules. Dependency
+licenses/notices are bundled. See libinfiniscribe/REPARSE.md for public contracts.
+
+The portable modules build without Android SDK environment configuration; twelve
+new JVM cases pass. Full app and standalone text-host APK builds pass. The Android
+runtime harness exercises all four relocated backends and the typed Scribe
+consumer on the owner's 903,633-byte single-line JSON. In the recorded run it
+reparses in 69 ms into 1,281 logical lines, with byte-for-byte token spelling and
+the source file preserved. Native font/widget layout and interactive scrolling
+are not claimed by this command-line harness.
+
+The refreshed workspace gate reports **899 cases: 869 pass, the same 30 known
+failures, no regressions or missing cases**. This includes two passing Cast cases
+from unrelated pending workspace edits. The expected-case snapshot protects all
+885 previous cases plus the 12 new reparser cases (897). An obsolete CSV startup
+test fixture was updated to the existing ScrollableListView field type while
+retaining both original safety assertions. The first offline dependency-resolution
+attempt and the pre-correction CSV report are retained as local evidence.
+
+Scribe commit: `2041c34`. The host pins that revision; pre-existing unrelated
+workspace edits remain outside the parser checkpoint. This completes the reparser
+consumer extraction; remaining copy/write and legacy-adapter migration is separate.
+[Build and verification record](validation/scribe-reparser-migration-checkpoint30.json).
+
 ## Final verification and reproducibility
 
-Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 885-case checkpoint.
+Run `python3 scripts/verify-infinistream.py` from the checkout (offline by default; --online permits configured dependency resolution). It builds the APK, runs application/viewer/library suites and compares all expected cases. Compilation/build failures, new failures/skips, missing cases and stale failed-test reports fail the gate. The only tolerated Gradle failure is the storage test task containing the documented pre-migration failures; the runner reports that the full suite is not green. It never skips those tests. The original 458-case baseline is retained separately from the expanded 897-case checkpoint.
 
-Last full gate (checkpoint 24): **885 tests, 855 pass, 30 pre-existing failures, no new failures or missing cases**. Later checkpoints record their builds and owner checks separately; that full automated gate has not been rerun for checkpoints 25–29. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
+Last full gate (checkpoint 30 workspace): **899 tests, 869 pass, 30 pre-existing failures, no new failures or missing cases**. The expected-case snapshot contains 897 protected cases; two additional passing Cast cases belong to pending workspace edits. Checkpoint 24 previously recorded 885 cases; the new run covers the current changes through checkpoint 30. Baseline failures cover archive/LVM, transfer/recovery and torrent expectations and remain unresolved; this migration does not claim those suites were repaired. The exact names are in validation/infinistream-baseline.json.
 
 | Independent library | Tests | Failures |
 | --- | ---: | ---: |
@@ -907,7 +946,7 @@ Last full gate (checkpoint 24): **885 tests, 855 pass, 30 pre-existing failures,
 | Vault | 9 | 0 |
 | Sound | 100 | 0 |
 | Canvas | 67 | 0 |
-| Scribe | 99 | 0 |
+| Scribe (core and reparser JVM modules) | 111 | 0 |
 | Video | 31 | 0 |
 
 Standalone builds for all seven libraries are recorded in their respective checkpoints. Checkpoint 24 repeats the changed Sound/Store builds and audio host; the full composite gate exercises all seven source libraries. Stream/Scribe and portable Sound builds need no Android runtime. Android modules were built with SDK 36, JDK 21 targeting Java 17, Kotlin 2.2.20 and AGP 8.9.2 using Gradle 9.7.1. The preceding checkpoint built full app and selected audio/text/image/video host debug APKs; checkpoints 5/6/7 rebuilt the full app and affected text/CSV hosts, and repeated the independent Scribe build. Checkpoint 8 repeats full/CSV-host and independent Scribe builds; checkpoint 9 repeats full/text/HTML/Markdown-host and independent Scribe builds. Checkpoint 10 rebuilds full/CSV-host APKs for the startup callback fix. Checkpoint 11 rebuilds full/audio-host and standalone Android/portable Sound artifacts for PCM pull output; checkpoint 12 repeats those builds for decoder frame positioning and playback policy; checkpoint 13 repeats them for trailing MP3 metadata and long seeks; checkpoint 14 repeats affected Sound/Stream/Canvas and audio/image host builds for common encoded inputs and exact FLAC positioning. Termux ARM64 native source builds passed; the standard NDK/CMake path and desktop/iOS runtime execution were not exercised.
@@ -923,4 +962,4 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 - Related-resource audio (banks/companion files), native iOS packaging, desktop output, all-ABI native verification and truly minimal viewer APK dependencies remain follow-up. The app retains File hints, output/lease ownership and existing composite renderer limits.
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. The requested libVLC backend adds a pinned published native AAR with source/override details; no native binary is committed and no language port is introduced.
 
-Final full debug APK SHA-256: `a20e9a1cf3595a6221ec0045ce700582046bd0ceb6169f5ca03d5b5c5d1f50d4`.
+Previously recorded full debug APK SHA-256: `a20e9a1cf3595a6221ec0045ce700582046bd0ceb6169f5ca03d5b5c5d1f50d4`.

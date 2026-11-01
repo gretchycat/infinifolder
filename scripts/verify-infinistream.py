@@ -27,6 +27,11 @@ MODULES = [
     (':libinfinivault:vault-android:testDebugUnitTest', 'libraries/libinfinivault/vault-android/build/test-results/testDebugUnitTest'),
     (':libinfinicanvas:canvas-android:testDebugUnitTest', 'libraries/libinfinicanvas/canvas-android/build/test-results/testDebugUnitTest'),
     (':libinfiniscribe:scribe-core:test', 'libraries/libinfiniscribe/scribe-core/build/test-results/test'),
+    (':libinfiniscribe:scribe-reparse-api:test', 'libraries/libinfiniscribe/scribe-reparse-api/build/test-results/test'),
+    (':libinfiniscribe:scribe-reparse-xml:test', 'libraries/libinfiniscribe/scribe-reparse-xml/build/test-results/test'),
+    (':libinfiniscribe:scribe-reparse-yaml:test', 'libraries/libinfiniscribe/scribe-reparse-yaml/build/test-results/test'),
+    (':libinfiniscribe:scribe-reparse-toml:test', 'libraries/libinfiniscribe/scribe-reparse-toml/build/test-results/test'),
+
     (':libinfinivideo:video-api:test', 'libraries/libinfinivideo/video-api/build/test-results/test'),
 ]
 parser = argparse.ArgumentParser(description=__doc__)
