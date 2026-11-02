@@ -33,7 +33,8 @@ Music variants used here. New components' licenses are also packaged in assets.
 Every file opened by the text viewer receives a bounded 16 KiB encoding probe.
 A positional source keeps its cursor and random-access capability; a sequential
 source replays its prefix. Detection never downloads a whole file to identify it.
-Unicode BOMs and valid multibyte UTF-8 take priority. Repeated valid ANSI control
+Unicode BOMs and valid multibyte UTF-8 determine the character encoding;
+ANSI controls are still detected in UTF-8. Repeated valid ANSI control
 sequences, CP437 box/line runs, OEM letter patterns and SAUCE metadata provide
 content evidence independent of the filename. DOS text extensions and an 8.3
 name combined with DOS line endings/EOF are secondary clues. Single-byte encodings
@@ -100,3 +101,15 @@ x=256..512 of the 512-unit cell with a 256-unit left bearing; U+258C occupies
 x=0..256. This also preserves the spacing of other glyphs with blank left
 columns. Rebuilt font version: 2.0. App/text-host build log:
 `build/cp437-glyph-bearings-build.log`; no on-device rendering check was run.
+
+## UTF-8 ANSI
+
+The terminal viewer and text icon previews accept UTF-8 ANSI art, with or without
+a UTF-8 BOM, while retaining CP437 decoding for legacy files. UTF-8 is decoded
+before interpreting ANSI colors, cursor controls and music. Unicode box/block
+characters retain the CP437 glyph geometry; characters outside that repertoire
+use Android font fallback. Scribe preserves supplementary Unicode characters
+and UTF-16 style offsets, and attaches combining marks to the preceding cell.
+The surface still uses one cell per printable scalar rather than full Unicode
+wide-character/emoji terminal layout. App/text-host build log:
+`build/utf8-ansi-build.log`; no interactive rendering checks were run.
