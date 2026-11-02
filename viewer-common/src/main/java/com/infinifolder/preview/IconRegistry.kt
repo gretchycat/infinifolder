@@ -18,13 +18,11 @@ class IconRegistry(private val file: File) {
     private val lock = locks.getOrPut(file.absolutePath) { Any() }
     private var loadedStamp = ""
     private var root = JSONObject()
-    private var associationIndex:Map<String,Set<String>>?=null
     var readError:String?=null
         private set
     private fun load() {
         val stamp = if(file.isFile) "${java.nio.file.Files.getLastModifiedTime(file.toPath())}:${file.length()}" else "missing"
         if (stamp == loadedStamp) return
-        associationIndex=null
         readError=null
         root = if (file.isFile) runCatching {JSONObject(file.readText())}.getOrElse {
             readError="Cannot read saved icon registry: ${it.message}";JSONObject()
@@ -50,13 +48,10 @@ class IconRegistry(private val file: File) {
     val revision: Long get() = synchronized(lock) { load(); root.optLong("revision", 0) }
     private fun recordsJson() = root.optJSONObject("mime") ?: JSONObject().also { root.put("mime", it) }
     fun mime(mime: String): MimeRecord = synchronized(lock) {
-        load(); readMimeRecord(MimeRegistry.normalize(mime))
-    }
-    private fun readMimeRecord(key:String):MimeRecord {
-        val built=builtins[key]
+        load(); val key = MimeRegistry.normalize(mime); val built = builtins[key]
         val json = recordsJson().optJSONObject(key)
         val renderable = if (json?.has("isImage") == true) json.optBoolean("isImage") else built?.isImage ?: false
-        return MimeRecord(key, json?.optJSONArray("extensions")?.strings()?.toSet() ?: built?.extensions.orEmpty(),
+        MimeRecord(key, json?.optJSONArray("extensions")?.strings()?.toSet() ?: built?.extensions.orEmpty(),
             json?.optString("iconName", built?.iconName ?: defaultIcon(key)) ?: built?.iconName ?: defaultIcon(key),
             json?.optionalString("overrideIcon"),
             renderable,
@@ -68,24 +63,14 @@ class IconRegistry(private val file: File) {
         load(); (builtins.keys + recordsJson().keys().asSequence().toList()).sorted()
     }
     fun candidates(name: String): Set<String> = synchronized(lock) {
-        load()
-        val index=associationIndex ?: run {
-            val defaults=mutableMapOf<String,MutableSet<String>>()
-            val explicit=mutableMapOf<String,MutableSet<String>>()
-            for(key in (builtins.keys+recordsJson().keys().asSequence().toList()).distinct()) {
-                val record=readMimeRecord(key)
-                val target=if(recordsJson().optJSONObject(key)?.has("extensions")==true)explicit else defaults
-                for(extension in record.extensions)target.getOrPut(extension.lowercase(Locale.ROOT)){linkedSetOf()}.add(record.mimeType)
-            }
-            (defaults+explicit).mapValues {it.value.toSet()}.also {associationIndex=it}
-        }
-        val lower=name.lowercase(Locale.ROOT)
-        var dot=lower.indexOf('.')
-        while(dot>=0) {
-            index[lower.substring(dot+1)]?.let {return@synchronized it}
-            dot=lower.indexOf('.',dot+1)
-        }
-        emptySet()
+        load(); val lower = name.lowercase(Locale.ROOT)
+        val all = mimeTypes().map(::mime)
+        val extensions = all.flatMap { it.extensions }.filter { lower.endsWith(".$it") }.distinct()
+        val longest = extensions.maxByOrNull { it.length } ?: return@synchronized emptySet()
+        val matches = all.filter { longest in it.extensions }
+        // Explicit associations take precedence; several explicit candidates remain ambiguous.
+        val explicit = matches.filter { recordsJson().optJSONObject(it.mimeType)?.has("extensions") == true }
+        (explicit.ifEmpty { matches }).map { it.mimeType }.toSet()
     }
     fun save(record: MimeRecord) = synchronized(lock) {
         load(); val key = MimeRegistry.normalize(record.mimeType)
@@ -138,7 +123,6 @@ class IconRegistry(private val file: File) {
             .thenByDescending { it.pathPrefix.length }.thenBy { it.id }).firstOrNull()
     }
     private fun persist() {
-        associationIndex=null
         check(readError==null) {readError ?: "Cannot overwrite unreadable registry"}
         root.put("version",maxOf(1,root.optInt("version",1))); root.put("revision", root.optLong("revision") + 1)
         file.parentFile?.mkdirs()

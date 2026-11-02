@@ -69,21 +69,6 @@ class ResourceIconResolver(context: Context) {
         }
         identities.put(key,IdentityCache(identity,System.currentTimeMillis()+30000));return identity
     }
-    /** Fast local artwork only: never opens a document, directory, shortcut or archive. Worker-only. */
-    fun themePreview(entry:ResourceEntry,size:Int):Icon? {
-        if(theme.getActiveThemeId().isNullOrBlank())return null
-        if(entry.metadata.isDirectory) return theme.resolveFolderIcon(entry.metadata.name,size)?.let {
-            Icon(it,"📁",entry.metadata.name,true,source="theme-preview",pending=true)
-        }
-        val mime=registry.candidates(entry.metadata.name).singleOrNull()
-            ?: MimeRegistry.effective(entry.metadata.name,entry.metadata.mimeType)
-        val record=registry.mime(mime)
-        val bitmap=overrideBitmap(record.overrideIcon,mime,size) ?: theme.resolveLogicalIcon(record.iconName,size)
-            ?: theme.resolveMimeDefaults(mime,size) ?: theme.resolveMimeCategory(mime,size) ?: return null
-        return Icon(bitmap,FileIconView.fallback(entry.metadata),entry.metadata.name,false,
-            source="theme-preview",mimeType=mime,pending=true)
-    }
-
     fun resolve(entry: ResourceEntry, size: Int, deferCacheWrite: Boolean = false): Icon {
         require(size>0)
         if(Thread.currentThread().isInterrupted) return fallback(entry,size)
@@ -111,7 +96,7 @@ class ResourceIconResolver(context: Context) {
         if(!seen.add(entry.ref) || seen.size>16)return base.copy(bitmap=LinkIcons.protocol("BROKEN",size),source="broken-link")
         // A directory's own cover wins over sibling per-file custom artwork.
         if(!entry.metadata.isDirectory) {
-            val saved=IconWork.bounded {artworkCache.load(entry,size,false)}
+            val saved=IconWork.bounded {artworkCache.load(entry,size)}
             if(saved!=null && !saved.generated && IconBitmapUsability.visible(saved.bitmap))return base.copy(bitmap=saved.bitmap,source="file-override")
         }
         if(entry.ref.providerId==PartialDownloadsProvider.SCHEME) return base.copy(fallback="⬇",source="partial-download")

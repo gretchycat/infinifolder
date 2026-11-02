@@ -491,7 +491,6 @@ class FloatingContainerService : Service() {
         val sortKey = preferences.getString("sort_key", if (sortByName) "name" else "modified") ?: "name"
         val descending = preferences.getBoolean("sort_descending", !sortByName)
         val rows = FileViewGrid.sortedEntries(entries, showHidden, sortKey, descending)
-        val iconRevision=iconResolver.revision()
         val table = FileViewGrid.build(this, rows, columns) { entry ->
             val card = FileEntryCard(this, entry, true, iconDp, ThemeManager.activeTheme.isDark)
             val icon = card.attachIcon(FileIconView.create(this, entry, entry.metadata, true, iconDp,
@@ -499,10 +498,10 @@ class FloatingContainerService : Service() {
             card.addLabels(entry.metadata.name, entry.metadata.isDirectory,
                 (cellWidth - 4 * density).roundToInt().coerceAtLeast(36), "")
             val pixelSize = (iconDp * density).roundToInt()
-            val cacheKey = "${entry.ref}:${entry.metadata.name}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:${iconRevision}:$pixelSize"
-            fun applyArtwork(resolved: ResourceIconResolver.Icon,preview:Boolean=false) {
+            val cacheKey = "${entry.ref}:${entry.metadata.name}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:${iconResolver.revision()}:$pixelSize"
+            fun applyArtwork(resolved: ResourceIconResolver.Icon) {
                 icon.removeViewAt(0)
-                if(!preview)icon.tag=resolved
+                icon.tag=resolved
                 val artwork: View = resolved.bitmap?.let { bitmap ->
                     android.widget.ImageView(this).apply {
                         scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
@@ -520,24 +519,12 @@ class FloatingContainerService : Service() {
             val cached = if(entry.metadata.isDirectory)null else iconCache.get(cacheKey)
             if (cached != null) applyArtwork(cached)
             var authoritativeApplied = false
-            var cachedArtworkApplied = cached != null
             pendingIcons.add(card.container to {
-                com.infinifolder.ResourceArtworkCache.queueTheme {
-                    if(iconGeneration==renderGeneration && windowView!=null) {
-                        val ready=iconResolver.themePreview(entry,pixelSize)
-                        if(ready!=null)onMain {
-                            if(!authoritativeApplied && !cachedArtworkApplied && iconGeneration==renderGeneration && windowView!=null)
-                                applyArtwork(ready,preview=true)
-                        }
-                    }
-                }
                 com.infinifolder.ResourceArtworkCache.reads.execute cacheRead@ {
                     if (iconGeneration != renderGeneration || windowView == null) return@cacheRead
                     iconResolver.cached(entry, pixelSize)?.let { saved ->
                         onMain {
-                            if (!authoritativeApplied && iconGeneration == renderGeneration && windowView != null) {
-                                cachedArtworkApplied=true;applyArtwork(saved)
-                            }
+                            if (!authoritativeApplied && iconGeneration == renderGeneration && windowView != null) applyArtwork(saved)
                         }
                     }
                     val sourceWorker = if (com.infinifolder.apps.AppsUri.isAppUri(entry.uri))
@@ -553,6 +540,7 @@ class FloatingContainerService : Service() {
                                 if (iconGeneration == renderGeneration && windowView != null) {
                                     authoritativeApplied = true
                                     applyArtwork(resolved)
+                                    iconResolver.cacheDisplayed(entry, pixelSize, resolved)
                                 }
                             }
                         }

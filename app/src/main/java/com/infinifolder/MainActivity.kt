@@ -4448,8 +4448,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             val artworkGeneration = loadGeneration
             val cardRender = artworkRenderGeneration
             var authoritativeApplied = false
-            var cachedArtworkApplied = false
-            fun applyArtwork(artwork: ResourceIconResolver.Icon, preview:Boolean=false) {
+            fun applyArtwork(artwork: ResourceIconResolver.Icon) {
                 val bitmap=artwork.bitmap ?: return
                 if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return
                 val image = ImageView(this).apply {
@@ -4458,7 +4457,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     contentDescription="${artwork.mimeType} ${artwork.source}"
                     tag=artwork
                 }
-                if(!preview)icon.tag=artwork
+                icon.tag=artwork
                 if (icon.childCount > 0) icon.removeViewAt(0)
                 icon.addView(image, 0, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             }
@@ -4471,21 +4470,6 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             startArtwork = {
                 val queuedAt = SystemClock.uptimeMillis()
-                ResourceArtworkCache.queueTheme {
-                    if(artworkGeneration==loadGeneration && cardRender==artworkRenderGeneration && !isDestroyed && entry.uri in visibleArtworkUris) {
-                        val started=SystemClock.uptimeMillis()
-                        val ready=resourceIconResolver.themePreview(entry,artworkSize)
-                        val finished=SystemClock.uptimeMillis()
-                        if(ready!=null)runOnUiThread {
-                            if(!authoritativeApplied && !cachedArtworkApplied) {
-                                applyArtwork(ready,preview=true)
-                                val displayed=SystemClock.uptimeMillis()
-                                if(displayed-queuedAt>=100)com.infinifolder.storage.DiagnosticLog.record("artwork.theme.display-slow",
-                                    "name=${entry.metadata.name} queueMs=${started-queuedAt} resolveMs=${finished-started} uiMs=${displayed-finished}")
-                            }
-                        }
-                    }
-                }
                 ResourceArtworkCache.reads.execute cacheRead@ {
                     if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return@cacheRead
                     if (entry.uri !in visibleArtworkUris) { retryWhenVisible(); return@cacheRead }
@@ -4494,7 +4478,6 @@ class MainActivity : Activity(), DebugDumpObserver {
                         val readyAt = SystemClock.uptimeMillis()
                         runOnUiThread {
                             if (!authoritativeApplied) {
-                                cachedArtworkApplied=true
                                 applyArtwork(cachedIcon)
                                 val appliedAt = SystemClock.uptimeMillis()
                                 if (appliedAt - queuedAt >= 100) com.infinifolder.storage.DiagnosticLog.record("artwork.cache.display-slow",
@@ -4519,6 +4502,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                             }
                             if (resolved.bitmap != null) {
                                 applyArtwork(resolved)
+                                resourceIconResolver.cacheDisplayed(entry, artworkSize, resolved)
                             } else {
                                 if (icon.childCount > 0) icon.removeViewAt(0)
                                 icon.addView(TextView(this).apply {

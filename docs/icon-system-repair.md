@@ -258,3 +258,18 @@ queue, resolution and UI delivery times under `artwork.theme.display-slow`.
 Build: `gradle :app:assembleDebug --offline --console=plain` succeeded in 21s;
 log: `build/icon-speed-final-build.log`. No tests were added or run for this
 follow-up. Device latency and visual precedence checks remain unverified.
+
+## MIME icon regression rollback
+
+The user reported missing MIME icons after the latency follow-up. Reverted its
+speculative theme-preview lane and restored the previously working listing,
+overlay, sidecar, registry association and warm-theme lookup paths. This removes
+the independent provisional icon selection and its race with authoritative MIME
+artwork; the exact device failure remains unconfirmed without a fresh device
+trace. Saved MIME/URI mappings, thumbnail preferences and installed themes are
+unchanged. The asynchronous PNG disk-cache writer remains: it does not select
+icons, and the display path no longer waits for PNG compression or eviction.
+
+Validation: `gradle :app:assembleDebug --offline --console=plain` (log:
+`build/mime-icon-regression-build.log`). No tests added or run. Device icon-display
+verification remains outstanding; compilation alone does not confirm recovery.
