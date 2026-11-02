@@ -38,8 +38,9 @@ class ImageViewerActivity : ViewerActivity() {
     private var parentFolderUri: Uri? = null
     private var currentName: String = ""
     private var currentMime: String = ""
-    private var ripMode=RipScriptDecoder.Mode.EGA
-    private lateinit var ripModeButton:TextView
+    private var ripMode=RipScriptDecoder.Mode.HIGH_RESOLUTION
+    private var displayedRipMode:RipScriptDecoder.Mode?=null
+    private lateinit var ripModeToggle:ToggleButton
     private fun isRipImage()=currentName.endsWith(".rip",true) || currentMime=="image/x-rip" ||
         decodedImageMetadata?.provenance?.transformations?.contains("image.decode.ripscrip")==true
 
@@ -71,7 +72,7 @@ class ImageViewerActivity : ViewerActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        ripMode=runCatching {RipScriptDecoder.Mode.valueOf(savedInstanceState?.getString("ripMode").orEmpty())}.getOrDefault(RipScriptDecoder.Mode.EGA)
+        ripMode=runCatching {RipScriptDecoder.Mode.valueOf(savedInstanceState?.getString("ripMode").orEmpty())}.getOrDefault(RipScriptDecoder.Mode.HIGH_RESOLUTION)
 
         val targetUri = intent.data
             ?: intent.getStringExtra("uri")?.let { Uri.parse(it) }
@@ -161,20 +162,24 @@ class ImageViewerActivity : ViewerActivity() {
         titleLayout.addView(subtitleView)
         topBar.addView(titleLayout)
 
-        ripModeButton=TextView(this).apply {
+        ripModeToggle=ToggleButton(this).apply {
             setTextColor(0xffffffff.toInt());setPadding(dp(10),dp(8),dp(10),dp(8))
-            contentDescription="RIPscrip rendering mode"
-            setOnClickListener {
+            textOn="Vector";textOff="EGA"
+            isChecked=ripMode==RipScriptDecoder.Mode.HIGH_RESOLUTION
+            contentDescription="RIPscrip high-resolution vector rendering"
+            setOnCheckedChangeListener { _,checked ->
+                val requested=if(checked)RipScriptDecoder.Mode.HIGH_RESOLUTION else RipScriptDecoder.Mode.EGA
+                if(requested==ripMode)return@setOnCheckedChangeListener
                 if(hasUnsavedEdits) {
+                    isChecked=ripMode==RipScriptDecoder.Mode.HIGH_RESOLUTION
                     Toast.makeText(this@ImageViewerActivity,"Save or discard image edits before changing RIP mode",Toast.LENGTH_LONG).show()
-                } else AlertDialog.Builder(this@ImageViewerActivity).setTitle("RIPscrip rendering")
-                    .setSingleChoiceItems(arrayOf("EGA simulation (default)","High-resolution vector"),if(ripMode==RipScriptDecoder.Mode.EGA)0 else 1) { dialog,which ->
-                        ripMode=if(which==0)RipScriptDecoder.Mode.EGA else RipScriptDecoder.Mode.HIGH_RESOLUTION
-                        dialog.dismiss();currentUri?.let {loadImage(it)}
-                    }.setNegativeButton("Cancel",null).show()
+                } else {
+                    ripMode=requested
+                    currentUri?.let {loadImage(it,preserveViewport=true)}
+                }
             }
         }
-        topBar.addView(ripModeButton)
+        topBar.addView(ripModeToggle)
 
         // Edit button: Monochromatic line-art quill icon with transparent background
         editQuillBtn = ImageView(this).apply {
@@ -655,9 +660,9 @@ class ImageViewerActivity : ViewerActivity() {
         super.onSaveInstanceState(outState)
     }
 
-    private fun loadImage(uri: Uri) {
-        ripModeButton.visibility=if(isRipImage())View.VISIBLE else View.GONE
-        ripModeButton.text=if(ripMode==RipScriptDecoder.Mode.EGA)"EGA" else "Vector"
+    private fun loadImage(uri: Uri,preserveViewport:Boolean=false) {
+        ripModeToggle.visibility=if(isRipImage())View.VISIBLE else View.GONE
+        ripModeToggle.isChecked=ripMode==RipScriptDecoder.Mode.HIGH_RESOLUTION
         val renderingMode=ripMode
         subtitleView.text = "Loading…"
         metadataLoadGeneration++
@@ -682,11 +687,12 @@ class ImageViewerActivity : ViewerActivity() {
                 if (bmp != null) {
                     decodedImageMetadata = frame?.metadata
                     originalBitmap = bmp
-                    zoomImageView.setImageBitmap(bmp)
+                    if(preserveViewport)zoomImageView.setImageBitmapPreservingViewport(bmp)
+                    else zoomImageView.setImageBitmap(bmp)
                     val rip=isRipImage()
-                    ripModeButton.visibility=if(rip)View.VISIBLE else View.GONE
+                    displayedRipMode=if(rip)renderingMode else null
+                    ripModeToggle.visibility=if(rip)View.VISIBLE else View.GONE
                     (zoomImageView.drawable as? android.graphics.drawable.BitmapDrawable)?.paint?.isFilterBitmap= !rip || renderingMode!=RipScriptDecoder.Mode.EGA
-                    zoomImageView.resetZoom()
                     val renderWarnings=frame?.metadata?.warnings.orEmpty()
                     subtitleView.text = "${bmp.width} × ${bmp.height} px" + if(renderWarnings.isEmpty())"" else " · Partial rendering"
                     if(renderWarnings.isNotEmpty()) {
@@ -696,6 +702,10 @@ class ImageViewerActivity : ViewerActivity() {
                     }
                     if (!isEditMode && ViewerLaunch.requestsEdit(intent)) toggleEditMode()
                 } else {
+                    if(preserveViewport)displayedRipMode?.let {
+                        ripMode=it
+                        ripModeToggle.isChecked=it==RipScriptDecoder.Mode.HIGH_RESOLUTION
+                    }
                     subtitleView.text = "Failed to decode image"
                     Toast.makeText(this, "Cannot decode this image format.", Toast.LENGTH_SHORT).show()
                 }

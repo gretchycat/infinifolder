@@ -348,3 +348,24 @@ Validation: `gradle :app:assembleDebug --offline --console=plain`; logs
 1m 41s). No tests added or run for this
 follow-up. ADB still reports no attached device: post-change scrolling, cover
 refresh behavior and measured display latency remain unverified.
+
+User follow-up: icon loading is confirmed substantially faster on the device.
+This confirms the perceived latency improvement; it does not substitute for the
+other outstanding UI regression checks.
+
+## RIP viewer default and mode toggle
+
+New RIP viewer sessions default to high-resolution vector rendering. A native
+Android ToggleButton now switches directly between Vector (checked) and EGA
+(unchecked); the selected mode still survives activity recreation. Replacing the
+render preserves the current normalized image-to-screen transform, pinch zoom
+factor, rotation, fit/fill mode and pan position across the different bitmap
+resolutions. Normal image navigation retains its existing viewport reset.
+The viewport is preserved when decoding completes, including gestures made while
+rendering; stale asynchronous results are rejected by the existing generation
+check. A failed mode render keeps the old image and restores the toggle to its
+displayed mode. The existing unsaved-edit guard remains active.
+
+Build: `gradle :app:assembleDebug --offline --console=plain`; log:
+`build/rip-vector-toggle-build.log` (successful in 58s). No tests added or run. The toggle's physical
+device behavior and viewport retention still need on-device confirmation.

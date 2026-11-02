@@ -185,6 +185,28 @@ class ZoomImageView @JvmOverloads constructor(
         resetZoom()
     }
 
+    /** Replace a render of the same scene, retaining its normalized location and magnification. */
+    fun setImageBitmapPreservingViewport(bitmap: Bitmap) {
+        val oldWidth=drawable?.intrinsicWidth ?: 0
+        val oldHeight=drawable?.intrinsicHeight ?: 0
+        val previous=Matrix(drawMatrix)
+        val canRestore=!resetPending && width>0 && height>0 && oldWidth>0 && oldHeight>0
+        super.setImageBitmap(bitmap)
+        val next=drawable
+        if(!canRestore || next==null || next.intrinsicWidth<=0 || next.intrinsicHeight<=0) {
+            resetZoom()
+            return
+        }
+        // New render pixels -> previous render pixels -> the unchanged screen viewport.
+        // Keeping scaleFactor also keeps pinch/double-tap limits relative to the fitted scene.
+        drawMatrix.setScale(oldWidth.toFloat()/next.intrinsicWidth,oldHeight.toFloat()/next.intrinsicHeight)
+        drawMatrix.postConcat(previous)
+        resetPending=false
+        checkBounds()
+        publishMatrix()
+        recordViewport("replace-render")
+    }
+
     fun resetZoom() {
         resetPending = true
         val d = drawable ?: return
