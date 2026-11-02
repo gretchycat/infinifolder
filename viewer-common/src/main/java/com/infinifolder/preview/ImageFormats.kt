@@ -53,6 +53,10 @@ object ImageFormats {
 
     fun extension(name: String): String = name.substringAfterLast('.', "").lowercase()
 
+    /** Raster icon previews do not determine which viewer opens a text document. */
+    fun hasDosTextPreview(metadata: ResourceMetadata): Boolean = !metadata.isDirectory &&
+        extension(metadata.name) in setOf("ans","ansi","asc","diz","nfo")
+
     fun isImage(metadata: ResourceMetadata): Boolean =
         !metadata.isDirectory &&
             (metadata.mimeType.lowercase().startsWith("image/") || extension(metadata.name) in decodableExtensions)

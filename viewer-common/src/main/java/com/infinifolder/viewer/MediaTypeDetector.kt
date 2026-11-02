@@ -31,7 +31,7 @@ object MediaTypeDetector {
     )
 
     private val AUDIO_EXTENSIONS = setOf(
-        "mp3", "flac", "wav", "ogg", "oga", "opus", "m4a", "aac", "mid", "midi", "kar", "rmi", "wma", "ape", "aiff", "aif", "aifc", "alac",
+        "mmf", "smaf", "gp3", "mp3", "flac", "wav", "ogg", "oga", "opus", "m4a", "aac", "mid", "midi", "kar", "rmi", "wma", "ape", "aiff", "aif", "aifc", "alac",
         "au", "snd", "voc", "8svx", "svx", "16sv", "maud", "w64", "rf64", "caf",
         "avr", "ircam", "sph", "pvf", "wve", "htk", "adx", "amr", "awb", "gsm", "g722",
         "sf2", "sfz", "pat", "mod", "s3m", "xm", "it", "dro", "imf", "vgm", "vgz", "ym",
@@ -40,11 +40,11 @@ object MediaTypeDetector {
     )
 
     private val VIDEO_EXTENSIONS = setOf(
-        "mp4", "mkv", "webm", "avi", "mov", "3gp", "ts", "m2ts", "ogv", "wmv", "flv", "m4v", "rm", "rmvb"
+        "mp4", "mkv", "webm", "avi", "mov", "3gp", "3gpp", "3g2", "ts", "m2ts", "ogv", "wmv", "flv", "m4v", "rm", "rmvb"
     )
 
     private val TEXT_EXTENSIONS = setOf(
-        "txt", "log", "cfg", "conf", "ini", "properties", "sh", "bash", "zsh", "fish",
+        "diz", "asc", "nfo", "ans", "ansi", "txt", "log", "cfg", "conf", "ini", "properties", "sh", "bash", "zsh", "fish",
         "py", "kt", "kts", "java", "c", "cpp", "cc", "cxx", "h", "hpp", "cs", "go", "rs",
         "rb", "php", "js", "mjs", "cjs", "ts", "tsx", "jsx", "json", "xml", "yaml", "yml",
         "toml", "sql", "env", "diff", "patch", "bat", "cmd", "ps1",
@@ -70,8 +70,10 @@ object MediaTypeDetector {
             lowerMime in setOf("text/csv", "text/tab-separated-values", "text/comma-separated-values", "text/x-comma-separated-values", "text/x-csv", "application/csv", "application/x-csv") -> return MediaType.SPREADSHEET
             lowerMime == "text/markdown" -> return MediaType.MARKDOWN
             lowerMime in setOf("text/html", "application/xhtml+xml") -> return MediaType.HTML
+            lowerMime == "image/x-ansi" -> return MediaType.TEXT
             lowerMime.startsWith("image/") -> return MediaType.IMAGE
             // Some providers use the RealAudio MIME even for RealMedia videos.
+            lowerMime in setOf("application/vnd.smaf", "application/x-smaf", "application/x-guitar-pro") -> return MediaType.AUDIO
             lowerMime.startsWith("audio/") -> return if (ext in setOf("rm", "rmvb")) MediaType.VIDEO else MediaType.AUDIO
             lowerMime.startsWith("video/") -> return MediaType.VIDEO
             lowerMime.startsWith("text/") || lowerMime in TEXT_MIME_TYPES -> return when {

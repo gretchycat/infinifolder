@@ -23,6 +23,7 @@ import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import io.github.gretchycat.infiniscribe.TextChunk
 import io.github.gretchycat.infiniscribe.TextChunkReader
+import io.github.gretchycat.infiniscribe.TextEncodingProbe
 import io.github.gretchycat.infiniscribe.TextDocuments
 import io.github.gretchycat.infinistream.CancellationToken
 import com.infinifolder.storage.DiagnosticLog
@@ -80,6 +81,7 @@ class TextViewerActivity : ViewerActivity(), DebugDumpObserver {
     private var currentMime: String = "text/plain"
 
     private var currentCharset: Charset = StandardCharsets.UTF_8
+    private var charsetOverride: Charset? = null
     private var originalText: String = ""
     private var isEditMode: Boolean = false
     private var hasUnsavedEdits: Boolean = false
@@ -548,6 +550,7 @@ class TextViewerActivity : ViewerActivity(), DebugDumpObserver {
         val uri = currentUri ?: return
         val request = ++documentGeneration
         val readerRequest = ++readerGeneration
+        val chosenCharset = charsetOverride
         val loadStarted = SystemClock.elapsedRealtime()
         documentTask?.cancel(true)
         subtitleView.text = "Loading…"
@@ -560,23 +563,37 @@ class TextViewerActivity : ViewerActivity(), DebugDumpObserver {
                 chunkReader = null
                 val sourceStarted = SystemClock.elapsedRealtime()
                 val cached = cachedDocument?.takeIf { cachedCharset == currentCharset }
-                val source = if (cached != null) MemoryTextSource(cached.bytes, cached.metadata)
+                val opened = if (cached != null) MemoryTextSource(cached.bytes, cached.metadata)
                     else MediaSourceAdapter.openDocumentSource(this, uri)
+                val cancel = CancellationToken { isDestroyed || isFinishing || request != documentGeneration }
+                val inspected = TextEncodingProbe.open(opened,currentName,cancel)
+                val source = inspected.source
+                val textCharset = chosenCharset ?: inspected.detection.charset
+                if (chosenCharset == null && inspected.detection.dosSurface &&
+                    !intent.getBooleanExtra("forcePlainText",false) && !ViewerLaunch.requestsEdit(intent)) {
+                    source.close()
+                    runOnUiThread {
+                        if (request == documentGeneration && !isDestroyed) {
+                            startActivity(Intent(intent).setClass(this,Cp437ViewerActivity::class.java))
+                            finish()
+                        }
+                    }
+                    return@submit
+                }
                 val sourceMetadata = source.metadata
                 val sourceLength = sourceMetadata.length
-                val cancel = CancellationToken { isDestroyed || isFinishing || request != documentGeneration }
-                val rawDocument = if (cached != null) {
+                val rawDocument = if (cached != null && cachedCharset == textCharset) {
                     source.close()
                     cached
                 } else if (sourceLength != null && sourceLength <= MAX_COMPLETE_DOCUMENT_BYTES) {
-                    try { TextDocuments.read(source, MAX_COMPLETE_DOCUMENT_BYTES.toInt(), currentCharset, cancel) }
+                    try { TextDocuments.read(source, MAX_COMPLETE_DOCUMENT_BYTES.toInt(), textCharset, cancel) }
                     finally { source.close() }
                 } else null
                 if (rawDocument != null && !rawDocument.hasMore) {
                     cachedDocument = rawDocument
-                    cachedCharset = currentCharset
+                    cachedCharset = textCharset
                 }
-                var displayCharset = currentCharset
+                var displayCharset = textCharset
                 val reparser = rawDocument?.let { TextReparsers.detect(currentName, currentMime, it.text) }
                 val fullDocument = if (reparseEnabled && reparser != null && rawDocument != null && !rawDocument.hasMore) {
                     try {
@@ -629,7 +646,8 @@ class TextViewerActivity : ViewerActivity(), DebugDumpObserver {
                     "generation=$request elapsedMs=${SystemClock.elapsedRealtime() - loadStarted}")
                 runOnUiThread {
                     if (request != documentGeneration || isDestroyed) return@runOnUiThread
-                    reparseCheck.isEnabled = reparser != null && cachedDocument != null && cachedCharset == currentCharset
+                    currentCharset = textCharset
+                    reparseCheck.isEnabled = reparser != null && cachedDocument != null && cachedCharset == textCharset
                     displayLogicalLineCount = logicalLineCount
                     syntaxLanguageHint = reparser?.name?.lowercase(java.util.Locale.ROOT)
                     showChunk(chunk)
@@ -1211,11 +1229,12 @@ class TextViewerActivity : ViewerActivity(), DebugDumpObserver {
     }
 
     private fun showEncodingPicker() {
-        val encodings = arrayOf("UTF-8", "UTF-16LE", "UTF-16BE", "ISO-8859-1", "US-ASCII")
+        val encodings = arrayOf("Automatic", "IBM437", "UTF-8", "UTF-16LE", "UTF-16BE", "ISO-8859-1", "US-ASCII")
         AlertDialog.Builder(this)
             .setTitle("Select Encoding")
             .setItems(encodings) { _, which ->
-                currentCharset = Charset.forName(encodings[which])
+                charsetOverride = if (which == 0) null else Charset.forName(encodings[which])
+                charsetOverride?.let { currentCharset = it }
                 loadText()
             }
             .show()

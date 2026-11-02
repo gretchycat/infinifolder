@@ -7,15 +7,15 @@ val viewers = listOf("image", "text", "markdown", "html", "pdf", "csv", "epub", 
 require(viewerKind == "all" || viewerKind in viewers) { "Unknown viewer: $viewerKind" }
 val mimeTypes = when (viewerKind) {
     "image" -> listOf("image/*")
-    "text" -> listOf("text/*", "application/json", "application/xml", "application/javascript")
+    "text" -> listOf("text/*", "application/json", "application/xml", "application/javascript", "image/x-ansi")
     "markdown" -> listOf("text/markdown", "text/x-markdown")
     "html" -> listOf("text/html", "application/xhtml+xml")
     "pdf" -> listOf("application/pdf")
     "csv" -> listOf("text/csv", "text/tab-separated-values")
     "epub" -> listOf("application/epub+zip")
-    "audio" -> listOf("audio/*")
+    "audio" -> listOf("audio/*", "application/vnd.smaf", "application/x-smaf", "application/x-guitar-pro", "application/x-gtp")
     "video" -> listOf("video/*")
-    else -> listOf("text/*", "image/*", "audio/*", "video/*", "application/pdf", "application/epub+zip", "application/json", "application/xml")
+    else -> listOf("text/*", "image/*", "audio/*", "video/*", "application/pdf", "application/epub+zip", "application/json", "application/xml", "application/vnd.smaf", "application/x-smaf", "application/x-guitar-pro", "application/x-gtp")
 }
 android {
     namespace = "com.infinifolder.standalone"
@@ -27,7 +27,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
-        (1..8).forEach { manifestPlaceholders["viewerMime$it"] = mimeTypes.getOrElse(it - 1) { mimeTypes.first() } }
+        (1..12).forEach { manifestPlaceholders["viewerMime$it"] = mimeTypes.getOrElse(it - 1) { mimeTypes.first() } }
         manifestPlaceholders["viewerName"] = "InfiniFolder " + viewerKind.replaceFirstChar { it.uppercase() } + " Viewer"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -37,5 +37,6 @@ android {
 }
 dependencies {
     implementation(project(":viewer-common"))
+    if (viewerKind == "image") implementation(project(":viewer-text")) // ANSI art opens on the DOS text surface.
     (if (viewerKind == "all") viewers else listOf(viewerKind)).forEach { implementation(project(":viewer-$it")) }
 }

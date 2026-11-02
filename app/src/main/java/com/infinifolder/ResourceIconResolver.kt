@@ -213,7 +213,7 @@ class ResourceIconResolver(context: Context) {
         }
         val mime = CustomIconStore.resolveMimeKey(entry.metadata)
         val custom = icons.getMimeIconBitmap(mime) { decoder.decode(Uri.fromFile(it), size) }
-        val image = if (custom == null && ImageFormats.isImage(entry.metadata)) decoder.decode(entry.uri, size) else null
+        val image = if (custom == null && (ImageFormats.isImage(entry.metadata) || ImageFormats.hasDosTextPreview(entry.metadata))) decoder.decode(entry.uri, size) else null
         val apk = if (custom == null && image == null &&
             com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType) == "application/vnd.android.package-archive")
             resolveApkIcon(entry, size) else null

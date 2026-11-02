@@ -22,6 +22,10 @@
                 <data android:mimeType="${viewerMime6}" />
                 <data android:mimeType="${viewerMime7}" />
                 <data android:mimeType="${viewerMime8}" />
+                <data android:mimeType="${viewerMime9}" />
+                <data android:mimeType="${viewerMime10}" />
+                <data android:mimeType="${viewerMime11}" />
+                <data android:mimeType="${viewerMime12}" />
             </intent-filter>
         </activity>
     </application>
