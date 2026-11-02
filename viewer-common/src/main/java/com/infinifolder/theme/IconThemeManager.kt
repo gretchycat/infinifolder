@@ -519,7 +519,7 @@ class IconThemeManager(private val context: Context) {
         val cached=ThemeIconDiskCache.read(diskCacheDir,key)
         val bitmap=cached ?: theme.getIconBitmap(name,size) ?: return null
         diskRenderMemory.put(key,bitmap)
-        if(cached==null)ThemeIconDiskCache.write(diskCacheDir,key,bitmap)
+        if(cached==null)ThemeIconDiskCache.enqueueWrite(diskCacheDir,key,bitmap)
         return bitmap
     }
 
@@ -527,8 +527,9 @@ class IconThemeManager(private val context: Context) {
     fun resolveLogicalIcon(name: String, size: Int): Bitmap? {
         refreshActiveTheme(); if(name.isBlank() || name.contains('/') || name.contains('\\')) return null
         val key=revision()
+        firstFrameIcons.get("$key:$name:$size")?.takeIf {System.currentTimeMillis()-it.checkedAt in 0..5000}?.let {return it.bitmap}
         val bitmap=activeTheme?.let {cachedThemeIcon(it,name,size)}
-        if(bitmap!=null && key==revision())firstFrameIcons.put("$key:$name:$size",bitmap)
+        if(bitmap!=null && key==revision())firstFrameIcons.put("$key:$name:$size",HotIcon(bitmap,System.currentTimeMillis()))
         return bitmap
     }
     /** Memory-only first-frame artwork; callers must not decode theme files on the UI thread. */
@@ -537,7 +538,7 @@ class IconThemeManager(private val context: Context) {
         if(id.isNullOrBlank())return null
         val candidates=if(meta.isDirectory)buildFolderIconCandidates(meta.name) else buildMimeIconCandidates(meta)
         val key=revision()
-        return candidates.firstNotNullOfOrNull {firstFrameIcons.get("$key:$it:$size")}
+        return candidates.firstNotNullOfOrNull {firstFrameIcons.get("$key:$it:$size")?.bitmap}
     }
 
     fun resolveMimeDefaults(mime:String,size:Int):Bitmap? = com.infinifolder.mime.MimeRegistry.iconCandidates(mime)
@@ -617,8 +618,9 @@ class IconThemeManager(private val context: Context) {
         private val diskRenderMemory=object:LruCache<String,Bitmap>(6*1024*1024) {
             override fun sizeOf(key:String,value:Bitmap)=value.allocationByteCount
         }
-        private val firstFrameIcons=object:LruCache<String,Bitmap>(6*1024*1024) {
-            override fun sizeOf(key:String,value:Bitmap)=value.allocationByteCount
+        private data class HotIcon(val bitmap:Bitmap,val checkedAt:Long)
+        private val firstFrameIcons=object:LruCache<String,HotIcon>(6*1024*1024) {
+            override fun sizeOf(key:String,value:HotIcon)=value.bitmap.allocationByteCount
         }
         fun buildMimeIconCandidates(meta: ResourceMetadata): List<String> {
             val mime = com.infinifolder.mime.MimeRegistry.effective(meta.name, meta.mimeType)

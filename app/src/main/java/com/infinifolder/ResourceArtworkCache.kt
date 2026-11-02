@@ -35,6 +35,7 @@ class ResourceArtworkCache(context: Context) {
 
     fun sidecar(uri: Uri, name: String = ""): ResourceEntry? {
         ResourceIconSidecars.find(uri)?.let { return it }
+        if(ResourceIconSidecars.hasObserved(uri))return null
         // Direct exact-name lookup for standalone items; never enumerate the parent directory.
         if (runtime.local.owns(uri)) {
             val file = runCatching { runtime.local.fileFor(uri) }.getOrNull() ?: return null
@@ -153,22 +154,24 @@ class ResourceArtworkCache(context: Context) {
         }
     }
 
-    fun load(entry: ResourceEntry, size: Int): Saved? {
+    fun load(entry:ResourceEntry,size:Int):Saved?=load(entry,size,true)
+    fun load(entry: ResourceEntry, size: Int, includeGenerated:Boolean): Saved? {
         val key = key(entry, size)
         val sidecar = sidecar(entry)
         val stamp = stamp(sidecar)
-        memory.get(key)?.let { if (it.sidecarStamp == stamp) return it }
+        memory.get(key)?.let { if (it.sidecarStamp == stamp) return it.takeIf {includeGenerated || !it.generated} }
         if (sidecar == null) return null
         val started = System.nanoTime()
         return runCatching {
             val bytes = bytes(sidecar)
             val readFinished = System.nanoTime()
-            val decoded = CachedImageCodec.decode(bytes, size) ?: return null
-            val bitmap = decoded.frame.takeBitmap()
-            val decodedAt = System.nanoTime()
             val p = sidecar.uri.toString()
             val generated = provenance.getString("$p:source", null) == entry.uri.toString() &&
                 provenance.getString("$p:sha256", null) == digest(bytes)
+            if(generated && !includeGenerated)return null
+            val decoded = CachedImageCodec.decode(bytes, size) ?: return null
+            val bitmap = decoded.frame.takeBitmap()
+            val decodedAt = System.nanoTime()
             Saved(bitmap, if (generated) provenance.getString("$p:signature", "").orEmpty() else "custom:$stamp",
                 if (generated) provenance.getLong("$p:fetched", 0) else System.currentTimeMillis(),
                 generated, stamp, persisted = true, sourcePixels = maxOf(decoded.sourceWidth, decoded.sourceHeight),
@@ -302,6 +305,11 @@ class ResourceArtworkCache(context: Context) {
     }
 
     companion object {
+        private val themeReads=java.util.concurrent.ThreadPoolExecutor(2,2,30,java.util.concurrent.TimeUnit.SECONDS,
+            java.util.concurrent.ArrayBlockingQueue<Runnable>(128),java.util.concurrent.ThreadFactory {task->Thread(task,"ThemeArtwork").apply {isDaemon=true}})
+        fun queueTheme(action:()->Unit) {
+            try {themeReads.execute {runCatching(action)}}catch(_:java.util.concurrent.RejectedExecutionException){}
+        }
         val reads = java.util.concurrent.Executors.newFixedThreadPool(2) { task -> Thread(task, "ArtworkCacheRead").apply { isDaemon = true } }
         val appSources = java.util.concurrent.Executors.newFixedThreadPool(2) { task -> Thread(task, "ApplicationArtwork").apply { isDaemon = true } }
         private val pending = ConcurrentHashMap.newKeySet<String>()

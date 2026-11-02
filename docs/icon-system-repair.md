@@ -230,3 +230,31 @@ saved associations or valid overrides.
 Build: `gradle :app:assembleDebug --offline --console=plain`, successful; log:
 `build/theme-cache-rip-proportions-build.log`. Device cache restart/eviction checks
 remain unverified; no tests were added or run for this follow-up.
+
+## Theme icon latency follow-up
+
+The listing and floating container now request provisional theme artwork on a
+separate bounded worker queue, independently of thumbnail, sidecar and content
+work. Cached final artwork and final resolver results take precedence; the full
+resolver still applies covers, custom icons, URI destinations and saved image
+mode choices. Queue saturation only skips this optional early display.
+
+MIME extension associations are indexed per registry revision instead of scanning
+all records and repeatedly checking the registry file for each listing item.
+Observed sidecar absence avoids redundant filesystem probes, and generated
+sidecars are identified before decoding when only custom artwork is needed.
+Warm theme artwork bypasses repeated source metadata probes for five seconds;
+theme revisions invalidate it immediately and later worker lookups revalidate
+source metadata. Cold PNG cache compression and eviction now run asynchronously
+on a bounded writer queue; reads no longer wait for unrelated writes. Cache
+failures continue to use the rendered theme bitmap.
+
+Removed redundant per-card UI-thread cache publication (the resolver already
+publishes on its worker), whose registry/custom-icon filesystem checks appeared
+in the 20261102-054304-984 dump. Floating listings also capture the icon revision
+once per render rather than once per card. Slow main-list theme previews log
+queue, resolution and UI delivery times under `artwork.theme.display-slow`.
+
+Build: `gradle :app:assembleDebug --offline --console=plain` succeeded in 21s;
+log: `build/icon-speed-final-build.log`. No tests were added or run for this
+follow-up. Device latency and visual precedence checks remain unverified.

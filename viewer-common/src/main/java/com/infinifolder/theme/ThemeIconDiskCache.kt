@@ -12,8 +12,16 @@ internal object ThemeIconDiskCache {
     private const val MAX_FILES=2048
     private const val MAX_ENTRY=4L*1024*1024
     private val lock=Any()
-    fun read(directory:File,key:String):Bitmap?=synchronized(lock) {
-        runCatching {
+    private val writer=java.util.concurrent.ThreadPoolExecutor(1,1,30,java.util.concurrent.TimeUnit.SECONDS,
+        java.util.concurrent.ArrayBlockingQueue<Runnable>(128),java.util.concurrent.ThreadFactory {task->Thread(task,"ThemeIconCacheWrite").apply {isDaemon=true}})
+    private val pending=java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    fun enqueueWrite(directory:File,key:String,bitmap:Bitmap) {
+        if(!pending.add(key))return
+        try {writer.execute {try {write(directory,key,bitmap)}finally {pending.remove(key)}}}
+        catch(_:java.util.concurrent.RejectedExecutionException){pending.remove(key)}
+    }
+    fun read(directory:File,key:String):Bitmap? {
+        return runCatching {
             val file=entry(directory,key)
             if(!file.isFile)return null
             if(file.length() !in 1..MAX_ENTRY){file.delete();return null}
@@ -26,7 +34,7 @@ internal object ThemeIconDiskCache {
             bitmap
         }.getOrNull()
     }
-    fun write(directory:File,key:String,bitmap:Bitmap)=synchronized(lock) {
+    private fun write(directory:File,key:String,bitmap:Bitmap) {
         runCatching {
             if(bitmap.width>2048 || bitmap.height>2048)return
             if(!directory.isDirectory && !directory.mkdirs())return
@@ -34,8 +42,10 @@ internal object ThemeIconDiskCache {
             try {
                 temp.outputStream().use {out->check(bitmap.compress(Bitmap.CompressFormat.PNG,100,out));out.flush()}
                 if(temp.length() !in 1..MAX_ENTRY)return
-                if(!temp.renameTo(entry(directory,key)))return
-                trim(directory)
+                synchronized(lock) {
+                    if(!temp.renameTo(entry(directory,key)))return
+                    trim(directory)
+                }
             } finally {temp.delete()}
         }
         Unit
