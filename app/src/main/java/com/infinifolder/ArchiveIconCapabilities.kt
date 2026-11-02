@@ -17,7 +17,7 @@ class ArchiveIconCapabilities(context: Context) {
         if(entry.metadata.isDirectory) return Result(false)
         val key = "${entry.uri}:${entry.metadata.name}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}"
         cache.get(key)?.takeIf { System.currentTimeMillis()-it.time < 30000 }?.let { return it.result }
-        val result = IconWork.bounded(2500) {
+        val result = IconWork.bounded(2500,lane="archive:${entry.ref.providerId}") {
             val magic = FileMagicDetector.detectFromStream {
                 (runtime.provider.openRead(entry.ref) as? ProviderResult.Success)?.value ?: error("Source inaccessible")
             }

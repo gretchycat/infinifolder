@@ -527,8 +527,9 @@ class IconThemeManager(private val context: Context) {
     fun resolveLogicalIcon(name: String, size: Int): Bitmap? {
         refreshActiveTheme(); if(name.isBlank() || name.contains('/') || name.contains('\\')) return null
         val key=revision()
+        firstFrameIcons.get("$key:$name:$size")?.takeIf {System.nanoTime()/1_000_000-it.checkedAt in 0..5000}?.let {return it.bitmap}
         val bitmap=activeTheme?.let {cachedThemeIcon(it,name,size)}
-        if(bitmap!=null && key==revision())firstFrameIcons.put("$key:$name:$size",bitmap)
+        if(bitmap!=null && key==revision())firstFrameIcons.put("$key:$name:$size",HotIcon(bitmap,System.nanoTime()/1_000_000))
         return bitmap
     }
     /** Memory-only first-frame artwork; callers must not decode theme files on the UI thread. */
@@ -539,7 +540,7 @@ class IconThemeManager(private val context: Context) {
         val key=revision()
         return candidates.filterNot { !meta.isDirectory && it in setOf("application-octet-stream","unknown",
             "text-x-generic","image-x-generic","video-x-generic","audio-x-generic","font-x-generic","package-x-generic") }
-            .firstNotNullOfOrNull {firstFrameIcons.get("$key:$it:$size")}
+            .firstNotNullOfOrNull {firstFrameIcons.get("$key:$it:$size")?.bitmap}
     }
 
     /** Broad theme placeholders must not hide the generated MIME/extension label. */
@@ -625,8 +626,9 @@ class IconThemeManager(private val context: Context) {
         private val diskRenderMemory=object:LruCache<String,Bitmap>(6*1024*1024) {
             override fun sizeOf(key:String,value:Bitmap)=value.allocationByteCount
         }
-        private val firstFrameIcons=object:LruCache<String,Bitmap>(6*1024*1024) {
-            override fun sizeOf(key:String,value:Bitmap)=value.allocationByteCount
+        private data class HotIcon(val bitmap:Bitmap,val checkedAt:Long)
+        private val firstFrameIcons=object:LruCache<String,HotIcon>(6*1024*1024) {
+            override fun sizeOf(key:String,value:HotIcon)=value.bitmap.allocationByteCount
         }
         fun buildMimeIconCandidates(meta: ResourceMetadata): List<String> {
             val mime = com.infinifolder.mime.MimeRegistry.effective(meta.name, meta.mimeType)

@@ -4051,7 +4051,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                             is ProviderResult.Success -> {
                                 entries = result.value
                                 if (!result.isLoading || result.value.isNotEmpty()) {
-                                    cacheDirectoryIconListing(uri, ref, result.value)
+                                    cacheDirectoryIconListing(uri, ref, result.value, complete=!result.isLoading)
                                 }
                                 result.value.forEach { child ->
                                     if (child.uri != uri) knownResourceParents.put(child.uri, uri)
@@ -4317,7 +4317,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun renderEntries() {
         artworkRenderGeneration++
         if ((!listingIsLoading || entries.isNotEmpty()) && listingError == null) {
-            ResourceIconSidecars.observe(entries, current)
+            ResourceIconSidecars.observe(entries, current, complete=!listingIsLoading)
         }
         val renderStartedAt = SystemClock.uptimeMillis()
         if (renderedPinnedIconSize != iconSizeDp) renderPinnedContainers()
@@ -4461,6 +4461,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                 if (icon.childCount > 0) icon.removeViewAt(0)
                 icon.addView(image, 0, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             }
+            resourceIconResolver.peekCached(entry,artworkSize)?.let {
+                authoritativeApplied=true
+                applyArtwork(it)
+            }
             lateinit var startArtwork: () -> Unit
             fun retryWhenVisible() {
                 runOnUiThread {
@@ -4474,27 +4478,40 @@ class MainActivity : Activity(), DebugDumpObserver {
                     if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return@cacheRead
                     if (entry.uri !in visibleArtworkUris) { retryWhenVisible(); return@cacheRead }
                     val readStartedAt = SystemClock.uptimeMillis()
-                    resourceIconResolver.cached(entry, artworkSize)?.let { cachedIcon ->
+                    val cachedIcon=resourceIconResolver.cached(entry, artworkSize)
+                    if(cachedIcon!=null) {
                         val readyAt = SystemClock.uptimeMillis()
                         runOnUiThread {
                             if (!authoritativeApplied) {
+                                authoritativeApplied=true
                                 applyArtwork(cachedIcon)
                                 val appliedAt = SystemClock.uptimeMillis()
                                 if (appliedAt - queuedAt >= 100) com.infinifolder.storage.DiagnosticLog.record("artwork.cache.display-slow",
                                     "name=${entry.metadata.name} queueMs=${readStartedAt - queuedAt} readMs=${readyAt - readStartedAt} uiMs=${appliedAt - readyAt}")
                             }
                         }
+                        return@cacheRead
+                    }
+                    if(entry.metadata.isDirectory) {
+                        val baseline=resourceIconResolver.directoryTheme(entry,artworkSize).copy(pending=true)
+                        runOnUiThread { if(!authoritativeApplied)applyArtwork(baseline) }
                     }
                     // Cache publication is queued before source work can publish a replacement.
-                    val sourceWorker = if (AppsUri.isAppUri(entry.uri)) ResourceArtworkCache.appSources else imageIo
+                    val sourceWorker = ResourceArtworkCache.sourceExecutor(entry)
+                    val sourceQueuedAt=SystemClock.uptimeMillis()
                     sourceWorker.execute sourceRead@ {
                         if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return@sourceRead
                         if (entry.uri !in visibleArtworkUris) { retryWhenVisible(); return@sourceRead }
+                        val sourceStartedAt=SystemClock.uptimeMillis()
                         val resolved = runCatching {
                             resourceIconResolver.resolve(entry.copy(metadata = effectiveMeta), artworkSize, deferCacheWrite = true)
                         }.getOrNull()
+                        val sourceFinishedAt=SystemClock.uptimeMillis()
                         if (resolved != null) runOnUiThread {
                             if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return@runOnUiThread
+                            val displayedAt=SystemClock.uptimeMillis()
+                            if(displayedAt-queuedAt>=100)com.infinifolder.storage.DiagnosticLog.record("artwork.source.display-slow",
+                                "name=${entry.metadata.name} source=${resolved.source} preSourceMs=${sourceQueuedAt-queuedAt} queueMs=${sourceStartedAt-sourceQueuedAt} resolveMs=${sourceFinishedAt-sourceStartedAt} uiMs=${displayedAt-sourceFinishedAt}")
                             authoritativeApplied = true
                             if (isShortcut) {
                                 resourceIconResolver.peekShortcut(entry)?.let { shortcutCache.put(entry.uri.toString(), it) }
@@ -4502,7 +4519,6 @@ class MainActivity : Activity(), DebugDumpObserver {
                             }
                             if (resolved.bitmap != null) {
                                 applyArtwork(resolved)
-                                resourceIconResolver.cacheDisplayed(entry, artworkSize, resolved)
                             } else {
                                 if (icon.childCount > 0) icon.removeViewAt(0)
                                 icon.addView(TextView(this).apply {
@@ -4515,7 +4531,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     }
                 }
             }
-            registerVisibleCardProbe(box, artworkGeneration, startArtwork)
+            if(!authoritativeApplied)registerVisibleCardProbe(box, artworkGeneration, startArtwork)
         }
 
 
@@ -4943,8 +4959,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         return frame
     }
-    private fun cacheDirectoryIconListing(dirUri: Uri, dirRef: ResourceRef?, contents: List<ResourceEntry>): Uri? {
-        ResourceIconSidecars.observe(contents, dirUri)
+    private fun cacheDirectoryIconListing(dirUri: Uri, dirRef: ResourceRef?, contents: List<ResourceEntry>,complete:Boolean=true): Uri? {
+        ResourceIconSidecars.observe(contents, dirUri,complete=complete)
         val bestUri = DirectoryIconResolver.findBestIcon(contents)?.uri
         val value = bestUri?.toString() ?: ""
         dirRef?.let { directoryIconCache.put("${it.providerId}:${it.documentId}", value) }

@@ -35,6 +35,7 @@ class ResourceArtworkCache(context: Context) {
 
     fun sidecar(uri: Uri, name: String = ""): ResourceEntry? {
         ResourceIconSidecars.find(uri)?.let { return it }
+        if (ResourceIconSidecars.hasObserved(uri)) return null
         // Direct exact-name lookup for standalone items; never enumerate the parent directory.
         if (runtime.local.owns(uri)) {
             val file = runCatching { runtime.local.fileFor(uri) }.getOrNull() ?: return null
@@ -46,7 +47,6 @@ class ResourceArtworkCache(context: Context) {
             }
             return null
         }
-        if (ResourceIconSidecars.hasObserved(uri)) return null
         return runCatching {
             when {
                 com.infinifolder.archive.ArchiveUri.isArchiveUri(uri) -> {
@@ -153,22 +153,24 @@ class ResourceArtworkCache(context: Context) {
         }
     }
 
-    fun load(entry: ResourceEntry, size: Int): Saved? {
+    fun load(entry: ResourceEntry, size: Int): Saved? = load(entry,size,true)
+    fun load(entry: ResourceEntry, size: Int, includeGenerated:Boolean): Saved? {
         val key = key(entry, size)
         val sidecar = sidecar(entry)
         val stamp = stamp(sidecar)
-        memory.get(key)?.let { if (it.sidecarStamp == stamp) return it }
+        memory.get(key)?.let { if (it.sidecarStamp == stamp) return it.takeIf {includeGenerated || !it.generated} }
         if (sidecar == null) return null
         val started = System.nanoTime()
         return runCatching {
             val bytes = bytes(sidecar)
             val readFinished = System.nanoTime()
-            val decoded = CachedImageCodec.decode(bytes, size) ?: return null
-            val bitmap = decoded.frame.takeBitmap()
-            val decodedAt = System.nanoTime()
             val p = sidecar.uri.toString()
             val generated = provenance.getString("$p:source", null) == entry.uri.toString() &&
                 provenance.getString("$p:sha256", null) == digest(bytes)
+            if(generated && !includeGenerated)return null
+            val decoded = CachedImageCodec.decode(bytes, size) ?: return null
+            val bitmap = decoded.frame.takeBitmap()
+            val decodedAt = System.nanoTime()
             Saved(bitmap, if (generated) provenance.getString("$p:signature", "").orEmpty() else "custom:$stamp",
                 if (generated) provenance.getLong("$p:fetched", 0) else System.currentTimeMillis(),
                 generated, stamp, persisted = true, sourcePixels = maxOf(decoded.sourceWidth, decoded.sourceHeight),
@@ -302,6 +304,22 @@ class ResourceArtworkCache(context: Context) {
     }
 
     companion object {
+        // Content renders and folder enumeration must not queue ahead of ordinary MIME artwork.
+        private fun sourcePool(name:String,count:Int)=java.util.concurrent.ThreadPoolExecutor(count,count,30,
+            java.util.concurrent.TimeUnit.SECONDS,java.util.concurrent.LinkedBlockingQueue<Runnable>(),
+            java.util.concurrent.ThreadFactory { Thread(it,name).apply {isDaemon=true} }).apply {allowCoreThreadTimeOut(true)}
+        private val iconSources=sourcePool("MimeArtwork",4)
+        private val directorySources=sourcePool("DirectoryArtwork",2)
+        private val contentSources=sourcePool("ContentArtwork",2)
+        fun sourceExecutor(entry:ResourceEntry):java.util.concurrent.Executor = when {
+            AppsUri.isAppUri(entry.uri) -> appSources
+            entry.metadata.isDirectory -> directorySources
+            com.infinifolder.preview.ImageFormats.isImage(entry.metadata) ||
+                com.infinifolder.preview.ImageFormats.hasDosTextPreview(entry.metadata) ||
+                entry.metadata.name.endsWith(".apk",ignoreCase=true) ||
+                entry.metadata.mimeType=="application/vnd.android.package-archive" -> contentSources
+            else -> iconSources
+        }
         val reads = java.util.concurrent.Executors.newFixedThreadPool(2) { task -> Thread(task, "ArtworkCacheRead").apply { isDaemon = true } }
         val appSources = java.util.concurrent.Executors.newFixedThreadPool(2) { task -> Thread(task, "ApplicationArtwork").apply { isDaemon = true } }
         private val pending = ConcurrentHashMap.newKeySet<String>()
@@ -389,7 +407,7 @@ object ResourceIconSidecars {
             }
         }
     }
-    data class DirectoryArtwork(val entry: ResourceEntry?, val observedAt: Long, val candidates: List<ResourceEntry> = emptyList())
+    data class DirectoryArtwork(val entry: ResourceEntry?, val observedAt: Long, val candidates: List<ResourceEntry> = emptyList(), val complete:Boolean=true)
     private val directoryArtwork = android.util.LruCache<String, DirectoryArtwork>(1024)
     @Synchronized fun directory(entry: ResourceEntry): DirectoryArtwork? = directory(entry.uri)
     @Synchronized fun directory(uri: Uri): DirectoryArtwork? = directoryArtwork.get(uri.toString())
@@ -404,12 +422,12 @@ object ResourceIconSidecars {
     @Synchronized fun clearDirectories() {
         directoryArtwork.evictAll()
     }
-    @Synchronized fun observe(entries: List<ResourceEntry>, parent: Uri? = null) {
+    @Synchronized fun observe(entries: List<ResourceEntry>, parent: Uri? = null, complete:Boolean=true) {
         if (parent != null) {
             val artwork = DirectoryArtwork(
                 com.infinifolder.preview.DirectoryIconResolver.findBestIcon(entries),
                 System.currentTimeMillis(),
-                com.infinifolder.preview.DirectoryIconResolver.candidates(entries)
+                com.infinifolder.preview.DirectoryIconResolver.candidates(entries), complete
             )
             directoryArtwork.put(parent.toString(), artwork)
             if (com.infinifolder.archive.ArchiveUri.isArchiveUri(parent) &&
@@ -421,11 +439,12 @@ object ResourceIconSidecars {
         }
         val named = entries.associateBy { it.metadata.name }
         entries.forEach { entry ->
-            observed.put(entry.uri.toString(), true)
             if (parent != null) parents.put(entry.uri.toString(), parent)
             val sidecar = named[ResourceArtworkCache.iconName(entry)]?.takeUnless { it.metadata.isDirectory }
+            if(complete || sidecar!=null)observed.put(entry.uri.toString(), true)
+            else observed.remove(entry.uri.toString())
             if (sidecar == null) {
-                if (parent != null) sidecars.remove(entry.uri.toString())
+                if (parent != null && complete) sidecars.remove(entry.uri.toString())
             } else {
                 sidecars.put(entry.uri.toString(), sidecar)
             }

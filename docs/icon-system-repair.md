@@ -296,3 +296,55 @@ Build command: `gradle :app:assembleDebug --offline --console=plain`; log:
 `build/generated-mime-fallback-final-build.log`. No tests added or run for this
 follow-up. The supplied screenshot was inspected; the revised APK still needs
 on-device visual confirmation.
+
+## Investigation of remaining icon latency (20261102-182841-908)
+
+Inspected the newly posted log and matching screenshot. The latest screenshot
+shows the selected theme's folder icons. The log contains failed SFTP directory
+probes on the same two IconWork threads used for local sidecars/magic detection
+(`ResourceIconResolver.directory` stacks at 18:28:29 and 18:28:35), plus repeated
+folder enumeration and UI-thread registry/custom-icon stats. Cancellation bounded
+the caller's wait but could not stop provider I/O that ignores interruption.
+The old log has no per-source queue/resolve timing, so it does not establish an
+exact end-to-end speedup or assign all latency to one stage.
+
+Repairs keep the generated-versus-generic icon policy intact:
+
+- Separate metadata, directory, thumbnail and archive work per provider; canceled
+  queued tasks are removed immediately. A stalled SFTP probe cannot monopolize
+  the workers used for local metadata or image rendering.
+- Separate ordinary MIME source jobs, folder discovery, content renders and app
+  icons. Main listing and floating overlay use the same source scheduler.
+- Return valid resolved cache hits immediately, including directories. Files are
+  reusable for five minutes with identity/mtime/size/registry/theme/custom-icon
+  keys (links and items without modification timestamps retain the 30-second
+  lifetime); directories for five seconds, including observed cover candidate stamps.
+  Existing invalidation still applies. Final cached artwork can be drawn directly
+  on the first frame via a memory-only revision snapshot, without enqueuing work.
+- Reuse complete directory observations for five seconds, including absence of
+  covers. Partial asynchronous listings are marked incomplete. Filesystem case
+  metadata is requested only when cover candidates exist. Show the shared theme
+  folder baseline while discovery proceeds; a valid cover still wins finally.
+- Index extension associations once per registry revision, preserving explicit
+  associations, ambiguous candidates and longest multipart extensions. Avoid
+  repeated registry stats for each record in every file's lookup.
+- Skip sidecar work when the listing already proved absence; verify generated
+  sidecar provenance before an unnecessary bitmap decode. Custom images retain
+  priority and validation.
+- Reuse warm theme bitmaps for five seconds before source metadata revalidation;
+  theme/import revisions invalidate that cache immediately. Existing persistent
+  PNG theme cache and asynchronous writes remain in use. Removed duplicate UI
+  cache publication and per-card overlay revision reads.
+
+New `artwork.work.slow`, `artwork.resolve.slow` and
+`artwork.source.display-slow` records distinguish provider queue saturation,
+resolver work, source queue wait and UI delivery. Memory caches remain bounded
+by the existing bitmap byte limits; idle work threads time out. No MIME/URI
+settings or thumbnail choices are changed.
+
+Validation: `gradle :app:assembleDebug --offline --console=plain`; logs
+`build/icon-latency-investigation-build.log` and
+`build/icon-latency-investigation-final-build.log` (final build successful in
+1m 41s). No tests added or run for this
+follow-up. ADB still reports no attached device: post-change scrolling, cover
+refresh behavior and measured display latency remain unverified.
