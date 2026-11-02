@@ -169,3 +169,20 @@ tests). The native acceptance APK also rebuilt successfully. Logs:
 `build/icon-settings-final.log` and `build/icon-settings-build.log`. The existing
 acceptance fixture now checks the default thumbnail before exercising the MIME
 icon toggle; the suite still awaits a device.
+
+## Follow-up: editor artwork previews
+
+MIME and URI registry rows now include asynchronously loaded current icon artwork
+with a bounded bitmap cache and recycled-row cancellation/binding checks. Individual
+editors show labeled Current, Theme default and User override previews, update
+when the logical name or image-mode fields change, and reopen with the selected
+artwork after import. Missing overrides are explicitly labeled None. Thumbnail
+mode explains that the displayed icon is the fallback for a per-file thumbnail.
+URI previews show the rule's registered/theme/scheme artwork without fetching a
+remote target.
+
+FileTypeIcons and LinkIcons moved unchanged into viewer-common, retaining their
+package/API, so the editor uses the same native fallback artwork as file listings.
+Validation: `gradle :app:assembleDebug --offline --console=plain`; build log
+`build/icon-editor-previews-final.log`. Device display remains unverified. Tests
+were not run for this UI-only follow-up.
