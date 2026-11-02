@@ -93,3 +93,10 @@ monospace rendering; DOS/ANSI text uses CP437 glyphs. Existing custom icons reta
 priority. Generated text-art cache signatures are versioned to refresh old results.
 App and text-host build log: `build/cp437-insets-icons-build.log`. These fixes have
 not been visually checked on a device.
+
+The generated CP437 font now preserves each glyph's left bearing rather than
+forcing it to zero. In particular, U+2590 (`0xDE`, right-half block) occupies
+x=256..512 of the 512-unit cell with a 256-unit left bearing; U+258C occupies
+x=0..256. This also preserves the spacing of other glyphs with blank left
+columns. Rebuilt font version: 2.0. App/text-host build log:
+`build/cp437-glyph-bearings-build.log`; no on-device rendering check was run.
