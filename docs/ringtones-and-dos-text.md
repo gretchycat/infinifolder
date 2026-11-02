@@ -83,3 +83,13 @@ coverage for the new features. App/text build log:
 
 Local library checkpoints: Sound `c1ecfd2`, Scribe `7f8428a`, Canvas `459b458`,
 Store `4d8990c`. The host pins these commits; remote publication is pending.
+
+## Viewer and icon follow-up
+
+The CP437 root applies status/navigation bar and display-cutout insets. Text icon
+previews are selected from resource metadata rather than the URI extension and
+read at most 16 KiB, showing the first 25 rows. Ordinary Unicode text uses native
+monospace rendering; DOS/ANSI text uses CP437 glyphs. Existing custom icons retain
+priority. Generated text-art cache signatures are versioned to refresh old results.
+App and text-host build log: `build/cp437-insets-icons-build.log`. These fixes have
+not been visually checked on a device.

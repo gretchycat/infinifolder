@@ -57,7 +57,19 @@ class Cp437ViewerActivity : ViewerActivity() {
             ?: intent.getStringExtra("extra_uri")?.let(android.net.Uri::parse)
         if(uri==null){finish();return}
         name=intent.getStringExtra("displayName") ?: intent.getStringExtra("extra_name") ?: uri.lastPathSegment ?: "DOS text"
-        val layout=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setBackgroundColor(Color.BLACK)}
+        val layout=LinearLayout(this).apply {
+            orientation=LinearLayout.VERTICAL;setBackgroundColor(Color.BLACK)
+            setOnApplyWindowInsetsListener { view, insets ->
+                val safe = if (android.os.Build.VERSION.SDK_INT >= 30)
+                    insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+                else null
+                view.setPadding(safe?.left ?: insets.systemWindowInsetLeft,
+                    safe?.top ?: insets.systemWindowInsetTop,
+                    safe?.right ?: insets.systemWindowInsetRight,
+                    safe?.bottom ?: insets.systemWindowInsetBottom)
+                insets
+            }
+        }
         val toolbar=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;gravity=android.view.Gravity.CENTER_VERTICAL}
         fun button(label:String, action:()->Unit)=Button(this).apply {this.text=label;setOnClickListener {action()}}
         toolbar.addView(button("‹"){finish()})
@@ -94,6 +106,7 @@ class Cp437ViewerActivity : ViewerActivity() {
         vertical=ZoomScroll(this).apply {addView(horizontal,ViewGroup.LayoutParams(-1,-2))}
         layout.addView(vertical,LinearLayout.LayoutParams(-1,0,1f))
         setContentView(layout)
+        layout.requestApplyInsets()
         vertical.addOnLayoutChangeListener {_,left,_,right,_,oldLeft,_,oldRight,_ ->
             if(right-left>0 && (!initialFit || right-left!=oldRight-oldLeft)) {
                 basePixels=((right-left-text.paddingLeft-text.paddingRight).coerceAtLeast(80)/80f)*2f

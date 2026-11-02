@@ -92,7 +92,8 @@ class ResourceIconResolver(context: Context) {
     }
 
     private fun signature(entry: ResourceEntry): String {
-        return "${entry.metadata.modifiedAtMillis}:${entry.metadata.sizeBytes}:${theme.getActiveThemeId()}"
+        val previewVersion = if (ImageFormats.hasTextPreview(entry.metadata)) ":text-preview-2" else ""
+        return "${entry.metadata.modifiedAtMillis}:${entry.metadata.sizeBytes}:${theme.getActiveThemeId()}$previewVersion"
     }
 
     /** Called after the host installs the image; PNG persistence stays off the display path. */
@@ -213,7 +214,12 @@ class ResourceIconResolver(context: Context) {
         }
         val mime = CustomIconStore.resolveMimeKey(entry.metadata)
         val custom = icons.getMimeIconBitmap(mime) { decoder.decode(Uri.fromFile(it), size) }
-        val image = if (custom == null && (ImageFormats.isImage(entry.metadata) || ImageFormats.hasDosTextPreview(entry.metadata))) decoder.decode(entry.uri, size) else null
+        val image = if (custom != null) null else when {
+            ImageFormats.hasTextPreview(entry.metadata) -> decoder.decodeTextPreview(entry.uri, size,
+                ImageFormats.hasDosTextPreview(entry.metadata))
+            ImageFormats.isImage(entry.metadata) -> decoder.decode(entry.uri, size)
+            else -> null
+        }
         val apk = if (custom == null && image == null &&
             com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType) == "application/vnd.android.package-archive")
             resolveApkIcon(entry, size) else null
