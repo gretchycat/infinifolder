@@ -52,7 +52,7 @@ class ResourceIconResolver(context: Context) {
     fun sidecar(uri: Uri, name: String = ""): ResourceEntry? = artworkCache.sidecar(uri, name)
     private fun signature(entry: ResourceEntry): String {
         val sidecar = ResourceIconSidecars.find(entry)
-        return "icons-v2:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:${revision()}:" +
+        return "icons-v3:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:${revision()}:" +
             "${sidecar?.uri}:${sidecar?.metadata?.modifiedAtMillis}:${sidecar?.metadata?.sizeBytes}"
     }
     fun cached(entry: ResourceEntry, size: Int): Icon? {
@@ -123,9 +123,10 @@ class ResourceIconResolver(context: Context) {
                     else decoder.decode(entry.uri,size,registry.rendererExtension(id.mimeType))
                 }
                 IconPolicy.Step.MIME_OVERRIDE -> overrideBitmap(record.overrideIcon,id.mimeType,size)
-                IconPolicy.Step.THEME_MIME -> theme.resolveLogicalIcon(record.iconName,size)
+                IconPolicy.Step.THEME_MIME -> theme.resolveMimeSpecific(id.mimeType,size,record.iconName)
                 IconPolicy.Step.ARCHIVE_FOLDER -> if(archives.inspect(entry.copy(metadata=meta)).browsable)
                     theme.resolveLogicalIcon("folder-archive",size) ?: FileTypeIcons.folder(size,true) else null
+                IconPolicy.Step.GENERATED_TYPE -> FileTypeIcons.bitmap(meta,size,id.mimeType)
                 IconPolicy.Step.THEME_CATEGORY -> theme.resolveMimeDefaults(id.mimeType,size) ?: theme.resolveMimeCategory(id.mimeType,size)
                 IconPolicy.Step.GENERIC -> FileTypeIcons.bitmap(meta,size,id.mimeType)
             }

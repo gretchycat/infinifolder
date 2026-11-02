@@ -537,9 +537,17 @@ class IconThemeManager(private val context: Context) {
         if(id.isNullOrBlank())return null
         val candidates=if(meta.isDirectory)buildFolderIconCandidates(meta.name) else buildMimeIconCandidates(meta)
         val key=revision()
-        return candidates.firstNotNullOfOrNull {firstFrameIcons.get("$key:$it:$size")}
+        return candidates.filterNot { !meta.isDirectory && it in setOf("application-octet-stream","unknown",
+            "text-x-generic","image-x-generic","video-x-generic","audio-x-generic","font-x-generic","package-x-generic") }
+            .firstNotNullOfOrNull {firstFrameIcons.get("$key:$it:$size")}
     }
 
+    /** Broad theme placeholders must not hide the generated MIME/extension label. */
+    fun resolveMimeSpecific(mime:String,size:Int,iconName:String?=null):Bitmap? =
+        (listOfNotNull(iconName)+com.infinifolder.mime.MimeRegistry.iconCandidates(mime)).distinct()
+        .filterNot {it in setOf("application-octet-stream","unknown","text-x-generic","image-x-generic",
+            "video-x-generic","audio-x-generic","font-x-generic","package-x-generic")}
+        .firstNotNullOfOrNull {resolveLogicalIcon(it,size)}
     fun resolveMimeDefaults(mime:String,size:Int):Bitmap? = com.infinifolder.mime.MimeRegistry.iconCandidates(mime)
         .firstNotNullOfOrNull {resolveLogicalIcon(it,size)}
     fun resolveMimeCategory(mime: String, size: Int): Bitmap? {

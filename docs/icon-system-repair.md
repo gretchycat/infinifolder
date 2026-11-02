@@ -273,3 +273,26 @@ icons, and the display path no longer waits for PNG compression or eviction.
 Validation: `gradle :app:assembleDebug --offline --console=plain` (log:
 `build/mime-icon-regression-build.log`). No tests added or run. Device icon-display
 verification remains outstanding; compilation alone does not confirm recovery.
+
+## Generated MIME icons versus generic theme fallbacks
+
+Inspected `build/infinifolder-debug-20261102-060742-355.png` and its matching
+log. The screenshot shows generic theme pages for unsupported extensions and
+text categories rather than the generated labeled icons. The previous rollback
+restored old code but did not address this representation-order problem:
+`resolveMimeDefaults` includes generic keys, so THEME_CATEGORY could always win
+before the procedural GENERIC renderer.
+
+Per the user's clarified rule, only specific theme MIME keys (including office
+and media aliases) precede the generated type icon. Broad `*-x-generic`,
+`application-octet-stream` and `unknown` keys do not suppress procedural MIME or
+extension artwork. Custom image overrides, requested successful thumbnails and
+supported archive-folder representations keep their precedence. MIME registry
+list/editor previews use the same specific-theme lookup. First-frame memory
+lookup no longer flashes generic category artwork; the resolver cache namespace
+was bumped to discard old resolved placeholders.
+
+Build command: `gradle :app:assembleDebug --offline --console=plain`; log:
+`build/generated-mime-fallback-final-build.log`. No tests added or run for this
+follow-up. The supplied screenshot was inspected; the revised APK still needs
+on-device visual confirmation.

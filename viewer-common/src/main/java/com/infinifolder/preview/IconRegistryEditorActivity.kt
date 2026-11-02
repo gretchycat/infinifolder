@@ -48,9 +48,7 @@ class IconRegistryEditorActivity : Activity() {
     private fun mimeArtwork(record:IconRegistry.MimeRecord,size:Int):Artwork {
         val fallback=if(record.iconName=="folder-archive")FileTypeIcons.folder(size,true)
             else FileTypeIcons.bitmap(ResourceMetadata("",record.mimeType,null,null,false),size,record.mimeType)
-        val default=visible(theme.resolveLogicalIcon(record.iconName,size))
-            ?: visible(theme.resolveMimeDefaults(record.mimeType,size))
-            ?: visible(theme.resolveMimeCategory(record.mimeType,size)) ?: fallback
+        val default=visible(theme.resolveMimeSpecific(record.mimeType,size,record.iconName)) ?: fallback
         val override=visible(IconOverrideAssets.decode(filesDir,custom,ThumbnailDecoder(contentResolver),record.overrideIcon,record.mimeType,size))
         return Artwork(default,override,override ?: default)
     }
