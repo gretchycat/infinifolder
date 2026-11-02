@@ -20,6 +20,11 @@ restart/device acceptance remains pending.
 
 ## Confirmed on the handset
 
+- The owner reports the pinned-link icon/name/breadcrumb repairs and embedded
+  image follow-up working (2026-11-02). This confirms the reported workflow;
+  restart persistence, cross-backend copies, multi-file drops and read-only
+  behavior remain separate acceptance checks.
+
 - ANSI music playback in the dedicated CP437 viewer is user-confirmed working
   (2026-11-02). Sound's current synthesizer uses a PC-speaker-style square wave.
   A less harsh waveform is deferred to the [to-do list](feature-todo.md#ansi-music).

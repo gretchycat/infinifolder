@@ -142,6 +142,8 @@ link JSON and icon precedence remain compatible; no new link-file format exists.
 
 Validation: `gradle :app:assembleDebug --offline --console=plain`; logs under
 `build/pinned-link-repair/`. Handset display, picker return, copy/reopen, clear,
-restart and breadcrumb/hover acceptance remain pending: ADB has no connected
-device. The previous 942-test gate predates this follow-up and is not new evidence
-for its UI behavior.
+restart and breadcrumb/hover checks were not performed by the agent: ADB has no
+connected device. The owner subsequently reports the current follow-up working
+(2026-11-02); copy/reopen, restart and backend/hover variants were not individually
+confirmed. The previous 942-test gate predates this follow-up and is not new
+evidence for its UI behavior.

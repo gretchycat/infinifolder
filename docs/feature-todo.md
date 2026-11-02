@@ -117,6 +117,11 @@ FTP status: the user reports that FTP is functioning after testing. The earlier 
 
 ## Persistent pinned container targets
 
+The owner reports the pinned-link presentation/navigation and embedded-image
+follow-up working (2026-11-02). The implementation checks below retain their
+broader handset-acceptance notes; restart, copied-link portability and backend/drop
+variants were not individually confirmed.
+
 - [x] Hold a URI-backed breadcrumb and drag it into the file area to create an `.iflink` to that location in the displayed directory. The breadcrumb drag ignores selected files, never moves its source, and uses the existing link writer and collision handling. Releasing a held breadcrumb without dragging retains its pin menu. Device acceptance is pending.
 
 Pinning was introduced 2026-10-23 and made persistent 2026-11-02. Pin/unpin updates
