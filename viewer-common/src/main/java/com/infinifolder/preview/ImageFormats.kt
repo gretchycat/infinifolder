@@ -48,7 +48,7 @@ object ImageFormats {
         // HDR, GPU textures, astronomy FITS, medical DICOM
         "hdr", "exr", "dds", "ktx", "fits", "fit", "fts", "dcm", "dicom",
         // Windows Metafiles, PostScript/EPS, and ANSI Art
-        "wmf", "wmz", "ps", "eps", "ept", "ans"
+        "wmf", "wmz", "ps", "eps", "ept", "ans", "rip"
     )
 
     fun extension(name: String): String = name.substringAfterLast('.', "").lowercase()
