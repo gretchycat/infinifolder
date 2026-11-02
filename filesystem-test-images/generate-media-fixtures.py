@@ -6,6 +6,7 @@ Generates comprehensive image and audio format test fixtures in:
 """
 
 import gzip
+import argparse
 import hashlib
 import json
 import math
@@ -445,14 +446,16 @@ def write_wmf_and_emf(rgba: bytes, w: int, h: int):
 
 
 def write_ansi_art_icon(src_png: Path):
-    # 64x32 pixel icon rendered as 64x16 rows of CP437 upper-half block (0xDF) with 24-bit ANSI SGR + SAUCE00
-    rgba = get_raw_rgba(src_png, 64, 32)
+    # Square 80x80 image: 80 columns x 40 rows of 8x16 upper-half block cells.
+    # Per-cell truecolour deliberately exceeds a short text-preview prefix.
+    cols, rows = 80, 40
+    rgba = get_raw_rgba(src_png, cols, rows * 2)
     lines = []
-    for row in range(0, 32, 2):
+    for row in range(0, rows * 2, 2):
         parts = []
-        for x in range(64):
-            top = (row * 64 + x) * 4
-            bot = ((row + 1) * 64 + x) * 4
+        for x in range(cols):
+            top = (row * cols + x) * 4
+            bot = ((row + 1) * cols + x) * 4
             tr, tg, tb = rgba[top], rgba[top + 1], rgba[top + 2]
             br, bg, bb = rgba[bot], rgba[bot + 1], rgba[bot + 2]
             parts.append(f"\x1b[38;2;{tr};{tg};{tb};48;2;{br};{bg};{bb}m".encode("ascii") + b"\xdf")
@@ -469,12 +472,12 @@ def write_ansi_art_icon(src_png: Path):
     struct.pack_into("<I", sauce, 90, len(body))
     sauce[94] = 1   # DataType = Character
     sauce[95] = 1   # FileType = ANSi
-    struct.pack_into("<HH", sauce, 96, 64, 16)  # TInfo1=width(64), TInfo2=height(16)
+    struct.pack_into("<HH", sauce, 96, cols, rows)
     sauce[106:128] = b"IBM VGA\x00" + b"\x00" * 14
     (IMAGES_DIR / "icon.ans").write_bytes(body + b"\x1a" + bytes(sauce))
 
 
-def generate_all_images():
+def generate_all_images(linear_float_only=False):
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     # 1. ImageMagick batch conversions from ICON_SOURCE (192x192)
     im_targets = [
@@ -509,7 +512,8 @@ def generate_all_images():
         ("icon.ppm", []),
         ("icon.pnm", []),
         ("icon.pam", []),
-        ("icon.pfm", []),
+        # Floating-point fixtures contain scene-linear RGB, not normalized sRGB samples.
+        ("icon.pfm", ["-colorspace", "RGB"]),
         ("icon.xbm", ["-resize", "64x64", "-monochrome"]),
         ("icon.xpm", ["-resize", "64x64", "-colors", "32"]),
         ("icon.xwd", ["-resize", "64x64"]),
@@ -520,7 +524,7 @@ def generate_all_images():
         ("icon.ase", ["ASE:"]),
         ("icon.aseprite", ["ASEPRITE:"]),
         ("icon.hdr", ["HDR:"]),
-        ("icon.exr", ["EXR:"]),
+        ("icon.exr", ["-colorspace", "RGB", "-compress", "None", "EXR:"]),
         ("icon.dds", ["DDS:"]),
         ("icon.fits", ["-colorspace", "Gray", "FITS:"]),
         ("icon.ras", ["RAS:"]),
@@ -539,6 +543,8 @@ def generate_all_images():
     ]
 
     for filename, extra in im_targets:
+        if linear_float_only and filename not in ("icon.pfm", "icon.exr"):
+            continue
         out_path = IMAGES_DIR / filename
         if extra and extra[-1].endswith(":"):
             prefix = extra[-1]
@@ -548,6 +554,9 @@ def generate_all_images():
             opts = extra
             target_arg = str(out_path)
         run_cmd(["magick", str(ICON_SOURCE), *opts, target_arg])
+
+    if linear_float_only:
+        return
 
     # Clean vector SVG & SVGZ embedding the icon graphic + vector badge frame
     png_128 = IMAGES_DIR / "icon.png"
@@ -1547,6 +1556,30 @@ def write_manifest():
 
 
 if __name__ == "__main__":
-    generate_all_images()
-    generate_all_audio()
-    write_manifest()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--linear-float-images-only", action="store_true",
+                        help="Regenerate only icon.pfm/icon.exr with linear-light RGB and update their manifest entries")
+    parser.add_argument("--ansi-image-only", action="store_true",
+                        help="Regenerate icon.ans as 80 columns by 40 rows and update its manifest entry")
+    args = parser.parse_args()
+    if args.linear_float_images_only or args.ansi_image_only:
+        names = []
+        if args.linear_float_images_only:
+            generate_all_images(linear_float_only=True)
+            names.extend(("icon.pfm", "icon.exr"))
+        if args.ansi_image_only:
+            write_ansi_art_icon(ICON_SOURCE)
+            names.append("icon.ans")
+        manifest_path = FIXTURES_DIR / "media-fixtures-manifest.json"
+        manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {"images": {}, "audio": {}}
+        images = manifest.setdefault("images", {})
+        for name in names:
+            data = (IMAGES_DIR / name).read_bytes()
+            record = images.setdefault(name, {})
+            record.update(size_bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        print(f"Regenerated {', '.join(names)}; updated their manifest entries")
+    else:
+        generate_all_images()
+        generate_all_audio()
+        write_manifest()

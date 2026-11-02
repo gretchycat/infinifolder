@@ -1,8 +1,8 @@
 {
   "images": {
     "icon.ans": {
-      "size_bytes": 32702,
-      "sha256": "39bb43141ab8a20b2b278a085158a5669ccedf937b9ae6b83fad505ca85f6613"
+      "size_bytes": 101410,
+      "sha256": "804933f974bfe37f96f5c7dfef99a45d2abb4b599380731fd79cbb5140c23a90"
     },
     "icon.apng": {
       "size_bytes": 36449,
@@ -58,7 +58,7 @@
     },
     "icon.exr": {
       "size_bytes": 298315,
-      "sha256": "272cf65cece362c2c6d58a31efffd87f5d7dbe74db545e04dfd3683680f4253e"
+      "sha256": "af83bef703a2e3d12ea3b5ba4e1b40c86ac36bbb7f74d418851a89f42780509c"
     },
     "icon.ff": {
       "size_bytes": 294928,
@@ -190,7 +190,7 @@
     },
     "icon.pfm": {
       "size_bytes": 442383,
-      "sha256": "f8c2b1e9939320bb7fae67d92fa7b8aa46b31b3b5408d9fef2eaefdcaab9b8d7"
+      "sha256": "748e1b60ce45a2a9f1030da2baff561142a68fa14ab6257a9bc9c038f1708ad0"
     },
     "icon.pgm": {
       "size_bytes": 36879,

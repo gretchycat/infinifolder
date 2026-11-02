@@ -33,6 +33,7 @@ class ImageViewerActivity : ViewerActivity() {
     private lateinit var editQuillBtn: ImageView
     private lateinit var slideshowBtn: TextView
     private lateinit var repeatBtn: TextView
+    private val imageSystemInsets=android.graphics.Rect()
 
     private var currentUri: Uri? = null
     private var parentFolderUri: Uri? = null
@@ -327,11 +328,16 @@ class ImageViewerActivity : ViewerActivity() {
             val top = safe?.top ?: insets.systemWindowInsetTop
             val right = safe?.right ?: insets.systemWindowInsetRight
             val bottom = safe?.bottom ?: insets.systemWindowInsetBottom
+            imageSystemInsets.set(left,top,right,bottom)
             topBar.setPadding(basePad + left, basePad + top, basePad + right, basePad)
             bottomBar.setPadding(basePad + left, basePad, basePad + right, basePad + bottom)
             editPanel.setPadding(basePad + left, basePad, basePad + right, basePad + bottom)
+            updateImageViewport()
             insets
         }
+
+        val viewportListener=View.OnLayoutChangeListener { _,_,_,_,_,_,_,_,_ -> updateImageViewport() }
+        listOf<View>(zoomImageView,topBar,bottomBar,editPanel).forEach {it.addOnLayoutChangeListener(viewportListener)}
 
         setContentView(root)
     }
@@ -394,6 +400,14 @@ class ImageViewerActivity : ViewerActivity() {
         editPanel.addView(actionRow)
     }
 
+    private fun updateImageViewport() {
+        if(zoomImageView.width<=0 || zoomImageView.height<=0)return
+        val top=if(topBar.visibility==View.VISIBLE && topBar.height>0)topBar.bottom-zoomImageView.top else 0
+        fun bottomInset(menu:View)=if(menu.visibility==View.VISIBLE && menu.height>0)zoomImageView.bottom-menu.top else 0
+        zoomImageView.setViewportInsets(imageSystemInsets.left,maxOf(imageSystemInsets.top,top),
+            imageSystemInsets.right,maxOf(imageSystemInsets.bottom,bottomInset(bottomBar),bottomInset(editPanel)))
+    }
+
     private fun toggleEditMode() {
         isEditMode = !isEditMode
         if (isEditMode) {
@@ -401,6 +415,7 @@ class ImageViewerActivity : ViewerActivity() {
             bottomBar.visibility = View.GONE
             editPanel.visibility = View.VISIBLE
             zoomImageView.isCropMode = false
+            updateImageViewport()
         } else {
             if (hasUnsavedEdits) {
                 AlertDialog.Builder(this)
@@ -428,11 +443,13 @@ class ImageViewerActivity : ViewerActivity() {
         zoomImageView.isGrayscale = false
         editPanel.visibility = View.GONE
         bottomBar.visibility = View.VISIBLE
+        updateImageViewport()
         zoomImageView.setImageBitmap(originalBitmap)
         zoomImageView.resetZoom()
     }
 
     private fun startCrop(aspectW: Float = 0f, aspectH: Float = 0f) {
+        updateImageViewport()
         zoomImageView.setCropViewportInsets(
             if (topBar.visibility == View.VISIBLE) topBar.bottom - zoomImageView.top else 0,
             if (editPanel.visibility == View.VISIBLE) zoomImageView.bottom - editPanel.top else 0)
@@ -875,6 +892,7 @@ class ImageViewerActivity : ViewerActivity() {
         val vis = if (isBarsVisible) View.VISIBLE else View.GONE
         topBar.visibility = vis
         bottomBar.visibility = vis
+        updateImageViewport()
     }
 
     override fun onBackPressed() {

@@ -24,6 +24,10 @@ class ZoomImageView @JvmOverloads constructor(
     private val drawMatrix = Matrix()
 
     private var resetPending = false
+    private var viewportLeft=0
+    private var viewportTop=0
+    private var viewportRight=0
+    private var viewportBottom=0
     private var cropTopInset = 0
     private var cropBottomInset = 0
     private var scaleFactor = 1f
@@ -79,8 +83,8 @@ class ZoomImageView @JvmOverloads constructor(
             drawMatrix.postScale(
                 scaleFactor / prevScale,
                 scaleFactor / prevScale,
-                detector.focusX,
-                detector.focusY
+                detector.focusX.coerceIn(viewport().left,viewport().right),
+                detector.focusY.coerceIn(viewport().top,viewport().bottom)
             )
             checkBounds()
             publishMatrix()
@@ -159,14 +163,51 @@ class ZoomImageView @JvmOverloads constructor(
         if (rect == null) setEmpty() else set(rect.left, rect.top, rect.right, rect.bottom)
     }
 
-    private fun viewport() = ViewportRect(0f, 0f, width.toFloat(), height.toFloat())
+    private fun viewport():ViewportRect {
+        val left=viewportLeft.coerceAtMost(width).toFloat()
+        val top=viewportTop.coerceAtMost(height).toFloat()
+        return ViewportRect(left,top,(width-viewportRight).toFloat().coerceAtLeast(left),
+            (height-viewportBottom).toFloat().coerceAtLeast(top))
+    }
+
+    /** Excludes menus/system bars from fitting, panning, drawing and gesture starts. */
+    fun setViewportInsets(left:Int,top:Int,right:Int,bottom:Int) {
+        val l=left.coerceAtLeast(0);val t=top.coerceAtLeast(0)
+        val r=right.coerceAtLeast(0);val b=bottom.coerceAtLeast(0)
+        if(l==viewportLeft && t==viewportTop && r==viewportRight && b==viewportBottom)return
+        val before=viewport()
+        viewportLeft=l;viewportTop=t;viewportRight=r;viewportBottom=b
+        val after=viewport()
+        val d=drawable
+        if(resetPending || scaleFactor==1f || d==null || !before.valid || !after.valid) {
+            resetZoom()
+            return
+        }
+        val rotated=RectF(0f,0f,d.intrinsicWidth.toFloat(),d.intrinsicHeight.toFloat())
+        Matrix().apply {postRotate(rotationAngle);mapRect(rotated)}
+        val oldPlacement=ImageViewportGeometry.placement(rotated.geometry(),before,isFitMode)
+        val newPlacement=ImageViewportGeometry.placement(rotated.geometry(),after,isFitMode)
+        if(oldPlacement==null || newPlacement==null) {resetZoom();return}
+        // Preserve the central image point and zoom relative to the fitted scene.
+        val ratio=newPlacement.scale/oldPlacement.scale
+        drawMatrix.postScale(ratio,ratio,before.centerX,before.centerY)
+        drawMatrix.postTranslate(after.centerX-before.centerX,after.centerY-before.centerY)
+        checkBounds()
+        publishMatrix()
+        if(isCropMode)initCropRect()
+        recordViewport("active-area")
+    }
 
     private fun mappedImageBounds(): RectF? {
         val d = drawable ?: return null
         return RectF(0f, 0f, d.intrinsicWidth.toFloat(), d.intrinsicHeight.toFloat()).also { drawMatrix.mapRect(it) }
     }
 
-    private fun cropViewport() = ViewportRect(0f, cropTopInset.toFloat(), width.toFloat(), (height - cropBottomInset).toFloat())
+    private fun cropViewport():ViewportRect {
+        val area=viewport()
+        return ViewportRect(area.left,maxOf(area.top,cropTopInset.toFloat()),area.right,
+            minOf(area.bottom,(height-cropBottomInset).toFloat()))
+    }
 
     fun setCropViewportInsets(top: Int, bottom: Int) {
         cropTopInset = top.coerceAtLeast(0)
@@ -251,7 +292,7 @@ class ZoomImageView @JvmOverloads constructor(
         com.infinifolder.storage.DiagnosticLog.record("ui.image.viewport",
             "reason=$reason view=${width}x$height drawable=${drawable?.intrinsicWidth}x${drawable?.intrinsicHeight} " +
                 "rotation=$rotationAngle fit=$isFitMode pending=$resetPending matrix=${values.contentToString()} " +
-                "mapped=${mappedImageBounds()} crop=$cropRect cropViewport=${cropViewport()}")
+                "mapped=${mappedImageBounds()} activeViewport=${viewport()} crop=$cropRect cropViewport=${cropViewport()}")
     }
 
     /** UI maps the display rectangle; Canvas owns source-pixel clamping and cropping. */
@@ -288,6 +329,10 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if(event.actionMasked==MotionEvent.ACTION_DOWN) {
+            val area=viewport()
+            if(!area.valid || event.x<area.left || event.x>=area.right || event.y<area.top || event.y>=area.bottom)return false
+        }
         if (isCropMode) {
             handleCropTouch(event)
             return true
@@ -333,6 +378,10 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     override fun onDraw(canvas: Canvas) {
+        val area=viewport()
+        if(!area.valid)return
+        val saved=canvas.save()
+        canvas.clipRect(area.left,area.top,area.right,area.bottom)
         super.onDraw(canvas)
         if (isCropMode && cropRect.width() > 0 && cropRect.height() > 0) {
             // Draw shaded mask outside crop rect
@@ -350,5 +399,6 @@ class ZoomImageView @JvmOverloads constructor(
             canvas.drawCircle(cropRect.right, cropRect.bottom, HANDLE_RADIUS / 2f, cropHandlePaint)
             canvas.drawCircle(cropRect.left, cropRect.bottom, HANDLE_RADIUS / 2f, cropHandlePaint)
         }
+        canvas.restoreToCount(saved)
     }
 }

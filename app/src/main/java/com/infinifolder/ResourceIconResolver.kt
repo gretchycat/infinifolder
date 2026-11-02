@@ -62,7 +62,7 @@ class ResourceIconResolver(context: Context) {
         val covers=if(entry.metadata.isDirectory)ResourceIconSidecars.directory(entry)?.candidates.orEmpty().joinToString {
             "${it.uri}:${it.metadata.modifiedAtMillis}:${it.metadata.sizeBytes}"
         } else ""
-        return "icons-v5:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
+        return "icons-v6:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
             "${sidecar?.uri}:${sidecar?.metadata?.modifiedAtMillis}:${sidecar?.metadata?.sizeBytes}:$covers"
     }
     fun cached(entry: ResourceEntry, size: Int): Icon? {

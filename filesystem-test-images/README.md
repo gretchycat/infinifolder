@@ -269,6 +269,29 @@ The standard-library generator preserves existing files and unrelated manifest
 entries, including edited document fixtures.
 
 
+## Regenerating ANSI and floating-point conversions
+
+`images/icon.ans` is an 80-column, 40-row truecolour CP437 conversion of the app icon
+with SAUCE dimensions, occupying a square 640x640 terminal surface. Its colour
+sequences exceed 16 KiB, so a short byte prefix cannot represent the complete art.
+Regenerate just that conversion and its manifest entry with:
+
+```sh
+python3 filesystem-test-images/generate-media-fixtures.py --ansi-image-only
+```
+
+`images/icon.pfm` and `icon.exr` contain linear-light RGB converted from the source
+PNG. The earlier conversions stored encoded sRGB channel values as float samples,
+which lifted midtones when the viewer applied its display transform. Regenerate
+only these conversions and their manifest entries with:
+
+```sh
+python3 filesystem-test-images/generate-media-fixtures.py --linear-float-images-only
+```
+
+EXR highlight tone mapping remains part of the viewer, so it need not exactly
+match the PNG. These options preserve other fixtures and manifest entries.
+
 ## Image edit fixtures
 
 `images/sample-image-edits.png` labels four colored corners. Independent expected
