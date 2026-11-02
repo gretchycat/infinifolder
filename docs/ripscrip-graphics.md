@@ -38,8 +38,9 @@ Bitmap fonts retain their bitmap shapes in both modes.
 - Escaped delimiters/backslashes and continued physical lines.
 
 This is a **partial static RIPscrip 1.54 implementation**, not a RIPterm emulator.
-A missing/corrupt stroke font uses a reported CP437 fallback. Styled buttons, formatted text regions, external ICN
-assets/scenes and later RIP versions are not implemented. Unsupported commands
+A missing/corrupt stroke font uses a reported CP437 fallback. Static button styles
+and labels now have best-effort rendering. Formatted text regions, external ICN
+asset loading/scenes, interactive BBS behavior and later RIP versions remain unsupported. Unsupported commands
 are reported in frame warnings; the viewer labels partial rendering and displays
 a warning. Invalid parameters, files without supported commands and exceeded
 limits fail decoding. No session replies, external file loads or BBS commands
@@ -150,3 +151,43 @@ Validation: app debug build passed; `build/rip-text-window-build.log` and
 `build/rip-text-window-final-build.log`. No tests were added or run. The new build
 still needs device checks against the seven original art files; other unsupported
 operations listed above remain unsupported.
+
+## BANG_RIP archive: best-effort recovery
+
+Inspected `build/infinifolder-debug-20261102-054304-984.{log,json,png}` and all
+12 RIP sources in the user's Download/BANG_RIP.ZIP. The screenshot shows a failed
+NUKE.RIP decode; the log identifies `1B/1U` button styling/instances and `1I`
+external icons in other scenes. The archive is not uniformly corrupt:
+
+- NUKE.RIP includes `p03DH84`, declaring a three-vertex polygon with only one
+  vertex supplied. Previously that aborted the entire scene.
+- COMMENT.RIP includes `w00000$0$10`, with non-MegaNum/unresolved window fields.
+- FILEALL, MAINALL and MESSALL reference LORDNEWW, LORDDRAG.ICN and LORDWIZ2.
+  None of those external ICN images is present in this archive. Its F.EXE is
+  described by the author's documentation as a DOS viewer; it was not executed.
+- POSTRIP starts with the documented SOH alternative RIP command prefix, which
+  the renderer previously treated as ordinary TTY text.
+
+The renderer now recovers from malformed command arguments, keeps the remaining
+scene and emits a visible/logged partial-render warning. Command/work/time and
+cancellation limits remain fatal, rather than being swallowed by recovery.
+Deadline checks are amortized across pixel work to reduce overhead on fill-heavy
+scenes. SOH/STX command prefixes are recognized, including after a TTY prefix.
+
+Static `1B/1U` button rendering includes base panels, labels, outside bevels,
+recessed/sunken effects, best-effort chisel decoration, selected appearance,
+label shadows, label placement/justification, hotkey highlighting/underlining and
+existing clipboard button imagery. It preserves graphics drawing state. This
+renders menus as pictures; no BBS commands or interactive host actions execute.
+Automatic button clipboard capture still warns as unsupported.
+
+External `1I` references remain unavailable: the prescribed missing-art box is
+rendered with a filename and a warning. No substitute artwork is fabricated and
+no external paths are opened. The same marker is used for icon-button references.
+Some screen details cannot be recovered without the missing original assets or
+host-substituted fields. Other unsupported commands remain explicit warnings.
+
+Validation: `gradle :app:assembleDebug --offline --console=plain` succeeded.
+Logs: `build/rip-bang-recovery-build.log` and `build/rip-bang-recovery-final.log`.
+No tests were added or run. This is source/dump-based repair; rendering the new
+build against the BANG_RIP and original DWM sets on-device remains unverified.
