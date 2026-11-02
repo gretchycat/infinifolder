@@ -262,7 +262,6 @@ class MainActivity : Activity(), DebugDumpObserver {
     private data class DragNavigationTarget(val destination: Uri, val name: String, val sourceUri: Uri,
         val kind: String, val open: () -> Unit)
     private val dragNavigationTargets = java.util.WeakHashMap<View, DragNavigationTarget>()
-    private data class PinnedContainer(val entry: ResourceEntry, val destination: Uri)
     private val pinnedContainers = mutableListOf<PinnedContainer>()
     private lateinit var pinnedContainerBar: HorizontalScrollView
     private lateinit var pinnedContainerContent: LinearLayout
@@ -528,6 +527,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         com.infinifolder.storage.StorageActivity.addListener(storageActivityListener)
         operations.addListener(operationsListener)
         shared = getSharedPreferences("browser", MODE_PRIVATE)
+        pinnedContainers.addAll(PinnedContainerPreferences(shared).load())
         isOperationWindowHidden = savedInstanceState?.getBoolean("operation_window_hidden", false) ?: false
         grid = shared.getBoolean("grid", true); sortByName = shared.getBoolean("sort_name", true)
         sortKey = shared.getString("sort_key", if (sortByName) "name" else "modified") ?: "name"
@@ -6960,12 +6960,14 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun pinContainer(entry: ResourceEntry, destination: Uri) {
         if (!isContainerPinned(destination)) {
             pinnedContainers += PinnedContainer(entry, destination)
+            PinnedContainerPreferences(shared).save(pinnedContainers)
             renderPinnedContainers()
         }
     }
 
     private fun unpinContainer(destination: Uri) {
         pinnedContainers.removeAll { sameResourceUri(it.destination, destination) }
+        PinnedContainerPreferences(shared).save(pinnedContainers)
         renderPinnedContainers()
     }
 

@@ -115,11 +115,15 @@ See [document rendering roadmap](roadmap.md#paged-documents-and-office-formats).
 
 FTP status: the user reports that FTP is functioning after testing. The earlier unique-file creation `502` error remains historical evidence, rather than a currently reproduced blocker. Revisit it if it recurs.
 
-## Temporary pinned container targets
+## Persistent pinned container targets
 
 - [x] Hold a URI-backed breadcrumb and drag it into the file area to create an `.iflink` to that location in the displayed directory. The breadcrumb drag ignores selected files, never moves its source, and uses the existing link writer and collision handling. Releasing a held breadcrumb without dragging retains its pin menu. Device acceptance is pending.
 
-Implemented 2026-10-23; handset acceptance is pending. Pins are kept in Activity memory for the current session and survive handled orientation changes, but are not saved as permanent bookmarks.
+Pinning was introduced 2026-10-23 and made persistent 2026-11-02. Pin/unpin updates
+browser preferences immediately; startup restores the ordered resource identities,
+source/destination URIs and labels before drawing the bar. Stored pins do not
+create grants or alter backend permissions. Malformed records are skipped
+individually without discarding valid pins. Restart/device acceptance is pending.
 
 - [x] Allow a browsable container to be pinned: a directory, archive, disk-image folder, or another supported storage container.
 - [x] Display pinned targets as icons in a row between the action bar and the breadcrumbs.
