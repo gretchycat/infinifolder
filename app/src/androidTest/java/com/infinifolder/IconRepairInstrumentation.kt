@@ -108,6 +108,9 @@ Context=MimeTypes
             check(icon(File(fixture,"01-corrupt")).source=="directory-icon")
             check(icon(File(fixture,"01-corrupt")).bitmap!!.getPixel(8,8)==Color.BLUE)
             completed+="real-listing-cover-and-corrupt-fallthrough"
+            check(icon(File(fixture,"image.png")).source=="thumbnail")
+            check(icon(File(fixture,"image.png")).bitmap!!.getPixel(8,8)==Color.RED)
+            registry.save(registry.mime("image/png").copy(overrideImageIcon=true));refresh()
             val initial=icon(File(fixture,"image.png"));check(initial.source=="theme_mime");check(initial.bitmap!!.getPixel(8,8)==Color.GREEN)
             check(icon(File(fixture,"extensionless")).mimeType=="image/png")
             completed+="default-image-mode-and-extensionless-magic"

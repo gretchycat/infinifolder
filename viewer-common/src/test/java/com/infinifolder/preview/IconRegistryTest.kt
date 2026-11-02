@@ -8,11 +8,11 @@ import org.junit.rules.TemporaryFolder
 
 class IconRegistryTest {
     @get:Rule val temp=TemporaryFolder()
-    @Test fun newImagesDefaultToMimeIconsAndTextNeverBecomesAnImage() {
+    @Test fun newImagesDefaultToContentIconsAndTextNeverBecomesAnImage() {
         val registry=IconRegistry.at(temp.root)
         for(mime in listOf("image/png","image/jpeg","image/svg+xml","image/x-ansi","text/x-diz")) {
             assertTrue(mime,registry.mime(mime).isImage)
-            assertTrue(mime,registry.mime(mime).overrideImageIcon)
+            assertFalse(mime,registry.mime(mime).overrideImageIcon)
         }
         assertFalse(registry.mime("text/plain").isImage)
     }
@@ -55,7 +55,7 @@ class IconRegistryTest {
     @Test fun unreadableRegistryIsNotOverwritten() {
         val file=temp.newFile("broken.json");file.writeText("unfinished {")
         val registry=IconRegistry(file)
-        assertTrue(registry.mime("image/png").overrideImageIcon)
+        assertFalse(registry.mime("image/png").overrideImageIcon)
         assertNotNull(registry.readError)
         try {registry.save(registry.mime("image/png"));fail("Must preserve corrupt file for recovery")}catch(_:IllegalStateException){}
         assertEquals("unfinished {",file.readText())

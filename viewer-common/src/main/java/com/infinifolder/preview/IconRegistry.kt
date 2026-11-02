@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
 /** Persistent icon/association settings. Unknown JSON fields survive every update. */
 class IconRegistry(private val file: File) {
     data class MimeRecord(val mimeType: String, val extensions: Set<String>, val iconName: String,
-        val overrideIcon: String? = null, val isImage: Boolean = false, val overrideImageIcon: Boolean = true)
+        val overrideIcon: String? = null, val isImage: Boolean = false, val overrideImageIcon: Boolean = !isImage)
     data class UriRule(val id: String, val exactUri: String? = null, val scheme: String = "",
         val authority: String = "", val pathPrefix: String = "", val iconName: String = "",
         val overrideIcon: String? = null)
@@ -28,17 +28,34 @@ class IconRegistry(private val file: File) {
             readError="Cannot read saved icon registry: ${it.message}";JSONObject()
         } else JSONObject()
         loadedStamp = stamp
+        // One-time user-requested switch of existing image entries to content icons.
+        // Only the image-mode field changes; later individual edits remain authoritative.
+        if (readError == null && !root.optBoolean("imageContentIconsEnabled", false)) {
+            val records = recordsJson()
+            for (key in (builtins.keys + records.keys().asSequence().toList()).distinct()) {
+                val saved = records.optJSONObject(key)
+                val renderable = if (saved?.has("isImage") == true) saved.optBoolean("isImage") else builtins[key]?.isImage == true
+                if (renderable || key.startsWith("image/")) {
+                    val entry = saved ?: JSONObject()
+                    entry.put("overrideImageIcon", false)
+                    records.put(key, entry)
+                }
+            }
+            root.put("imageContentIconsEnabled", true)
+            persist()
+        }
     }
     val revision: Long get() = synchronized(lock) { load(); root.optLong("revision", 0) }
     private fun recordsJson() = root.optJSONObject("mime") ?: JSONObject().also { root.put("mime", it) }
     fun mime(mime: String): MimeRecord = synchronized(lock) {
         load(); val key = MimeRegistry.normalize(mime); val built = builtins[key]
         val json = recordsJson().optJSONObject(key)
+        val renderable = if (json?.has("isImage") == true) json.optBoolean("isImage") else built?.isImage ?: false
         MimeRecord(key, json?.optJSONArray("extensions")?.strings()?.toSet() ?: built?.extensions.orEmpty(),
             json?.optString("iconName", built?.iconName ?: defaultIcon(key)) ?: built?.iconName ?: defaultIcon(key),
             json?.optString("overrideIcon")?.takeIf { it.isNotBlank() },
-            if (json?.has("isImage") == true) json.optBoolean("isImage") else built?.isImage ?: false,
-            if (json?.has("overrideImageIcon") == true) json.optBoolean("overrideImageIcon") else true)
+            renderable,
+            if (json?.has("overrideImageIcon") == true) json.optBoolean("overrideImageIcon") else !(key.startsWith("image/") || renderable))
     }
     fun rendererExtension(mime:String):String? = builtins[MimeRegistry.normalize(mime)]?.extensions
         ?.filter {it in ImageFormats.decodableExtensions}?.sorted()?.firstOrNull()

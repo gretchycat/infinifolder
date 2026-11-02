@@ -25,7 +25,7 @@ class IconIdentityPolicyTest {
         assertEquals(3,probes)
     }
     @Test fun overrideAndThumbnailOrderingMatchesCheckboxMeaning() {
-        val base=IconRegistry.MimeRecord("image/png",setOf("png"),"image-png",overrideIcon="uri_icons/icon.png",isImage=true)
+        val base=IconRegistry.MimeRecord("image/png",setOf("png"),"image-png",overrideIcon="uri_icons/icon.png",isImage=true,overrideImageIcon=true)
         assertEquals(IconPolicy.Step.MIME_OVERRIDE,IconPolicy.steps(base).first())
         assertEquals(listOf(IconPolicy.Step.THUMBNAIL,IconPolicy.Step.MIME_OVERRIDE),IconPolicy.steps(base.copy(overrideImageIcon=false)).take(2))
         assertFalse(IconPolicy.steps(base.copy(isImage=false,overrideImageIcon=false)).contains(IconPolicy.Step.THUMBNAIL))

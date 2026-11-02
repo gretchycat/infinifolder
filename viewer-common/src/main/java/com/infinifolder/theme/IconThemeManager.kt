@@ -93,6 +93,16 @@ class IconThemeManager(private val context: Context) {
         }
     }
 
+    /** Preview another theme without changing the user's active theme. Call on a worker. */
+    fun previewThemeIcon(themeId: String, iconName: String, size: Int): Bitmap? {
+        val themes = listAvailableThemes()
+        val info = themes.firstOrNull { it.id == themeId } ?: return null
+        val theme = themeCache.getOrPut(info.id) {
+            FreeDesktopIconTheme(info) { resolveInheritedTheme(it, themes) }
+        }
+        return theme.getIconBitmap(iconName, size)
+    }
+
     private fun resolveInheritedTheme(inheritName: String, allThemes: List<IconThemeInfo>): FreeDesktopIconTheme? {
         val found = allThemes.firstOrNull { it.id.equals(inheritName, ignoreCase = true) || it.name.equals(inheritName, ignoreCase = true) }
             ?: return null

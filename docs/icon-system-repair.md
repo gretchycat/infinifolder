@@ -145,3 +145,27 @@ rapid scrolling, tree/overlay/search parity, live HTTP favicon/offline behavior,
 permission-denied content providers, inaccessible/slow network directory covers,
 and long-press behavior on a device. Archive-backed storage is covered by the
 prepared native suite; live SMB/SFTP/provider behavior has not been verified.
+
+## Follow-up: image defaults and Settings access
+
+The user subsequently requested content icons for all image MIME types. This
+supersedes the original default-true requirement above: renderable image entries
+now default to `overrideImageIcon=false`. A one-time
+`imageContentIconsEnabled` migration changes only that field for existing image
+entries (including supported art), retaining icon overrides, associations and
+unknown fields. Later per-MIME edits remain authoritative. Unsupported rendering
+still falls back to the MIME icon.
+
+Settings now exposes **MIME and URI icon registry…**, **Browse icon themes…** and
+**Import freedesktop.org icon theme…**. The existing archive importer remains the
+implementation. The installed-theme browser filters by name and shows actual
+folder/text/image/PDF/archive artwork without changing the active theme. Applying
+a theme preserves MIME/URI overrides. This browses installed/bundled/system
+themes; it is not an online theme catalog. Device UI verification remains pending.
+
+Follow-up validation: `gradle :app:assembleDebug :viewer-common:testDebugUnitTest
+:app:testDebugUnitTest --offline --console=plain` passed (116 common and 17 app
+tests). The native acceptance APK also rebuilt successfully. Logs:
+`build/icon-settings-final.log` and `build/icon-settings-build.log`. The existing
+acceptance fixture now checks the default thumbnail before exercising the MIME
+icon toggle; the suite still awaits a device.

@@ -8192,6 +8192,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                 action("Clear selection", selectable) { selectedUris.clear(); renderCurrentContents(); updateListingStatus() }
             )),
             submenu("Settings", listOf(
+                action("MIME and URI icon registry…") { startActivity(Intent(this, com.infinifolder.preview.IconRegistryEditorActivity::class.java)) },
+                action("Browse icon themes…") { showIconThemeDialog() },
+                action("Import freedesktop.org icon theme…") { showImportThemeOptionsDialog() },
                 action("Termux file associations…") { TermuxAssociationSettings.show(this) },
                 action("Common locations…") { showCommonLocationsSettings() },
                 action("Copy verification: ${if (shared.getBoolean("verify_copies", true)) "on" else "off"}…") { showCopyVerificationSettings() },
@@ -8523,44 +8526,88 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             return
         }
-        val availableThemes = iconThemeManager.listAvailableThemes()
-        val activeId = iconThemeManager.getActiveThemeId()
-
-        val themeItems = mutableListOf<IconThemeInfo?>()
-        themeItems.add(null) // null = default system emojis
-        themeItems.addAll(availableThemes)
-
-        var selectedIndex = themeItems.indexOfFirst {
-            if (it == null) activeId.isNullOrBlank() else it.id == activeId || it.name.equals(activeId, true)
-        }.coerceAtLeast(0)
-
-        val itemLabels = themeItems.map { theme ->
-            if (theme == null) {
-                "Default (InfiniFolder Emojis)"
-            } else {
-                val origin = if (theme.isSystem) "System / Termux" else "Imported"
-                "${theme.name} ($origin)"
+        val textColor = setTextColorForTheme()
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(8), dp(16), 0)
+        }
+        val search = EditText(this).apply { hint = "Filter installed themes"; setSingleLine() }
+        body.addView(search)
+        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        body.addView(ScrollView(this).apply { addView(rows) }, LinearLayout.LayoutParams(-1, dp(380)))
+        val dialog = dialogBuilder().setTitle("freedesktop.org icon themes").setView(body)
+            .setNeutralButton("Import…") { _, _ -> showImportThemeOptionsDialog() }
+            .setNegativeButton("Close", null).create()
+        var themes: List<IconThemeInfo> = emptyList()
+        var generation = 0
+        fun showRows() {
+            val currentGeneration = ++generation
+            rows.removeAllViews()
+            val filter = search.text.toString().trim()
+            val activeId = iconThemeManager.getActiveThemeId()
+            val choices = listOf<IconThemeInfo?>(null) + themes
+            choices.filter { (it?.name ?: "Built-in icons").contains(filter, true) }.forEach { theme ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(8), dp(8), dp(8), dp(8))
+                }
+                val selected = if (theme == null) activeId.isNullOrBlank() else theme.id == activeId
+                row.addView(TextView(this).apply {
+                    text = (if (selected) "✓ " else "") + (theme?.name ?: "Built-in icons")
+                    setTextColor(textColor); textSize = 17f
+                })
+                row.addView(TextView(this).apply {
+                    text = if (theme == null) "InfiniFolder fallback artwork" else if (theme.isSystem) "System / Termux" else "Installed"
+                    setTextColor(textColor)
+                })
+                val previews = LinearLayout(this)
+                row.addView(previews)
+                val keys = listOf("folder", "text-x-generic", "image-x-generic", "application-pdf", "folder-archive")
+                if (theme != null) keys.forEach { key ->
+                    val icon = ImageView(this).apply { contentDescription = key }
+                    previews.addView(icon, LinearLayout.LayoutParams(dp(44), dp(44)))
+                    imageIo.execute {
+                        if (currentGeneration != generation || !dialog.isShowing) return@execute
+                        val bitmap = runCatching { iconThemeManager.previewThemeIcon(theme.id, key, dp(36)) }.getOrNull()
+                        runOnUiThread {
+                            if (dialog.isShowing && currentGeneration == generation) {
+                                if (bitmap != null) icon.setImageBitmap(bitmap)
+                                else { icon.visibility = View.GONE }
+                            }
+                        }
+                    }
+                }
+                row.setOnClickListener {
+                    dialogBuilder().setTitle(theme?.name ?: "Built-in icons")
+                        .setMessage("Use this icon theme? MIME and URI overrides will be preserved.")
+                        .setPositiveButton("Apply") { _, _ ->
+                            iconThemeManager.setActiveTheme(theme?.id)
+                            resourceIconResolver.invalidate(); thumbnailCache.evictAll()
+                            renderCurrentContents(); rebuildTreeRoots(); showRows()
+                        }.setNegativeButton("Cancel", null).show()
+                }
+                rows.addView(row)
             }
-        }.toTypedArray()
-
-        dialogBuilder()
-            .setTitle("FreeDesktop Icon Themes")
-            .setSingleChoiceItems(itemLabels, selectedIndex) { _, which ->
-                selectedIndex = which
+            if (rows.childCount == 0) rows.addView(TextView(this).apply { text = "No matching installed themes"; setTextColor(textColor) })
+        }
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { showRows() }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+        dialog.setOnDismissListener { generation++ }
+        dialog.show()
+        rows.addView(TextView(this).apply { text = "Loading installed themes…"; setTextColor(textColor) })
+        imageIo.execute {
+            val result = runCatching { iconThemeManager.listAvailableThemes() }
+            runOnUiThread {
+                if (dialog.isShowing && !isDestroyed) {
+                    themes = result.getOrDefault(emptyList())
+                    showRows()
+                    result.exceptionOrNull()?.let { Toast.makeText(this, "Cannot list themes: ${it.message}", Toast.LENGTH_LONG).show() }
+                }
             }
-            .setPositiveButton("Apply") { _, _ ->
-                val selected = themeItems.getOrNull(selectedIndex)
-                iconThemeManager.setActiveTheme(selected?.id)
-                thumbnailCache.evictAll()
-                renderCurrentContents()
-                rebuildTreeRoots()
-                Toast.makeText(this, "Active icon theme: ${selected?.name ?: "Default emojis"}", Toast.LENGTH_SHORT).show()
-            }
-            .setNeutralButton("Import…") { _, _ ->
-                showImportThemeOptionsDialog()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        }
     }
 
     private fun showImportThemeOptionsDialog() {
@@ -8573,11 +8620,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> pickThemeArchiveLauncher()
-                    1 -> {
-                        val count = iconThemeManager.listAvailableThemes().size
-                        Toast.makeText(this, "Found $count icon themes", Toast.LENGTH_SHORT).show()
-                        showIconThemeDialog()
-                    }
+                    1 -> showIconThemeDialog()
                 }
             }
             .setNegativeButton("Cancel", null)
