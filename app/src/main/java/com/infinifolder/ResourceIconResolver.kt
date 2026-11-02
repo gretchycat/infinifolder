@@ -30,6 +30,7 @@ class ResourceIconResolver(context: Context) {
     private val decoder = ThumbnailDecoder(context.contentResolver) { uri ->
         runtime.provider.refForUri(uri)?.let { (runtime.provider.openRead(it) as? ProviderResult.Success)?.value }
     }
+    private val audioArtwork=AudioArtworkResolver(context,runtime,decoder)
     data class Icon(val bitmap: Bitmap?, val fallback: String, val label: String, val directory: Boolean,
         val program: Boolean = false, val source: String = "fallback", val mimeType: String = "", val pending: Boolean = false)
     private data class Cached(val icon: Icon, val expires: Long)
@@ -52,7 +53,7 @@ class ResourceIconResolver(context: Context) {
         return key
     }
     fun close() { onArtworkChanged=null; retries.shutdownNow() }
-    fun invalidate() { rendered.evictAll(); identities.evictAll(); archives.clear(); ResourceArtworkCache.clearMemory() }
+    fun invalidate() { rendered.evictAll(); identities.evictAll(); archives.clear(); audioArtwork.clear(); ResourceArtworkCache.clearMemory() }
     private fun linkKey(entry: ResourceEntry) = "${entry.uri}:${entry.metadata.modifiedAtMillis}:${entry.metadata.sizeBytes}"
     fun peekShortcut(entry: ResourceEntry): ShortcutInfo? = linkInfo.get(linkKey(entry))
     fun sidecar(entry: ResourceEntry): ResourceEntry? = artworkCache.sidecar(entry)
@@ -62,8 +63,10 @@ class ResourceIconResolver(context: Context) {
         val covers=if(entry.metadata.isDirectory)ResourceIconSidecars.directory(entry)?.candidates.orEmpty().joinToString {
             "${it.uri}:${it.metadata.modifiedAtMillis}:${it.metadata.sizeBytes}"
         } else ""
-        return "icons-v6:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
-            "${sidecar?.uri}:${sidecar?.metadata?.modifiedAtMillis}:${sidecar?.metadata?.sizeBytes}:$covers"
+        val audioCover=if(AudioIconFormats.isAudio(MimeRegistry.effective(entry.metadata.name,entry.metadata.mimeType)))
+            AudioArtworkResolver.coverRevision(entry) else ""
+        return "icons-v7:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
+            "${sidecar?.uri}:${sidecar?.metadata?.modifiedAtMillis}:${sidecar?.metadata?.sizeBytes}:$covers:$audioCover"
     }
     fun cached(entry: ResourceEntry, size: Int): Icon? {
         return rendered.get("${signature(entry)}:$size")?.takeIf { System.currentTimeMillis()<it.expires }?.icon
@@ -142,6 +145,15 @@ class ResourceIconResolver(context: Context) {
         val id=identity(entry)
         val meta=entry.metadata.copy(mimeType=id.mimeType)
         val record=registry.mime(id.mimeType)
+        var artworkPending=false
+        if(AudioIconFormats.isAudio(id.mimeType) && !ArchiveFormats.isPlaylist(meta.name,id.mimeType)) {
+            val audio=audioArtwork.resolve(entry.copy(metadata=meta),size)
+            artworkPending=audio.pending
+            retryPending(entry,audio.pending)
+            audio.artwork?.let {
+                return base.copy(bitmap=it.bitmap,source=it.source,mimeType=id.mimeType,pending=artworkPending)
+            }
+        }
         val genericArchive=ArchiveFormats.isDefaultBrowsableArchive("",id.mimeType)
         for(step in IconPolicy.steps(record,genericArchive)) {
             if(Thread.currentThread().isInterrupted)break
@@ -152,16 +164,17 @@ class ResourceIconResolver(context: Context) {
                     else decoder.decode(entry.uri,size,registry.rendererExtension(id.mimeType,entry.metadata.name))
                 }
                 IconPolicy.Step.MIME_OVERRIDE -> overrideBitmap(record.overrideIcon,id.mimeType,size)
-                IconPolicy.Step.THEME_MIME -> theme.resolveMimeSpecific(id.mimeType,size,record.iconName)
+                IconPolicy.Step.THEME_MIME -> if(AudioIconFormats.isAudio(id.mimeType))theme.resolveAudioIcon(meta,size,record.iconName)
+                    else theme.resolveMimeSpecific(id.mimeType,size,record.iconName)
                 IconPolicy.Step.ARCHIVE_FOLDER -> if(archives.inspect(entry.copy(metadata=meta)).browsable)
                     theme.resolveLogicalIcon("folder-archive",size) ?: FileTypeIcons.folder(size,true) else null
                 IconPolicy.Step.GENERATED_TYPE -> FileTypeIcons.bitmap(meta,size,id.mimeType)
                 IconPolicy.Step.THEME_CATEGORY -> theme.resolveMimeDefaults(id.mimeType,size) ?: theme.resolveMimeCategory(id.mimeType,size)
                 IconPolicy.Step.GENERIC -> FileTypeIcons.bitmap(meta,size,id.mimeType)
             }
-            if(bitmap!=null && IconBitmapUsability.visible(bitmap))return base.copy(bitmap=bitmap,source=step.name.lowercase(),mimeType=id.mimeType)
+            if(bitmap!=null && IconBitmapUsability.visible(bitmap))return base.copy(bitmap=bitmap,source=step.name.lowercase(),mimeType=id.mimeType,pending=artworkPending)
         }
-        return base.copy(mimeType=id.mimeType)
+        return base.copy(mimeType=id.mimeType,pending=artworkPending)
     }
     /** Shared folder baseline, with no directory enumeration or document reads. Worker-only. */
     fun directoryTheme(entry:ResourceEntry,size:Int):Icon {
@@ -188,6 +201,11 @@ class ResourceIconResolver(context: Context) {
     /** Discovery seeds the authority cache; this first-frame lookup never queries PackageManager. */
     fun peekAppStorageIcon(authority:String,size:Int):Bitmap? =
         AppDocumentSources.getProgramPackage(null,authority)?.let {runtime.apps.getCachedAppIconBitmap(it,size)}
+    private fun retryPending(entry:ResourceEntry,pending:Boolean) {
+        if(pending && retryCounts.merge(entry.uri.toString(),1,Int::plus)!!<=8)
+            retries.schedule({notifyChanged(entry.uri)},500,TimeUnit.MILLISECONDS)
+        if(!pending)retryCounts.remove(entry.uri.toString())
+    }
     private fun directory(entry: ResourceEntry,size: Int): Icon {
         val base=directoryTheme(entry,size)
         val observed=ResourceIconSidecars.directory(entry)?.takeIf {
@@ -198,8 +216,7 @@ class ResourceIconResolver(context: Context) {
         } as? ProviderResult.Success else null
         val items=success?.value.orEmpty()
         val pending=success?.isLoading==true
-        if(pending && retryCounts.merge(entry.uri.toString(),1,Int::plus)!!<=8)retries.schedule({ notifyChanged(entry.uri) },500,TimeUnit.MILLISECONDS)
-        if(!pending)retryCounts.remove(entry.uri.toString())
+        retryPending(entry,pending)
         if(success!=null)ResourceIconSidecars.observe(items,entry.uri,complete=!pending)
         val possible=observed?.candidates ?: DirectoryIconResolver.candidates(items)
         if(possible.isEmpty())return base.copy(pending=pending)

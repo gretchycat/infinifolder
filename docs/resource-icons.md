@@ -12,6 +12,35 @@ including locations waiting for a folder grant; their access badge remains visib
 App artwork uses the existing app-icon memory/disk cache and is loaded on workers.
 Unavailable package artwork falls back to the themed application-place icon.
 
+## Audio file icons
+
+After any explicit per-file icon, the shared listing resolver tries embedded
+artwork from Sound's metadata reader, then valid `cover.*` (or extensionless
+`cover`) images in the track's parent directory, then its effective MIME icon.
+Audio cover fallback does not use `.icon.*` directory customizations. Covers use
+the existing storage abstraction, supported image decoders, stable format ordering
+and backend case-sensitivity rules; a corrupt candidate falls through to the next.
+
+Metadata reads are asynchronous, bounded to 16 MiB of requested source data and
+1.5 seconds, with encoded artwork capped at 8 MiB. They do not open playback,
+calculate duration through fallback decoders, or extract compressed archive songs.
+Embedded artwork depends on the existing platform metadata reader and a seekable
+source; unsupported tags or sources fall through to the cover/MIME icon.
+
+Decoded artwork and missing-art results are cached in memory. Decoded covers are
+reused across tracks for each size/modification state; successful artwork also uses the shared
+disposable disk-cache budget, with asynchronous PNG writes. Cover dependencies in
+the listing cache change when cover metadata changes, and partial directory
+enumerations retain the existing retry behavior.
+
+Generated audio icons carry a musical-note symbol and format labels, including
+MP3/MP2/MP1 rather than MPEG, and M4A/M4B/M4R rather than MP4. MIME associations
+remain canonical; formats sharing a MIME retain distinct labels. Theme lookup
+also tries extension-specific logical names (`audio-mp3`, `audio-x-mp3`, etc.)
+before the default MIME artwork, preserving explicit MIME icon customizations
+as the fallback when no album artwork is available. Existing registry records
+and user overrides are retained.
+
 ## Exact filename and location
 
 Generated program icons are saved **in the same directory as the program file or application link** as `.icon-<full filename>.png`. Manually supplied artwork can use the same naming convention for any resource:

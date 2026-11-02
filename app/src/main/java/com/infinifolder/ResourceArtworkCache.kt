@@ -311,9 +311,11 @@ class ResourceArtworkCache(context: Context) {
         private val iconSources=sourcePool("MimeArtwork",4)
         private val directorySources=sourcePool("DirectoryArtwork",2)
         private val contentSources=sourcePool("ContentArtwork",2)
+        private val audioSources=sourcePool("AudioArtwork",2)
         fun sourceExecutor(entry:ResourceEntry):java.util.concurrent.Executor = when {
             AppsUri.isAppUri(entry.uri) -> appSources
             entry.metadata.isDirectory -> directorySources
+            com.infinifolder.preview.AudioIconFormats.isAudio(com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name,entry.metadata.mimeType)) -> audioSources
             com.infinifolder.preview.ImageFormats.isImage(entry.metadata) ||
                 com.infinifolder.preview.ImageFormats.hasDosTextPreview(entry.metadata) ||
                 entry.metadata.name.endsWith(".apk",ignoreCase=true) ||

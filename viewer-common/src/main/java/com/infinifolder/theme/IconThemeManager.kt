@@ -549,6 +549,15 @@ class IconThemeManager(private val context: Context) {
         .filterNot {it in setOf("application-octet-stream","unknown","text-x-generic","image-x-generic",
             "video-x-generic","audio-x-generic","font-x-generic","package-x-generic")}
         .firstNotNullOfOrNull {resolveLogicalIcon(it,size)}
+
+    /** MP1/MP2/MP3 and other shared-MIME families can have extension-specific theme artwork. */
+    fun resolveAudioIcon(meta:ResourceMetadata,size:Int,iconName:String):Bitmap? {
+        val defaults=com.infinifolder.mime.MimeRegistry.iconCandidates(meta.mimeType)
+        val custom=iconName.takeIf {it.isNotBlank() && it!=defaults.first()}
+        return (listOfNotNull(custom)+buildMimeIconCandidates(meta)).distinct()
+            .filterNot {it in setOf("audio-x-generic","application-octet-stream","unknown")}
+            .firstNotNullOfOrNull {resolveLogicalIcon(it,size)}
+    }
     fun resolveMimeDefaults(mime:String,size:Int):Bitmap? = com.infinifolder.mime.MimeRegistry.iconCandidates(mime)
         .firstNotNullOfOrNull {resolveLogicalIcon(it,size)}
     fun resolveMimeCategory(mime: String, size: Int): Bitmap? {
@@ -648,7 +657,10 @@ class IconThemeManager(private val context: Context) {
             if (extension.isEmpty() || !extension.all { it.isLetterOrDigit() || it == '-' || it == '_' }) return candidates
             val generic = setOf("application-octet-stream", "unknown", "text-x-generic", "image-x-generic",
                 "audio-x-generic", "video-x-generic", "font-x-generic")
-            return (candidates.filterNot { it in generic } +
+            val audio=com.infinifolder.preview.AudioIconFormats.extension(meta.name,mime)
+                ?.takeIf {com.infinifolder.preview.AudioIconFormats.isAudio(mime)}
+                ?.let {listOf("audio-$it","audio-x-$it")}.orEmpty()
+            return (audio + candidates.filterNot { it in generic } +
                 listOf("application-x-extension-$extension", "application-x-$extension", "text-x-$extension") +
                 candidates.filter { it in generic }).distinct()
         }

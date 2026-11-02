@@ -9,6 +9,7 @@ import android.graphics.Typeface
 import android.util.LruCache
 import com.infinifolder.mime.MimeRegistry
 import com.infinifolder.model.ResourceMetadata
+import com.infinifolder.preview.AudioIconFormats
 import com.infinifolder.viewer.MediaType
 import com.infinifolder.viewer.MediaTypeDetector
 import java.util.Locale
@@ -62,8 +63,11 @@ object FileTypeIcons {
         val extension = meta.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
         val text = MediaTypeDetector.detect(if(resolvedMime==null)meta.name else "", mime) in setOf(MediaType.TEXT, MediaType.MARKDOWN, MediaType.HTML)
         val known=mime!="application/octet-stream"
-        val type = if (text) "text/plain" else if(known)mime else extension.ifBlank { mime }
+        val audio=AudioIconFormats.isAudio(mime)
+        val audioLabel=if(audio)AudioIconFormats.label(meta.name,mime) else null
+        val type = if (text) "text/plain" else if(audio)"$mime:$audioLabel" else if(known)mime else extension.ifBlank { mime }
         val mimeLabel=when {
+            audioLabel!=null -> audioLabel
             mime=="application/msword" -> "DOC"
             mime.contains("wordprocessingml") -> "DOCX"
             mime.contains("spreadsheetml") -> "XLSX"
@@ -91,6 +95,12 @@ object FileTypeIcons {
         canvas.drawPath(page, paint)
         paint.style = Paint.Style.FILL
         canvas.drawPath(Path().apply { moveTo(41f, 3f); lineTo(41f, 15f); lineTo(53f, 15f); close() }, paint)
+        if(audio) {
+            paint.style=Paint.Style.STROKE;paint.strokeWidth=2f
+            canvas.drawPath(Path().apply {moveTo(26f,25f);lineTo(26f,16f);lineTo(36f,14f);lineTo(36f,23f)},paint)
+            paint.style=Paint.Style.FILL
+            canvas.drawOval(20f,23f,27f,28f,paint);canvas.drawOval(30f,21f,37f,26f,paint)
+        }
         canvas.drawRoundRect(4f, 30f, 60f, 53f, 3f, 3f, paint)
         paint.color = Color.WHITE; paint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
         paint.textSize = 15f
