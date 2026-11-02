@@ -20,6 +20,8 @@ class CustomIconStore(baseDir: File) {
     private val mimeToFileName = ConcurrentHashMap<String, String>()
     private val mimeBitmaps = ConcurrentHashMap<String, Bitmap>()
 
+    private var indexStamp = ""
+    val revision: String get() = if(indexFile.isFile)"${java.nio.file.Files.getLastModifiedTime(indexFile.toPath())}:${indexFile.length()}" else "missing"
     init {
         loadIndex()
     }
@@ -28,15 +30,25 @@ class CustomIconStore(baseDir: File) {
         try {
             if (!indexFile.exists()) return
             val json = JSONObject(indexFile.readText(Charsets.UTF_8))
+            mimeToFileName.clear(); mimeBitmaps.clear()
             val keys = json.keys()
             while (keys.hasNext()) {
                 val k = keys.next()
                 val fileName = json.optString(k, "")
-                if (fileName.isNotEmpty() && File(iconsDir, fileName).isFile) {
+                if (fileName.isNotEmpty()) {
                     mimeToFileName[k] = fileName
                 }
             }
+            indexStamp = revision
         } catch (_: Exception) {}
+    }
+    @Synchronized private fun refreshIndex() { if (indexStamp != revision) loadIndex() }
+    private fun safeFile(name:String):File? = File(iconsDir,name).takeIf {it.canonicalPath.startsWith(iconsDir.canonicalPath+File.separator)}
+    @Synchronized fun clearMimeIcon(mimeKey: String) {
+        refreshIndex()
+        val key = normalizeMimeKey(mimeKey)
+        mimeToFileName.remove(key)?.let { safeFile(it)?.delete() }
+        mimeBitmaps.remove(key); saveIndex()
     }
 
     @Synchronized
@@ -47,12 +59,15 @@ class CustomIconStore(baseDir: File) {
             for ((k, v) in mimeToFileName) {
                 json.put(k, v)
             }
-            indexFile.writeText(json.toString(2), Charsets.UTF_8)
+            val temp = File.createTempFile("mime-index-", ".json", iconsDir)
+            try { temp.writeText(json.toString(2)); check(temp.renameTo(indexFile)); indexStamp = revision }
+            finally { temp.delete() }
         } catch (_: Exception) {}
     }
 
     @Synchronized
     fun setMimeIcon(mimeKey: String, extension: String, bytes: ByteArray, decodedBitmap: Bitmap? = null): File {
+        refreshIndex()
         iconsDir.mkdirs()
         val normalizedMime = normalizeMimeKey(mimeKey)
         val cleanExt = extension.lowercase().trimStart('.').ifEmpty { "png" }
@@ -60,7 +75,7 @@ class CustomIconStore(baseDir: File) {
         val fileName = "${safeStem}.${cleanExt}"
         val previousName = mimeToFileName[normalizedMime]
         if (previousName != null && previousName != fileName) {
-            try { File(iconsDir, previousName).delete() } catch (_: Exception) {}
+            try { safeFile(previousName)?.delete() } catch (_: Exception) {}
         }
         val outFile = File(iconsDir, fileName)
         outFile.writeBytes(bytes)
@@ -79,10 +94,10 @@ class CustomIconStore(baseDir: File) {
         return outFile
     }
 
-    fun getCachedMimeBitmap(mimeKey: String): Bitmap? =
-        mimeBitmaps[normalizeMimeKey(mimeKey)]
+    fun getCachedMimeBitmap(mimeKey: String): Bitmap? { refreshIndex(); return mimeBitmaps[normalizeMimeKey(mimeKey)] }
 
     fun getMimeIconBitmap(mimeKey: String, fallbackDecoder: ((File) -> Bitmap?)? = null): Bitmap? {
+        refreshIndex()
         val normalizedMime = normalizeMimeKey(mimeKey)
         mimeBitmaps[normalizedMime]?.let { return it }
         val file = getMimeIconFile(normalizedMime) ?: return null
@@ -95,9 +110,10 @@ class CustomIconStore(baseDir: File) {
     }
 
     fun getMimeIconFile(mimeKey: String): File? {
+        refreshIndex()
         val normalizedMime = normalizeMimeKey(mimeKey)
         val fileName = mimeToFileName[normalizedMime] ?: return null
-        val file = File(iconsDir, fileName)
+        val file = safeFile(fileName) ?: return null
         return if (file.isFile) file else null
     }
 

@@ -19,16 +19,39 @@ object FileTypeIcons {
         override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
     }
 
+    fun folder(requestedSize: Int, archive: Boolean = false): Bitmap {
+        val size=requestedSize.coerceIn(1,1024)
+        val key="folder:$archive:$size"
+        cache.get(key)?.let { return it }
+        val bitmap=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888)
+        val canvas=Canvas(bitmap);canvas.scale(size/64f,size/64f)
+        val paint=Paint(Paint.ANTI_ALIAS_FLAG).apply { color=0xffe9b949.toInt() }
+        val path=Path().apply { moveTo(3f,15f);lineTo(26f,15f);lineTo(32f,21f);lineTo(61f,21f);lineTo(57f,55f);lineTo(7f,55f);close() }
+        canvas.drawPath(path,paint)
+        if(archive) {
+            paint.color=0xff72592d.toInt();canvas.drawRect(29f,21f,35f,55f,paint)
+            paint.color=Color.WHITE
+            for(y in 22..50 step 6)canvas.drawRect(30f,y.toFloat(),34f,y+3f,paint)
+        }
+        cache.put(key,bitmap);return bitmap
+    }
+
     @Synchronized
-    fun bitmap(meta: ResourceMetadata, requestedSize: Int): Bitmap {
-        val mime = MimeRegistry.effective(meta.name, meta.mimeType)
+    fun bitmap(meta: ResourceMetadata, requestedSize: Int, resolvedMime: String? = null): Bitmap {
+        val mime = resolvedMime?.let(MimeRegistry::normalize) ?: MimeRegistry.effective(meta.name, meta.mimeType)
         val extension = meta.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
-        val text = MediaTypeDetector.detect(meta.name, mime) in setOf(MediaType.TEXT, MediaType.MARKDOWN, MediaType.HTML)
-        val type = if (text) "text/plain" else extension.ifBlank { mime }
-        val label = if (text) "TXT" else extension.ifBlank {
-            if (mime == "application/octet-stream") "FILE"
-            else mime.substringAfter('/').removePrefix("x-").removePrefix("vnd.")
-        }.uppercase(Locale.ROOT).filter { it.isLetterOrDigit() || it == '+' || it == '-' }.take(8).ifBlank { "FILE" }
+        val text = MediaTypeDetector.detect(if(resolvedMime==null)meta.name else "", mime) in setOf(MediaType.TEXT, MediaType.MARKDOWN, MediaType.HTML)
+        val known=mime!="application/octet-stream"
+        val type = if (text) "text/plain" else if(known)mime else extension.ifBlank { mime }
+        val mimeLabel=when {
+            mime=="application/msword" -> "DOC"
+            mime.contains("wordprocessingml") -> "DOCX"
+            mime.contains("spreadsheetml") -> "XLSX"
+            mime.contains("presentationml") -> "PPTX"
+            mime=="application/vnd.android.package-archive" -> "APK"
+            else -> mime.substringAfter('/').removePrefix("x-").removePrefix("vnd.")
+        }
+        val label = (if(text)"TXT" else if(known)mimeLabel else extension.ifBlank {"FILE"}).uppercase(Locale.ROOT).filter { it.isLetterOrDigit() || it == '+' || it == '-' }.take(8).ifBlank { "FILE" }
         val size = requestedSize.coerceIn(1, 1024)
         val key = "$type:$label:$size"
         cache.get(key)?.let { return it }

@@ -50,7 +50,14 @@ class FloatingContainerService : Service() {
     private val icons by lazy { CustomIconStore(filesDir) }
     private val iconTheme by lazy { IconThemeManager(applicationContext) }
     private val iconWorker = java.util.concurrent.Executors.newFixedThreadPool(2)
-    private val iconResolver by lazy { ResourceIconResolver(applicationContext) }
+    private val refreshArtwork=Runnable { if(windowView!=null) {iconCache.evictAll();render(currentEntries)} }
+    private var registrySubscription:AutoCloseable?=null
+    private val iconPreferencesListener=android.content.SharedPreferences.OnSharedPreferenceChangeListener {_,key ->
+        if(key in setOf("active_icon_theme","icon_theme_revision"))onMain {refreshArtwork.run()}
+    }
+    private val iconResolver by lazy { ResourceIconResolver(applicationContext).apply {
+        onArtworkChanged={onMain {refreshArtwork.run()}}
+    } }
     private val iconCache = object : android.util.LruCache<String, ResourceIconResolver.Icon>(8 * 1024) {
         override fun sizeOf(key: String, value: ResourceIconResolver.Icon) = (value.bitmap?.byteCount?.div(1024) ?: 1).coerceAtLeast(1)
     }
@@ -69,6 +76,8 @@ class FloatingContainerService : Service() {
     override fun onCreate() {
         super.onCreate()
         runtime = StorageRuntime.get(applicationContext)
+        registrySubscription=com.infinifolder.preview.IconRegistry.listen(filesDir) {onMain {iconResolver.invalidate();refreshArtwork.run()}}
+        getSharedPreferences("browser",MODE_PRIVATE).registerOnSharedPreferenceChangeListener(iconPreferencesListener)
         ThemeManager.init(applicationContext)
         val defaultIconDp = getSharedPreferences("browser", MODE_PRIVATE).getInt("icon_size_dp", 56)
         iconDp = getSharedPreferences("floating_window", MODE_PRIVATE)
@@ -400,8 +409,7 @@ class FloatingContainerService : Service() {
         val headerEntry = runtime.provider.refForUri(uri)?.let { ref ->
             ResourceEntry(ref, com.infinifolder.model.ResourceMetadata(title.text.toString(), "", null, null, true), uri)
         }
-        val headerBitmap = headerEntry?.let { com.infinifolder.ResourceArtworkCache.peek(it, headerSize) }
-        showContainerIcon(headerBitmap?.let { ResourceIconResolver.Icon(it, "📁", title.text.toString(), true) })
+        showContainerIcon(null)
         grid.removeAllViews()
         val loading = TextView(this).apply { text = "Loading…"; setTextColor(Color.GRAY); textSize = 14f }
         grid.addView(loading)
@@ -490,9 +498,10 @@ class FloatingContainerService : Service() {
             card.addLabels(entry.metadata.name, entry.metadata.isDirectory,
                 (cellWidth - 4 * density).roundToInt().coerceAtLeast(36), "")
             val pixelSize = (iconDp * density).roundToInt()
-            val cacheKey = "${entry.ref}:${entry.metadata.modifiedAtMillis}:$pixelSize"
+            val cacheKey = "${entry.ref}:${entry.metadata.name}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:${iconResolver.revision()}:$pixelSize"
             fun applyArtwork(resolved: ResourceIconResolver.Icon) {
                 icon.removeViewAt(0)
+                icon.tag=resolved
                 val artwork: View = resolved.bitmap?.let { bitmap ->
                     android.widget.ImageView(this).apply {
                         scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
@@ -507,7 +516,7 @@ class FloatingContainerService : Service() {
                 icon.addView(artwork, 0, android.widget.FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
                 card.nameView.setFileName(resolved.label, resolved.directory)
             }
-            val cached = iconCache.get(cacheKey)
+            val cached = if(entry.metadata.isDirectory)null else iconCache.get(cacheKey)
             if (cached != null) applyArtwork(cached)
             var authoritativeApplied = false
             pendingIcons.add(card.container to {
@@ -589,6 +598,9 @@ class FloatingContainerService : Service() {
         iconWorker.shutdownNow()
         windowView?.let { runCatching { windows.removeView(it) } }
         windowView = null
+        registrySubscription?.close()
+        getSharedPreferences("browser",MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(iconPreferencesListener)
+        iconResolver.close()
         super.onDestroy()
     }
 

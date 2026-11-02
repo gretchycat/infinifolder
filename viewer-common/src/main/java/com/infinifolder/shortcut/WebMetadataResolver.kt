@@ -310,7 +310,22 @@ object WebMetadataResolver {
         )
     }
 
-    private fun fetchAndDecodeIcon(iconUrl: String, maxIconPx: Int): Bitmap? {
+    /** Origin-only, public-network favicon lookup with one bounded request budget. */
+    fun fetchPublicFavicon(rawUrl: String, maxIconPx: Int = 128): Bitmap? {
+        val origin=PublicIconUrls.origin(rawUrl) ?: return null
+        val deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(8)
+        val page=runCatching {openUrlBytes(origin,MAX_HTML_BYTES,true,deadline)}.getOrNull()
+        val finalUrl=page?.first ?: origin
+        val html=page?.third?.toString(Charsets.UTF_8).orEmpty()
+        for(url in extractFaviconUrls(html,finalUrl).take(3)) {
+            if(System.nanoTime()>=deadline || Thread.currentThread().isInterrupted)break
+            val image=fetchAndDecodeIcon(url,maxIconPx,true,deadline)
+            if(image!=null)return image
+        }
+        return null
+    }
+
+    private fun fetchAndDecodeIcon(iconUrl: String, maxIconPx: Int, safe: Boolean = false, deadline: Long = Long.MAX_VALUE): Bitmap? {
         return try {
             if (iconUrl.startsWith("data:image/", ignoreCase = true)) {
                 val base64Part = iconUrl.substringAfter("base64,", "")
@@ -318,7 +333,7 @@ object WebMetadataResolver {
                 val bytes = Base64.decode(base64Part, Base64.DEFAULT)
                 return decodeAndScaleBitmap(bytes, maxIconPx)
             }
-            val (_, _, bytes) = openUrlBytes(iconUrl, MAX_ICON_BYTES)
+            val (_, _, bytes) = openUrlBytes(iconUrl, if(safe)512*1024 else MAX_ICON_BYTES, safe, deadline)
             if (bytes == null || bytes.isEmpty()) return null
             decodeAndScaleBitmap(bytes, maxIconPx)
         } catch (_: Exception) {
@@ -357,14 +372,17 @@ object WebMetadataResolver {
         return Bitmap.createScaledBitmap(decoded, targetW, targetH, true).also { if (it !== decoded) decoded.recycle() }
     }
 
-    private fun openUrlBytes(urlString: String, maxBytes: Int): Triple<String, String?, ByteArray?> {
+    private fun openUrlBytes(urlString: String, maxBytes: Int, safe: Boolean = false, deadline: Long = Long.MAX_VALUE): Triple<String, String?, ByteArray?> {
         var currentUrl = urlString
         var redirects = 0
-        while (redirects < 5) {
+        while (redirects < if(safe)3 else 5) {
+            if(Thread.currentThread().isInterrupted || System.nanoTime()>=deadline)break
+            if(safe && !PublicIconUrls.allowed(currentUrl))break
+            val remaining=if(safe) java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(deadline-System.nanoTime()).coerceIn(1,1500).toInt() else CONNECT_TIMEOUT_MS
             val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
-                connectTimeout = CONNECT_TIMEOUT_MS
-                readTimeout = READ_TIMEOUT_MS
-                instanceFollowRedirects = true
+                connectTimeout = remaining
+                readTimeout = if(safe)remaining else READ_TIMEOUT_MS
+                instanceFollowRedirects = false
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", USER_AGENT)
                 setRequestProperty("Accept", "text/html,application/xhtml+xml,image/*,*/*;q=0.8")
@@ -383,7 +401,7 @@ object WebMetadataResolver {
                 }
                 val finalUrl = conn.url?.toString() ?: currentUrl
                 val contentType = conn.contentType
-                val bytes = conn.inputStream.use { readCappedBytes(it, maxBytes) }
+                val bytes = conn.inputStream.use { readCappedBytes(it, maxBytes, deadline) }
                 return Triple(finalUrl, contentType, bytes)
             } finally {
                 try { conn.disconnect() } catch (_: Exception) {}
@@ -392,11 +410,11 @@ object WebMetadataResolver {
         return Triple(currentUrl, null, null)
     }
 
-    private fun readCappedBytes(input: InputStream, maxBytes: Int): ByteArray {
+    private fun readCappedBytes(input: InputStream, maxBytes: Int, deadline: Long = Long.MAX_VALUE): ByteArray {
         val out = ByteArrayOutputStream()
         val buf = ByteArray(8192)
         var total = 0
-        while (total < maxBytes) {
+        while (total < maxBytes && System.nanoTime()<deadline && !Thread.currentThread().isInterrupted) {
             val toRead = minOf(buf.size, maxBytes - total)
             val read = input.read(buf, 0, toRead)
             if (read <= 0) break

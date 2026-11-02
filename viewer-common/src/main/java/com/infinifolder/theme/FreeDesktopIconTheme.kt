@@ -14,8 +14,10 @@ class FreeDesktopIconTheme(
     val info: IconThemeInfo,
     private val fallbackResolver: ((String) -> FreeDesktopIconTheme?)? = null
 ) {
-    // Memory cache for decoded bitmaps (max ~300 bitmaps)
-    private val bitmapCache = object : LruCache<String, Bitmap>(300) {}
+    // Decoded artwork is limited by byte size, including high-density icon requests.
+    private val bitmapCache = object : LruCache<String, Bitmap>(8 * 1024 * 1024) {
+        override fun sizeOf(key:String,value:Bitmap)=value.allocationByteCount
+    }
 
     // File path lookup cache: key is "$iconName:$targetPx"
     private val pathCache = ConcurrentHashMap<String, File>()
@@ -97,20 +99,31 @@ class FreeDesktopIconTheme(
         return null
     }
 
-    fun getIconBitmap(iconName: String, targetSizePx: Int): Bitmap? {
-        val cacheKey = "${info.id}:$iconName:$targetSizePx"
+    fun getIconBitmap(iconName: String, targetSizePx: Int): Bitmap? = getIconBitmap(iconName,targetSizePx,mutableSetOf())
+    private fun getIconBitmap(iconName:String,targetSizePx:Int,visited:MutableSet<String>):Bitmap? {
+        if(!visited.add(info.rootDir.absolutePath))return null
+        val file = findIconFile(iconName,targetSizePx)
+        val cacheKey = "${info.id}:$iconName:$targetSizePx:${file?.lastModified()}:${file?.length()}"
         synchronized(bitmapCache) {
             bitmapCache.get(cacheKey)?.let { return it }
         }
 
-        val file = findIconFile(iconName, targetSizePx) ?: return null
+        if(file==null)return null
         val resolvedFile = try { file.canonicalFile } catch (_: Exception) { file }
-        val bitmap = when {
+        var bitmap = when {
             resolvedFile.name.endsWith(".svg", ignoreCase = true) -> renderSvg(resolvedFile, targetSizePx)
             resolvedFile.name.endsWith(".png", ignoreCase = true) -> renderPng(resolvedFile, targetSizePx)
             else -> null
         }
 
+        if(bitmap!=null && !com.infinifolder.preview.IconBitmapUsability.visible(bitmap)) {bitmap.recycle();bitmap=null}
+        if(bitmap==null && resolvedFile.name.endsWith(".svg",true)) {
+            bitmap=renderPng(File(resolvedFile.parentFile,"$iconName.png"),targetSizePx)
+            if(bitmap!=null && !com.infinifolder.preview.IconBitmapUsability.visible(bitmap)) {bitmap.recycle();bitmap=null}
+        }
+        if(bitmap==null && fallbackResolver!=null) {
+            bitmap=info.inherits.firstNotNullOfOrNull {fallbackResolver.invoke(it)?.getIconBitmap(iconName,targetSizePx,visited)}
+        }
         if (bitmap != null) {
             synchronized(bitmapCache) {
                 bitmapCache.put(cacheKey, bitmap)

@@ -42,12 +42,12 @@ class DirectoryIconResolverTest {
     }
 
     @Test
-    fun prioritizesDotIconOverCover() {
+    fun prioritizesCoverOverDotIcon() {
         val cover = FileItem("cover.jpg", true)
         val dotIcon = FileItem(".icon.png", true)
 
         val best = DirectoryIconResolver.findBest(listOf(cover, dotIcon), { it.name }, { it.isImage })
-        assertEquals(dotIcon, best)
+        assertEquals(cover, best)
     }
 
     @Test
@@ -92,8 +92,14 @@ class DirectoryIconResolverTest {
         val extlessCover = entry("cover", "application/octet-stream")
         val textCover = entry("cover.txt", "text/plain")
 
-        assertEquals(extlessDotIcon, DirectoryIconResolver.findBestIcon(listOf(textCover, extlessCover, extlessDotIcon)))
+        assertEquals(extlessCover, DirectoryIconResolver.findBestIcon(listOf(textCover, extlessCover, extlessDotIcon)))
         assertEquals(extlessCover, DirectoryIconResolver.findBestIcon(listOf(textCover, extlessCover)))
         assertNull(DirectoryIconResolver.findBestIcon(listOf(textCover)))
+    }
+    @Test fun candidateOrderIsStableAndRespectsCaseRules() {
+        val entries=listOf(entry("cover.jpg","image/jpeg"),entry(".icon.png","image/png"),
+            entry("Cover.PNG","image/png"),entry("cover.png","image/png"),entry("cover.txt","text/plain"))
+        assertEquals(listOf("cover.png","cover.jpg",".icon.png"),DirectoryIconResolver.candidates(entries,true).map {it.metadata.name})
+        assertEquals(listOf("Cover.PNG","cover.png","cover.jpg",".icon.png"),DirectoryIconResolver.candidates(entries,false).map {it.metadata.name})
     }
 }

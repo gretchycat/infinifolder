@@ -497,6 +497,34 @@ class IconThemeManager(private val context: Context) {
     /**
      * Resolves an icon for a file by examining its MIME type, extension, and generic fallbacks.
      */
+    fun revision(): String = "${getActiveThemeId()}:${shared.getInt("icon_theme_revision", 0)}"
+    fun resolveLogicalIcon(name: String, size: Int): Bitmap? {
+        refreshActiveTheme(); if(name.isBlank() || name.contains('/') || name.contains('\\')) return null
+        return activeTheme?.getIconBitmap(name, size)
+    }
+    fun resolveMimeDefaults(mime:String,size:Int):Bitmap? = com.infinifolder.mime.MimeRegistry.iconCandidates(mime)
+        .firstNotNullOfOrNull {resolveLogicalIcon(it,size)}
+    fun resolveMimeCategory(mime: String, size: Int): Bitmap? {
+        val category = mime.substringBefore('/')
+        return resolveLogicalIcon("$category-x-generic", size)
+            ?: resolveLogicalIcon("application-octet-stream", size) ?: resolveLogicalIcon("unknown", size)
+    }
+    fun resolveSchemeIcon(scheme: String, size: Int): Bitmap? {
+        val keys = when(scheme.lowercase(Locale.ROOT)) {
+            "http", "https" -> listOf("web-browser", "applications-internet")
+            "ftp", "ftps" -> listOf("folder-remote", "network-server")
+            "ssh", "sftp", "sshfs" -> listOf("utilities-terminal", "network-server")
+            "smb", "cifs", "nfs", "webdav", "dav", "davs" -> listOf("folder-network", "folder-remote", "network-server")
+            "mailto" -> listOf("internet-mail", "mail-message-new")
+            "tel", "sms" -> listOf("phone", "call-start")
+            "irc", "ircs" -> listOf("internet-group-chat", "im-message-new")
+            "magnet", "torrent" -> listOf("magnet", "application-x-bittorrent")
+            "content" -> listOf("folder-documents", "text-x-generic")
+            else -> listOf("x-scheme-handler-$scheme", "emblem-symbolic-link")
+        }
+        return keys.firstNotNullOfOrNull { resolveLogicalIcon(it, size) }
+    }
+
     fun resolveFileIcon(meta: ResourceMetadata, targetSizePx: Int, includeGenericFallback: Boolean = true): Bitmap? {
         refreshActiveTheme()
         val theme = activeTheme ?: return null

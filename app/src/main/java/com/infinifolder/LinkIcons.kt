@@ -52,6 +52,19 @@ object LinkIcons {
             canvas.drawOval(22f, 4f, 42f, 44f, paint)
             canvas.drawLine(12f, 24f, 52f, 24f, paint)
             canvas.drawOval(14f, 14f, 50f, 34f, paint)
+        } else if(label=="MAILTO") {
+            paint.style=Paint.Style.STROKE
+            canvas.drawRoundRect(8f,8f,56f,37f,4f,4f,paint)
+            canvas.drawLine(9f,10f,32f,27f,paint);canvas.drawLine(32f,27f,55f,10f,paint)
+        } else if(label in setOf("TEL","SMS")) {
+            paint.style=Paint.Style.STROKE;paint.strokeWidth=9f;paint.strokeCap=Paint.Cap.ROUND
+            canvas.drawPath(android.graphics.Path().apply {moveTo(19f,8f);cubicTo(8f,19f,39f,47f,48f,32f)},paint)
+            canvas.drawLine(18f,8f,24f,15f,paint);canvas.drawLine(42f,27f,48f,32f,paint)
+        } else if(label in setOf("IRC","IRCS")) {
+            paint.style=Paint.Style.STROKE
+            canvas.drawRoundRect(8f,5f,56f,31f,6f,6f,paint)
+            canvas.drawLine(18f,31f,15f,40f,paint);canvas.drawLine(15f,40f,30f,31f,paint)
+            paint.style=Paint.Style.FILL;for(x in 21..43 step 11)canvas.drawCircle(x.toFloat(),18f,2.5f,paint)
         } else if (label in setOf("FTP", "FTPS", "SFTP", "SSH", "SSHFS", "SMB", "CIFS", "WEBDAV", "DAV", "DAVS", "NFS")) {
             for (row in 0..2) {
                 val y = 4f + row * 12f

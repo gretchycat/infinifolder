@@ -389,7 +389,7 @@ object ResourceIconSidecars {
             }
         }
     }
-    data class DirectoryArtwork(val entry: ResourceEntry?, val observedAt: Long)
+    data class DirectoryArtwork(val entry: ResourceEntry?, val observedAt: Long, val candidates: List<ResourceEntry> = emptyList())
     private val directoryArtwork = android.util.LruCache<String, DirectoryArtwork>(1024)
     @Synchronized fun directory(entry: ResourceEntry): DirectoryArtwork? = directory(entry.uri)
     @Synchronized fun directory(uri: Uri): DirectoryArtwork? = directoryArtwork.get(uri.toString())
@@ -408,7 +408,8 @@ object ResourceIconSidecars {
         if (parent != null) {
             val artwork = DirectoryArtwork(
                 com.infinifolder.preview.DirectoryIconResolver.findBestIcon(entries),
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                com.infinifolder.preview.DirectoryIconResolver.candidates(entries)
             )
             directoryArtwork.put(parent.toString(), artwork)
             if (com.infinifolder.archive.ArchiveUri.isArchiveUri(parent) &&

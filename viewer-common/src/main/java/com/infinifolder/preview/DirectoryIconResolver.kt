@@ -2,13 +2,7 @@ package com.infinifolder.preview
 
 import com.infinifolder.model.ResourceEntry
 
-/**
- * Matches directory icon conventions:
- * 1. .icon.<format> (e.g. .icon.png, .icon.svg, .icon.jpg)
- * 2. cover.<format> (e.g. cover.jpg, cover.png, cover.webp)
- *
- * .icon.* has higher precedence than cover.*.
- */
+/** Deterministic directory artwork candidates. Actual decoding must validate each candidate. */
 object DirectoryIconResolver {
     fun isDirectoryIconFileName(name: String): Boolean {
         val lower = name.lowercase()
@@ -62,7 +56,7 @@ object DirectoryIconResolver {
 
     fun priority(name: String): Int {
         val lower = name.lowercase()
-        return if (isIconName(lower)) 0 else 1
+        return if (isCoverName(lower)) 0 else 1
     }
 
     /**
@@ -85,8 +79,18 @@ object DirectoryIconResolver {
     /**
      * Given a list of entries inside a directory, finds the best matching image entry to use as the directory icon.
      */
-    fun findBestIcon(entries: List<ResourceEntry>): ResourceEntry? =
-        findBest(entries, { it.metadata.name }, { isCandidateIconEntry(it) })
+    private val formatOrder = listOf("png", "webp", "svg", "svgz", "jpg", "jpeg", "avif", "gif", "bmp", "ico")
+    fun candidates(entries: List<ResourceEntry>, caseSensitive: Boolean = false): List<ResourceEntry> = entries
+        .filter { entry ->
+            val name = entry.metadata.name
+            val matched = if (caseSensitive) name == "cover" || name.startsWith("cover.") || name == ".icon" || name.startsWith(".icon.")
+                else isDirectoryIconFileName(name)
+            matched && entry.metadata.canRead && !entry.metadata.isSymbolicLink && isCandidateIconEntry(entry)
+        }.sortedWith(compareBy<ResourceEntry> { priority(it.metadata.name) }
+            .thenBy { formatOrder.indexOf(ImageFormats.extension(it.metadata.name)).let { index -> if(index<0) Int.MAX_VALUE else index } }
+            .thenBy { it.metadata.name.lowercase(java.util.Locale.ROOT) }.thenBy { it.metadata.name })
+
+    fun findBestIcon(entries: List<ResourceEntry>): ResourceEntry? = candidates(entries).firstOrNull()
 
     private fun isCandidateIconEntry(entry: ResourceEntry): Boolean {
         val meta = entry.metadata

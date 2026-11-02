@@ -55,7 +55,7 @@ object ImageFormats {
 
     /** Raster icon previews do not determine which viewer opens a text document. */
     fun hasDosTextPreview(metadata: ResourceMetadata): Boolean = !metadata.isDirectory &&
-        (extension(metadata.name) in setOf("ans","ansi","asc","diz","nfo") || metadata.mimeType == "image/x-ansi")
+        (extension(metadata.name) in setOf("ans","ansi","asc","diz","nfo") || metadata.mimeType in setOf("image/x-ansi","text/x-ansi","text/x-diz","text/x-nfo","text/x-ascii-art"))
 
     fun isImage(metadata: ResourceMetadata): Boolean =
         !metadata.isDirectory &&

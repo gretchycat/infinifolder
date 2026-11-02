@@ -35,32 +35,14 @@ object FileIconView {
         mimePreview: ((String, String) -> View)? = null,
         imagePreview: (() -> View)? = null
     ): View {
-        val defaultArchive = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isDefaultBrowsableArchive(meta.name, meta.mimeType)
-        val mimeKey = CustomIconStore.resolveMimeKey(meta)
-        val sidePx = ((if (asGrid) iconSizeDp else 44) * context.resources.displayMetrics.density).toInt()
-        val fallback = if (defaultArchive) "📦" else fallback(meta)
-        fun bitmapView(bitmap: android.graphics.Bitmap) = ImageView(context).apply {
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            setImageBitmap(bitmap)
-            layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
-        }
-        ResourceArtworkCache.peek(entry, sidePx)?.let { return bitmapView(it) }
-        if (icons.hasMimeIcon(mimeKey)) {
-            mimePreview?.let { return it(mimeKey, fallback) }
-            icons.getMimeIconBitmap(mimeKey)?.let { return bitmapView(it) }
-        }
-        if (!defaultArchive && ImageFormats.hasDosTextPreview(meta)) imagePreview?.let { return it() }
-        if (theme.hasActiveTheme()) theme.resolveFileIcon(meta, sidePx, includeGenericFallback = false)?.let { return bitmapView(it) }
-        if (MimeRegistry.effective(meta.name, meta.mimeType) == "application/vnd.android.package-archive" && local.owns(entry.uri)) {
-            apps.getApkFileIconBitmap(local.fileFor(entry.uri).absolutePath, sidePx)?.let { return bitmapView(it) }
-        }
-        if (!defaultArchive && ImageFormats.isImage(meta)) imagePreview?.let { return it() }
-        if (!meta.isDirectory) return bitmapView(FileTypeIcons.bitmap(meta, sidePx))
-        return TextView(context).apply {
-            text = fallback
-            setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp * .72f else 28f)
-            gravity = Gravity.CENTER
-            includeFontPadding = false
+        // A visible card's worker supplies the authoritative result from ResourceIconResolver.
+        // This is only a cheap first-frame placeholder, with no theme/content/storage lookup.
+        return ImageView(context).apply {
+            scaleType=ImageView.ScaleType.FIT_CENTER
+            setImageBitmap(if(meta.isDirectory)FileTypeIcons.folder(((if(asGrid)iconSizeDp else 44)*context.resources.displayMetrics.density).toInt())
+                else FileTypeIcons.bitmap(meta,((if(asGrid)iconSizeDp else 44)*context.resources.displayMetrics.density).toInt()))
+            contentDescription="Loading file icon"
+            layoutParams=FrameLayout.LayoutParams(-1,-1,Gravity.CENTER)
         }
     }
 }

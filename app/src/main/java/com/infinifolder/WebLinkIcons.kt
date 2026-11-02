@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.os.Looper
 import android.util.LruCache
 import com.infinifolder.shortcut.WebMetadataResolver
+import com.infinifolder.shortcut.PublicIconUrls
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
@@ -20,8 +21,33 @@ object WebLinkIcons {
     }
     private val attempts = ConcurrentHashMap<String, Long>()
 
+    private val workers=java.util.concurrent.ThreadPoolExecutor(2,2,30,java.util.concurrent.TimeUnit.SECONDS,
+        java.util.concurrent.ArrayBlockingQueue<Runnable>(32))
+    private val listeners=ConcurrentHashMap<String,java.util.concurrent.ConcurrentLinkedQueue<()->Unit>>()
+    private val active=ConcurrentHashMap<String, Boolean>()
+    fun pending(target:String):Boolean = PublicIconUrls.origin(target)?.let {active.containsKey(it)} == true
+    fun request(context:Context,target:String,onReady:()->Unit):Bitmap? {
+        val origin=PublicIconUrls.origin(target) ?: return null
+        val key=MessageDigest.getInstance("SHA-256").digest(origin.toByteArray(Charsets.UTF_8)).joinToString("") {"%02x".format(it.toInt() and 255)}
+        val now=System.currentTimeMillis()
+        memory.get(key)?.takeIf {now<it.expires}?.let {return it.bitmap}
+        val disk=File(context.cacheDir,"web_link_icons/$key.png")
+        if(attempts[key]?.let {now-it<RETRY_MS}==true && !disk.isFile)return null
+        val callbacks=listeners.getOrPut(origin) {java.util.concurrent.ConcurrentLinkedQueue()}
+        if(callbacks.size<64)callbacks.add(onReady)
+        if(active.putIfAbsent(origin,true)==null) {
+            try {workers.execute {
+                try {favicon(context,origin)} finally {
+                    active.remove(origin);listeners.remove(origin)?.forEach {runCatching {it()}}
+                }
+            }} catch (_:java.util.concurrent.RejectedExecutionException) {
+                active.remove(origin);listeners.remove(origin);attempts[key]=now
+            }
+        }
+        return null
+    }
     fun favicon(context: Context, target: String): Bitmap? {
-        val url = WebMetadataResolver.normalizeInputUri(target)
+        val url = PublicIconUrls.origin(target) ?: return null
         if (!WebMetadataResolver.isWebUri(url)) return null
         val key = MessageDigest.getInstance("SHA-256").digest(url.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it.toInt() and 255) }
@@ -44,7 +70,7 @@ object WebLinkIcons {
         if (previous != null && (now - previous < RETRY_MS || !attempts.replace(key, previous, now))) return null
         if (attempts.size > 256) attempts.entries.sortedBy { it.value }.take((attempts.size - 256).coerceAtLeast(0))
             .forEach { attempts.remove(it.key, it.value) }
-        val bitmap = runCatching { WebMetadataResolver.fetchWebMetadata(url, 128).faviconBitmap }.getOrNull() ?: return null
+        val bitmap = runCatching { WebMetadataResolver.fetchPublicFavicon(url, 128) }.getOrNull() ?: return null
         memory.put(key, Saved(bitmap, now + FRESH_MS))
         runCatching {
             folder.mkdirs()
