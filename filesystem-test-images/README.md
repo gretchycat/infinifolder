@@ -269,7 +269,7 @@ The standard-library generator preserves existing files and unrelated manifest
 entries, including edited document fixtures.
 
 
-## Regenerating ANSI and floating-point conversions
+## Regenerating image format conversions
 
 `images/icon.ans` is an 80-column, 40-row truecolour CP437 conversion of the app icon
 with SAUCE dimensions, occupying a square 640x640 terminal surface. Its colour
@@ -291,6 +291,16 @@ python3 filesystem-test-images/generate-media-fixtures.py --linear-float-images-
 
 EXR highlight tone mapping remains part of the viewer, so it need not exactly
 match the PNG. These options preserve other fixtures and manifest entries.
+
+The KoalaPainter conversions (`images/icon.kla` and `icon.koa`) select three C64
+colours for each 4x8 multicolour cell, alongside the shared black background.
+Earlier samples used green/light-green inks everywhere and assigned pixels by
+brightness, discarding the source colours. Regenerate these two files without
+changing other fixtures:
+
+```sh
+python3 filesystem-test-images/generate-media-fixtures.py --koala-images-only
+```
 
 ## Image edit fixtures
 

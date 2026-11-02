@@ -9,6 +9,7 @@ import gzip
 import argparse
 import hashlib
 import json
+from itertools import combinations
 import math
 import os
 import shutil
@@ -228,23 +229,34 @@ def write_zx_spectrum_scr(src_png: Path):
 
 def write_c64_koala(src_png: Path):
     # C64 KoalaPainter: 2-byte load addr (0x6000) + 8000 bitmap + 1000 screen RAM + 1000 color RAM + 1 bg = 10003 bytes
-    rgba = get_raw_rgba(src_png, 160, 200)
+    # Match RetroImageDecoder's C64 palette. Each 4x8 multicolour cell gets
+    # three local colours plus the shared black background; preserve RGB
+    # information rather than assigning brightness bands to fixed green inks.
+    palette = np.array([
+        (0, 0, 0), (255, 255, 255), (136, 0, 0), (170, 255, 238),
+        (204, 68, 204), (0, 204, 85), (0, 0, 170), (238, 238, 119),
+        (221, 136, 85), (102, 68, 0), (255, 119, 119), (51, 51, 51),
+        (119, 119, 119), (170, 255, 102), (0, 136, 255), (187, 187, 187),
+    ], dtype=np.int32)
+    rgb = np.frombuffer(get_raw_rgba(src_png, 160, 200), dtype=np.uint8)
+    cells = rgb.reshape(25, 8, 40, 4, 4).transpose(0, 2, 1, 3, 4).reshape(1000, 32, 4)
+    delta = cells[:, :, None, :3].astype(np.int32) - palette
+    distances = np.sum(delta * delta, axis=3)
+    candidates = np.array(list(combinations(range(1, 16), 3)), dtype=np.int32)
     bitmap = bytearray(8000)
-    screen_ram = bytearray([0x5D] * 1000)  # green / light-green
-    color_ram = bytearray([0x0F] * 1000)   # light gray
-    for cy in range(25):
-        for cx in range(40):
-            cell_idx = cy * 40 + cx
-            for row in range(8):
-                y = cy * 8 + row
-                b_val = 0
-                for px in range(4):
-                    x = cx * 4 + px
-                    off = (y * 160 + x) * 4
-                    lum = (rgba[off] * 299 + rgba[off + 1] * 587 + rgba[off + 2] * 114) // 1000
-                    two_bit = min(3, lum // 64)
-                    b_val = (b_val << 2) | two_bit
-                bitmap[cell_idx * 8 + row] = b_val
+    screen_ram = bytearray(1000)
+    color_ram = bytearray(1000)
+    for cell_idx, errors in enumerate(distances):
+        # Exhaustive 455-triplet search; lexical ordering resolves ties stably.
+        costs = np.minimum(errors[:, 0], errors[:, candidates[:, 0]].T)
+        costs = np.minimum(costs, errors[:, candidates[:, 1]].T)
+        costs = np.minimum(costs, errors[:, candidates[:, 2]].T)
+        c1, c2, c3 = map(int, candidates[np.argmin(costs.sum(axis=1))])
+        indices = np.argmin(errors[:, [0, c1, c2, c3]], axis=1).reshape(8, 4)
+        packed = (indices[:, 0] << 6) | (indices[:, 1] << 4) | (indices[:, 2] << 2) | indices[:, 3]
+        bitmap[cell_idx * 8:(cell_idx + 1) * 8] = packed.astype(np.uint8).tobytes()
+        screen_ram[cell_idx] = (c1 << 4) | c2
+        color_ram[cell_idx] = c3
     kla = struct.pack("<H", 0x6000) + bytes(bitmap) + bytes(screen_ram) + bytes(color_ram) + b"\x00"
     (IMAGES_DIR / "icon.kla").write_bytes(kla)
     (IMAGES_DIR / "icon.koa").write_bytes(kla)
@@ -1561,8 +1573,10 @@ if __name__ == "__main__":
                         help="Regenerate only icon.pfm/icon.exr with linear-light RGB and update their manifest entries")
     parser.add_argument("--ansi-image-only", action="store_true",
                         help="Regenerate icon.ans as 80 columns by 40 rows and update its manifest entry")
+    parser.add_argument("--koala-images-only", action="store_true",
+                        help="Regenerate icon.kla/icon.koa using per-cell source colours and update their manifest entries")
     args = parser.parse_args()
-    if args.linear_float_images_only or args.ansi_image_only:
+    if args.linear_float_images_only or args.ansi_image_only or args.koala_images_only:
         names = []
         if args.linear_float_images_only:
             generate_all_images(linear_float_only=True)
@@ -1570,6 +1584,9 @@ if __name__ == "__main__":
         if args.ansi_image_only:
             write_ansi_art_icon(ICON_SOURCE)
             names.append("icon.ans")
+        if args.koala_images_only:
+            write_c64_koala(ICON_SOURCE)
+            names.extend(("icon.kla", "icon.koa"))
         manifest_path = FIXTURES_DIR / "media-fixtures-manifest.json"
         manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {"images": {}, "audio": {}}
         images = manifest.setdefault("images", {})
