@@ -497,11 +497,12 @@ class IconThemeManager(private val context: Context) {
     /**
      * Resolves an icon for a file by examining its MIME type, extension, and generic fallbacks.
      */
-    fun resolveFileIcon(meta: ResourceMetadata, targetSizePx: Int): Bitmap? {
+    fun resolveFileIcon(meta: ResourceMetadata, targetSizePx: Int, includeGenericFallback: Boolean = true): Bitmap? {
         refreshActiveTheme()
         val theme = activeTheme ?: return null
         val candidates = buildMimeIconCandidates(meta)
         for (candidate in candidates) {
+            if (!includeGenericFallback && candidate in setOf("application-octet-stream", "unknown")) continue
             val bmp = theme.getIconBitmap(candidate, targetSizePx)
             if (bmp != null) return bmp
         }
@@ -547,8 +548,17 @@ class IconThemeManager(private val context: Context) {
     }
 
     companion object {
-        fun buildMimeIconCandidates(meta: ResourceMetadata): List<String> =
-            com.infinifolder.mime.MimeRegistry.iconCandidates(com.infinifolder.mime.MimeRegistry.effective(meta.name, meta.mimeType))
+        fun buildMimeIconCandidates(meta: ResourceMetadata): List<String> {
+            val mime = com.infinifolder.mime.MimeRegistry.effective(meta.name, meta.mimeType)
+            val candidates = com.infinifolder.mime.MimeRegistry.iconCandidates(mime)
+            val extension = meta.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+            if (extension.isEmpty() || !extension.all { it.isLetterOrDigit() || it == '-' || it == '_' }) return candidates
+            val generic = setOf("application-octet-stream", "unknown", "text-x-generic", "image-x-generic",
+                "audio-x-generic", "video-x-generic", "font-x-generic")
+            return (candidates.filterNot { it in generic } +
+                listOf("application-x-extension-$extension", "application-x-$extension", "text-x-$extension") +
+                candidates.filter { it in generic }).distinct()
+        }
 
         fun buildFolderIconCandidates(folderName: String): List<String> {
             val list = mutableListOf<String>()

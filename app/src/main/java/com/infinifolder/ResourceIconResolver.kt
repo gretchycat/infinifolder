@@ -92,7 +92,7 @@ class ResourceIconResolver(context: Context) {
     }
 
     private fun signature(entry: ResourceEntry): String {
-        val previewVersion = if (ImageFormats.hasDosTextPreview(entry.metadata)) ":ansi-art-preview-3" else ":file-icons-3"
+        val previewVersion = if (ImageFormats.hasDosTextPreview(entry.metadata)) ":ansi-art-preview-3" else ":file-icons-4"
         return "${entry.metadata.modifiedAtMillis}:${entry.metadata.sizeBytes}:${theme.getActiveThemeId()}$previewVersion"
     }
 
@@ -223,7 +223,8 @@ class ResourceIconResolver(context: Context) {
         val apk = if (custom == null && image == null &&
             com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType) == "application/vnd.android.package-archive")
             resolveApkIcon(entry, size) else null
-        return base.copy(bitmap = custom ?: image ?: apk ?: theme.resolveFileIcon(entry.metadata, size), program = apk != null)
+        return base.copy(bitmap = custom ?: image ?: apk ?: theme.resolveFileIcon(entry.metadata, size, includeGenericFallback = false)
+            ?: FileTypeIcons.bitmap(entry.metadata, size), program = apk != null)
     }
 
     private fun resolveApkIcon(entry: ResourceEntry, size: Int): Bitmap? {

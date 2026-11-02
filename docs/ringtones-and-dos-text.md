@@ -130,3 +130,13 @@ The fallback glyphs for text/PDF/unknown files are document icons rather than
 striped geometric boxes; Word and source MIME aliases also have generic theme
 icon candidates. Explicit custom icons retain priority. Build log:
 `build/document-file-icons-build.log`; no device screenshot check was run.
+
+## Type-specific fallback artwork
+
+Regular files without matching custom/theme icons receive native folded-page
+artwork labeled with their extension or MIME subtype, with stable type colors.
+Detected text and source files share the TXT icon; files with neither extension
+nor useful MIME use FILE. Theme lookup also tries extension-based icon names
+before category/generic fallbacks. Generated fallback artwork is cached within
+a 4 MiB memory budget and does not read file contents. This does not expand
+text-art preview eligibility. Build log: `build/file-type-fallback-icons-build.log`.

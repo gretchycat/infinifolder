@@ -50,11 +50,12 @@ object FileIconView {
             icons.getMimeIconBitmap(mimeKey)?.let { return bitmapView(it) }
         }
         if (!defaultArchive && ImageFormats.hasDosTextPreview(meta)) imagePreview?.let { return it() }
-        if (theme.hasActiveTheme()) theme.resolveFileIcon(meta, sidePx)?.let { return bitmapView(it) }
+        if (theme.hasActiveTheme()) theme.resolveFileIcon(meta, sidePx, includeGenericFallback = false)?.let { return bitmapView(it) }
         if (MimeRegistry.effective(meta.name, meta.mimeType) == "application/vnd.android.package-archive" && local.owns(entry.uri)) {
             apps.getApkFileIconBitmap(local.fileFor(entry.uri).absolutePath, sidePx)?.let { return bitmapView(it) }
         }
         if (!defaultArchive && ImageFormats.isImage(meta)) imagePreview?.let { return it() }
+        if (!meta.isDirectory) return bitmapView(FileTypeIcons.bitmap(meta, sidePx))
         return TextView(context).apply {
             text = fallback
             setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, if (asGrid) iconSizeDp * .72f else 28f)
