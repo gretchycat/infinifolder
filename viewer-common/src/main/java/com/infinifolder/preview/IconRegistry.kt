@@ -53,7 +53,7 @@ class IconRegistry(private val file: File) {
         val renderable = if (json?.has("isImage") == true) json.optBoolean("isImage") else built?.isImage ?: false
         MimeRecord(key, json?.optJSONArray("extensions")?.strings()?.toSet() ?: built?.extensions.orEmpty(),
             json?.optString("iconName", built?.iconName ?: defaultIcon(key)) ?: built?.iconName ?: defaultIcon(key),
-            json?.optString("overrideIcon")?.takeIf { it.isNotBlank() },
+            json?.optionalString("overrideIcon"),
             renderable,
             if (json?.has("overrideImageIcon") == true) json.optBoolean("overrideImageIcon") else !(key.startsWith("image/") || renderable))
     }
@@ -84,9 +84,9 @@ class IconRegistry(private val file: File) {
     fun uriRules(): List<UriRule> = synchronized(lock) {
         load(); val rules = root.optJSONArray("uriRules") ?: return@synchronized emptyList()
         (0 until rules.length()).mapNotNull { i -> rules.optJSONObject(i)?.let { j ->
-            UriRule(j.optString("id"), j.optString("exactUri").takeIf { it.isNotBlank() },
+            UriRule(j.optString("id"), j.optionalString("exactUri"),
                 j.optString("scheme"), j.optString("authority"), j.optString("pathPrefix"),
-                j.optString("iconName"), j.optString("overrideIcon").takeIf { it.isNotBlank() }) } }
+                j.optString("iconName"), j.optionalString("overrideIcon")) } }
     }
     fun save(rule: UriRule) = synchronized(lock) {
         load(); require(rule.id.isNotBlank())
@@ -142,6 +142,8 @@ class IconRegistry(private val file: File) {
         }
         private val locks = ConcurrentHashMap<String, Any>()
         fun at(base: File) = IconRegistry(File(base, "icon_registry.json"))
+        private fun JSONObject.optionalString(key:String):String? =
+            (opt(key) as? String)?.takeIf {it.isNotBlank() && it!="null"}
         private fun JSONArray.strings() = (0 until length()).map { getString(it) }
         private fun defaultIcon(mime: String) = MimeRegistry.iconCandidates(mime).first()
         private val builtins: Map<String, MimeRecord> by lazy {

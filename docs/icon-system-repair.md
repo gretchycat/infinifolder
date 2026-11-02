@@ -208,3 +208,25 @@ lookup or decode is added to drawing on the UI thread. This also covers floating
 container cards through their shared FileIconView. Per-MIME content-thumbnail
 choices remain in effect. Build log: `build/rip-text-theme-first-frame.log`;
 no tests run and device display remains unverified for this follow-up.
+
+## Persistent local theme render cache and dump follow-up
+
+Imported theme packages remain in app-private `files/icon_themes`. Decoded theme
+icons now also have a persistent PNG cache at `cache/icon_theme_renders`, so they
+can be reused across process restarts without rerasterizing SVG assets. Memory
+caches still serve warm first frames. Disk reads/writes stay in theme-resolution
+workers. Keys cover renderer version, active theme/import revision, theme/source paths,
+index and asset modification metadata, fallback PNG metadata and requested size.
+Atomic temporary-file publication, bounded/validated image reads and LRU eviction
+limit the disk cache to 48 MiB and 2048 icons (4 MiB per cached PNG). Cache failures
+fall back to normal theme rendering. Android may reclaim this disposable cache;
+installed theme packages and saved theme selection are persistent settings/data.
+
+The posted 20261102-051712-385 dump also contained repeated attempts to open
+`files/null`. Optional JSON icon overrides/URI matches now accept actual strings
+and treat JSON null as absent; this fixes repeated failed reads without removing
+saved associations or valid overrides.
+
+Build: `gradle :app:assembleDebug --offline --console=plain`, successful; log:
+`build/theme-cache-rip-proportions-build.log`. Device cache restart/eviction checks
+remain unverified; no tests were added or run for this follow-up.

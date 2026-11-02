@@ -1,5 +1,9 @@
 # RIPscrip graphics
 
+Current font support: the ten BGI stroke fonts are now bundled and rendered from
+their original CHR outlines. The earlier substitution/metrics sections below
+record the investigation that led to this implementation.
+
 RIP `.rip` files use `image/x-rip` and open in the existing zoomable image viewer.
 The MIME registry classifies them as image-renderable, so normal per-MIME icon
 settings also control their thumbnails. Strong command prefixes can identify
@@ -29,12 +33,12 @@ Bitmap fonts retain their bitmap shapes in both modes.
 - Pixels, lines, rectangles, filled bars, circles, ellipses, arcs and pie slices.
 - Open/closed polygons, filled polygons, cubic Bezier curves and border flood fill.
 - Built-in/custom line and fill patterns, line thickness.
-- CP437 bitmap graphics text, text placement, horizontal/vertical size settings.
+- CP437 bitmap and original BGI stroke graphics text, text placement and horizontal/vertical sizing.
 - In-memory clipboard get/put with COPY/XOR/OR/AND/NOT raster operations.
 - Escaped delimiters/backslashes and continued physical lines.
 
 This is a **partial static RIPscrip 1.54 implementation**, not a RIPterm emulator.
-BGI stroke fonts currently use a reported CP437 bitmap fallback. TTY text outside
+A missing/corrupt stroke font uses a reported CP437 fallback. TTY text outside
 graphics command lines, styled buttons, formatted text regions, external ICN
 assets/scenes and later RIP versions are not implemented. Unsupported commands
 are reported in frame warnings; the viewer labels partial rendering and displays
@@ -73,3 +77,50 @@ unchanged. These are metric-scaled substitute glyphs, not the original CHR font
 outlines; the partial-rendering warning remains. Metrics reference:
 [BGI font measurements](https://github.com/DosWorld/dwbgi/blob/master/DOCS/CHR.MD).
 Build log: `build/rip-text-theme-first-frame.log`; device checks remain pending.
+
+## Device dump: REAPER.RIP font layout
+
+Reviewed `build/infinifolder-debug-20261102-051712-385.{json,log,png}` and the
+actual REAPER.RIP source in the user's Download/DWM_RIP1.ZIP. The screenshot
+shows right-edge text clipping; the source selects Triplex (`Y01000400`) for
+those labels. Numeric advance measurements from the reference TRIP.CHR put the
+first label's right edge at x=617, whereas the previous fixed-width substitute
+put it at x=658 on a 640-pixel-wide surface. All eight Triplex labels have measured
+right edges between 611 and 619; the old estimates ran to 658–698.
+
+RipFontMetrics now stores measured advances and nominal heights for font IDs
+1–10. `scripts/measure-bgi-metrics.py` reproduces those numeric tables from the
+reference files, with source SHA-256 hashes recorded. Only layout measurements
+are included; downloaded CHR files/stroke outlines stay in ignored build storage.
+CP437 substitute glyphs remain, with an explicit partial-rendering warning.
+RIP files reference presumed terminal fonts by ID, size and direction rather
+than embedding their glyphs. Authentic stroke-font shapes are still unsupported.
+
+The original font references are under
+[the RIPterm 1.54 reference font directory](https://github.com/bbs-land/remote-imaging-protocol/tree/main/version/1.54/assets/fonts).
+The current app build succeeds (`build/theme-cache-rip-proportions-build.log`).
+The source measurements explain the posted screenshot, but rendering the new
+build on-device remains unverified. No tests were added or run.
+
+## Bundled original BGI stroke fonts
+
+Fonts 1–10 now load from local CHR resources: Triplex, Small, Sans Serif, Gothic,
+Script, Simplex, Triplex Script, Complex, European and Bold. Font 0 retains the
+CP437 bitmap renderer. BgiStrokeFonts reads the bounded header, advance/offset
+tables, signed 7-bit vertices and move/draw/end opcodes. Text uses the real glyph
+strokes, ascenders, proportional advances and BGI fractional size factors in
+both EGA and high-resolution rendering. No font network requests occur at runtime.
+Malformed/missing resources fall back with a warning instead of disappearing.
+
+Font assets come from the pinned GameMaker distribution identified by
+vector-text-borland as its MIT font source. Original Borland font headers and
+the upstream license are preserved; full provenance, source revision and hashes
+are in `libraries/libinfinicanvas/third_party/bgi-fonts/PROVENANCE.md`. Only font
+assets were imported, not upstream program/compiler code. The APK contains all
+ten CHR resources and their license. This supersedes the earlier statement that
+authentic stroke shapes were unsupported; other static-RIP limitations remain.
+
+App build: `gradle :app:assembleDebug --offline --console=plain`, successful.
+Logs: `build/bgi-fonts-theme-cache-build.log` and `build/bgi-fonts-final-build.log`.
+No tests were added or run. The posted screenshot was inspected, and its actual
+RIP source examined; the new font rendering still needs on-device visual checks.

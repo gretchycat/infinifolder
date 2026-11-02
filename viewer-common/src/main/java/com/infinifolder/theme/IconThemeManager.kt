@@ -29,6 +29,7 @@ class IconThemeManager(private val context: Context) {
 
     private val shared: SharedPreferences = context.getSharedPreferences("browser", Context.MODE_PRIVATE)
     private val importedThemesDir = File(context.filesDir, "icon_themes").apply { mkdirs() }
+    private val diskCacheDir=File(context.cacheDir,"icon_theme_renders")
     private val themeCache = ConcurrentHashMap<String, FreeDesktopIconTheme>()
     @Volatile private var activeTheme: FreeDesktopIconTheme? = null
 
@@ -100,7 +101,7 @@ class IconThemeManager(private val context: Context) {
         val theme = themeCache.getOrPut(info.id) {
             FreeDesktopIconTheme(info) { resolveInheritedTheme(it, themes) }
         }
-        return theme.getIconBitmap(iconName, size)
+        return cachedThemeIcon(theme,iconName,size)
     }
 
     private fun resolveInheritedTheme(inheritName: String, allThemes: List<IconThemeInfo>): FreeDesktopIconTheme? {
@@ -507,11 +508,26 @@ class IconThemeManager(private val context: Context) {
     /**
      * Resolves an icon for a file by examining its MIME type, extension, and generic fallbacks.
      */
+    private fun cachedThemeIcon(theme:FreeDesktopIconTheme,name:String,size:Int):Bitmap? {
+        val file=theme.findIconFile(name,size) ?: return null
+        val sibling=File(file.parentFile,"$name.png")
+        val index=File(theme.info.rootDir,"index.theme")
+        val key="theme-render-v1:${revision()}:${theme.info.rootDir.absolutePath}:$name:$size:"+
+            "${index.lastModified()}:${index.length()}:${file.absolutePath}:${file.lastModified()}:${file.length()}:"+
+            "${sibling.lastModified()}:${sibling.length()}"
+        diskRenderMemory.get(key)?.let {return it}
+        val cached=ThemeIconDiskCache.read(diskCacheDir,key)
+        val bitmap=cached ?: theme.getIconBitmap(name,size) ?: return null
+        diskRenderMemory.put(key,bitmap)
+        if(cached==null)ThemeIconDiskCache.write(diskCacheDir,key,bitmap)
+        return bitmap
+    }
+
     fun revision(): String = "${getActiveThemeId()}:${shared.getInt("icon_theme_revision", 0)}"
     fun resolveLogicalIcon(name: String, size: Int): Bitmap? {
         refreshActiveTheme(); if(name.isBlank() || name.contains('/') || name.contains('\\')) return null
         val key=revision()
-        val bitmap=activeTheme?.getIconBitmap(name,size)
+        val bitmap=activeTheme?.let {cachedThemeIcon(it,name,size)}
         if(bitmap!=null && key==revision())firstFrameIcons.put("$key:$name:$size",bitmap)
         return bitmap
     }
@@ -598,6 +614,9 @@ class IconThemeManager(private val context: Context) {
     }
 
     companion object {
+        private val diskRenderMemory=object:LruCache<String,Bitmap>(6*1024*1024) {
+            override fun sizeOf(key:String,value:Bitmap)=value.allocationByteCount
+        }
         private val firstFrameIcons=object:LruCache<String,Bitmap>(6*1024*1024) {
             override fun sizeOf(key:String,value:Bitmap)=value.allocationByteCount
         }
