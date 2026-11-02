@@ -2,9 +2,15 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
-Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) distinguish implementation from handset acceptance. Unchecked items below are remaining work, unless explicitly described as historical evidence.
+Updated: 2026-11-02. [Current confirmations and priorities](project-status.md) distinguish implementation from handset acceptance. Unchecked items below are remaining work, unless explicitly described as historical evidence.
 
 ## InfiniStream architecture migration
+
+The existing application migration is [complete at checkpoint 31](library-migration-completion.md).
+Remaining portability, graph-planning and release items below are follow-up work.
+
+- [x] Finish the host processing/transfer audit, standalone builds and checkpoint 31 evidence.
+- [ ] Investigate the 30 recorded pre-migration storage failures and record fresh results without changing the historical baseline. See [investigation](storage-failure-investigation.md).
 
 - [x] Align references with the supplied architecture; retain dated evidence and safety limits.
 - [x] Create/reuse the seven justified repositories, pin source submodules and build them independently.
@@ -68,6 +74,14 @@ Updated: 2026-10-31. [Current confirmations and priorities](project-status.md) d
 
 See the [large-file editing roadmap](roadmap.md#large-text-and-csv-editing). Current large-file read-only guards remain in place.
 
+## Structured text formatting
+
+- [x] Add separate JSON/XML/YAML/TOML reparser modules and run view-only reparse before Android word wrapping. Preserve original source for editing and saving; keep the Reparse checkbox debug-only for now.
+- [x] Restore syntax highlighting after toggling Reparse; the scheduling correction is user-confirmed.
+- [ ] Extend large-document indexing/preloading beyond the current limits without weakening save guards.
+
+See the [structured text formatting roadmap](roadmap.md#structured-text-formatting). Word wrap remains an independent viewer option.
+
 ## Paged documents and Office formats
 
 - [ ] Add full PostScript/EPS document rendering and LaTeX typesetting behind Scribe interfaces; retain existing raster-preview support and explicit platform capabilities.
@@ -78,7 +92,9 @@ See [document rendering roadmap](roadmap.md#paged-documents-and-office-formats).
 
 ## ANSI music
 
-- [ ] Add [ANSI music playback](roadmap.md#ansi-music-playback) through Sound's portable note parser/synthesizer and existing PCM player, with optional synchronized terminal art and explicit dialect detection.
+- [x] Play supported ANSI/BASIC PLAY melodies in the dedicated CP437 viewer using Sound's `AnsiMusic` PCM output; user-confirmed 2026-11-02.
+- [ ] Use a less harsh waveform than the current square wave, with suitable attack/release while preserving melody timing. Deferred at the owner's request while storage failures are investigated.
+- [ ] Extend dialect/malformed-input coverage and evaluate normal music-player routing and synchronized terminal presentation separately.
 
 ## Cloud storage
 

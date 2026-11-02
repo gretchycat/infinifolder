@@ -2,9 +2,30 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
-Updated 2026-10-31. This is the current status reference. Checked implementation work is not automatically device acceptance. Dated audits, build counts and dump reports describe the revisions they examined.
+Updated 2026-11-02. This is the current status reference. Checked implementation work is not automatically device acceptance. Dated audits, build counts and dump reports describe the revisions they examined.
+
+## Current priority
+
+The library migration is complete at [checkpoint 31](library-migration-completion.md).
+The current stabilization task is to reproduce and investigate the 30 storage-test
+failures recorded before the migration, distinguishing product defects, invalid
+fixtures and outdated test contracts. Historical baseline evidence is retained;
+it is not a claim that the current suite has been rerun or is green. See the
+[investigation](storage-failure-investigation.md).
 
 ## Confirmed on the handset
+
+- ANSI music playback in the dedicated CP437 viewer is user-confirmed working
+  (2026-11-02). Sound's current synthesizer uses a PC-speaker-style square wave.
+  A less harsh waveform is deferred to the [to-do list](feature-todo.md#ansi-music).
+  This confirms the existing viewer path, not general music-player routing or
+  every ANSI music dialect.
+
+- The audio-icon workflow is user-confirmed (2026-11-02): embedded artwork,
+  directory cover fallback, then format/MIME icons. Generated MP3 icons say MP3;
+  other audio formats retain their own labels. Artwork uses memory and shared
+  disposable disk caches. Live remote/archive artwork and invalidation remain
+  separate checks. Icon-loading speed improvements were also user-confirmed.
 
 - Playlist lengths for playable files are user-confirmed consistent after
   checkpoint 27 (2026-10-31), following the standalone/ZIP timing and archive URI
@@ -40,7 +61,7 @@ Updated 2026-10-31. This is the current status reference. Checked implementation
   (2026-10-31). Checkpoint 15 moves the existing Android PDF backend into Scribe
   and adds serialized page work, bounded aspect-preserving rasters and explicit
   resource cleanup. Its updated UI and archive/remote opening need acceptance.
-  Full PostScript/EPS, LaTeX, Office viewing and ANSI music playback are planned;
+  Full PostScript/EPS, LaTeX and Office viewing are planned;
   new document fixtures do not enable those formats.
 
 - Local MP3 seeking, including the previously slow copied songs, and linked gapless playback are user-confirmed working (2026-10-31, checkpoint 13). Checkpoint 14 adds exact high-resolution FLAC positioning, direct positional audio inputs and image common-source composition; its high-resolution/remote/image UI acceptance remains pending. The checkpoint records 683 cases with the same 30 known failures and 46 passing pipeline checks.

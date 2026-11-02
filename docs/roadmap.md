@@ -2,17 +2,26 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
-Updated 2026-10-31. See [current status](project-status.md) for confirmed behavior and [detailed tasks](feature-todo.md) for acceptance work.
+Updated 2026-11-02. See [current status](project-status.md) for confirmed behavior and [detailed tasks](feature-todo.md) for acceptance work.
 
-## Active: InfiniStream library migration
+## Active: investigate recorded storage failures
 
-1. Align documentation and record baseline regressions and source ownership.
-2. Create the justified library repositories, reusing libinfinisound.
-3. Establish independently tested Stream source/sink, positional access, metadata and processor contracts.
-4. Adapt existing opens and consumers before removing legacy contracts.
-5. Extract Store/Vault and media/document implementations in verified commits with pinned submodules.
-6. Add bounded content detection and pull planning; negotiate push/backpressure explicitly.
-7. Recheck full and standalone builds and existing runtime acceptance after every migration. Preserve storage publication/recovery, audio gapless/seek and every current format.
+Reproduce the 30 failures recorded in the pre-migration baseline: archive/disc
+images (2), ordinary file operations (7), recovery transfers (15), torrent
+lifecycle (1) and torrent verification checkpoints (5). Investigate shared causes,
+repair implementation defects or obsolete test fixtures with evidence, and rerun
+the affected suites. Preserve the historical baseline and do not weaken safety
+requirements or turn expected failures into skipped tests. Track current results
+in the [investigation](storage-failure-investigation.md).
+
+## Completed: InfiniStream library migration
+
+Checkpoint 31 completed extraction into seven source repositories, common
+source/metadata contracts, real host consumers, transfer/save/recovery routing
+and standalone builds. See the [completion audit](library-migration-completion.md)
+for retained compatibility boundaries and the last full migration gate: 917 cases,
+887 passed and the same 30 pre-existing failures. Those counts describe that
+checkpoint, not a newly run suite. Further platform/format work is separate.
 
 Audio output and analysis now share library-decoded PCM sources, with bounded startup and independent frame blocks for seek-capable decoders. Playback prefers portable MPEG for validated content, retaining Android fallback. Portable FLAC now positions exact frames while retaining 24/32-bit precision. Audio uses demonstrated positional provider handles directly, with explicit staging for unsupported/sequential, CUE, companion-file and extraction-backed archive inputs. Unknown-length preparation and other non-seekable decoder prefixes remain. Local MP3 seeking and gapless are user-confirmed; high-resolution FLAC, live remote/container and visualizer acceptance remain. The full image viewer now composes Canvas common resources and output frame metadata while retaining its native decode/sampling paths.
 
@@ -101,17 +110,18 @@ planned until their backend and acceptance checks are complete.
 
 ### ANSI music playback
 
-Add ANSI/BBS music parsing and tone synthesis to Sound, exposing timed events and
-PCM through the common interfaces for normal music-player playback. Terminal art
-may be presented alongside the music using the same clock. Keep synthesis out of
-the text viewer and Android output out of the library's portable parser/core.
-Choose explicit dialects for CSI M/N/| and PLAY-style tempo, octave, lengths,
-accidentals, rests and articulation; handle ambiguous terminal control sequences,
-malformed or unterminated macros, duration bounds, cancellation and seeking.
-Preserve static ANSI preview dispatch for files without music. The existing
-synthetic fixture is `filesystem-test-images/audio/c_major_piano_ansi_music.ans`;
-add dialect and malformed-input cases before enabling playback. ANSI music is
-not currently supported by the music player.
+Playback from the dedicated CP437 viewer is implemented and user-confirmed
+(2026-11-02). Sound's `AnsiMusic` parses the supported BBS/BASIC PLAY melodies
+and produces mono PCM; the viewer prepares a temporary WAVE and uses Android
+media playback with audio focus and lifecycle cleanup. Static art remains
+available independently. This does not claim general music-player routing or
+universal terminal/dialect support.
+
+Deferred: replace or supplement the current PC-speaker-style square wave with
+a less harsh waveform (for example, triangle or sine with short attack/release),
+preserving pitch, rhythm, rests and cancellation. The owner requests this as a
+to-do item, after documentation and storage-failure investigation. Broader dialect,
+malformed-input and synchronized-artwork work remains separate.
 
 ### Large text and CSV editing
 

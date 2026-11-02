@@ -14,7 +14,7 @@ spelling and comments; TOML's reconstructed view can omit comments and normalize
 value spelling. XML preserves mixed content and `xml:space`, and declines DTDs.
 The source file changes only through an explicit editor save.
 
-Updated 2026-10-27. This document tracks plain text, source code, markup, paginated document, eBook, spreadsheet, and **text-based media** (such as ANSI art and ANSI music) across the six text/document viewer modules, along with difficulty ratings and prerequisites for implementing viewers/players and creators/editors for currently unsupported formats:
+Updated 2026-11-02. This document tracks plain text, source code, markup, paginated document, eBook, spreadsheet, and **text-based media** (such as ANSI art and ANSI music) across the six text/document viewer modules, along with difficulty ratings and prerequisites for implementing viewers/players and creators/editors for currently unsupported formats:
 
 1. **Plain Text & Code Viewer (`:viewer-text` / `TextViewerActivity`)**
 2. **Markdown Viewer (`:viewer-markdown` / `MarkdownViewerActivity` & `MarkdownRenderer`)**
@@ -99,7 +99,11 @@ Text-based art and terminal music share terminal byte streams. Their presentatio
 can be combined, while Sound owns music parsing/timing/synthesis and exposes PCM
 for the normal player. Scribe/terminal presentation consumes synchronized events;
 audio output remains a separate host concern. Existing Canvas static ANSI previews
-remain available. Full terminal emulation and ANSI music playback are planned.
+remain available. ANSI music playback from the dedicated CP437 viewer is implemented
+and user-confirmed (2026-11-02), using Sound’s existing `AnsiMusic` PCM synthesizer.
+Its current square wave will gain a less harsh waveform as a deferred to-do.
+General music-player routing, full terminal emulation and synchronized playback
+remain follow-up work.
 
 #### Core Prerequisites for ANSI Art & ANSI Music
 
@@ -116,7 +120,7 @@ remain available. Full terminal emulation and ANSI music playback are planned.
 | --- | --- | --- | --- | --- |
 | **ASCII / NFO / DIZ Art** | `.asc`, `.nfo`, `.diz` | **Tier 2 (Low)** | **Tier 2 (Low)** (text/CP437 editor) | **Prerequisites**: CP437 byte-to-Unicode mapping table + CP437 8×16 bitmap font (or zero-line-spacing monospace canvas) + SAUCE metadata parser. Creation uses `TextViewerActivity` with CP437 encoding output and a block-character palette bar. |
 | **ANSI Art & VT Animations** | `.ans`, `.vt` | **Tier 3 (Medium)** | **Tier 4 (High)** (character-cell draw editor) | **Prerequisites**: (1) **CP437 / Topaz bitmap font atlas**; (2) **Virtual terminal screen buffer** handling `ESC[...m` (16-color, iCE colors, 256-color `38;5;n`, 24-bit `38;2;r;g;b` / `.tnd` `ESC[1;r;g;bt`) and cursor positioning; (3) **SAUCE parser**; (4) Optional **baud-rate timer** (300–115200 bps) for `.vt`/`.ans` animations. Creating `.ans` art requires a character-cell canvas editor with foreground/background color picker, F1–F12 CP437 shading-block brushes (`░▒▓█▄▀▌▐`), and an optimizer that serializes the 2D grid into minimal `ESC[...m` sequences + SAUCE footer. |
-| **ANSI Music (Sound; optional terminal presentation)** | Dialect-dependent `ESC[M...`, `ESC[N...`, `ESC[\|...` and `0x0E` terminator in terminal streams | **Tier 3 (Medium)** | **Tier 3 (Medium)** (`PLAY` macro composer/tester) | Planned Sound parser for explicit PLAY-style dialects, timed note events, bounded PCM synthesis and seek/cancellation support. The ordinary player provides audio output; terminal presentation may synchronize artwork. Validate tempo, octave, notes, rests, accidentals, lengths and articulation for each selected dialect. Creation adds macro editing and audition. Filename alone must not enable music parsing. |
+| **ANSI Music (Sound; optional terminal presentation)** | Dialect-dependent `ESC[M...`, `ESC[N...`, `ESC[\|...` and `0x0E` terminator in terminal streams | **Tier 3 (Medium)** | **Tier 3 (Medium)** (`PLAY` macro composer/tester) | Sound’s existing supported PLAY-style melody parser and PCM synthesis are used by the CP437 viewer; playback is user-confirmed 2026-11-02. Softer synthesis, broader dialects, general music-player routing and synchronized presentation remain follow-up. Validate tempo, octave, notes, rests, accidentals, lengths and articulation for each selected dialect. Creation adds macro editing and audition. Filename alone must not enable music parsing. |
 | **Binary VGA / XBin / iCE Draw / Tundra / PCBoard** | `.bin`, `.xb`, `.idf`, `.tnd`, `.pcb`, `.avt` | **Tier 2–3 (Low–Medium)** | **Tier 3–4 (Medium–High)** | **Prerequisites**: Same CP437 bitmap font cell blitter + format-specific grid readers: `.bin` reads raw `[char, attr]` pairs (160 bytes per 80-col row); `.xb` (`XBIN\x1a` header) supports custom embedded 16-color palettes, custom 8×N VGA fonts, and RLE compression; `.idf` has a 12-byte header + RLE + custom palette/font; `.tnd` uses 24-bit RGB cells; `.pcb` parses `@X<bg><fg>` hex color codes. |
 | **PETSCII / ATASCII / Teletext** | `.pet`, `.seq`, `.ata`, `.ep1`, `.tti` | **Tier 2–3 (Low–Medium)** | **Tier 3–4 (Medium–High)** | **Prerequisites**: Commodore 64 PETSCII (shifted/unshifted) or Atari 8-bit ATASCII or Teletext Mode 7 (`40×25` 2×3 sixel mosaic) glyph tables + control-code color/reverse-video state machine. |
 | **Terminal Session Recordings** | `.ttyrec`, `.cast` (asciinema) | **Tier 3 (Medium)** | **Tier 2 (Low)** (session recorder) | **Prerequisites**: Virtual terminal screen buffer + timestamped packet reader (`[sec, usec, len]` header in `.ttyrec`; newline-delimited JSON `[time, "o", data]` in `.cast` v2) + play/pause/speed timeline scrubber. |
