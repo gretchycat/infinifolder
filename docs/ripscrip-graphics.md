@@ -38,8 +38,7 @@ Bitmap fonts retain their bitmap shapes in both modes.
 - Escaped delimiters/backslashes and continued physical lines.
 
 This is a **partial static RIPscrip 1.54 implementation**, not a RIPterm emulator.
-A missing/corrupt stroke font uses a reported CP437 fallback. TTY text outside
-graphics command lines, styled buttons, formatted text regions, external ICN
+A missing/corrupt stroke font uses a reported CP437 fallback. Styled buttons, formatted text regions, external ICN
 assets/scenes and later RIP versions are not implemented. Unsupported commands
 are reported in frame warnings; the viewer labels partial rendering and displays
 a warning. Invalid parameters, files without supported commands and exceeded
@@ -124,3 +123,30 @@ App build: `gradle :app:assembleDebug --offline --console=plain`, successful.
 Logs: `build/bgi-fonts-theme-cache-build.log` and `build/bgi-fonts-final-build.log`.
 No tests were added or run. The posted screenshot was inspected, and its actual
 RIP source examined; the new font rendering still needs on-device visual checks.
+
+## Unsupported-command dump follow-up: text windows
+
+Reviewed `build/infinifolder-debug-20261102-053308-566.{log,json,png}`. Its screenshot
+shows the DWM_RIP1.ZIP directory; the log did not yet record renderer warnings.
+Inspection of all seven actual `.RIP` sources identifies `w` (RIP_TEXT_WINDOW)
+as their unsupported opcode. Graphics-text continuations in BF-109.RIP remain
+part of their graphics text commands, rather than being routed as TTY text.
+
+RipTextWindow now implements `w`, `e`, `g`, `H` and `>`: independent TTY bounds,
+all five cell grids, wrap/truncate, scrolling, CP437 cells, cursor motion and
+erasing. Common ANSI cursor, SGR colour and erase sequences render directly on
+the shared indexed surface, independent of graphics clipping and write mode.
+Reset restores the 80×43 window. Zero-bound disabled windows accept the legacy
+nonzero size field found in REAPER/BLITZ; no unsupported operation is advertised
+as implemented merely to silence a warning. Unsupported terminal attributes still
+warn. DOS EOF metadata is not displayed as TTY content. Ordinary TTY backslashes
+are preserved; only graphics command lines use RIP continuation rules.
+
+Image-viewer warnings now emit `viewer.image.render-warning` diagnostics with the
+filename and actual warnings, as well as the existing visible partial-rendering
+notice. This makes the next offloaded log useful for further opcode work.
+
+Validation: app debug build passed; `build/rip-text-window-build.log` and
+`build/rip-text-window-final-build.log`. No tests were added or run. The new build
+still needs device checks against the seven original art files; other unsupported
+operations listed above remain unsupported.

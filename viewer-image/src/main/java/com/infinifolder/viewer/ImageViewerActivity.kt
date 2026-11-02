@@ -689,7 +689,11 @@ class ImageViewerActivity : ViewerActivity() {
                     zoomImageView.resetZoom()
                     val renderWarnings=frame?.metadata?.warnings.orEmpty()
                     subtitleView.text = "${bmp.width} × ${bmp.height} px" + if(renderWarnings.isEmpty())"" else " · Partial rendering"
-                    if(renderWarnings.isNotEmpty())Toast.makeText(this,renderWarnings.take(3).joinToString("\n"),Toast.LENGTH_LONG).show()
+                    if(renderWarnings.isNotEmpty()) {
+                        com.infinifolder.storage.DiagnosticLog.record("viewer.image.render-warning",
+                            "name=$currentName warnings=${renderWarnings.joinToString("; ")}")
+                        Toast.makeText(this,renderWarnings.take(3).joinToString("\n"),Toast.LENGTH_LONG).show()
+                    }
                     if (!isEditMode && ViewerLaunch.requestsEdit(intent)) toggleEditMode()
                 } else {
                     subtitleView.text = "Failed to decode image"
