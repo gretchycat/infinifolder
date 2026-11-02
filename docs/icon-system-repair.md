@@ -197,3 +197,14 @@ an editor leaves the existing list intact. Build command:
 `gradle :app:assembleDebug --offline --console=plain`; log:
 `build/icon-editor-scroll-build.log`. Device interaction remains unverified;
 no tests were run for this follow-up.
+
+## Selected-theme first frame
+
+FileIconView no longer paints built-in artwork ahead of a selected theme. It
+uses a bounded, revision/size-keyed memory cache of already decoded theme icons,
+shared by theme manager instances. Cold entries reserve their icon space until
+the existing background resolver supplies the chosen artwork. No theme file
+lookup or decode is added to drawing on the UI thread. This also covers floating
+container cards through their shared FileIconView. Per-MIME content-thumbnail
+choices remain in effect. Build log: `build/rip-text-theme-first-frame.log`;
+no tests run and device display remains unverified for this follow-up.

@@ -510,8 +510,20 @@ class IconThemeManager(private val context: Context) {
     fun revision(): String = "${getActiveThemeId()}:${shared.getInt("icon_theme_revision", 0)}"
     fun resolveLogicalIcon(name: String, size: Int): Bitmap? {
         refreshActiveTheme(); if(name.isBlank() || name.contains('/') || name.contains('\\')) return null
-        return activeTheme?.getIconBitmap(name, size)
+        val key=revision()
+        val bitmap=activeTheme?.getIconBitmap(name,size)
+        if(bitmap!=null && key==revision())firstFrameIcons.put("$key:$name:$size",bitmap)
+        return bitmap
     }
+    /** Memory-only first-frame artwork; callers must not decode theme files on the UI thread. */
+    fun peekFileIcon(meta:ResourceMetadata,size:Int):Bitmap? {
+        val id=getActiveThemeId()
+        if(id.isNullOrBlank())return null
+        val candidates=if(meta.isDirectory)buildFolderIconCandidates(meta.name) else buildMimeIconCandidates(meta)
+        val key=revision()
+        return candidates.firstNotNullOfOrNull {firstFrameIcons.get("$key:$it:$size")}
+    }
+
     fun resolveMimeDefaults(mime:String,size:Int):Bitmap? = com.infinifolder.mime.MimeRegistry.iconCandidates(mime)
         .firstNotNullOfOrNull {resolveLogicalIcon(it,size)}
     fun resolveMimeCategory(mime: String, size: Int): Bitmap? {
@@ -541,7 +553,7 @@ class IconThemeManager(private val context: Context) {
         val candidates = buildMimeIconCandidates(meta)
         for (candidate in candidates) {
             if (!includeGenericFallback && candidate in setOf("application-octet-stream", "unknown")) continue
-            val bmp = theme.getIconBitmap(candidate, targetSizePx)
+            val bmp = resolveLogicalIcon(candidate, targetSizePx)
             if (bmp != null) return bmp
         }
         return null
@@ -556,7 +568,7 @@ class IconThemeManager(private val context: Context) {
         val theme = activeTheme ?: return null
         val candidates = buildFolderIconCandidates(folderName)
         for (candidate in candidates) {
-            val bmp = theme.getIconBitmap(candidate, targetSizePx)
+            val bmp = resolveLogicalIcon(candidate, targetSizePx)
             if (bmp != null) return bmp
         }
         return null
@@ -579,13 +591,16 @@ class IconThemeManager(private val context: Context) {
             else -> listOf("folder")
         }
         for (candidate in candidates) {
-            val bmp = theme.getIconBitmap(candidate, targetSizePx)
+            val bmp = resolveLogicalIcon(candidate, targetSizePx)
             if (bmp != null) return bmp
         }
         return null
     }
 
     companion object {
+        private val firstFrameIcons=object:LruCache<String,Bitmap>(6*1024*1024) {
+            override fun sizeOf(key:String,value:Bitmap)=value.allocationByteCount
+        }
         fun buildMimeIconCandidates(meta: ResourceMetadata): List<String> {
             val mime = com.infinifolder.mime.MimeRegistry.effective(meta.name, meta.mimeType)
             val candidates = com.infinifolder.mime.MimeRegistry.iconCandidates(mime)

@@ -62,3 +62,14 @@ rendering modes. Log: `build/ripscrip-modes-build.log`. No tests were added or r
 for this request. Device rendering, real historical art files, gestures and mode
 switching remain unverified because no device is connected. Example source:
 `filesystem-test-images/images/ripscrip-modes.rip`.
+
+## Text sizing follow-up
+
+The CP437 substitute for BGI stroke fonts now uses font-specific nominal metrics
+and BGI fractional size factors instead of the default bitmap font's integer
+magnification. In particular, Small/LITT at size 4 uses its native small metrics,
+rather than a 32-pixel-tall 8×8 enlargement. Default bitmap-font scaling remains
+unchanged. These are metric-scaled substitute glyphs, not the original CHR font
+outlines; the partial-rendering warning remains. Metrics reference:
+[BGI font measurements](https://github.com/DosWorld/dwbgi/blob/master/DOCS/CHR.MD).
+Build log: `build/rip-text-theme-first-frame.log`; device checks remain pending.
