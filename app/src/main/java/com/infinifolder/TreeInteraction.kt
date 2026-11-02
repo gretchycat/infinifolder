@@ -20,7 +20,8 @@ internal data class TreeNode(
     val children: MutableList<TreeNode> = mutableListOf(),
     var onLongPress: (() -> Unit)? = null,
     var needsAccessBadge: Boolean = false,
-    var onRequestAccess: (() -> Unit)? = null
+    var onRequestAccess: (() -> Unit)? = null,
+    var providerAuthority: String? = null
 )
 
 internal fun isCreateDirectoryNode(node: TreeNode): Boolean =

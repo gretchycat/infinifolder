@@ -2,6 +2,16 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
+## Application public
+
+The Application public section uses the selected theme's application-place icon.
+Its app-provided storage roots use the owning application's icon, resolved from
+the DocumentsProvider package metadata rather than guessed from the authority.
+The shared resolver supplies these icons to list/grid cards and tree entries,
+including locations waiting for a folder grant; their access badge remains visible.
+App artwork uses the existing app-icon memory/disk cache and is loaded on workers.
+Unavailable package artwork falls back to the themed application-place icon.
+
 ## Exact filename and location
 
 Generated program icons are saved **in the same directory as the program file or application link** as `.icon-<full filename>.png`. Manually supplied artwork can use the same naming convention for any resource:

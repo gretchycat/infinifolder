@@ -5887,7 +5887,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     sources.forEach { source ->
                         val progName = source.detail.ifBlank { source.title }
                         applicationPublicItems += HomeItem(
-                            "📁", source.title, source.detail,
+                            "▦", source.title, source.detail,
                             {
                                 currentProgramName = progName
                                 source.granted?.let { openRoot(it, "Application public", false) }
@@ -6018,7 +6018,11 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             layoutParams = iconParams
         }
-        val themePlaceBmp:Bitmap?=null
+        val themePlaceBmp:Bitmap?=when {
+            item.providerAuthority!=null -> resourceIconResolver.peekAppStorageIcon(item.providerAuthority,iconWidth)
+            item.treeKey=="application_public" -> iconThemeManager.peekPlaceIcon("application_public",iconWidth)
+            else -> null
+        }
 
         val placeholderView: View = if (themePlaceBmp != null) {
             ImageView(this).apply {
@@ -6035,14 +6039,20 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         iconFrame.addView(placeholderView, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
         val targetTreeUri = item.treeUri
-        if(targetTreeUri!=null && !item.needsAccessBadge) {
+        val providerAuthority=item.providerAuthority
+        if(providerAuthority!=null || item.treeKey=="application_public" || (targetTreeUri!=null && !item.needsAccessBadge)) {
             val image=ImageView(this).apply {scaleType=ImageView.ScaleType.FIT_CENTER}
             iconFrame.addView(image,FrameLayout.LayoutParams(-1,-1,Gravity.CENTER))
             val generation=loadGeneration
             registerVisibleCardProbe(box,generation) {
                 imageIo.execute {
                     if(generation!=loadGeneration || isDestroyed)return@execute
-                    val resolved=resourceIconResolver.resolveLocation(targetTreeUri,item.title,iconWidth)
+                    val resolved=when {
+                        providerAuthority!=null -> resourceIconResolver.resolveAppStorage(providerAuthority,item.title,iconWidth)
+                        item.treeKey=="application_public" -> resourceIconResolver.resolveApplicationPublic(item.title,iconWidth)
+                        targetTreeUri!=null -> resourceIconResolver.resolveLocation(targetTreeUri,item.title,iconWidth)
+                        else -> return@execute
+                    }
                     runOnUiThread {
                         if(generation==loadGeneration && !isDestroyed) {
                             image.setImageBitmap(resolved.bitmap);image.tag=resolved
@@ -7406,6 +7416,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         childUri?.let { openRoot(it, "Application public", false) } ?: childItem.action()
                     }
                     childNode.canExpand = childItem.treeExpandable
+                    childNode.providerAuthority = childItem.providerAuthority
                     childNode.needsAccessBadge = childItem.needsAccessBadge
                     childNode.onRequestAccess = if (childItem.needsAccessBadge) {
                         childItem.initialUri?.let { target -> ({ rootPicker(target, childKey) }) } ?: childItem.action
@@ -7658,20 +7669,26 @@ class MainActivity : Activity(), DebugDumpObserver {
             text = node.icon; textSize = 17f; gravity = Gravity.CENTER
         }
         iconStack.addView(placeholder, FrameLayout.LayoutParams(dp(30), dp(32)))
-        if(node.uri!=null && !node.needsAccessBadge) {
+        val providerAuthority=node.providerAuthority
+        if(providerAuthority!=null || node.key=="application_public" || (node.uri!=null && !node.needsAccessBadge)) {
             val image=ImageView(this).apply {scaleType=ImageView.ScaleType.FIT_CENTER}
             iconStack.addView(image,FrameLayout.LayoutParams(dp(30),dp(32)))
             val generation=loadGeneration
             imageIo.execute {
-                val ref=provider.refForUri(node.uri)
-                if(ref!=null) {
-                    val metadata=ResourceMetadata(node.name,"vnd.android.document/directory",null,null,true)
-                    val resolved=resourceIconResolver.resolve(ResourceEntry(ref,metadata,node.uri),dp(30))
-                    runOnUiThread {
-                        if(generation==loadGeneration && !isDestroyed) {
-                            image.setImageBitmap(resolved.bitmap);image.tag=resolved
-                            placeholder.visibility=if(resolved.bitmap==null)View.VISIBLE else View.GONE
-                        }
+                val resolved=when {
+                    providerAuthority!=null -> resourceIconResolver.resolveAppStorage(providerAuthority,node.name,dp(30))
+                    node.key=="application_public" -> resourceIconResolver.resolveApplicationPublic(node.name,dp(30))
+                    node.uri!=null -> {
+                        val ref=provider.refForUri(node.uri) ?: return@execute
+                        val metadata=ResourceMetadata(node.name,"vnd.android.document/directory",null,null,true)
+                        resourceIconResolver.resolve(ResourceEntry(ref,metadata,node.uri),dp(30))
+                    }
+                    else -> return@execute
+                }
+                runOnUiThread {
+                    if(generation==loadGeneration && !isDestroyed) {
+                        image.setImageBitmap(resolved.bitmap);image.tag=resolved
+                        placeholder.visibility=if(resolved.bitmap==null)View.VISIBLE else View.GONE
                     }
                 }
             }

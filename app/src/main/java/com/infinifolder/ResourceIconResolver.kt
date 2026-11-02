@@ -172,6 +172,22 @@ class ResourceIconResolver(context: Context) {
     private fun installedApplications(name:String,size:Int)=Icon(
         theme.resolvePlaceIcon("installed_apps",size) ?: FileTypeIcons.installedApplications(size),
         "▦",name,true,source="installed-applications")
+
+    fun resolveApplicationPublic(name:String,size:Int)=Icon(
+        theme.resolvePlaceIcon("application_public",size) ?: FileTypeIcons.installedApplications(size),
+        "▦",name,true,source="application-public")
+
+    /** Provider ownership and package artwork do not require a document-tree grant. */
+    fun resolveAppStorage(authority:String,name:String,size:Int):Icon {
+        val owner=AppDocumentSources.getProgramPackage(appContext,authority)
+        val bitmap=owner?.let {runtime.apps.getAppIconBitmap(it,size)}
+        return if(bitmap!=null)Icon(bitmap,"▦",name,true,source="provider-app-storage")
+            else resolveApplicationPublic(name,size)
+    }
+
+    /** Discovery seeds the authority cache; this first-frame lookup never queries PackageManager. */
+    fun peekAppStorageIcon(authority:String,size:Int):Bitmap? =
+        AppDocumentSources.getProgramPackage(null,authority)?.let {runtime.apps.getCachedAppIconBitmap(it,size)}
     private fun directory(entry: ResourceEntry,size: Int): Icon {
         val base=directoryTheme(entry,size)
         val observed=ResourceIconSidecars.directory(entry)?.takeIf {
