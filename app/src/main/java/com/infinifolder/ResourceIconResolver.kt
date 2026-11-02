@@ -92,7 +92,8 @@ class ResourceIconResolver(context: Context) {
     }
 
     private fun signature(entry: ResourceEntry): String {
-        val previewVersion = if (ImageFormats.hasDosTextPreview(entry.metadata)) ":ansi-art-preview-3" else ":file-icons-4"
+        val previewVersion = if (ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) ":link-icons-1"
+            else if (ImageFormats.hasDosTextPreview(entry.metadata)) ":ansi-art-preview-3" else ":file-icons-4"
         return "${entry.metadata.modifiedAtMillis}:${entry.metadata.sizeBytes}:${theme.getActiveThemeId()}$previewVersion"
     }
 
@@ -133,7 +134,7 @@ class ResourceIconResolver(context: Context) {
             return base.copy(fallback = "⬇", label = info?.displayNameOverride ?: fallbackLabel(entry))
         }
         if (ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) {
-            val info = readShortcut(entry) ?: return base
+            val info = readShortcut(entry) ?: return base.copy(bitmap = LinkIcons.protocol("LINK", size))
             val custom = info.iconBase64?.let(CustomIconStore::decodeBase64Bitmap)
             val label = linkLabel(entry, info)
             val isArchiveTarget = isArchiveShortcutTarget(info)
@@ -141,6 +142,10 @@ class ResourceIconResolver(context: Context) {
             if (custom != null) return base.copy(bitmap = custom, label = label, directory = effectiveIsDir,
                 program = AppsUri.isAppUri(Uri.parse(info.targetUri)))
             val rawTarget = Uri.parse(info.targetUri)
+            if (com.infinifolder.shortcut.WebMetadataResolver.isWebUri(info.targetUri)) {
+                val favicon = WebLinkIcons.favicon(appContext, info.targetUri)
+                return base.copy(bitmap = favicon ?: LinkIcons.protocol("WEB", size), fallback = "🌐", label = label)
+            }
             if (TermuxCommandLink.owns(rawTarget)) return base.copy(
                 bitmap = runtime.apps.getAppIconBitmap("com.termux", size, useDiskCache = false),
                 fallback = "⌨", label = label, program = true)
@@ -163,14 +168,13 @@ class ResourceIconResolver(context: Context) {
             // A saved server link is a local shortcut. Drawing it must not connect
             // to the server or enumerate its contents before the user opens it.
             if (ContainerUris.networkType(rawTarget) != null) {
-                val themed = if (effectiveIsDir && !isArchiveTarget) theme.resolveFolderIcon(targetName, size)
-                    else theme.resolveFileIcon(metadata, size)
-                return base.copy(bitmap = themed, fallback = if (isArchiveTarget) "📦" else FileIconView.fallback(metadata),
+                return base.copy(bitmap = LinkIcons.protocol(LinkIcons.networkProtocol(rawTarget, runtime.connections.list()), size), fallback = "🌐",
                     label = label, directory = effectiveIsDir)
             }
             val targetEntry = ref?.let { ResourceEntry(it, metadata, target) }
             val resolved = targetEntry?.let { resolve(it, size, seen) }
-                ?: base.copy(fallback = if (isArchiveTarget) "📦" else FileIconView.fallback(metadata), directory = effectiveIsDir)
+                ?: base.copy(bitmap = LinkIcons.protocol(rawTarget.scheme ?: "LINK", size),
+                    fallback = "🔗", directory = effectiveIsDir)
             return resolved.copy(label = label, directory = effectiveIsDir)
         }
         if (entry.metadata.isSymbolicLink) {

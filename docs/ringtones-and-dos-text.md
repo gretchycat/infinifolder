@@ -140,3 +140,16 @@ nor useful MIME use FILE. Theme lookup also tries extension-based icon names
 before category/generic fallbacks. Generated fallback artwork is cached within
 a 4 MiB memory budget and does not read file contents. This does not expand
 text-art preview eligibility. Build log: `build/file-type-fallback-icons-build.log`.
+
+## Link artwork
+
+`.iflink` artwork follows its target. Explicit embedded/custom artwork remains
+first; web links use saved or fetched favicons (including SVG), with a WEB globe
+when unavailable. Favicon lookup runs on the existing background artwork worker,
+uses a bounded memory cache and up to 128 cache-directory PNGs, and retries
+missing icons after ten minutes. Cached icons expire after a day. Saved links
+are not rewritten. Network links and connection roots use local protocol-labeled
+server artwork (FTP/FTPS, SFTP, SMB, WebDAV/DAVS, etc.) without connecting to
+remote storage. Local file, folder, app and archive links retain target artwork;
+unsupported schemes get a labeled link icon. Build log:
+`build/link-target-icons-build.log`; no live favicon or visual checks were run.

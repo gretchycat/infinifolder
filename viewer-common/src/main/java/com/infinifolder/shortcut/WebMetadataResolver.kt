@@ -327,13 +327,34 @@ object WebMetadataResolver {
     }
 
     private fun decodeAndScaleBitmap(bytes: ByteArray, maxIconPx: Int): Bitmap? {
-        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        val decoded = if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = 1
+                while (maxOf(bounds.outWidth, bounds.outHeight) / inSampleSize / 2 >= maxIconPx.coerceAtLeast(1))
+                    inSampleSize *= 2
+            }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: return null
+        } else {
+            // Many sites publish only an SVG favicon.
+            return try {
+                val svg = java.io.ByteArrayInputStream(bytes).use { com.caverock.androidsvg.SVG.getFromInputStream(it) }
+                if (svg.documentViewBox == null && svg.documentWidth > 0 && svg.documentHeight > 0)
+                    svg.setDocumentViewBox(0f, 0f, svg.documentWidth, svg.documentHeight)
+                svg.setDocumentWidth("100%"); svg.setDocumentHeight("100%")
+                val bitmap = Bitmap.createBitmap(maxIconPx, maxIconPx, Bitmap.Config.ARGB_8888)
+                svg.renderToCanvas(android.graphics.Canvas(bitmap), com.caverock.androidsvg.RenderOptions.create()
+                    .preserveAspectRatio(com.caverock.androidsvg.PreserveAspectRatio.LETTERBOX))
+                bitmap
+            } catch (_: Exception) { null }
+        }
         if (decoded.width <= 0 || decoded.height <= 0) return null
         if (decoded.width <= maxIconPx && decoded.height <= maxIconPx) return decoded
         val scale = maxIconPx.toFloat() / maxOf(decoded.width, decoded.height).toFloat()
         val targetW = (decoded.width * scale).toInt().coerceAtLeast(1)
         val targetH = (decoded.height * scale).toInt().coerceAtLeast(1)
-        return Bitmap.createScaledBitmap(decoded, targetW, targetH, true)
+        return Bitmap.createScaledBitmap(decoded, targetW, targetH, true).also { if (it !== decoded) decoded.recycle() }
     }
 
     private fun openUrlBytes(urlString: String, maxBytes: Int): Triple<String, String?, ByteArray?> {

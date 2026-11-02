@@ -6229,7 +6229,10 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             layoutParams = iconParams
         }
-        val themePlaceBmp = if (iconThemeManager.hasActiveTheme()) {
+        val protocolBitmap = item.treeUri?.takeIf { ContainerUris.networkType(it) != null }?.let {
+            LinkIcons.protocol(LinkIcons.networkProtocol(it, savedConnections()), iconWidth)
+        }
+        val themePlaceBmp = protocolBitmap ?: if (iconThemeManager.hasActiveTheme()) {
             val key = item.treeParentKey ?: item.treeKey ?: item.title
             iconThemeManager.resolvePlaceIcon(key, iconWidth)
         } else null
