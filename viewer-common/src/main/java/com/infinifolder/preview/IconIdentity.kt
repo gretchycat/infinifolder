@@ -8,7 +8,10 @@ data class IconIdentity(val mimeType: String, val associated: Boolean, val ambig
 class IconIdentityResolver(private val registry: IconRegistry) {
     fun resolve(name: String, supplied: String?, detect: () -> String?): IconIdentity {
         val candidates = registry.candidates(name)
-        if (candidates.size == 1) return IconIdentity(candidates.single(), true, false)
+        // Generic binary associations carry no specific format identity. Let bounded
+        // content detection recognize real images/containers without treating every BIN as a disc.
+        if (candidates.size == 1 && candidates.single() != "application/octet-stream")
+            return IconIdentity(candidates.single(), true, false)
         val detected = detect()?.let(MimeRegistry::normalize)?.takeUnless { it == "application/octet-stream" }
         val stated = MimeRegistry.normalize(supplied)
         val packaged=MimeRegistry.packageFormat("",stated)
