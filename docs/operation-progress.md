@@ -18,3 +18,11 @@ Device checks pending: multiple small files, a large file, empty files, unknown 
 ## Verification feedback
 
 Read-back verification now has a named phase and byte/percentage progress in the per-file bar; overall progress remains below 100% until required finishing steps complete. The transfer dialog has a remembered verification checkbox for ordinary copies, including stopping an ongoing read-back. Moves/recovery remain verified. Elapsed/wait status refreshes once per second during blocked I/O. See [policy and device checks](transfer-verification-feedback.md).
+
+## Direct transfer cancellation (2026-11-02)
+
+Ordinary copy/move windows now expose **Cancel** beside file progress, with the
+same control on their Activity rows. Cancellation reverses the operation's copied
+outputs and restores removed move originals before reporting cancellation. Undo
+failures remain visible for review. Torrent controls and saved-progress behavior
+retain their existing policy. See [implementation, safeguards and validation](transfer-cancellation.md).

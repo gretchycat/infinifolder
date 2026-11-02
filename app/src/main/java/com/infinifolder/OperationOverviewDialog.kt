@@ -26,10 +26,11 @@ internal class OperationOverviewDialog(
     private val onSelect: (OperationSnapshot) -> Unit,
     private val onClearFinished: () -> Unit,
     private val onSwipe: (OperationSnapshot, Boolean) -> Unit,
+    private val onCancel: (OperationSnapshot) -> Unit,
     onDismiss: (OperationOverviewDialog) -> Unit
 ) {
     private data class Row(val root: SwipeOperationRow, val name: TextView, val destination: TextView,
-        val progress: ProgressBar, val status: TextView, val rate: TextView, val hint: TextView)
+        val progress: ProgressBar, val status: TextView, val rate: TextView, val hint: TextView, val cancel: Button)
     private val rows = LinkedHashMap<String, Row>()
     private val content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val empty = TextView(context).apply {
@@ -81,6 +82,13 @@ internal class OperationOverviewDialog(
             if (row.root.parent == null) content.addView(row.root, index)
             else if (content.indexOfChild(row.root) != index) {
                 content.removeView(row.root); content.addView(row.root, index)
+            }
+            row.cancel.apply {
+                visibility = if (operation.undoableTransfer && operation.state in setOf(OperationState.RUNNING, OperationState.QUEUED)) View.VISIBLE else View.GONE
+                text = when { operation.cancellationRequested -> "Undoing…"; operation.cancellationCommitted -> "Finishing…"; else -> "Cancel" }
+                isEnabled = !operation.cancellationRequested && !operation.cancellationCommitted
+                contentDescription = "Cancel ${operation.displayName ?: operation.label} and undo its changes"
+                setOnClickListener { onCancel(operation) }
             }
             val isPlayback = operation.id.startsWith("playback_")
             if (isPlayback) {
@@ -139,7 +147,11 @@ internal class OperationOverviewDialog(
                 row.root.setOnClickListener { onSelect(operation) }
                 row.root.swipeAction = { right -> onSwipe(operation, right) }
                 row.root.canDismiss = operation.canRemoveFromHistory
-                row.hint.text = if (operation.canRemoveFromHistory) {
+                row.hint.text = if (operation.undoableTransfer && !operation.canRemoveFromHistory && operation.cancellationRequested) {
+                    "Undoing transfer changes…"
+                } else if (operation.undoableTransfer && !operation.canRemoveFromHistory && operation.cancellationCommitted) {
+                    "Finishing transfer…"
+                } else if (operation.canRemoveFromHistory) {
                     "← Remove" + if (operation.canRestart) " · ${operation.restartActionLabel} →" else ""
                 } else "← Cancel" + if (operation.canFinishLater) " · Pause →" else ""
             }
@@ -168,18 +180,23 @@ internal class OperationOverviewDialog(
             typeface = Typeface.DEFAULT_BOLD
             setPadding(dp(8), 0, 0, 0)
         }
+        val cancel = Button(context, null, android.R.attr.borderlessButtonStyle).apply {
+            text = "Cancel"; setTextColor(0xFFD32F2F.toInt()); minHeight = dp(48)
+            visibility = View.GONE
+        }
         val statusRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
             addView(status, LinearLayout.LayoutParams(0, -2, 1f))
             addView(rate, LinearLayout.LayoutParams(-2, -2))
+            addView(cancel, LinearLayout.LayoutParams(-2, -2))
         }
         root.addView(name); root.addView(destination)
         root.addView(progress, LinearLayout.LayoutParams(-1, dp(10)).apply { topMargin = dp(6); bottomMargin = dp(4) })
         root.addView(statusRow)
         val hint = label(11f, 1).apply { alpha = .7f; setPadding(0, dp(4), 0, 0) }
         root.addView(hint)
-        return Row(root, name, destination, progress, status, rate, hint)
+        return Row(root, name, destination, progress, status, rate, hint, cancel)
     }
     private fun dp(value: Int) = (value * context.resources.displayMetrics.density).toInt()
 }

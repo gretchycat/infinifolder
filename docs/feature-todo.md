@@ -147,6 +147,12 @@ individually without discarding valid pins. Restart/device acceptance is pending
 - [x] Use the same 700 ms drag-hover navigation for container cards, breadcrumbs, and pinned targets; preserve the full selected drag payload. Breadcrumb hover uses the breadcrumb navigation action, preserving its history semantics.
 - [ ] Validate pin/unpin, half-size themed icons, horizontal clipping, multi-file drops and hover navigation on the handset in both orientations, including SAF/network/archive targets and read-only failures.
 
+## Transfer cancellation
+
+- [x] Put Cancel beside copy/move progress and on Activity transfer rows; keep the operation active while undo runs.
+- [x] Undo ordinary copied outputs and restore removed move originals with verification and conflict-safe retention. Preserve the torrent policy; continuation/resume is user-confirmed working (2026-11-02).
+- [ ] Accept the direct button, group/directory undo and live SAF/network/container variants on-device. See [scope, safeguards and tests](transfer-cancellation.md).
+
 ## Selection and sorting
 
 - [x] Current-folder wildcard `*`/`?` and bounded regex selection, with matching options and selected-set actions.

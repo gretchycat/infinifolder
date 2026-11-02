@@ -21,7 +21,16 @@ class FileOperationsTest {
         val dirs: MutableMap<String, MutableList<ResourceEntry>> = mutableMapOf()
     ) : StorageProvider {
         override val id: String = "mock"
-        init {dirs.putIfAbsent("dest",mutableListOf())}
+        init {
+            dirs.putIfAbsent("dest",mutableListOf())
+            (files.keys + dirs.keys.toList()).forEach { path ->
+                var parent = path.substringBeforeLast('/', "")
+                while (parent.isNotEmpty()) { dirs.putIfAbsent(parent, mutableListOf()); parent = parent.substringBeforeLast('/', "") }
+            }
+        }
+        var parentSupported = true
+        override fun parent(ref: ResourceRef): ProviderResult<ResourceRef?> = if (!parentSupported) ProviderResult.Unsupported(ResourceCapability.PARENT) else ProviderResult.Success(
+            ref.documentId.substringBeforeLast('/', "").takeIf { it.isNotEmpty() }?.let { ResourceRef(id, it) })
         private val attributes=mutableMapOf<ResourceRef,com.infinifolder.model.TransferMetadata>()
 
         override fun stat(ref:ResourceRef):ProviderResult<ResourceEntry> {
@@ -45,9 +54,17 @@ class FileOperationsTest {
         val listingResults = mutableMapOf<String, ProviderResult<List<ResourceEntry>>>()
         var failDelete: String? = null
         var corruptWrites = false
+        var afterWrite: ((ResourceRef) -> Unit)? = null
+        var afterDelete: ((ResourceRef) -> Unit)? = null
+        var partialDirectoryDelete: String? = null
 
-        override fun list(parent: ResourceRef): ProviderResult<List<ResourceEntry>> =
-            listingResults[parent.documentId] ?: ProviderResult.Success(dirs[parent.documentId] ?: emptyList())
+        override fun list(parent: ResourceRef): ProviderResult<List<ResourceEntry>> {
+            listingResults[parent.documentId]?.let { return it }
+            if (parent.documentId !in dirs) return ProviderResult.Failure("Missing directory")
+            val refs = (files.keys + dirs.keys).filter { it.substringBeforeLast('/', "") == parent.documentId }
+            val actual = refs.mapNotNull { (stat(ResourceRef(id, it)) as? ProviderResult.Success)?.value }
+            return ProviderResult.Success((dirs[parent.documentId].orEmpty() + actual).distinctBy { it.ref })
+        }
 
         override fun openRead(ref: ResourceRef): ProviderResult<InputStream> {
             val bytes = files[ref.documentId] ?: return ProviderResult.Failure("Not found")
@@ -59,6 +76,7 @@ class FileOperationsTest {
                 override fun close() {
                     super.close()
                     files[ref.documentId] = if (corruptWrites && ref.documentId.startsWith("dest/")) byteArrayOf(0) else toByteArray()
+                    afterWrite?.invoke(ref)
                 }
             }
             return ProviderResult.Success(out)
@@ -66,6 +84,7 @@ class FileOperationsTest {
 
         override fun createDirectory(parent: ResourceRef, name: String): ProviderResult<ResourceEntry> {
             val docId = "${parent.documentId}/$name"
+            if (docId in files || docId in dirs) return ProviderResult.Failure("Already exists")
             val entry = ResourceEntry(ResourceRef(id, docId), ResourceMetadata(name, "vnd.android.document/directory", null, 0L, true), TestUri("mock://$docId"))
             dirs.getOrPut(parent.documentId) { mutableListOf() }.add(entry)
             dirs.getOrPut(docId) { mutableListOf() }
@@ -84,11 +103,21 @@ class FileOperationsTest {
 
         override fun delete(ref: ResourceRef): ProviderResult<Unit> {
             if (ref.documentId == failDelete) return ProviderResult.Failure("Removal denied")
+            if (ref.documentId == partialDirectoryDelete) {
+                files.keys.firstOrNull { it.startsWith(ref.documentId + "/") }?.let { files.remove(it) }
+                afterDelete?.invoke(ref)
+                return ProviderResult.Failure("Interrupted recursive removal")
+            }
             deletedRefs.add(ref)
+            if (ref.documentId in dirs) {
+                files.keys.filter { it.startsWith(ref.documentId + "/") }.forEach { files.remove(it) }
+                dirs.keys.filter { it.startsWith(ref.documentId + "/") }.forEach { dirs.remove(it) }
+            }
             attributes.remove(ref)
             files.remove(ref.documentId)
             dirs.remove(ref.documentId)
             dirs.values.forEach { list -> list.removeAll { it.ref == ref } }
+            afterDelete?.invoke(ref)
             return ProviderResult.Success(Unit)
         }
 
@@ -376,4 +405,224 @@ class FileOperationsTest {
         release1.countDown()
         assertTrue(latch2Completed.await(5, java.util.concurrent.TimeUnit.SECONDS))
     }
+    private fun cancelTransfer(storage: MockStorage, paths: List<ResourceEntry>, move: Boolean, cancelled: () -> Boolean) =
+        FileOperations.batchTransfer(paths, TestUri("mock://dest"), move, storage,
+            { ResourceRef("mock", "dest") }, {}, cancelled)
+
+    @Test fun cancellationRemovesCompletedCopiesAndPreservesCollisionFile() {
+        val store = MockStorage(mutableMapOf("root/a.txt" to "aaa".toByteArray(), "root/b.txt" to "bbb".toByteArray(),
+            "dest/a.txt" to "existing".toByteArray()))
+        var cancelled = false
+        store.afterWrite = { if (it.documentId == "dest/b.txt") cancelled = true }
+        assertThrows(TransferCancelledException::class.java) {
+            cancelTransfer(store, listOf(entry("root/a.txt", size=3), entry("root/b.txt", size=3)), false) { cancelled }
+        }
+        assertEquals(setOf("root/a.txt", "root/b.txt", "dest/a.txt"), store.files.keys)
+        assertEquals("existing", String(store.files.getValue("dest/a.txt")))
+    }
+
+    @Test fun cancellationOfNestedCopyRemovesOnlyCreatedTree() {
+        val store = MockStorage(mutableMapOf("root/tree/a.txt" to "aaa".toByteArray(), "root/tree/sub/b.txt" to "bbb".toByteArray()))
+        var cancelled = false
+        store.afterWrite = { if (it.documentId == "dest/tree/sub/b.txt") cancelled = true }
+        assertThrows(TransferCancelledException::class.java) { cancelTransfer(store, listOf(entry("root/tree", directory=true)), false) { cancelled } }
+        assertEquals(setOf("root/tree/a.txt", "root/tree/sub/b.txt"), store.files.keys)
+        assertFalse(store.dirs.keys.any { it.startsWith("dest/") })
+    }
+
+    @Test fun cancellingMoveDuringCopyRetainsEveryOriginal() {
+        val store = MockStorage(mutableMapOf("root/a.txt" to "aaa".toByteArray(), "root/b.txt" to "bbb".toByteArray()))
+        var cancelled = false
+        store.afterWrite = { if (it.documentId == "dest/b.txt") {
+            assertTrue(store.files.containsKey("root/a.txt")); cancelled = true
+        } }
+        assertThrows(TransferCancelledException::class.java) {
+            cancelTransfer(store, listOf(entry("root/a.txt", size=3), entry("root/b.txt", size=3)), true) { cancelled }
+        }
+        assertEquals(setOf("root/a.txt", "root/b.txt"), store.files.keys)
+    }
+
+    @Test fun cancellationAfterOriginalRemovalRestoresVerifiedMove() {
+        val store = MockStorage(mutableMapOf("root/a.txt" to "aaa".toByteArray(), "root/b.txt" to "bbb".toByteArray()))
+        var cancelled = false
+        store.afterDelete = { if (it.documentId == "root/a.txt") cancelled = true }
+        assertThrows(TransferCancelledException::class.java) {
+            cancelTransfer(store, listOf(entry("root/a.txt", size=3), entry("root/b.txt", size=3)), true) { cancelled }
+        }
+        assertEquals(setOf("root/a.txt", "root/b.txt"), store.files.keys)
+        assertEquals("aaa", String(store.files.getValue("root/a.txt")))
+    }
+
+    @Test fun cancellationRepairsPartiallyDeletedSourceDirectory() {
+        val store = MockStorage(mutableMapOf("root/tree/a.txt" to "aaa".toByteArray(), "root/tree/sub/b.txt" to "bbb".toByteArray()))
+        var cancelled = false
+        store.partialDirectoryDelete = "root/tree"
+        store.afterDelete = { if (it.documentId == "root/tree") cancelled = true }
+        assertThrows(TransferCancelledException::class.java) { cancelTransfer(store, listOf(entry("root/tree", directory=true)), true) { cancelled } }
+        assertEquals(setOf("root/tree/a.txt", "root/tree/sub/b.txt"), store.files.keys)
+        assertEquals("aaa", String(store.files.getValue("root/tree/a.txt")))
+    }
+
+    @Test fun cancellationDoesNotOverwriteRecreatedOriginal() {
+        val store = MockStorage(mutableMapOf("root/a.txt" to "aaa".toByteArray()))
+        var cancelled = false
+        store.afterDelete = { if (it.documentId == "root/a.txt") {
+            store.files["root/a.txt"] = "new occupant".toByteArray(); cancelled = true
+        } }
+        val error = assertThrows(TransferRollbackException::class.java) { cancelTransfer(store, listOf(entry("root/a.txt", size=3)), true) { cancelled } }
+        assertTrue(error.message!!.contains("retained"))
+        assertEquals("new occupant", String(store.files.getValue("root/a.txt")))
+        assertEquals("aaa", String(store.files.getValue("dest/a.txt")))
+    }
+
+    @Test fun cancellationKeepsExternallyChangedCopyForReview() {
+        val store = MockStorage(mutableMapOf("root/a.txt" to "aaa".toByteArray(), "root/b.txt" to "bbb".toByteArray()))
+        var cancelled = false
+        store.afterWrite = { if (it.documentId == "dest/b.txt") {
+            store.files["dest/a.txt"] = "edited".toByteArray(); cancelled = true
+        } }
+        assertThrows(TransferRollbackException::class.java) {
+            cancelTransfer(store, listOf(entry("root/a.txt", size=3), entry("root/b.txt", size=3)), false) { cancelled }
+        }
+        assertEquals("edited", String(store.files.getValue("dest/a.txt")))
+        assertEquals("aaa", String(store.files.getValue("root/a.txt")))
+    }
+
+    @Test fun cancellationNeverRecursivelyDeletesAnUnrelatedNewChild() {
+        val store = MockStorage(mutableMapOf("root/tree/a.txt" to "aaa".toByteArray()))
+        var cancelled = false
+        store.afterWrite = { if (it.documentId == "dest/tree/a.txt") {
+            store.files["dest/tree/foreign.txt"] = "foreign".toByteArray(); cancelled = true
+        } }
+        assertThrows(TransferRollbackException::class.java) { cancelTransfer(store, listOf(entry("root/tree", directory=true)), false) { cancelled } }
+        assertEquals("foreign", String(store.files.getValue("dest/tree/foreign.txt")))
+        assertEquals("aaa", String(store.files.getValue("root/tree/a.txt")))
+    }
+
+    @Test fun coordinatorKeepsCancellationActiveUntilMoveUndoFinishes() {
+        val store = MockStorage(mutableMapOf("root/a.txt" to "aaa".toByteArray()))
+        val removed = java.util.concurrent.CountDownLatch(1)
+        val restoring = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val terminal = java.util.concurrent.CountDownLatch(1)
+        store.afterDelete = { if (it.documentId == "root/a.txt") {
+            removed.countDown()
+            try { java.util.concurrent.CountDownLatch(1).await(5, java.util.concurrent.TimeUnit.SECONDS) } catch (_: InterruptedException) { }
+        } }
+        store.afterWrite = { if (it.documentId == "root/a.txt") {
+            restoring.countDown(); release.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        } }
+        val coordinator = OperationCoordinator(1)
+        coordinator.addListener { snapshots -> if (snapshots.any { it.state in setOf(OperationState.CANCELLED, OperationState.FAILED, OperationState.COMPLETE) }) terminal.countDown() }
+        val selected = listOf(entry("root/a.txt", size=3))
+        val id = coordinator.submit("Move a.txt", restartTransfer=TransferRestartRequest(selected,"mock://dest",true)) { update, cancelled ->
+            FileOperations.batchTransfer(selected, TestUri("mock://dest"), true, store, { ResourceRef("mock","dest") }, update, cancelled)
+        }
+        try {
+            assertTrue(removed.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            coordinator.cancel(id)
+            assertTrue(restoring.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            val active = coordinator.snapshots().single()
+            assertEquals(OperationState.RUNNING, active.state)
+            assertTrue(active.cancellationRequested)
+        } finally { release.countDown() }
+        assertTrue(terminal.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        assertEquals(OperationState.CANCELLED, coordinator.snapshots().single().state)
+        assertTrue(coordinator.snapshots().single().message!!.contains("undone"))
+        assertEquals(setOf("root/a.txt"), store.files.keys)
+    }
+
+    @Test fun coordinatorReportsUndoConflictAsFailureWithCopyRetained() {
+        val store = MockStorage(mutableMapOf("root/a.txt" to "aaa".toByteArray()))
+        val removed = java.util.concurrent.CountDownLatch(1)
+        val terminal = java.util.concurrent.CountDownLatch(1)
+        store.afterDelete = { if (it.documentId == "root/a.txt") {
+            removed.countDown()
+            try { java.util.concurrent.CountDownLatch(1).await(5, java.util.concurrent.TimeUnit.SECONDS) } catch (_: InterruptedException) { }
+        } }
+        val coordinator = OperationCoordinator(1)
+        coordinator.addListener { snapshots -> if (snapshots.any { it.state in setOf(OperationState.CANCELLED,OperationState.FAILED,OperationState.COMPLETE) }) terminal.countDown() }
+        val selected = listOf(entry("root/a.txt", size=3))
+        val id = coordinator.submit("Move a.txt",restartTransfer=TransferRestartRequest(selected,"mock://dest",true)) { update, cancelled ->
+            FileOperations.batchTransfer(selected,TestUri("mock://dest"),true,store,{ResourceRef("mock","dest")},update,cancelled)
+        }
+        assertTrue(removed.await(5,java.util.concurrent.TimeUnit.SECONDS))
+        store.files["root/a.txt"]="replacement".toByteArray()
+        coordinator.cancel(id)
+        assertTrue(terminal.await(5,java.util.concurrent.TimeUnit.SECONDS))
+        assertEquals(OperationState.FAILED,coordinator.snapshots().single().state)
+        assertTrue(coordinator.snapshots().single().message!!.contains("undo incomplete"))
+        assertEquals("replacement",String(store.files.getValue("root/a.txt")))
+        assertEquals("aaa",String(store.files.getValue("dest/a.txt")))
+    }
+
+    @Test fun finalCommitHandshakeRejectsLateCancellation() {
+        val coordinator=OperationCoordinator(1)
+        val committed=java.util.concurrent.CountDownLatch(1)
+        val release=java.util.concurrent.CountDownLatch(1)
+        val terminal=java.util.concurrent.CountDownLatch(1)
+        coordinator.addListener { if(it.any { op -> op.state==OperationState.COMPLETE })terminal.countDown() }
+        val selected=listOf(entry("root/a.txt",size=3))
+        val id=coordinator.submit("Copy a.txt",restartTransfer=TransferRestartRequest(selected,"mock://dest",false)) { update,_ ->
+            update(OperationUpdate(cancellationCommitted=true));committed.countDown()
+            release.await(5,java.util.concurrent.TimeUnit.SECONDS)
+        }
+        assertTrue(committed.await(5,java.util.concurrent.TimeUnit.SECONDS))
+        coordinator.cancel(id)
+        assertFalse(coordinator.snapshots().single().cancellationRequested)
+        release.countDown()
+        assertTrue(terminal.await(5,java.util.concurrent.TimeUnit.SECONDS))
+    }
+
+    @Test fun movesWithoutRestorableParentFailBeforeCreatingOutput() {
+        val store=MockStorage(mutableMapOf("root/a.txt" to "aaa".toByteArray())).apply {parentSupported=false}
+        assertThrows(java.io.IOException::class.java) { cancelTransfer(store,listOf(entry("root/a.txt",size=3)),true) {false} }
+        assertEquals(setOf("root/a.txt"),store.files.keys)
+        assertTrue(store.createdFiles.isEmpty())
+    }
+
+    @Test fun cancellationCleanupFailureIsReportedAndOriginalsRemain() {
+        val store=MockStorage(mutableMapOf("root/a.txt" to "aaa".toByteArray(),"root/b.txt" to "bbb".toByteArray()))
+        var cancelled=false
+        store.failDelete="dest/a.txt"
+        store.afterWrite={if(it.documentId=="dest/b.txt")cancelled=true}
+        val error=assertThrows(TransferRollbackException::class.java) {
+            cancelTransfer(store,listOf(entry("root/a.txt",size=3),entry("root/b.txt",size=3)),false) {cancelled}
+        }
+        assertTrue(error.message!!.contains("dest/a.txt"))
+        assertEquals("aaa",String(store.files.getValue("root/a.txt")))
+        assertEquals("bbb",String(store.files.getValue("root/b.txt")))
+        assertEquals("aaa",String(store.files.getValue("dest/a.txt")))
+    }
+
+    @Test fun threadInterruptionIsMaskedForUndoAndRestoredAfterward() {
+        val store=MockStorage(mutableMapOf("root/a.txt" to "aaa".toByteArray(),"root/b.txt" to "bbb".toByteArray()))
+        store.afterWrite={if(it.documentId=="dest/b.txt")Thread.currentThread().interrupt()}
+        try {
+            assertThrows(TransferCancelledException::class.java) {
+                cancelTransfer(store,listOf(entry("root/a.txt",size=3),entry("root/b.txt",size=3)),false) {false}
+            }
+            assertTrue(Thread.currentThread().isInterrupted)
+            assertEquals(setOf("root/a.txt","root/b.txt"),store.files.keys)
+        } finally {Thread.interrupted()}
+    }
+
+    @Test fun cancellationRemovesEveryCopyOfARepeatedSource() {
+        val store=MockStorage(mutableMapOf("root/a.txt" to "aaa".toByteArray()))
+        var cancelled=false
+        store.afterWrite={if(it.documentId=="dest/a (2).txt")cancelled=true}
+        val source=entry("root/a.txt",size=3)
+        assertThrows(TransferCancelledException::class.java) {cancelTransfer(store,listOf(source,source),false) {cancelled}}
+        assertEquals(setOf("root/a.txt"),store.files.keys)
+    }
+
+    @Test fun overlappingMoveSelectionsAreRejectedBeforeChanges() {
+        val store=MockStorage(mutableMapOf("root/tree/a.txt" to "aaa".toByteArray()))
+        assertThrows(java.io.IOException::class.java) {
+            cancelTransfer(store,listOf(entry("root/tree",directory=true),entry("root/tree/a.txt",size=3)),true) {false}
+        }
+        assertTrue(store.createdFiles.isEmpty())
+        assertEquals(setOf("root/tree/a.txt"),store.files.keys)
+    }
+
 }

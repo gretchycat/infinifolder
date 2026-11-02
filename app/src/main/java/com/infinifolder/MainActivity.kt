@@ -400,6 +400,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         getSharedPreferences(com.infinifolder.torrent.TorrentTransferPreferences.NAME, MODE_PRIVATE)
     }
     private var progressCancelButton: Button? = null
+    private var progressDirectCancelButton: Button? = null
     private var progressHideButton: Button? = null
     private val refreshedTerminalOperations = mutableSetOf<String>()
     private var pendingMinimizeAfterNotificationPermission = false
@@ -9079,7 +9080,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 confirmClearFinishedOperations()
             }, onSwipe = { op, right ->
                 confirmOperationAction(op, right)
-            }, onDismiss = { dismissed ->
+            }, onCancel = { op -> confirmOperationAction(op, right = false) }, onDismiss = { dismissed ->
                 if (operationOverview === dismissed) {
                     operationOverview = null
                     isOperationWindowHidden = true
@@ -9107,6 +9108,8 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun confirmOperationAction(previous: OperationSnapshot, right: Boolean) {
         val op = operations.snapshots().firstOrNull { it.id == previous.id } ?: return
+        if (op.state in setOf(OperationState.RUNNING, OperationState.QUEUED) &&
+            (op.cancellationRequested || op.cancellationCommitted)) return
         if (op.id.startsWith("playback_")) {
             dialogBuilder().setTitle("Stop audio playback?")
                 .setMessage("Stop the current track and close the music player.")
@@ -9133,7 +9136,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         val detail = when (action) {
             "Remove" -> "Remove this status record from Activity? Files and saved download progress are kept."
             "Pause" -> "Keep the downloaded data and saved progress. Choose Resume when you want to continue."
-            "Cancel" -> if (op.canFinishLater) "Stop this download. Partial files and saved progress are kept for a manual restart."
+            "Cancel" -> if (op.undoableTransfer) "Undo this ${if (op.restartTransfer?.move == true) "move" else "copy"}. Copied files will be removed and moved originals restored. Any changed files or undo problems will be kept for review."
+                else if (op.canFinishLater) "Stop this download. Partial files and saved progress are kept for a manual restart."
                 else "Stop this operation. Files already processed are kept; unfinished output follows the operation's normal cleanup."
             else -> if (op.resumeDestination != null) "Continue using saved download progress."
                 else "Start this transfer again after checking the sources. Completed copies may be copied again with new names; existing destination files are kept."
@@ -9152,6 +9156,12 @@ class MainActivity : Activity(), DebugDumpObserver {
                     }
                     "Pause", "Cancel" -> if (currentOp.state in setOf(OperationState.RUNNING, OperationState.QUEUED)) {
                         if (!stoppingOperations.add(currentOp.id)) return@setPositiveButton
+                        if (currentOp.undoableTransfer) {
+                            // Do not queue Cancel behind the transfers occupying the loading pool.
+                            operations.cancel(currentOp.id, "transfer-cancel-button", pause = false)
+                            stoppingOperations.remove(currentOp.id)
+                            return@setPositiveButton
+                        }
                         io.execute {
                             val saved = runCatching {
                                 currentOp.resumeDestination?.let { destination ->
@@ -9428,7 +9438,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             ellipsize = android.text.TextUtils.TruncateAt.END
             text = if (active.canRemoveFromHistory) "Remove" else active.stopActionLabel
             setTextColor(0xFFD32F2F.toInt())
-            visibility = View.VISIBLE
+            visibility = if (active.undoableTransfer && !active.canRemoveFromHistory) View.GONE else View.VISIBLE
             setOnClickListener {
                 operations.snapshots().firstOrNull { it.id == activeDialogOpId }?.let { op ->
                     confirmOperationAction(op, right = !op.canRemoveFromHistory && op.canFinishLater)
@@ -9459,7 +9469,24 @@ class MainActivity : Activity(), DebugDumpObserver {
         body.addView(statusLabel)
         body.addView(currentItemView)
         body.addView(itemNameView)
-        body.addView(fileLabel)
+        val fileProgressHeading = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(fileLabel, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        progressDirectCancelButton = Button(context, null, android.R.attr.borderlessButtonStyle).apply {
+            text = "Cancel"
+            setTextColor(0xFFD32F2F.toInt())
+            minHeight = dp(48)
+            visibility = if (active.undoableTransfer) View.VISIBLE else View.GONE
+            setOnClickListener {
+                operations.snapshots().firstOrNull { it.id == activeDialogOpId }?.let {
+                    confirmOperationAction(it, right = false)
+                }
+            }
+            fileProgressHeading.addView(this, LinearLayout.LayoutParams(-2, -2))
+        }
+        body.addView(fileProgressHeading)
         body.addView(fileBar)
         body.addView(overallLabel)
         body.addView(bar)
@@ -9520,6 +9547,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             progressTorrentWaitCheck = null
             progressRetryButton = null
             progressCancelButton = null
+            progressDirectCancelButton = null
             progressHideButton = null
             val latestSnapshots = operations.snapshots()
             if (latestSnapshots.any { it.state == OperationState.RUNNING || it.state == OperationState.QUEUED }) {
@@ -9554,6 +9582,12 @@ class MainActivity : Activity(), DebugDumpObserver {
                 android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
             window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             window.attributes = window.attributes.apply { dimAmount = 0f }
+        }
+        progressDirectCancelButton?.apply {
+            visibility = if (op.undoableTransfer && op.state in setOf(OperationState.RUNNING, OperationState.QUEUED)) View.VISIBLE else View.GONE
+            isEnabled = !op.cancellationRequested && !op.cancellationCommitted
+            text = when { op.cancellationRequested -> "Undoing…"; op.cancellationCommitted -> "Finishing…"; else -> "Cancel" }
+            contentDescription = "Cancel ${op.displayName ?: op.label} and undo its changes"
         }
         val activeList = allSnapshots.filter { it.state == OperationState.RUNNING || it.state == OperationState.QUEUED }
         val waitingAfterCurrent = operationWindowQueue.count { id ->
@@ -9707,8 +9741,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 setTextIsSelectable(false)
             }
-            progressCancelButton?.visibility = View.VISIBLE
-            progressCancelButton?.isEnabled = op.id !in stoppingOperations
+            progressCancelButton?.visibility = if (op.undoableTransfer) View.GONE else View.VISIBLE
+            progressCancelButton?.isEnabled = op.id !in stoppingOperations && !op.cancellationRequested && !op.cancellationCommitted
             progressCancelButton?.text = if (op.id in stoppingOperations) "Stopping…" else op.stopActionLabel
             progressHideButton?.text = "Activity"
         }
