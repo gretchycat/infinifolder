@@ -20,6 +20,14 @@ restart/device acceptance remains pending.
 
 ## Confirmed on the handset
 
+- Copy, Cancel and restricted-destination failure are owner-confirmed working
+  (2026-11-02). The 23:17 UTC dump records direct-button cancellation of an SFTP
+  copy into ZIP, discarding its unpublished batch, and FAT16 maximum-file-size
+  rejection before copying. Move restoration, group/directory undo and a separate
+  free-space exhaustion case remain acceptance work. The cancellation increment's
+  APK gate passes 958 cases, including 370 storage cases. See
+  [evidence and remaining checks](transfer-cancellation.md#owner-run-acceptance-2026-11-02-2317-utc-dump).
+
 - The owner reports the pinned-link icon/name/breadcrumb repairs and embedded
   image follow-up working (2026-11-02). This confirms the reported workflow;
   restart persistence, cross-backend copies, multi-file drops and read-only

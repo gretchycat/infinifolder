@@ -151,7 +151,8 @@ individually without discarding valid pins. Restart/device acceptance is pending
 
 - [x] Put Cancel beside copy/move progress and on Activity transfer rows; keep the operation active while undo runs.
 - [x] Undo ordinary copied outputs and restore removed move originals with verification and conflict-safe retention. Preserve the torrent policy; continuation/resume is user-confirmed working (2026-11-02).
-- [ ] Accept the direct button, group/directory undo and live SAF/network/container variants on-device. See [scope, safeguards and tests](transfer-cancellation.md).
+- [x] Owner confirms copy, Cancel and restricted-destination failure behave as expected (2026-11-02). The 23:17 UTC dump records direct-button cancellation into an SFTP-hosted ZIP with its unpublished batch discarded, and preflight rejection of an oversized file for FAT16.
+- [ ] Accept move-original restoration, completed group/directory undo, live SAF cancellation and a distinct free-space exhaustion failure on-device. See [scope, safeguards and tests](transfer-cancellation.md).
 
 ## Selection and sorting
 

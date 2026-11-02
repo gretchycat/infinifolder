@@ -77,11 +77,39 @@ Results and logs are under `build/transfer-cancel-repair/`: `tests.log`,
 `storage-all.log` (the earlier 365-case storage run), `app-build.log`,
 `full-gate.log`, `storage-summary.json` and `full-gate-summary.json`.
 The underlying Gradle gate log is
-`build/infinistream-migration/verification-gate.log`. No device is connected through ADB, so button layout,
-tap/confirmation, and cancellation on live SAF/network/container backends remain
-unverified on-device.
+`build/infinistream-migration/verification-gate.log`. No device was connected through
+ADB during implementation; subsequent owner-run acceptance is recorded below.
 
 The undo journal is scoped to a live transfer; it is not a persistent general Undo
 stack or automatic crash recovery. Undo requires storage access and can take time
 for large moved files. Storage failures or concurrent external changes can prevent
 full reversal; those cases preserve recovery data and report the remaining paths.
+
+## Owner-run acceptance: 2026-11-02, 23:17 UTC dump
+
+The owner reports copy, Cancel and space-restricted copy failure behaving as
+expected. Evidence is `build/infinifolder-debug-20261102-231740-886.{log,json,png}`,
+from a Pixel 8 Pro with the APK updated at 23:14:00 UTC.
+
+- A roughly 31 GB `devsda` copy into an SFTP-hosted FAT16 image is rejected during
+  preflight at zero transferred bytes. The reported constraint is FAT16's
+  4 GiB-minus-one-byte maximum file size; the image also reports 18,020,352 bytes
+  free. This exercises the file-size guard, not a free-space exhaustion failure.
+  The operation becomes FAILED and its warning is shown.
+- Copying `ubuntu-26.04.1-desktop-amd64.iso` from SFTP into an SFTP-hosted ZIP
+  reaches 400,790,180 written bytes. The direct progress button requests Cancel at
+  23:17:33.517743; the operation becomes CANCELLED at 23:17:33.555988, about 38 ms
+  later. The log reports partial output removed and source retained; the private
+  container batch closes with `committed=false`, followed by “Cancelled; copied
+  changes removed.” The cancellation exception is expected here, not a second
+  failed operation. No completed copy is recorded in this retained dump; ordinary
+  copy acceptance comes from the owner's report.
+- The screenshot shows the browser after the operation windows have closed. It
+  does not independently verify destination contents or source hashes.
+
+Move-original restoration, completed group/directory rollback, conflicts and live
+SAF cancellation still need handset acceptance. The dump also contains background
+icon/archive-probe interruptions, remote permission/channel failures and main-thread
+disk-I/O warnings; these remain separate follow-up findings rather than evidence
+that the two recorded transfer outcomes failed. No code changes, tests or rebuild
+were needed for this review.
