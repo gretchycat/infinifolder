@@ -57,10 +57,6 @@ object ImageFormats {
     fun hasDosTextPreview(metadata: ResourceMetadata): Boolean = !metadata.isDirectory &&
         (extension(metadata.name) in setOf("ans","ansi","asc","diz","nfo") || metadata.mimeType == "image/x-ansi")
 
-    fun hasTextPreview(metadata: ResourceMetadata): Boolean = !metadata.isDirectory &&
-        (hasDosTextPreview(metadata) || metadata.mimeType.startsWith("text/", ignoreCase = true) ||
-            extension(metadata.name) in setOf("txt", "log", "cfg", "conf", "ini", "json", "xml", "yaml", "yml", "toml", "md"))
-
     fun isImage(metadata: ResourceMetadata): Boolean =
         !metadata.isDirectory &&
             (metadata.mimeType.lowercase().startsWith("image/") || extension(metadata.name) in decodableExtensions)

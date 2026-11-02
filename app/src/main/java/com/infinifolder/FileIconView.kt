@@ -49,7 +49,7 @@ object FileIconView {
             mimePreview?.let { return it(mimeKey, fallback) }
             icons.getMimeIconBitmap(mimeKey)?.let { return bitmapView(it) }
         }
-        if (!defaultArchive && ImageFormats.hasTextPreview(meta)) imagePreview?.let { return it() }
+        if (!defaultArchive && ImageFormats.hasDosTextPreview(meta)) imagePreview?.let { return it() }
         if (theme.hasActiveTheme()) theme.resolveFileIcon(meta, sidePx)?.let { return bitmapView(it) }
         if (MimeRegistry.effective(meta.name, meta.mimeType) == "application/vnd.android.package-archive" && local.owns(entry.uri)) {
             apps.getApkFileIconBitmap(local.fileFor(entry.uri).absolutePath, sidePx)?.let { return bitmapView(it) }

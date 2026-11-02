@@ -119,3 +119,14 @@ content-detected MIME used by their labels. Cards rebuilt after asynchronous
 format detection also request text previews before generic theme icons, and
 pass their known metadata to the preview callback. Explicit custom MIME icons
 still take priority. Build log: `build/text-card-icon-routing-build.log`.
+
+## Icon policy correction
+
+Content previews are limited to ANSI/text-art formats (`ans`, `ansi`, `asc`,
+`diz`, `nfo`, or detected `image/x-ansi`). Plain text, unknown text and source
+files use ordinary text icons. PDF and Word files use their document-type icons.
+The prior expansion to content previews for all text files has been removed.
+The fallback glyphs for text/PDF/unknown files are document icons rather than
+striped geometric boxes; Word and source MIME aliases also have generic theme
+icon candidates. Explicit custom icons retain priority. Build log:
+`build/document-file-icons-build.log`; no device screenshot check was run.

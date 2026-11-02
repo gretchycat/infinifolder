@@ -4454,7 +4454,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val isApk = !entry.metadata.isDirectory &&
             com.infinifolder.mime.MimeRegistry.effective(effectiveMeta.name, effectiveMeta.mimeType) == "application/vnd.android.package-archive"
         val sharedArtwork = isShortcut || AppsUri.isAppUri(entry.uri) || isApk ||
-            ImageFormats.hasTextPreview(effectiveMeta) || ResourceIconSidecars.find(entry) != null ||
+            ImageFormats.hasDosTextPreview(effectiveMeta) || ResourceIconSidecars.find(entry) != null ||
             ResourceArtworkCache.peek(entry, sidePx) != null
         val rawIcon = if (sharedArtwork) {
             TextView(this).apply {
@@ -5155,7 +5155,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 imageIo.execute {
                     // Drop work queued for a folder the user has already left.
                     if (generation != loadGeneration || isFinishing || isDestroyed) return@execute
-                    val bitmap = if (ImageFormats.hasTextPreview(entry.metadata))
+                    val bitmap = if (ImageFormats.hasDosTextPreview(entry.metadata))
                         thumbnailDecoder.decodeTextPreview(entry.uri, sidePx, ImageFormats.hasDosTextPreview(entry.metadata))
                     else thumbnailDecoder.decode(entry.uri, sidePx)
                     if (bitmap != null) thumbnailCache.put(previewKey, bitmap) else failedThumbnails.put(previewKey, true)

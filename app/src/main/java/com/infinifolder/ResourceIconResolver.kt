@@ -92,7 +92,7 @@ class ResourceIconResolver(context: Context) {
     }
 
     private fun signature(entry: ResourceEntry): String {
-        val previewVersion = if (ImageFormats.hasTextPreview(entry.metadata)) ":text-preview-2" else ""
+        val previewVersion = if (ImageFormats.hasDosTextPreview(entry.metadata)) ":ansi-art-preview-3" else ":file-icons-3"
         return "${entry.metadata.modifiedAtMillis}:${entry.metadata.sizeBytes}:${theme.getActiveThemeId()}$previewVersion"
     }
 
@@ -215,7 +215,7 @@ class ResourceIconResolver(context: Context) {
         val mime = CustomIconStore.resolveMimeKey(entry.metadata)
         val custom = icons.getMimeIconBitmap(mime) { decoder.decode(Uri.fromFile(it), size) }
         val image = if (custom != null) null else when {
-            ImageFormats.hasTextPreview(entry.metadata) -> decoder.decodeTextPreview(entry.uri, size,
+            ImageFormats.hasDosTextPreview(entry.metadata) -> decoder.decodeTextPreview(entry.uri, size,
                 ImageFormats.hasDosTextPreview(entry.metadata))
             ImageFormats.isImage(entry.metadata) -> decoder.decode(entry.uri, size)
             else -> null
