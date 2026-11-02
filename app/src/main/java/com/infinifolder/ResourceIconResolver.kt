@@ -108,8 +108,9 @@ class ResourceIconResolver(context: Context) {
         if(!entry.metadata.isDirectory)rendered.put("${signature(entry)}:$size",Cached(icon,System.currentTimeMillis()+if(icon.pending)500 else 30000))
     }
     private fun fallback(entry: ResourceEntry, size: Int): Icon = Icon(
-        if(entry.metadata.isDirectory)FileTypeIcons.folder(size) else FileTypeIcons.bitmap(entry.metadata,size),
-        FileIconView.fallback(entry.metadata),entry.metadata.name,entry.metadata.isDirectory)
+        if(AppsUri.isRoot(entry.uri))FileTypeIcons.installedApplications(size)
+        else if(entry.metadata.isDirectory)FileTypeIcons.folder(size) else FileTypeIcons.bitmap(entry.metadata,size),
+        if(AppsUri.isRoot(entry.uri))"▦" else FileIconView.fallback(entry.metadata),entry.metadata.name,entry.metadata.isDirectory)
     private fun notifyChanged(uri: Uri) { rendered.evictAll(); onArtworkChanged?.invoke(uri) }
     private fun overrideBitmap(value:String?,mime:String?,size:Int):Bitmap? =
         IconOverrideAssets.decode(appContext.filesDir,icons,decoder,value,mime,size)
@@ -134,6 +135,7 @@ class ResourceIconResolver(context: Context) {
             if(target!=null)return resolve(target,size,seen).copy(label=entry.metadata.name)
             return base.copy(bitmap=LinkIcons.protocol("BROKEN",size),source="broken-link")
         }
+        if(AppsUri.isRoot(entry.uri))return installedApplications(entry.metadata.name,size)
         if(AppsUri.isAppUri(entry.uri))return base.copy(bitmap=AppsUri.getPackageName(entry.uri)?.let { runtime.apps.getAppIconBitmap(it,size,useDiskCache=false) } ?: base.bitmap,source="provider-app")
         if(AppsUri.isCategoryUri(entry.uri))return base.copy(bitmap=null,fallback=runtime.apps.getCategoryIcon(AppsUri.getCategoryName(entry.uri).orEmpty()),source="provider-category")
         if(entry.metadata.isDirectory)return directory(entry,size)
@@ -163,9 +165,13 @@ class ResourceIconResolver(context: Context) {
     }
     /** Shared folder baseline, with no directory enumeration or document reads. Worker-only. */
     fun directoryTheme(entry:ResourceEntry,size:Int):Icon {
+        if(AppsUri.isRoot(entry.uri))return installedApplications(entry.metadata.name,size)
         val original=fallback(entry,size)
         return original.copy(bitmap=theme.resolveFolderIcon(entry.metadata.name,size) ?: original.bitmap,source="directory-theme")
     }
+    private fun installedApplications(name:String,size:Int)=Icon(
+        theme.resolvePlaceIcon("installed_apps",size) ?: FileTypeIcons.installedApplications(size),
+        "▦",name,true,source="installed-applications")
     private fun directory(entry: ResourceEntry,size: Int): Icon {
         val base=directoryTheme(entry,size)
         val observed=ResourceIconSidecars.directory(entry)?.takeIf {
@@ -196,6 +202,7 @@ class ResourceIconResolver(context: Context) {
     fun resolveLocation(uri:Uri,name:String,size:Int):Icon {
         val rule=runCatching {uriRule(uri.toString(),size)}.getOrNull()
         if(rule!=null)return Icon(rule,"🔗",name,true,source="uri-rule")
+        if(AppsUri.isRoot(uri))return installedApplications(name,size)
         val scheme=uri.scheme.orEmpty().lowercase()
         if(ContainerUris.networkType(uri)!=null || scheme in setOf("magnet","torrent")) {
             return Icon(theme.resolveSchemeIcon(scheme,size) ?: LinkIcons.protocol(LinkIcons.networkProtocol(uri,runtime.connections.list()),size),

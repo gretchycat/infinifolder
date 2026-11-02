@@ -604,9 +604,25 @@ class IconThemeManager(private val context: Context) {
      */
     fun resolvePlaceIcon(placeId: String, targetSizePx: Int): Bitmap? {
         refreshActiveTheme()
-        val theme = activeTheme ?: return null
+        if(activeTheme==null)return null
+        for (candidate in placeIconCandidates(placeId)) {
+            val bmp = resolveLogicalIcon(candidate, targetSizePx)
+            if (bmp != null) return bmp
+        }
+        return null
+    }
+
+    /** First-frame place artwork comes from memory; theme decoding stays on workers. */
+    fun peekPlaceIcon(placeId:String,size:Int):Bitmap? {
+        if(getActiveThemeId().isNullOrBlank())return null
+        val key=revision()
+        return placeIconCandidates(placeId).firstNotNullOfOrNull {firstFrameIcons.get("$key:$it:$size")?.bitmap}
+    }
+
+    private fun placeIconCandidates(placeId:String):List<String> {
         val lower = placeId.lowercase(Locale.ROOT)
-        val candidates = when {
+        return when {
+            lower == "installed_apps" -> listOf("start-here-android", "view-app-grid", "applications-all", "applications-other")
             lower.startsWith("internal_shared") -> listOf("drive-harddisk", "drive-removable-media", "folder")
             lower.startsWith("application_public") -> listOf("applications-other", "system-run", "folder")
             lower.startsWith("sftp") || lower.startsWith("ftp") || lower.startsWith("smb") || lower.startsWith("network") ->
@@ -615,11 +631,6 @@ class IconThemeManager(private val context: Context) {
             lower.startsWith("trash") -> listOf("user-trash", "user-trash-full", "folder")
             else -> listOf("folder")
         }
-        for (candidate in candidates) {
-            val bmp = resolveLogicalIcon(candidate, targetSizePx)
-            if (bmp != null) return bmp
-        }
-        return null
     }
 
     companion object {

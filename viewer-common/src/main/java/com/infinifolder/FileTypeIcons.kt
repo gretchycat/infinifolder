@@ -36,6 +36,26 @@ object FileTypeIcons {
         cache.put(key,bitmap);return bitmap
     }
 
+    /** App-drawer artwork for Android's virtual installed-applications root. */
+    @Synchronized
+    fun installedApplications(requestedSize:Int):Bitmap {
+        val size=requestedSize.coerceIn(1,1024)
+        val key="installed-applications:$size"
+        cache.get(key)?.let {return it}
+        val bitmap=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888)
+        val canvas=Canvas(bitmap);canvas.scale(size/64f,size/64f)
+        val paint=Paint(Paint.ANTI_ALIAS_FLAG)
+        val colours=intArrayOf(0xff56b6f2.toInt(),0xff8acb57.toInt(),0xffffb74d.toInt(),
+            0xffb18be8.toInt(),0xff68c9c0.toInt(),0xffee8194.toInt(),
+            0xff8acb57.toInt(),0xffffb74d.toInt(),0xff56b6f2.toInt())
+        for(row in 0..2)for(col in 0..2) {
+            val x=5f+col*19f;val y=5f+row*19f
+            paint.color=colours[row*3+col]
+            canvas.drawRoundRect(x,y,x+16f,y+16f,4f,4f,paint)
+        }
+        cache.put(key,bitmap);return bitmap
+    }
+
     @Synchronized
     fun bitmap(meta: ResourceMetadata, requestedSize: Int, resolvedMime: String? = null): Bitmap {
         val mime = resolvedMime?.let(MimeRegistry::normalize) ?: MimeRegistry.effective(meta.name, meta.mimeType)

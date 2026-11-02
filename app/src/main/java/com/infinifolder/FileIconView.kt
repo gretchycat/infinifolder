@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import com.infinifolder.apps.AppsStorageProvider
+import com.infinifolder.apps.AppsUri
 import com.infinifolder.mime.MimeRegistry
 import com.infinifolder.model.ResourceEntry
 import com.infinifolder.model.ResourceMetadata
@@ -37,7 +38,10 @@ object FileIconView {
         return ImageView(context).apply {
             scaleType=ImageView.ScaleType.FIT_CENTER
             val size=((if(asGrid)iconSizeDp else 44)*context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
-            setImageBitmap(if(!theme.getActiveThemeId().isNullOrBlank())theme.peekFileIcon(meta,size)
+            setImageBitmap(if(AppsUri.isRoot(entry.uri)) {
+                if(!theme.getActiveThemeId().isNullOrBlank())theme.peekPlaceIcon("installed_apps",size)
+                else FileTypeIcons.installedApplications(size)
+            } else if(!theme.getActiveThemeId().isNullOrBlank())theme.peekFileIcon(meta,size)
                 else if(meta.isDirectory)FileTypeIcons.folder(size) else FileTypeIcons.bitmap(meta,size))
             contentDescription="Loading file icon"
             layoutParams=FrameLayout.LayoutParams(-1,-1,Gravity.CENTER)
