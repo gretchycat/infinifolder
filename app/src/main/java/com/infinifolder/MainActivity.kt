@@ -784,9 +784,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 val right = safe?.right ?: insets.systemWindowInsetRight
                 val bottom = safe?.bottom ?: insets.systemWindowInsetBottom
                 topInsetArea.layoutParams = LinearLayout.LayoutParams(-1, top)
-                if (::unhideOperationBar.isInitialized) {
-                    unhideOperationBar.setPadding(dp(8) + left, dp(6), dp(8) + right, dp(6) + bottom)
-                }
+                // Protect every pane even when the operation-status bar is hidden.
+                root.setPadding(left, 0, right, bottom)
                 insets
             }
         }
@@ -1212,6 +1211,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         root.addView(browserArea, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(unhideOperationBar, LinearLayout.LayoutParams(-1, -2))
         setContentView(root)
+        root.requestApplyInsets()
         root.setOnDragListener { host, event ->
             when (event.action) {
                 android.view.DragEvent.ACTION_DRAG_STARTED -> event.localState is BrowserDragPayload
