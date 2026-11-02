@@ -113,3 +113,9 @@ and UTF-16 style offsets, and attaches combining marks to the preceding cell.
 The surface still uses one cell per printable scalar rather than full Unicode
 wide-character/emoji terminal layout. App/text-host build log:
 `build/utf8-ansi-build.log`; no interactive rendering checks were run.
+
+Ordinary text cards now enter the shared artwork resolver, including the
+content-detected MIME used by their labels. Cards rebuilt after asynchronous
+format detection also request text previews before generic theme icons, and
+pass their known metadata to the preview callback. Explicit custom MIME icons
+still take priority. Build log: `build/text-card-icon-routing-build.log`.

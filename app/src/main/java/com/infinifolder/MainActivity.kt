@@ -4396,7 +4396,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     ): View = FileIconView.create(this, entry, meta, asGrid, iconSizeDp,
         customIconStore, iconThemeManager, localProvider, appsProvider,
         mimePreview = { mimeKey, fallback -> mimeIconPreview(mimeKey, fallback, asGrid, box) },
-        imagePreview = { imagePreview(entry, asGrid, box) })
+        imagePreview = { imagePreview(entry.copy(metadata = meta), asGrid, box) })
 
     private fun browseNestedArchive(entry: ResourceEntry) {
         val loadingToken = beginEntryActionLoading("Opening ${entry.metadata.name}…") ?: return
@@ -4453,7 +4453,8 @@ class MainActivity : Activity(), DebugDumpObserver {
 
         val isApk = !entry.metadata.isDirectory &&
             com.infinifolder.mime.MimeRegistry.effective(effectiveMeta.name, effectiveMeta.mimeType) == "application/vnd.android.package-archive"
-        val sharedArtwork = isShortcut || AppsUri.isAppUri(entry.uri) || isApk || ResourceIconSidecars.find(entry) != null ||
+        val sharedArtwork = isShortcut || AppsUri.isAppUri(entry.uri) || isApk ||
+            ImageFormats.hasTextPreview(effectiveMeta) || ResourceIconSidecars.find(entry) != null ||
             ResourceArtworkCache.peek(entry, sidePx) != null
         val rawIcon = if (sharedArtwork) {
             TextView(this).apply {
@@ -4601,7 +4602,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return@sourceRead
                         if (entry.uri !in visibleArtworkUris) { retryWhenVisible(); return@sourceRead }
                         val resolved = runCatching {
-                            resourceIconResolver.resolve(entry, artworkSize, deferCacheWrite = true)
+                            resourceIconResolver.resolve(entry.copy(metadata = effectiveMeta), artworkSize, deferCacheWrite = true)
                         }.getOrNull()
                         if (resolved != null) runOnUiThread {
                             if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return@runOnUiThread
@@ -5119,7 +5120,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun imagePreview(entry: ResourceEntry, asGrid: Boolean, cardView: View? = null): View {
         val sideDp = if (asGrid) iconSizeDp else 44
         val sidePx = dp(sideDp)
-        val previewKey = "${entry.ref.providerId}:${entry.ref.documentId}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}"
+        val previewKey = "${entry.ref.providerId}:${entry.ref.documentId}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:${entry.metadata.mimeType}:text-v3"
         val frame = FrameLayout(this).apply {
             clipChildren = false
             clipToPadding = false
@@ -5154,7 +5155,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                 imageIo.execute {
                     // Drop work queued for a folder the user has already left.
                     if (generation != loadGeneration || isFinishing || isDestroyed) return@execute
-                    val bitmap = thumbnailDecoder.decode(entry.uri, sidePx)
+                    val bitmap = if (ImageFormats.hasTextPreview(entry.metadata))
+                        thumbnailDecoder.decodeTextPreview(entry.uri, sidePx, ImageFormats.hasDosTextPreview(entry.metadata))
+                    else thumbnailDecoder.decode(entry.uri, sidePx)
                     if (bitmap != null) thumbnailCache.put(previewKey, bitmap) else failedThumbnails.put(previewKey, true)
                     runOnUiThread {
                         if (image.tag == previewKey && bitmap != null) {
