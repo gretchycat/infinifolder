@@ -113,3 +113,35 @@ Queued main-card requests recheck an immutable snapshot of the actual viewport a
 - **Single-pass stream decoding**: `ThumbnailDecoder` reads non-direct provider streams (`sftp://`, `smb://`, `ftp://`, `webdav://`, `archive://`) into memory once (bounded to 32 MiB) and extracts archive entry extensions from the `path` query parameter so stream-backed icons and SVG/raster artwork decode without double-opening or mid-stream closes.
 - **Arbitrary overrides and sibling PNG cache in remote/archive containers**: Any file, directory, or archive inside local, remote, or archive/disk-image containers honors a sibling `.icon-<full filename>.png` override. Program artwork (`.iflnk` app shortcuts and `.apk` files, including remote/archived APKs staged temporarily for `PackageManager` icon extraction) automatically persists and refreshes `.icon-<full filename>.png` sidecars in writable remote directories and writable archives/disk images while preserving custom user-supplied sidecars.
 - **Status**: User-confirmed working on the handset (2026-10-27).
+
+## Pinned links and embedded artwork (2026-11-02 repair)
+
+Pins use `ResourceIconResolver`, including embedded link images, URI registry rules,
+theme icons and directory covers. Their icon slots use their actual pixel size,
+with asynchronous work independent of the scrolling file list. Theme/registry and
+artwork notifications refresh the pin bar. A link's display-name override is used
+for its pin label; a missing override falls back to its filename without the link
+extension. Resolved labels are saved with existing pins; old preferences load
+without a migration reset. Taps, menu-open and hover jumps use container navigation
+with an absolute target route rather than appending unrelated visited folders.
+
+In **Link properties → Embedded link icon**, **Choose image…** imports an image
+and **Remove image** restores automatic target artwork. A pinned link's long-press
+menu includes **Link properties**. Creating a link also supports choosing an image
+by tapping its icon. These operations store a Base64-encoded PNG in the existing
+optional `iconBase64` JSON field, so copying the `.iflink` carries its image without
+a separate image path or permission grant. PNG imports are bounded to 256 pixels
+independent of display density; the complete link must fit the existing 1 MiB
+reader limit. Image updates use the shared verified replacement API with the
+original content revision, retaining the original on a failed replacement.
+
+The properties preview and pin/list/tree caches refresh after replacement or
+removal. Saving other edited link fields retains the selected embedded image.
+Malformed/absent images fall through to normal target/URI/theme artwork. Existing
+link JSON and icon precedence remain compatible; no new link-file format exists.
+
+Validation: `gradle :app:assembleDebug --offline --console=plain`; logs under
+`build/pinned-link-repair/`. Handset display, picker return, copy/reopen, clear,
+restart and breadcrumb/hover acceptance remain pending: ADB has no connected
+device. The previous 942-test gate predates this follow-up and is not new evidence
+for its UI behavior.

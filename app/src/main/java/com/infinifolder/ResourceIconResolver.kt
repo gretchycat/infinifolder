@@ -53,9 +53,12 @@ class ResourceIconResolver(context: Context) {
         return key
     }
     fun close() { onArtworkChanged=null; retries.shutdownNow() }
-    fun invalidate() { rendered.evictAll(); identities.evictAll(); archives.clear(); audioArtwork.clear(); ResourceArtworkCache.clearMemory() }
+    fun invalidate() { rendered.evictAll(); identities.evictAll(); linkInfo.evictAll(); archives.clear(); audioArtwork.clear(); ResourceArtworkCache.clearMemory() }
     private fun linkKey(entry: ResourceEntry) = "${entry.uri}:${entry.metadata.modifiedAtMillis}:${entry.metadata.sizeBytes}"
     fun peekShortcut(entry: ResourceEntry): ShortcutInfo? = linkInfo.get(linkKey(entry))
+    /** Worker-only metadata access shared by listing and pinned-link presentation. */
+    fun shortcutInfo(entry: ResourceEntry): ShortcutInfo? = peekShortcut(entry)
+        ?: IconWork.bounded(lane="metadata:${entry.ref.providerId}") { readShortcut(entry) }
     fun sidecar(entry: ResourceEntry): ResourceEntry? = artworkCache.sidecar(entry)
     fun sidecar(uri: Uri, name: String = ""): ResourceEntry? = artworkCache.sidecar(uri, name)
     private fun signature(entry: ResourceEntry,iconRevision:String=revision()): String {
@@ -246,7 +249,7 @@ class ResourceIconResolver(context: Context) {
             else Icon(theme.resolveSchemeIcon(scheme,size) ?: LinkIcons.protocol(scheme,size),"🔗",name,true,source="scheme")
     }
     private fun link(entry: ResourceEntry,size: Int,seen: MutableSet<ResourceRef>): Icon {
-        val info=readShortcut(entry) ?: return fallback(entry,size).copy(bitmap=LinkIcons.protocol("BROKEN",size),source="broken-link")
+        val info=shortcutInfo(entry) ?: return fallback(entry,size).copy(bitmap=LinkIcons.protocol("BROKEN",size),source="broken-link")
         val label=info.displayNameOverride?.takeIf { it.isNotBlank() } ?: entry.metadata.name.substringBeforeLast('.')
         val target=runCatching { Uri.parse(IconRegistry.normalizeUri(info.targetUri)) }.getOrNull()
             ?: return fallback(entry,size).copy(bitmap=LinkIcons.protocol("BROKEN",size),label=label,source="broken-link")

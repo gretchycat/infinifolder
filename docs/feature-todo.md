@@ -128,9 +128,12 @@ individually without discarding valid pins. Restart/device acceptance is pending
 - [x] Allow a browsable container to be pinned: a directory, archive, disk-image folder, or another supported storage container.
 - [x] Display pinned targets as icons in a row between the action bar and the breadcrumbs.
 - [x] Size each pinned icon at approximately half the normal file icon size, following the configured icon size.
-- [x] Keep pins temporary for the current browsing session; do not restore them as permanent bookmarks after restarting the app.
+- [x] Persist pin/unpin changes and restore the ordered targets after restarting the app (supersedes the original temporary-pin policy).
 - [x] Hide the entire pinned-target row when no targets are pinned.
-- [x] Tap a pinned icon to navigate to its container.
+- [x] Use the shared icon resolver for pinned artwork, independently of file-list visibility, with correctly sized theme/cache icons and asynchronous source fallback (2026-11-02 repair; handset acceptance pending).
+- [x] Display a pinned `.iflink` using its defined display name, falling back to the filename without its extension; persist resolved names and refresh link metadata asynchronously.
+- [x] Expose **Embedded link icon → Choose image / Remove image** in link properties, also reachable from a pinned link. Store a PNG as Base64 in the existing `iconBase64` field, use bounded 256-pixel imports and verified provider saves, retain the embedded image when saving other link properties, and refresh listing/tree/pin/header artwork after changes. Handset acceptance is pending.
+- [x] Tap, menu-open and drag-hover a pin using the same absolute target route, clearing unrelated breadcrumb ancestry; retain archive/virtual-container route handling (2026-11-02 repair; handset acceptance pending).
 - [x] Accept a dragged file or selected file set over a pinned target. Use the same destination capability checks, safety checks, and device identity rules as other drop targets: move within the same device and copy between different devices.
 - [x] Keep pinned targets available while navigating elsewhere, in portrait and landscape layouts.
 - [x] Provide **Pin to top** in container long-press menus and **Unpin** on pinned-item long press, without introducing long-press actions on the navigation tree. Breadcrumb long press can also pin the referenced folder.

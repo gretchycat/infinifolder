@@ -196,7 +196,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     @Volatile private var visibleArtworkUris: Set<Uri> = emptySet()
     private var artworkRenderGeneration = 0
     private val artworkRefreshRunnable=Runnable {
-        if(!isFinishing && !isDestroyed) {renderCurrentContents();renderTree()}
+        if(!isFinishing && !isDestroyed) {renderCurrentContents();renderTree();renderPinnedContainers()}
     }
     private var lastIconRegistryRevision=""
     private val resourceIconResolver by lazy { ResourceIconResolver(applicationContext).apply {
@@ -266,6 +266,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private lateinit var pinnedContainerBar: HorizontalScrollView
     private lateinit var pinnedContainerContent: LinearLayout
     private var renderedPinnedIconSize = 0
+    @Volatile private var pinnedRenderGeneration = 0
     private var dragHoveredTreeRow: View? = null
     private var dragHoveredTreeRowSelected = false
     private var dragHoveredTreeNodeKey: String? = null
@@ -412,7 +413,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private val homeItems = mutableListOf<HomeItem>()
     private val applicationPublicItems = mutableListOf<HomeItem>()
     private data class ExternalLinkVisit(val uri: String, val title: String, val openedAt: Long)
-    private enum class LinkNavigationOrigin { DIRECTORY_LINK, VIRTUAL_ROOT, EXTERNAL_HISTORY }
+    private enum class LinkNavigationOrigin { DIRECTORY_LINK, VIRTUAL_ROOT, EXTERNAL_HISTORY, PINNED }
     private val externalLinkHistoryKey = "external_link_history_v1"
     private val externalLinkSchemes = setOf("ftp", "ftps", "sftp", "ssh", "sshfs", "smb", "webdav", "dav", "davs", "magnet", "torrent")
     private val pickTreeRequest = 4101
@@ -1608,7 +1609,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             setTextColor(setTextColorForTheme())
         }
         val detectStatusView = TextView(context).apply {
-            text = "Web URLs auto-detect title & favicon · Tap icon to customize"
+            text = "Web URLs auto-detect title & favicon · Tap icon to embed an image"
             textSize = 12f
             setTextColor(if (dark) 0xFF9BA994.toInt() else 0xFF687363.toInt())
             setPadding(0, dp(2), 0, 0)
@@ -1627,7 +1628,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     customSelectedIconBase64 = base64
                     iconImage.setImageBitmap(bmp)
                     iconPlaceholder.visibility = View.GONE
-                    detectStatusView.text = "Custom icon selected"
+                    detectStatusView.text = "Image will be embedded in the link"
                 }
             }
             launchCustomIconPicker()
@@ -3683,7 +3684,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         "mime" -> if (targetMime != null) applyMimeTypeIcon(targetMime, pickedImageUri)
                         "create_link" -> if (createLinkCb != null) {
                             imageIo.execute {
-                                val bmp = thumbnailDecoder.decode(pickedImageUri, dp(128))
+                                val bmp = thumbnailDecoder.decode(pickedImageUri, 256)
                                 val base64 = bmp?.let { CustomIconStore.encodeBitmapToBase64Png(it) }
                                 if (bmp != null && !base64.isNullOrBlank()) {
                                     runOnUiThread {
@@ -3691,6 +3692,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                                             createLinkCb(bmp, base64)
                                         }
                                     }
+                                } else runOnUiThread {
+                                    Toast.makeText(this, "Could not decode the selected link image", Toast.LENGTH_LONG).show()
                                 }
                             }
                         }
@@ -6906,11 +6909,12 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun shortcutContainerDestination(entry: ResourceEntry): Uri? {
-        if (!ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) return null
+        if (entry.metadata.isDirectory || !ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) return null
         val shortcut = shortcutCache.get(entry.uri.toString()) ?: return null
         if (!shortcut.targetIsDirectory && !ArchiveFormats.isArchive(Uri.parse(shortcut.targetUri).lastPathSegment.orEmpty())) return null
-        val target = containerUriHint(Uri.parse(shortcut.targetUri))
-        return provider.refForUri(target)?.let { Uri.parse(it.documentId) }
+        val uri = Uri.parse(shortcut.targetUri)
+        val target = if (shortcut.targetIsDirectory) uri else containerUriHint(uri)
+        return target.takeIf { provider.refForUri(it) != null }
     }
     private fun entryDropDestination(entry: ResourceEntry): Uri? {
         shortcutContainerDestination(entry)?.let { return it }
@@ -6959,7 +6963,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun pinContainer(entry: ResourceEntry, destination: Uri) {
         if (!isContainerPinned(destination)) {
-            pinnedContainers += PinnedContainer(entry, destination)
+            pinnedContainers += PinnedContainer(entry, destination, shortcutCache.get(entry.uri.toString())?.displayNameOverride)
             PinnedContainerPreferences(shared).save(pinnedContainers)
             renderPinnedContainers()
         }
@@ -6971,12 +6975,21 @@ class MainActivity : Activity(), DebugDumpObserver {
         renderPinnedContainers()
     }
 
+    /** Pins jump to a storage route; they are not children of the currently displayed folder. */
+    private fun openPinnedContainer(pin: PinnedContainer) {
+        openContainerLinkUri(pin.destination, pin.name, requireContainer = true,
+            origin = LinkNavigationOrigin.PINNED, knownDirectory = true)
+    }
+
     private fun showContainerPinMenu(entry: ResourceEntry, destination: Uri) {
-        val pinned = isContainerPinned(destination)
-        showGroupedMenuDialog(entry.metadata.name,
-            groups = listOf(listOf("Open container", if (pinned) "Unpin" else "Pin to top"))) { action ->
+        val saved = pinnedContainers.firstOrNull { sameResourceUri(it.destination, destination) }
+        val pin = saved ?: PinnedContainer(entry, destination, shortcutCache.get(entry.uri.toString())?.displayNameOverride)
+        val actions = mutableListOf("Open container", if (saved != null) "Unpin" else "Pin to top")
+        if (!entry.metadata.isDirectory && ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) actions += "Link properties"
+        showGroupedMenuDialog(pin.name, groups = listOf(actions)) { action ->
             when (action) {
-                "Open container" -> navigate(destination, displayName = entry.metadata.name)
+                "Open container" -> openPinnedContainer(pin)
+                "Link properties" -> showPropertiesDialog(pin.entry)
                 "Unpin" -> unpinContainer(destination)
                 "Pin to top" -> pinContainer(entry, destination)
             }
@@ -6985,64 +6998,99 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun renderPinnedContainers() {
         if (!::pinnedContainerContent.isInitialized) return
+        val generation = ++pinnedRenderGeneration
         cancelDragContainerHover()
         for (index in 0 until pinnedContainerContent.childCount)
             dragNavigationTargets.remove(pinnedContainerContent.getChildAt(index))
         pinnedContainerContent.removeAllViews()
         renderedPinnedIconSize = iconSizeDp
         pinnedContainerBar.visibility = if (pinnedContainers.isEmpty()) View.GONE else View.VISIBLE
-        val side = dp(iconSizeDp / 2)
-        val normalSide = dp(44)
-        for (pin in pinnedContainers) {
+        val sideDp = (iconSizeDp / 2).coerceAtLeast(24)
+        val side = dp(sideDp)
+        for (storedPin in pinnedContainers.toList()) {
+            var pin = storedPin
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
                 setPadding(dp(6), dp(4), dp(6), dp(4))
                 minimumWidth = dp(48)
                 minimumHeight = dp(48)
-                contentDescription = "Pinned container: ${pin.entry.metadata.name}"
-                tooltipText = pin.entry.metadata.name
             }
             val iconHolder = FrameLayout(this)
-            val isPinnedArchive = !AppsUri.isAppUri(pin.entry.uri) &&
-                ArchiveFormats.isDefaultBrowsableArchive(pin.entry.metadata.name, pin.entry.metadata.mimeType)
-            val rawPinIcon = when {
-                pin.entry.metadata.isDirectory -> directoryPreview(pin.entry, false, card, probeImmediately = true)
-                isPinnedArchive -> directoryPreview(
-                    pin.entry,
-                    false,
-                    card,
-                    fallbackView = buildFileIconView(pin.entry, pin.entry.metadata, false, card),
-                    probeImmediately = true
-                )
-                else -> buildFileIconView(pin.entry, pin.entry.metadata, false, card)
-            }
-            val icon = rawPinIcon.apply {
-                pivotX = 0f; pivotY = 0f
-                scaleX = side.toFloat() / normalSide
-                scaleY = side.toFloat() / normalSide
-                // The whole pin remains one tap/drop target, including its text.
-                isClickable = false; isLongClickable = false
-            }
-            iconHolder.addView(icon, FrameLayout.LayoutParams(normalSide, normalSide))
+            // Match the actual slot size; no scaled MATCH_PARENT view inside a smaller parent.
+            iconHolder.addView(FileIconView.create(this, pin.entry, pin.entry.metadata, true, sideDp,
+                customIconStore, iconThemeManager, localProvider, appsProvider), FrameLayout.LayoutParams(side, side))
             card.addView(iconHolder, LinearLayout.LayoutParams(side, side))
-            card.addView(TextView(this).apply {
-                text = pin.entry.metadata.name
+            val label = TextView(this).apply {
                 textSize = 10f
                 setTextColor(setTextColorForTheme())
                 maxWidth = dp(96)
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 gravity = Gravity.CENTER
-            }, LinearLayout.LayoutParams(-2, -2))
-            card.setOnClickListener { navigate(pin.destination, displayName = pin.entry.metadata.name) }
+            }
+            card.addView(label, LinearLayout.LayoutParams(-2, -2))
+            fun bindTarget() {
+                label.text = pin.name
+                card.contentDescription = "Pinned container: ${pin.name}"
+                card.tooltipText = pin.name
+                // Hover navigation must take the same route as a tap.
+                installBreadcrumbDropTarget(card, pin.destination, pin.name,
+                    sourceUri = pin.entry.uri, kind = "pin", onNavigate = { openPinnedContainer(pin) })
+            }
+            fun applyIcon(artwork: ResourceIconResolver.Icon) {
+                iconHolder.removeAllViews()
+                val image = artwork.bitmap?.let { bitmap -> ImageView(this).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    setImageBitmap(bitmap)
+                } } ?: TextView(this).apply {
+                    text = artwork.fallback
+                    textSize = sideDp * .72f
+                    gravity = Gravity.CENTER
+                }
+                iconHolder.addView(image, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+            }
+            bindTarget()
+            resourceIconResolver.peekCached(pin.entry, side)?.let { applyIcon(it) }
+            card.setOnClickListener { openPinnedContainer(pin) }
             card.setOnLongClickListener {
                 showContainerPinMenu(pin.entry, pin.destination)
                 true
             }
-            installBreadcrumbDropTarget(card, pin.destination, pin.entry.metadata.name,
-                sourceUri = pin.entry.uri, kind = "pin")
             pinnedContainerContent.addView(card, LinearLayout.LayoutParams(-2, -2))
+            // Pins are outside the scrolling file list: they need their own resolver work
+            // and lifetime, independent of listing visibility and loadGeneration changes.
+            ResourceArtworkCache.sourceExecutor(storedPin.entry).execute {
+                if (generation != pinnedRenderGeneration || isDestroyed) return@execute
+                val freshEntry = (IconWork.bounded(lane = "metadata:${storedPin.entry.ref.providerId}") {
+                    provider.stat(storedPin.entry.ref)
+                } as? ProviderResult.Success)?.value ?: storedPin.entry
+                val isLink = !freshEntry.metadata.isDirectory && ShortcutInfo.isShortcut(freshEntry.metadata.name, freshEntry.metadata.mimeType)
+                val shortcut = if (isLink) resourceIconResolver.shortcutInfo(freshEntry) else null
+                val fallbackName = PinnedContainer(freshEntry, storedPin.destination).name
+                val name = if (shortcut != null) shortcut.displayNameOverride?.takeIf { it.isNotBlank() } ?: fallbackName
+                    else storedPin.displayName ?: fallbackName
+                val target = shortcut?.targetUri?.let { raw ->
+                    runCatching { Uri.parse(raw).let { if (shortcut.targetIsDirectory) it else containerUriHint(it) } }.getOrNull()
+                }?.takeIf { provider.refForUri(it) != null } ?: storedPin.destination
+                val updated = PinnedContainer(freshEntry, target, name)
+                val artwork = runCatching { resourceIconResolver.resolve(freshEntry, side) }.getOrNull()
+                runOnUiThread {
+                    if (generation != pinnedRenderGeneration || isDestroyed || isFinishing) return@runOnUiThread
+                    val index = pinnedContainers.indexOf(storedPin)
+                    if (index < 0) return@runOnUiThread
+                    pin = updated
+                    if (updated != storedPin) {
+                        pinnedContainers[index] = updated
+                        PinnedContainerPreferences(shared).save(pinnedContainers)
+                    }
+                    if (shortcut != null) shortcutCache.put(freshEntry.uri.toString(), shortcut)
+                    bindTarget()
+                    if (artwork != null) applyIcon(artwork)
+                    else applyIcon(ResourceIconResolver.Icon(FileTypeIcons.bitmap(freshEntry.metadata, side),
+                        FileIconView.fallback(freshEntry.metadata), pin.name, freshEntry.metadata.isDirectory))
+                }
+            }
         }
     }
 
@@ -9817,14 +9865,25 @@ class MainActivity : Activity(), DebugDumpObserver {
         iconBox.addView(iconPlaceholder)
         iconBox.addView(iconImage)
 
+        var embeddedIconStatus: TextView? = null
+        var removeEmbeddedIconButton: Button? = null
+        var headerIconGeneration = 0
+        fun refreshEmbeddedIconControls() {
+            val embedded = !shortcut?.iconBase64.isNullOrBlank()
+            embeddedIconStatus?.text = if (embedded) "Image stored inside this link" else "Using the target's automatic icon"
+            removeEmbeddedIconButton?.isEnabled = embedded && canChangeShortcutIcon && !inArchive && currentEntry.metadata.canWrite
+        }
         fun loadHeaderIcon() {
             if(!isSingle)return
+            val embeddedIcon = if (isShortcut) shortcut?.iconBase64 else null
+            val generation = ++headerIconGeneration
             imageIo.execute {
                 val resolved=resourceIconResolver.resolve(currentEntry,dp(64))
+                val preview=CustomIconStore.decodeBase64Bitmap(embeddedIcon) ?: resolved.bitmap
                 runOnUiThread {
-                    if(!isCancelled && !isFinishing && !isDestroyed) {
-                        iconImage.setImageBitmap(resolved.bitmap);iconImage.tag=resolved
-                        iconPlaceholder.visibility=if(resolved.bitmap==null)View.VISIBLE else View.GONE
+                    if(!isCancelled && !isFinishing && !isDestroyed && generation == headerIconGeneration) {
+                        iconImage.setImageBitmap(preview);iconImage.tag=resolved
+                        iconPlaceholder.visibility=if(preview==null)View.VISIBLE else View.GONE
                     }
                 }
             }
@@ -10094,6 +10153,27 @@ class MainActivity : Activity(), DebugDumpObserver {
                 propertyRow("Display Name Override", roOverride)
             }
 
+            val embeddedIconControls = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            embeddedIconStatus = textValue("").also { embeddedIconControls.addView(it) }
+            embeddedIconControls.addView(TextView(context).apply {
+                text = "Choose an image to keep the icon with the link when it is copied. Changes save immediately."
+                textSize = 12f
+                setTextColor(setTextColorForTheme())
+            })
+            val embeddedIconButtons = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+            embeddedIconButtons.addView(Button(context).apply {
+                text = "Choose image…"
+                isEnabled = canChangeShortcutIcon && !inArchive && currentEntry.metadata.canWrite
+                setOnClickListener { promptSelectShortcutIcon(currentEntry.uri) }
+            })
+            removeEmbeddedIconButton = Button(context).apply {
+                text = "Remove image"
+                setOnClickListener { saveShortcutEmbeddedIcon(currentEntry.uri, null) }
+            }.also { embeddedIconButtons.addView(it) }
+            embeddedIconControls.addView(embeddedIconButtons)
+            propertyRow("Embedded link icon", embeddedIconControls)
+            refreshEmbeddedIconControls()
+
             val createdText = initialShortcut?.let {
                 java.text.DateFormat.getDateTimeInstance(
                     java.text.DateFormat.MEDIUM,
@@ -10111,6 +10191,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         runOnUiThread {
                             if (!isCancelled) {
                                 shortcut = loaded
+                                refreshEmbeddedIconControls()
                                 shortcutTargetUriInput?.setText(loaded.targetUri)
                                 shortcutTargetPathInput?.setText(loaded.targetPath ?: "")
                                 shortcutOverrideInput?.setText(loaded.displayNameOverride ?: "")
@@ -10324,6 +10405,8 @@ class MainActivity : Activity(), DebugDumpObserver {
 
         activePropertiesIconRefresh = {
             if (!isCancelled && dialog.isShowing) {
+                if (isShortcut) shortcutCache.get(currentEntry.uri.toString())?.let { shortcut = it }
+                refreshEmbeddedIconControls()
                 loadHeaderIcon()
             }
         }
@@ -11377,59 +11460,59 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun applyShortcutIcon(shortcutUri: Uri, sourceImageUri: Uri) {
+        imageIo.execute {
+            try {
+                // Use pixels, independent of screen density, so the embedded PNG stays
+                // compact enough for every link reader's bounded JSON input.
+                val bmp = thumbnailDecoder.decode(sourceImageUri, 256)
+                    ?: throw java.io.IOException("Could not decode selected image")
+                val base64 = CustomIconStore.encodeBitmapToBase64Png(bmp)
+                    ?: throw java.io.IOException("Could not encode selected image")
+                saveShortcutEmbeddedIcon(shortcutUri, base64)
+            } catch (error: Exception) {
+                runOnUiThread { Toast.makeText(this, "Failed to set link icon: ${error.message}", Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
+
+    private fun shortcutPresentationChanged(uri: Uri, shortcut: ShortcutInfo) {
+        shortcutCache.put(uri.toString(), shortcut)
+        thumbnailCache.evictAll()
+        failedThumbnails.evictAll()
+        refreshCurrentLocation() // Refresh file stamps as well as cached link metadata/artwork.
+        activePropertiesIconRefresh?.invoke()
+        renderTree()
+        renderPinnedContainers()
+    }
+
+    private fun saveShortcutEmbeddedIcon(shortcutUri: Uri, base64: String?) {
         io.execute {
             try {
-                val bmp = thumbnailDecoder.decode(sourceImageUri, dp(128))
-                if (bmp == null) {
-                    runOnUiThread {
-                        Toast.makeText(this, "Could not decode selected image.", Toast.LENGTH_SHORT).show()
-                    }
-                    return@execute
+                val ref = resourceRef(shortcutUri)
+                val input = when (val result = provider.openRead(ref)) {
+                    is ProviderResult.Success -> result.value
+                    is ProviderResult.Failure -> throw java.io.IOException(result.message, result.cause)
+                    else -> throw java.io.IOException("Cannot read link file")
                 }
-                val base64 = CustomIconStore.encodeBitmapToBase64Png(bmp)
-
-                val shortcutRef = resourceRef(shortcutUri)
-                val existingInfo = shortcutCache.get(shortcutUri.toString()) ?: run {
-                    val readRes = provider.openRead(shortcutRef)
-                    if (readRes is ProviderResult.Success) {
-                        val text = readRes.value.bufferedReader().use { it.readText() }
-                        ShortcutInfo.fromJson(text)
-                    } else null
+                val original = input.use { readStreamBytes(it, 1024 * 1024) }
+                val info = ShortcutInfo.fromJson(original.toString(Charsets.UTF_8))
+                    ?: throw java.io.IOException("Cannot read link-file metadata")
+                val updated = info.copy(iconBase64 = base64)
+                val bytes = updated.toJson().toByteArray(Charsets.UTF_8)
+                if (bytes.size > 1024 * 1024) throw java.io.IOException("The embedded image makes this link too large")
+                when (val result = MediaSourceAdapter.saveContent(this, shortcutUri, bytes,
+                    com.infinifolder.storage.ContentRevision.of(original))) {
+                    is ProviderResult.Success -> Unit
+                    is ProviderResult.Failure -> throw java.io.IOException(result.message, result.cause)
+                    else -> throw java.io.IOException("This storage provider cannot update the link")
                 }
-                if (existingInfo == null) {
-                    runOnUiThread {
-                        Toast.makeText(this, "Could not read link file.", Toast.LENGTH_SHORT).show()
-                    }
-                    return@execute
-                }
-
-                val updatedInfo = existingInfo.copy(iconBase64 = base64)
-                val writeRes = provider.openWrite(shortcutRef)
-                if (writeRes !is ProviderResult.Success) {
-                    val msg = (writeRes as? ProviderResult.Failure)?.message ?: "Could not write link file"
-                    runOnUiThread {
-                        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
-                    }
-                    return@execute
-                }
-                writeRes.value.bufferedWriter().use { writer ->
-                    writer.write(updatedInfo.toJson())
-                    writer.flush()
-                }
-
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
-                    shortcutCache.put(shortcutUri.toString(), updatedInfo)
-                    thumbnailCache.evictAll()
-                    failedThumbnails.evictAll()
-                    activePropertiesIconRefresh?.invoke()
-                    renderCurrentContents()
-                    Toast.makeText(this, "Link icon updated", Toast.LENGTH_SHORT).show()
+                    shortcutPresentationChanged(shortcutUri, updated)
+                    Toast.makeText(this, if (base64 == null) "Embedded link image removed" else "Image embedded in link", Toast.LENGTH_SHORT).show()
                 }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    Toast.makeText(this, "Failed to set link icon: ${e.message}", Toast.LENGTH_LONG).show()
-                }
+            } catch (error: Exception) {
+                runOnUiThread { Toast.makeText(this, "Failed to update link icon: ${error.message}", Toast.LENGTH_LONG).show() }
             }
         }
     }
@@ -11795,9 +11878,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                 writeRes.value.bufferedWriter().use { writer ->
                     writer.write(shortcut.toJson())
                 }
-                shortcutCache.put(entry.uri.toString(), shortcut)
                 runOnUiThread {
-                    renderCurrentContents()
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    shortcutPresentationChanged(entry.uri, shortcut)
                     Toast.makeText(this, "Link properties saved", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
@@ -13045,6 +13128,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             renderCurrentContents();renderTree()
         }
         lastIconRegistryRevision=iconRevision
+        renderPinnedContainers()
         val currentTheme = com.infinifolder.theme.ThemeManager.activeTheme
         if (lastAppliedThemeId != currentTheme.id || lastAppliedTextPrimary != currentTheme.textPrimary) {
             lastAppliedThemeId = currentTheme.id

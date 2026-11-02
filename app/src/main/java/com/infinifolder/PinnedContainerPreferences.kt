@@ -9,7 +9,11 @@ import com.infinifolder.storage.DiagnosticLog
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal data class PinnedContainer(val entry:ResourceEntry,val destination:Uri)
+internal data class PinnedContainer(val entry:ResourceEntry,val destination:Uri,val displayName:String?=null) {
+    val name:String get()=displayName?.takeIf {it.isNotBlank()} ?: if(!entry.metadata.isDirectory &&
+        com.infinifolder.shortcut.ShortcutInfo.isShortcut(entry.metadata.name,entry.metadata.mimeType)
+    ) entry.metadata.name.substringBeforeLast('.').ifBlank { "Link" } else entry.metadata.name
+}
 
 /** UI bookmarks only: restoring a pin neither opens its target nor grants storage access. */
 internal class PinnedContainerPreferences(private val prefs:SharedPreferences) {
@@ -27,7 +31,7 @@ internal class PinnedContainerPreferences(private val prefs:SharedPreferences) {
                     if(json.isNull("size"))null else json.optLong("size").takeIf {it>=0},
                     if(json.isNull("modified"))null else json.optLong("modified"),json.optBoolean("directory"),
                     canRead=json.optBoolean("canRead",true),canWrite=json.optBoolean("canWrite",true))
-                PinnedContainer(ResourceEntry(ref,metadata,uri),destination)
+                PinnedContainer(ResourceEntry(ref,metadata,uri),destination,if(json.isNull("displayName"))null else json.optString("displayName").takeIf {it.isNotBlank()})
             }.getOrElse {
                 DiagnosticLog.record("browser.pins.entry-invalid","index=$index",it);null
             }
@@ -40,7 +44,8 @@ internal class PinnedContainerPreferences(private val prefs:SharedPreferences) {
             val entry=pin.entry;val metadata=entry.metadata
             array.put(JSONObject().put("provider",entry.ref.providerId).put("documentId",entry.ref.documentId)
                 .put("uri",entry.uri.toString()).put("destination",pin.destination.toString())
-                .put("name",metadata.name).put("mimeType",metadata.mimeType).put("directory",metadata.isDirectory)
+                .put("name",metadata.name).put("displayName",pin.displayName ?: JSONObject.NULL)
+                .put("mimeType",metadata.mimeType).put("directory",metadata.isDirectory)
                 .put("size",metadata.sizeBytes ?: JSONObject.NULL).put("modified",metadata.modifiedAtMillis ?: JSONObject.NULL)
                 .put("canRead",metadata.canRead).put("canWrite",metadata.canWrite))
         }
