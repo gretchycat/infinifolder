@@ -153,3 +153,9 @@ server artwork (FTP/FTPS, SFTP, SMB, WebDAV/DAVS, etc.) without connecting to
 remote storage. Local file, folder, app and archive links retain target artwork;
 unsupported schemes get a labeled link icon. Build log:
 `build/link-target-icons-build.log`; no live favicon or visual checks were run.
+
+Magnet links now select dedicated horseshoe-magnet artwork before any target
+filename/extension inference or provider lookup. This includes `.iflink`
+targets, direct magnet resources, percent-escaped magnet scheme hints and
+torrent-directory targets. Link artwork signatures were bumped to refresh
+old generated icons. Build log: `build/magnet-link-icon-build.log`.

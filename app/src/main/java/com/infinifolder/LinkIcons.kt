@@ -22,6 +22,9 @@ object LinkIcons {
             else -> scheme.ifBlank { "NETWORK" }
         }
     }
+    fun isMagnet(uri: android.net.Uri): Boolean = uri.scheme.equals("magnet", true) ||
+        (uri.scheme == null && uri.toString().startsWith("magnet%3a", true))
+
     @Synchronized
     fun protocol(rawProtocol: String, requestedSize: Int): Bitmap {
         val label = rawProtocol.uppercase(Locale.ROOT).filter { it.isLetterOrDigit() }.take(8).ifBlank { "LINK" }
@@ -32,7 +35,18 @@ object LinkIcons {
         val canvas = Canvas(bitmap)
         canvas.scale(size / 64f, size / 64f)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 2.5f; color = 0xff2979b8.toInt() }
-        if (label in setOf("WEB", "HTTP", "HTTPS")) {
+        if (label in setOf("MAGNET", "TORRENT")) {
+            // Horseshoe magnet, with contrasting pole ends.
+            paint.style = Paint.Style.STROKE; paint.strokeWidth = 10f; paint.strokeCap = Paint.Cap.BUTT
+            paint.color = 0xffdf4444.toInt()
+            canvas.drawArc(16f, 5f, 48f, 37f, 0f, 180f, false, paint)
+            canvas.drawLine(16f, 21f, 16f, 7f, paint)
+            canvas.drawLine(48f, 21f, 48f, 7f, paint)
+            paint.color = 0xffe6edf5.toInt()
+            canvas.drawLine(16f, 11f, 16f, 3f, paint)
+            canvas.drawLine(48f, 11f, 48f, 3f, paint)
+            paint.strokeWidth = 2.5f
+        } else if (label in setOf("WEB", "HTTP", "HTTPS")) {
             paint.style = Paint.Style.STROKE
             canvas.drawCircle(32f, 24f, 20f, paint)
             canvas.drawOval(22f, 4f, 42f, 44f, paint)

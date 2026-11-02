@@ -92,7 +92,7 @@ class ResourceIconResolver(context: Context) {
     }
 
     private fun signature(entry: ResourceEntry): String {
-        val previewVersion = if (ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) ":link-icons-1"
+        val previewVersion = if (ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) ":link-icons-2"
             else if (ImageFormats.hasDosTextPreview(entry.metadata)) ":ansi-art-preview-3" else ":file-icons-4"
         return "${entry.metadata.modifiedAtMillis}:${entry.metadata.sizeBytes}:${theme.getActiveThemeId()}$previewVersion"
     }
@@ -127,6 +127,7 @@ class ResourceIconResolver(context: Context) {
                 return base.copy(bitmap = saved.bitmap, program = saved.program)
             }
         }
+        if (LinkIcons.isMagnet(entry.uri)) return base.copy(bitmap = LinkIcons.protocol("MAGNET", size), fallback = "🧲", directory = true)
         if (entry.ref.providerId == PartialDownloadsProvider.SCHEME) {
             // Discovery aliases are private records. Rendering their icons must
             // never reconnect to or request permission for the original source.
@@ -142,6 +143,9 @@ class ResourceIconResolver(context: Context) {
             if (custom != null) return base.copy(bitmap = custom, label = label, directory = effectiveIsDir,
                 program = AppsUri.isAppUri(Uri.parse(info.targetUri)))
             val rawTarget = Uri.parse(info.targetUri)
+            if (LinkIcons.isMagnet(rawTarget) || (rawTarget.scheme.equals("torrent", true) && effectiveIsDir)) {
+                return base.copy(bitmap = LinkIcons.protocol("MAGNET", size), fallback = "🧲", label = label, directory = true)
+            }
             if (com.infinifolder.shortcut.WebMetadataResolver.isWebUri(info.targetUri)) {
                 val favicon = WebLinkIcons.favicon(appContext, info.targetUri)
                 return base.copy(bitmap = favicon ?: LinkIcons.protocol("WEB", size), fallback = "🌐", label = label)
