@@ -186,3 +186,14 @@ package/API, so the editor uses the same native fallback artwork as file listing
 Validation: `gradle :app:assembleDebug --offline --console=plain`; build log
 `build/icon-editor-previews-final.log`. Device display remains unverified. Tests
 were not run for this UI-only follow-up.
+
+## Follow-up: registry scroll restoration
+
+The registry retains the native ListView state (including row offset) and filter
+separately for MIME types and URI rules before opening/rebuilding editors. Saving,
+clearing an override or returning from the icon picker restores the list state;
+Android activity recreation preserves it through saved instance state. Canceling
+an editor leaves the existing list intact. Build command:
+`gradle :app:assembleDebug --offline --console=plain`; log:
+`build/icon-editor-scroll-build.log`. Device interaction remains unverified;
+no tests were run for this follow-up.

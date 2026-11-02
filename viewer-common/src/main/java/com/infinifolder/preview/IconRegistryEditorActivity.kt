@@ -28,6 +28,17 @@ class IconRegistryEditorActivity : Activity() {
     private var pickRule:String?=null
     private var uris=false
     private var listGeneration=0
+    private var mimeListState=Bundle()
+    private var uriListState=Bundle()
+    private var displayedUris=false
+    private var displayedList:ListView?=null
+    private var displayedFilter:EditText?=null
+    private fun rememberList() {
+        val list=displayedList ?: return
+        val saved=if(displayedUris)uriListState else mimeListState
+        saved.putString("filter",displayedFilter?.text?.toString().orEmpty())
+        saved.putParcelable("scroll",list.onSaveInstanceState())
+    }
     private val previewCache=object:android.util.LruCache<String,Bitmap>(2*1024*1024) {
         override fun sizeOf(key:String,value:Bitmap)=value.allocationByteCount
     }
@@ -65,6 +76,8 @@ class IconRegistryEditorActivity : Activity() {
         registry=IconRegistry.at(filesDir);custom=CustomIconStore(filesDir);theme=IconThemeManager(this)
         pickMime=state?.getString("pickMime");pickRule=state?.getString("pickRule")
         uris=state?.getBoolean("uris") ?: false
+        mimeListState=Bundle(state?.getBundle("mimeListState") ?: Bundle())
+        uriListState=Bundle(state?.getBundle("uriListState") ?: Bundle())
         showList()
         intent.getStringExtra("mime")?.let(::editMime)
     }
@@ -75,6 +88,8 @@ class IconRegistryEditorActivity : Activity() {
     }
     private fun message(error:Throwable) { Toast.makeText(this,error.message ?: "Cannot save setting",Toast.LENGTH_LONG).show() }
     private fun showList() {
+        rememberList()
+        val saved=if(uris)uriListState else mimeListState
         val generation=++listGeneration
         val showingUris=uris
         val root=column()
@@ -99,7 +114,9 @@ class IconRegistryEditorActivity : Activity() {
         val search=EditText(this).apply { hint="Filter";setSingleLine() };root.addView(search)
         val rules=if(uris)registry.uriRules() else emptyList()
         val values=if(uris)rules.mapIndexed {index,rule -> (rule.exactUri ?: "${rule.scheme}://${rule.authority}${rule.pathPrefix}")+" · ${index+1}"} else registry.mimeTypes()
-        var filtered=values
+        val savedFilter=saved.getString("filter").orEmpty()
+        search.setText(savedFilter)
+        var filtered=values.filter {it.contains(savedFilter,true)}
         val revision="${registry.revision}:${theme.revision()}:${custom.revision}"
         val adapter=object:BaseAdapter() {
             override fun getCount()=filtered.size
@@ -142,9 +159,12 @@ class IconRegistryEditorActivity : Activity() {
             }
             override fun afterTextChanged(s:android.text.Editable?) {}
         })
+        displayedUris=showingUris;displayedList=list;displayedFilter=search
         root.addView(list,LinearLayout.LayoutParams(-1,0,1f));setContentView(root);root.requestApplyInsets()
+        saved.getParcelable<android.os.Parcelable>("scroll")?.let {list.onRestoreInstanceState(it)}
     }
     private fun editMime(raw:String) {
+        rememberList()
         val record=registry.mime(raw)
         val body=column()
         body.addView(TextView(this).apply {text=record.mimeType})
@@ -192,6 +212,7 @@ class IconRegistryEditorActivity : Activity() {
         dialog.show();preview()
     }
     private fun editRule(rule:IconRegistry.UriRule) {
+        rememberList()
         val body=column()
         val exact=field(body,"Exact URI (leave empty for a rule)",rule.exactUri.orEmpty())
         val scheme=field(body,"Scheme",rule.scheme)
@@ -263,6 +284,11 @@ class IconRegistryEditorActivity : Activity() {
             }}
         }
     }
-    override fun onSaveInstanceState(out:Bundle) {super.onSaveInstanceState(out);out.putString("pickMime",pickMime);out.putString("pickRule",pickRule);out.putBoolean("uris",uris)}
+    override fun onSaveInstanceState(out:Bundle) {
+        rememberList()
+        super.onSaveInstanceState(out)
+        out.putString("pickMime",pickMime);out.putString("pickRule",pickRule);out.putBoolean("uris",uris)
+        out.putBundle("mimeListState",Bundle(mimeListState));out.putBundle("uriListState",Bundle(uriListState))
+    }
     override fun onDestroy(){worker.shutdownNow();super.onDestroy()}
 }
