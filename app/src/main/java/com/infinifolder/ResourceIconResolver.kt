@@ -62,7 +62,7 @@ class ResourceIconResolver(context: Context) {
         val covers=if(entry.metadata.isDirectory)ResourceIconSidecars.directory(entry)?.candidates.orEmpty().joinToString {
             "${it.uri}:${it.metadata.modifiedAtMillis}:${it.metadata.sizeBytes}"
         } else ""
-        return "icons-v4:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
+        return "icons-v5:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
             "${sidecar?.uri}:${sidecar?.metadata?.modifiedAtMillis}:${sidecar?.metadata?.sizeBytes}:$covers"
     }
     fun cached(entry: ResourceEntry, size: Int): Icon? {
@@ -147,7 +147,7 @@ class ResourceIconResolver(context: Context) {
                 IconPolicy.Step.THUMBNAIL -> IconWork.bounded(2000,lane="thumbnail:${entry.ref.providerId}") {
                     if(id.mimeType=="application/vnd.android.package-archive")resolveApkIcon(entry,size)
                     else if(ImageFormats.hasDosTextPreview(meta))decoder.decodeTextPreview(entry.uri,size,true)
-                    else decoder.decode(entry.uri,size,registry.rendererExtension(id.mimeType))
+                    else decoder.decode(entry.uri,size,registry.rendererExtension(id.mimeType,entry.metadata.name))
                 }
                 IconPolicy.Step.MIME_OVERRIDE -> overrideBitmap(record.overrideIcon,id.mimeType,size)
                 IconPolicy.Step.THEME_MIME -> theme.resolveMimeSpecific(id.mimeType,size,record.iconName)

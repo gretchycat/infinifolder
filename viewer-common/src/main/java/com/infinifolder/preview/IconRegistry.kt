@@ -62,8 +62,14 @@ class IconRegistry(private val file: File) {
             renderable,
             if (json?.has("overrideImageIcon") == true) json.optBoolean("overrideImageIcon") else !(key.startsWith("image/") || renderable))
     }
-    fun rendererExtension(mime:String):String? = builtins[MimeRegistry.normalize(mime)]?.extensions
-        ?.filter {it in ImageFormats.decodableExtensions}?.sorted()?.firstOrNull()
+    fun rendererExtension(mime:String):String? = rendererExtension(mime,"")
+    fun rendererExtension(mime:String,name:String):String? {
+        val supported=builtins[MimeRegistry.normalize(mime)]?.extensions
+            ?.filter {it in ImageFormats.decodableExtensions}.orEmpty()
+        // Shared MIME types can contain incompatible encodings (PI1 versus compressed PC1).
+        val actual=ImageFormats.extension(name)
+        return actual.takeIf {it in supported} ?: supported.sorted().firstOrNull()
+    }
     fun mimeTypes(): List<String> = synchronized(lock) {
         load(); (builtins.keys + recordsJson().keys().asSequence().toList()).sorted()
     }

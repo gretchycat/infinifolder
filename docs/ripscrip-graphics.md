@@ -12,18 +12,19 @@ storage streams use the existing Canvas/Store interfaces.
 
 ## Rendering modes
 
-**EGA simulation is the default**, for thumbnails and newly opened viewers.
+**High-resolution vector is the viewer default**; thumbnails use EGA simulation.
 The renderer uses a 640×350 indexed surface, the 16 active EGA palette entries,
 palette changes that recolour existing pixels, patterned fills and COPY/XOR
 operations. The displayed bitmap corrects the non-square EGA pixels to 4:3.
 The image viewer disables bitmap filtering in this mode to retain the pixel grid.
 
-The viewer's **EGA / Vector** control selects **High-resolution vector** rendering.
+The viewer's native **EGA / Vector** toggle selects **High-resolution vector** rendering.
 This replays geometry at up to four times the native coordinate resolution,
 producing up to a 2560×1920 display bitmap, rather than enlarging the EGA render.
 It remains a rasterized view of the RIP vector commands, like the existing SVG
 viewer; this does not add SVG export. The mode survives activity recreation,
-while a newly opened viewer defaults to EGA. Thumbnail rendering stays in EGA.
+while a newly opened viewer defaults to Vector. Switching modes preserves zoom
+and pan across the different bitmap resolutions. Thumbnail rendering stays in EGA.
 Bitmap fonts retain their bitmap shapes in both modes.
 
 ## Supported static graphics
@@ -191,3 +192,42 @@ Validation: `gradle :app:assembleDebug --offline --console=plain` succeeded.
 Logs: `build/rip-bang-recovery-build.log` and `build/rip-bang-recovery-final.log`.
 No tests were added or run. This is source/dump-based repair; rendering the new
 build against the BANG_RIP and original DWM sets on-device remains unverified.
+
+## JOUST rendering and thumbnail follow-up
+
+Reproduced the supplied `filesystem-test-images/images/JOUST.RIP` with real
+Android bitmap rendering from the APK. Both modes had boundary-fill spills;
+the vector render erased nearly all of the knight and horse. Flood connectivity
+now uses a reference raster of the same command stream: native EGA checks a 2x
+reference, and vector rendering checks the native raster. Coverage masks constrain
+fills to the corresponding region, allowing one reference pixel at an edge.
+A seed on the reference border does not flood. Graphics commands still draw on
+each mode's own indexed surface; the vector image is not an enlarged EGA bitmap.
+This adds bounded reference-render work, and remains best-effort static RIP
+rendering rather than an exact BGI emulator.
+
+The final APK rendered JOUST in both modes with the knight, horse and lance
+visibly retained. Also rendered ANIF, BF-109, BLITZ, CASTLE, NIETZ and REAPER in
+both modes: all 14 outputs decoded without warnings. JOUST took 876 ms in EGA
+and 711 ms in vector in this diagnostic run; these are headless renderer times,
+not UI-load measurements. Preview PNGs and the real Android render harness are
+in `build/graphics-review`; final log: `checked-render.log`. Earlier prototype
+runs in that directory are diagnostic experiments, not the final result.
+
+ANSI thumbnails now trim unused black outer margins before fitting the icon;
+interior spacing and colored backgrounds remain, with aspect ratio preserved.
+Only icon/page-preview callers request trimming; the normal ANSI surface keeps
+its terminal layout. The real `icon.ans` preview was rendered with both settings.
+
+The corrupted `icon.pi1` thumbnail came from choosing alphabetically among
+extensions sharing a MIME: `image/x-degas` selected compressed PC1 for uncompressed
+PI1 data. The host registry now prefers the actual native extension when it
+belongs to that MIME's renderer family. The registry/decoder diagnostic reproduced
+the corrupt PC1-hinted output and produced the correct PI1 thumbnail with the
+selected `pi1` hint. The existing one-argument registry API remains available;
+the resolved-icon cache namespace was bumped to discard prior representations.
+
+Build: `gradle :app:assembleDebug --offline --console=plain` succeeded in 23s;
+log: `build/graphics-review/checked-build.log`. Native rendering and PNGs were
+inspected; the full listing UI, gestures and mode-toggle display still need
+on-device confirmation. No unit tests were added or run for this follow-up.
