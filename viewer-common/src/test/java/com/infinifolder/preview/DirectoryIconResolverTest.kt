@@ -50,6 +50,17 @@ class DirectoryIconResolverTest {
         assertEquals(cover, best)
     }
 
+    // Retain the historical baseline case name. Dot-icon precedence applies when
+    // the cover is unusable; a usable cover wins in prioritizesCoverOverDotIcon.
+    @Test
+    fun prioritizesDotIconOverCover() {
+        val unusableCover = FileItem("cover.png", false)
+        val dotIcon = FileItem(".icon.png", true)
+        for (items in listOf(listOf(unusableCover, dotIcon), listOf(dotIcon, unusableCover))) {
+            assertEquals(dotIcon, DirectoryIconResolver.findBest(items, { it.name }, { it.isImage }))
+        }
+    }
+
     @Test
     fun selectsCoverWhenNoDotIcon() {
         val cover = FileItem("cover.png", true)

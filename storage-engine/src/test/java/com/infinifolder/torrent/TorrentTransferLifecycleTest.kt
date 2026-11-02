@@ -100,8 +100,8 @@ class TorrentTransferLifecycleTest {
     }
     @Test fun finishLaterLabelUsesResumabilityRatherThanChangingStatusWords() {
         val torrent = OperationSnapshot("id", "Copy ubuntu.iso", OperationState.RUNNING, resumable = true)
-        assertEquals("Finish later", torrent.copy(message = "Restoring saved progress").stopActionLabel)
-        assertEquals("Finish later", torrent.copy(message = "Connecting to peers…").stopActionLabel)
+        assertEquals("Pause", torrent.copy(message = "Restoring saved progress").stopActionLabel)
+        assertEquals("Pause", torrent.copy(message = "Connecting to peers…").stopActionLabel)
         assertEquals("Cancel", torrent.copy(resumable = false, label = "Copy notes.txt").stopActionLabel)
     }
 }

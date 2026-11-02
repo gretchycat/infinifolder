@@ -333,27 +333,46 @@ class ArchiveStorageTest {
 
     @Test
     fun testLargeRemoteDiscImageSizeLimit() {
-        val provider = ArchiveStorageProvider(
-            context = createMockContext(),
-            customCacheDir = tempFolder.newFolder("archive_provider_disc_cache")
-        )
-        val sftpVdiUri = TestUri("sftp://94e3778c-140e-43a5-bc2e-b1c18f76f6d2/home/gretchen/VirtualBox VMs/echoesbbs/echoesbbs-u.vdi")
-
-        provider.streamResolver = { uri ->
-            java.io.ByteArrayInputStream(ByteArray(0))
+        val cache = tempFolder.newFolder("archive_provider_disc_cache")
+        val provider = ArchiveStorageProvider(context = createMockContext(), customCacheDir = cache)
+        val source = TestUri("sftp://test-host/images/large.vdi")
+        val sourceSize = 20L * 1024 * 1024 * 1024
+        val streamingLimit = 512L * 1024 * 1024
+        var greatestRead = 0L
+        var opened = 0
+        var closed = 0
+        provider.streamResolver = {
+            opened++
+            // Generate bytes lazily: the old empty stream only exercised malformed-input
+            // handling. Stream-only scratch staging now enforces its limit as bytes arrive;
+            // a native range device must not be rejected just because it exceeds that limit.
+            object : java.io.InputStream() {
+                var position = 0L
+                var isClosed = false
+                override fun read(): Int {
+                    val one = ByteArray(1)
+                    return if (read(one, 0, 1) < 0) -1 else 0
+                }
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                    if (length == 0) return 0
+                    if (position >= sourceSize) return -1
+                    val count = minOf(length.toLong(), sourceSize - position).toInt()
+                    buffer.fill(0, offset, offset + count)
+                    position += count
+                    greatestRead = maxOf(greatestRead, position)
+                    return count
+                }
+                override fun close() { if (!isClosed) { isClosed = true; closed++ } }
+            }
         }
-        provider.metadataResolver = { uri ->
-            // 20 GB file
-            Pair(20L * 1024L * 1024L * 1024L, 1700000000000L)
-        }
-
-        try {
-            provider.getArchiveTree(sftpVdiUri)
-            fail("Expected IOException due to large remote disk image limit")
-        } catch (e: java.io.IOException) {
-            assertTrue(e.message!!.contains("too large to stream over network"))
-            assertTrue(e.message!!.contains("echoesbbs-u.vdi"))
-        }
+        provider.metadataResolver = { Pair(sourceSize, 1700000000000L) }
+        val error = assertThrows(java.io.IOException::class.java) { provider.getArchiveTree(source) }
+        assertTrue(error.message, error.message.orEmpty().contains("512 MB streaming limit"))
+        assertTrue(error.message.orEmpty().contains("large.vdi"))
+        assertTrue(greatestRead > streamingLimit)
+        assertTrue("Bounded read: $greatestRead", greatestRead <= streamingLimit + 65536)
+        assertEquals("All opened streams closed", opened, closed)
+        assertTrue("Partial scratch image removed", cache.walkTopDown().none { it.isFile })
     }
     @Test fun exactZipCaseWinsAndAmbiguousFallbackIsRefused() {
         val file = tempFolder.newFile("case-collision.zip")

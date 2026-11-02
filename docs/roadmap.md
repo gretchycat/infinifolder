@@ -4,15 +4,16 @@
 
 Updated 2026-11-02. See [current status](project-status.md) for confirmed behavior and [detailed tasks](feature-todo.md) for acceptance work.
 
-## Active: investigate recorded storage failures
+## Completed: recorded storage failure investigation
 
-Reproduce the 30 failures recorded in the pre-migration baseline: archive/disc
-images (2), ordinary file operations (7), recovery transfers (15), torrent
-lifecycle (1) and torrent verification checkpoints (5). Investigate shared causes,
-repair implementation defects or obsolete test fixtures with evidence, and rerun
-the affected suites. Preserve the historical baseline and do not weaken safety
-requirements or turn expected failures into skipped tests. Track current results
-in the [investigation](storage-failure-investigation.md).
+Reproduced all 30 historical failures and repaired the test backend contracts,
+obsolete expectations, LVM fixture and a real batch-transfer cancellation exception
+mismatch. The complete storage suite now passes 354 cases with no skips; the full APK/library
+gate passes all 942 cases. Historical
+baselines remain intact. See [evidence and remaining device/provider acceptance](storage-failure-investigation.md).
+
+Pinned containers now survive app restarts; handset restart acceptance is pending.
+ANSI music playback is user-confirmed; its softer waveform remains a future task.
 
 ## Completed: InfiniStream library migration
 

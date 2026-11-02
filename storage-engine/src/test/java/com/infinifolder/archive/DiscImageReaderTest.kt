@@ -719,10 +719,12 @@ class DiscImageReaderTest {
         // PV Header at sec1Off + 32 = 544
         val pvOff = sec1Off + 32
         System.arraycopy("PVTEST00000000000000000000000001".toByteArray(StandardCharsets.US_ASCII), 0, img, pvOff, 32)
-        val pvBuf = ByteBuffer.wrap(img, pvOff, 64).slice().order(ByteOrder.LITTLE_ENDIAN)
+        val pvBuf = ByteBuffer.wrap(img, pvOff, 112).slice().order(ByteOrder.LITTLE_ENDIAN)
         pvBuf.putLong(32, (totalSectors * 512).toLong())
-        pvBuf.putLong(40, 4096L) // mdaOffset = 4096
-        pvBuf.putLong(48, 65536L) // mdaSize = 65536
+        pvBuf.putLong(40, peStartSector * 512L) // Data-area list, followed by its zero terminator.
+        pvBuf.putLong(48, (totalSectors - peStartSector) * 512L)
+        pvBuf.putLong(72, 4096L) // Metadata-area list, followed by its zero terminator.
+        pvBuf.putLong(80, 4096L) // Ends at the first physical extent.
 
         // Text metadata
         val metadataText = """
@@ -742,7 +744,7 @@ vg_synth {
             device = "/dev/sda1"
             status = ["ALLOCATABLE"]
             flags = []
-            dev_size = ${totalSectors * 512}
+            dev_size = $totalSectors
             pe_start = $peStartSector
             pe_count = ${rootExtents + dataExtents}
         }
@@ -790,14 +792,11 @@ vg_synth {
 
         // MDA Header at 4096
         val mdaOff = 4096
-        img[mdaOff + 4] = 0x16.toByte()
-        img[mdaOff + 5] = 0x30.toByte()
-        img[mdaOff + 6] = 0x35.toByte()
-        img[mdaOff + 7] = 0x31.toByte()
+        System.arraycopy(" LVM2 x[5A%r0N*>".toByteArray(StandardCharsets.US_ASCII), 0, img, mdaOff + 4, 16)
         val mdaBuf = ByteBuffer.wrap(img, mdaOff, 512).slice().order(ByteOrder.LITTLE_ENDIAN)
         mdaBuf.putInt(20, 1) // version = 1
-        mdaBuf.putLong(24, 512L) // start = 512
-        mdaBuf.putLong(32, 65024L) // size
+        mdaBuf.putLong(24, mdaOff.toLong()) // PV-relative metadata-area origin
+        mdaBuf.putLong(32, 4096L) // Matches the PV metadata-area descriptor
         mdaBuf.putLong(40, 512L) // locOffset = 512 -> text at 4096 + 512 = 4608
         mdaBuf.putLong(48, textBytes.size.toLong()) // locSize
 

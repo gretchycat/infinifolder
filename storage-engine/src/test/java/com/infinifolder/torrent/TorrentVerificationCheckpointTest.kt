@@ -70,10 +70,12 @@ class TorrentVerificationCheckpointTest {
         var invalidRead = false
         var failRead = false
         var failWrite = false
+        var rejectWrite = false
         var commitThenFail = false
         override fun read(): ByteArray? { if (invalidRead) throw com.infinifolder.storage.InvalidTransferCheckpointException("oversized"); if (failRead) throw IOException("offline"); return data }
         override fun fingerprint() = fingerprint
         override fun write(bytes: ByteArray) {
+            if(rejectWrite)throw com.infinifolder.storage.CheckpointWriteRejectedException("denied before submission",IOException("denied"))
             if (failWrite) throw IOException("denied")
             data = bytes.copyOf()
             events.add("write:${TorrentCheckpointCodec.properties(bytes)?.getProperty("clean")}")
@@ -81,17 +83,19 @@ class TorrentVerificationCheckpointTest {
         }
         override fun delete() { events.add("delete"); data = null }
     }
-    private fun session(store: Store, flushFails: Boolean = false) = TorrentVerificationCheckpoint(identity, store, {
+    private fun session(store: Store, flushFails: () -> Boolean = {false}) = TorrentVerificationCheckpoint(identity, store, {
         store.events.add("flush")
-        if (flushFails) throw IOException("flush failed")
+        if (flushFails()) throw IOException("flush failed")
     }, true)
 
     @Test fun dirtyStatePrecedesDestinationWrites() {
         val store = Store().apply { data = encoded() }
         val session = session(store)
         session.beforeWrite(4, 4)
-        assertEquals(listOf("write:false"), store.events)
-        assertTrue(decode(store.data).isEmpty)
+        assertEquals(listOf("flush", "write:false"), store.events)
+        // The checksummed write journal retains untouched pieces, never the piece being changed.
+        assertEquals(bits,decode(store.data))
+        assertFalse(decode(store.data)[1])
     }
     @Test fun flushPrecedesCleanPublication() {
         val store = Store()
@@ -120,7 +124,8 @@ class TorrentVerificationCheckpointTest {
     @Test fun interruptedUncheckpointedWriteForcesRecheck() {
         val store = Store().apply { data = encoded() }
         session(store).beforeWrite(4, 4)
-        assertTrue(session(store).trustedPieces.isEmpty)
+        assertEquals(bits,session(store).trustedPieces)
+        assertFalse(session(store).trustedPieces[1])
     }
     @Test fun gracefulStopRetainsVerifiedProgress() {
         val store = Store()
@@ -132,8 +137,10 @@ class TorrentVerificationCheckpointTest {
     }
     @Test fun failedFlushCannotPublishNewCleanState() {
         val store = Store()
-        val session = session(store, flushFails = true)
+        var flushFails=false
+        val session = session(store, flushFails = {flushFails})
         session.beforeWrite(0, 4)
+        flushFails=true // Fail the data flush after the pre-write journal was safely stored.
         session.checked(0, true)
         assertThrows(IOException::class.java) { session.save() }
         assertTrue(decode(store.data).isEmpty)
@@ -144,7 +151,7 @@ class TorrentVerificationCheckpointTest {
         assertEquals(bits, decode(store.data))
     }
     @Test fun noCheckpointWritePermissionFallsBackWithoutTrust() {
-        val store = Store().apply { failWrite = true }
+        val store = Store().apply { rejectWrite = true }
         val session = session(store)
         session.beforeWrite(0, 4)
         session.checked(0, true)
@@ -224,7 +231,7 @@ class TorrentVerificationCheckpointTest {
         session.beforeWrite(0, 4)
         session.pieceVerified(0)
         assertTrue(session(store).trustedPieces[0])
-        assertEquals(listOf("write:false", "flush", "write:true"), store.events)
+        assertEquals(listOf("flush", "write:false", "flush", "write:true"), store.events)
     }
     @Test fun restoringCachedPiecesDoesNotRewriteTheirCheckpoint() {
         val store = Store().apply { data = encoded() }

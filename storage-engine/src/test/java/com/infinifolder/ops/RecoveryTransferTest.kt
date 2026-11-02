@@ -20,6 +20,14 @@ class RecoveryTransferTest {
         override val id = "mock"
         val bytes = mutableMapOf("recovery/file.bin" to "data".toByteArray(), "nested/file.bin" to "data".toByteArray())
         val children = mutableMapOf<String, List<ResourceEntry>>()
+        val directories=mutableSetOf("dest","inside","inside-outer","recovery")
+        override fun stat(ref:ResourceRef):ProviderResult<ResourceEntry> {
+            val directory=ref.documentId in directories || ref.documentId in children
+            val data=bytes[ref.documentId]
+            if(!directory && data==null)return ProviderResult.Failure("Missing resource")
+            val found=entry(ref.documentId,directory)
+            return ProviderResult.Success(found.copy(metadata=found.metadata.copy(sizeBytes=data?.size?.toLong())))
+        }
         val origins = mutableMapOf<String, ResourceRef>()
         val backing = mutableMapOf<String, ResourceRef>()
         val created = mutableListOf<String>()
@@ -74,6 +82,7 @@ class RecoveryTransferTest {
         }
         override fun createDirectory(parent: ResourceRef, name: String): ProviderResult<ResourceEntry> {
             val path = "${parent.documentId}/$name"; created += path
+            directories.add(path)
             return ProviderResult.Success(entry(path, true))
         }
         override fun delete(ref: ResourceRef): ProviderResult<Unit> { if (failDelete) return ProviderResult.Failure("Injected cleanup failure"); bytes.remove(ref.documentId); return ProviderResult.Success(Unit) }
@@ -220,7 +229,16 @@ class RecoveryTransferTest {
     @Test fun cancellationDuringWritingRemovesPartialDestination() {
         var cancelled = false
         val store = store().apply { onWrite = { cancelled = true } }
-        assertThrows(InterruptedException::class.java) { transfer(store, cancelled = { cancelled }) }
+        val error = assertThrows(InterruptedException::class.java) { transfer(store, cancelled = { cancelled }) }
+        assertTrue(error.cause is java.io.InterruptedIOException)
+        assertFalse(store.bytes.containsKey("dest/file.bin"))
+        assertEquals("data", String(store.bytes.getValue("recovery/file.bin")))
+    }
+    @Test fun interruptedIoWithoutCancellationRemainsFailureAndCleansDestination() {
+        val injected = java.io.InterruptedIOException("Provider interrupted its write")
+        val store = store().apply { onWrite = { throw injected } }
+        val error = assertThrows(IOException::class.java) { transfer(store) }
+        assertTrue(generateSequence<Throwable>(error) { it.cause }.any { it === injected })
         assertFalse(store.bytes.containsKey("dest/file.bin"))
         assertEquals("data", String(store.bytes.getValue("recovery/file.bin")))
     }

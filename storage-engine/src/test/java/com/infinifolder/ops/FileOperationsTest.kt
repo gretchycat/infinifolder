@@ -21,6 +21,24 @@ class FileOperationsTest {
         val dirs: MutableMap<String, MutableList<ResourceEntry>> = mutableMapOf()
     ) : StorageProvider {
         override val id: String = "mock"
+        init {dirs.putIfAbsent("dest",mutableListOf())}
+        private val attributes=mutableMapOf<ResourceRef,com.infinifolder.model.TransferMetadata>()
+
+        override fun stat(ref:ResourceRef):ProviderResult<ResourceEntry> {
+            val directory=ref.documentId in dirs || ref.documentId in listingResults
+            val bytes=files[ref.documentId]
+            if(!directory && bytes==null)return ProviderResult.Failure("Not found")
+            return ProviderResult.Success(ResourceEntry(ref,ResourceMetadata(ref.documentId.substringAfterLast('/'),
+                if(directory)"vnd.android.document/directory" else "application/octet-stream",
+                bytes?.size?.toLong(),0L,directory),TestUri("mock://${ref.documentId}")))
+        }
+        override fun readTransferMetadata(ref:ResourceRef):ProviderResult<com.infinifolder.model.TransferMetadata> =
+            attributes[ref]?.let {ProviderResult.Success(it)} ?: super.readTransferMetadata(ref)
+        override fun applyTransferMetadata(ref:ResourceRef,metadata:com.infinifolder.model.TransferMetadata):ProviderResult<Unit> {
+            if(ref.documentId !in files && ref.documentId !in dirs)return ProviderResult.Failure("Not found")
+            attributes[ref]=metadata
+            return ProviderResult.Success(Unit)
+        }
 
         val deletedRefs = mutableListOf<ResourceRef>()
         val createdFiles = mutableListOf<String>()
@@ -56,6 +74,7 @@ class FileOperationsTest {
 
         override fun createFile(parent: ResourceRef, name: String, mimeType: String): ProviderResult<ResourceEntry> {
             val docId = "${parent.documentId}/$name"
+            if(docId in files || docId in dirs)return ProviderResult.Failure("Already exists")
             val entry = ResourceEntry(ResourceRef(id, docId), ResourceMetadata(name, mimeType, 0L, 0L, false), TestUri("mock://$docId"))
             dirs.getOrPut(parent.documentId) { mutableListOf() }.add(entry)
             files[docId] = ByteArray(0)
@@ -66,6 +85,7 @@ class FileOperationsTest {
         override fun delete(ref: ResourceRef): ProviderResult<Unit> {
             if (ref.documentId == failDelete) return ProviderResult.Failure("Removal denied")
             deletedRefs.add(ref)
+            attributes.remove(ref)
             files.remove(ref.documentId)
             dirs.remove(ref.documentId)
             dirs.values.forEach { list -> list.removeAll { it.ref == ref } }

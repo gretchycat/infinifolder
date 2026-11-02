@@ -7,11 +7,16 @@ Updated 2026-11-02. This is the current status reference. Checked implementation
 ## Current priority
 
 The library migration is complete at [checkpoint 31](library-migration-completion.md).
-The current stabilization task is to reproduce and investigate the 30 storage-test
-failures recorded before the migration, distinguishing product defects, invalid
-fixtures and outdated test contracts. Historical baseline evidence is retained;
-it is not a claim that the current suite has been rerun or is green. See the
-[investigation](storage-failure-investigation.md).
+The 30 pre-migration storage failures were reproduced and resolved on 2026-11-02.
+The final storage suite passes all 354 cases with no skips; the full APK/library
+gate passes all 942 cases. Repairs cover stale
+backend contracts/expectations, the synthetic LVM layout and the batch-transfer
+cancellation exception boundary; historical baseline evidence is preserved. See
+[commands, causes and acceptance limits](storage-failure-investigation.md).
+
+Container pins now persist in browser preferences across restarts, retaining
+order, resource identities and destination URIs. The debug build passes; actual
+restart/device acceptance remains pending.
 
 ## Confirmed on the handset
 
