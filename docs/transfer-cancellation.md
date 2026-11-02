@@ -113,3 +113,20 @@ icon/archive-probe interruptions, remote permission/channel failures and main-th
 disk-I/O warnings; these remain separate follow-up findings rather than evidence
 that the two recorded transfer outcomes failed. No code changes, tests or rebuild
 were needed for this review.
+
+## Move tree to SAF: 23:38 UTC dump
+
+`build/infinifolder-debug-20261102-233822-608.{log,json,png}` uses the same
+23:14 APK. Moving `Ringtones` from an archive to the Termux SAF provider creates
+its destination tree, verifies an empty file and two ringtone files (32,410 and
+25,373 bytes; **57,783 payload bytes**). Cancel is requested at 23:38:18.527297.
+The journal reports `transfer.undo.start move=true roots=1`, followed by 14 SAF
+delete calls, `transfer.undo.finished move=true failures=0`, and CANCELLED with
+“Cancelled; move undone” at 23:38:18.780702, about **253 ms** after the request.
+
+This establishes live tree/output cleanup after completed file copies. Original
+removal had not started, so it does not exercise restoration of deleted originals.
+The final zero-byte snapshot follows undo; it does not mean nothing was copied.
+The log also contains source attribute capture warnings (`TransferMetadata`
+validation, “Failed requirement”; originals retained). Attribute handling remains
+a separate follow-up; the warning-free move completion path is not accepted here.

@@ -26,3 +26,10 @@ same control on their Activity rows. Cancellation reverses the operation's copie
 outputs and restores removed move originals before reporting cancellation. Undo
 failures remain visible for review. Torrent controls and saved-progress behavior
 retain their existing policy. See [implementation, safeguards and validation](transfer-cancellation.md).
+
+## Reconnecting badge (2026-11-02)
+
+The existing toolbar activity dot blinks red while SFTP reconnects, taking priority
+over loading/write/verification colors. It resumes its normal state when reconnect
+attempts finish or fail. Its accessible description is “Reconnecting”; tapping it
+still opens file operations. See [channel recovery and pending device checks](sftp-channel-recovery.md).

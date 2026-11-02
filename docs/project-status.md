@@ -18,6 +18,12 @@ Container pins now persist in browser preferences across restarts, retaining
 order, resource identities and destination URIs. The debug build passes; actual
 restart/device acceptance remains pending.
 
+The SFTP channel-opening follow-up bounds independent streams, reuses a separate
+range channel, closes late cancelled setup results, and retries read-only channel
+failures once. The toolbar dot blinks red during reconnect attempts. The 23:27,
+23:30 and 23:36 UTC dumps precede the repair; handset retry remains pending. See
+[evidence, changes and limits](sftp-channel-recovery.md).
+
 ## Confirmed on the handset
 
 - Copy, Cancel and restricted-destination failure are owner-confirmed working
@@ -27,6 +33,12 @@ restart/device acceptance remains pending.
   free-space exhaustion case remain acceptance work. The cancellation increment's
   APK gate passes 958 cases, including 370 storage cases. See
   [evidence and remaining checks](transfer-cancellation.md#owner-run-acceptance-2026-11-02-2317-utc-dump).
+
+- The 23:38 UTC dump records cancelled move-tree cleanup into SAF after two
+  ringtone files (57,783 bytes) were copied and verified: undo finishes with zero
+  failures in about 253 ms. Original removal had not started. Source attribute
+  warnings remain separate from this successful output cleanup; restoration
+  after deletion is still unverified. See [move evidence](transfer-cancellation.md#move-tree-to-saf-2338-utc-dump).
 
 - The owner reports the pinned-link icon/name/breadcrumb repairs and embedded
   image follow-up working (2026-11-02). This confirms the reported workflow;

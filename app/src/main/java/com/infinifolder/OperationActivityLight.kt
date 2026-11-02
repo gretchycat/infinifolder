@@ -58,12 +58,14 @@ class OperationActivityLight(context: Context) : View(context) {
         val now = SystemClock.uptimeMillis()
         val completing = now < completionUntil
         val theme = ThemeManager.activeTheme
+        val reconnecting = StorageActivity.pending(StorageActivity.Kind.RECONNECTING)
         val verifying = StorageActivity.active(StorageActivity.Kind.VERIFICATION)
         val writing = active || StorageActivity.active(StorageActivity.Kind.FILE_OPERATION)
         val loading = StorageActivity.active(StorageActivity.Kind.LOADING)
         val waiting = !loading && StorageActivity.pending(StorageActivity.Kind.LOADING)
-        val working = verifying || writing || loading
+        val working = reconnecting || verifying || writing || loading
         paint.color = when {
+            reconnecting -> 0xFFE53935.toInt()
             verifying -> theme.verificationActivityLight
             writing -> theme.activityLight
             loading || waiting -> theme.loadingActivityLight
@@ -71,6 +73,7 @@ class OperationActivityLight(context: Context) : View(context) {
             else -> theme.activityLight
         }
         contentDescription = when {
+            reconnecting -> "Reconnecting. Tap for file operations."
             verifying -> "Verifying data. Tap for file operations."
             writing -> "File operation in progress. Tap for progress."
             loading -> "Loading files. Tap for file operations."

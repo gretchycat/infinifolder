@@ -152,7 +152,9 @@ individually without discarding valid pins. Restart/device acceptance is pending
 - [x] Put Cancel beside copy/move progress and on Activity transfer rows; keep the operation active while undo runs.
 - [x] Undo ordinary copied outputs and restore removed move originals with verification and conflict-safe retention. Preserve the torrent policy; continuation/resume is user-confirmed working (2026-11-02).
 - [x] Owner confirms copy, Cancel and restricted-destination failure behave as expected (2026-11-02). The 23:17 UTC dump records direct-button cancellation into an SFTP-hosted ZIP with its unpublished batch discarded, and preflight rejection of an oversized file for FAT16.
-- [ ] Accept move-original restoration, completed group/directory undo, live SAF cancellation and a distinct free-space exhaustion failure on-device. See [scope, safeguards and tests](transfer-cancellation.md).
+- [x] Verify cancelled move tree cleanup after completed copies into SAF: the 23:38 UTC dump records 57,783 copied/verified bytes, 14 output cleanup calls and undo with zero failures. Originals had not yet been removed.
+- [ ] Accept move-original restoration after deletion, conflicts and a distinct free-space exhaustion failure on-device. Investigate source attribute capture warnings in the 23:38 UTC dump. See [scope, safeguards and tests](transfer-cancellation.md).
+- [ ] Accept the SFTP channel-capacity/setup recovery repair and blinking red reconnect badge on-device. See [evidence and implementation](sftp-channel-recovery.md).
 
 ## Selection and sorting
 
