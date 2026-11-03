@@ -139,13 +139,33 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
     }
     private fun normalized(entry: ResourceEntry) = entry.copy(metadata = entry.metadata.copy(
         mimeType = MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType)))
+    private fun connectionKey(ref: ResourceRef): NetworkConnectionStatus.Key? =
+        if (ref.providerId !in setOf("sftp", "ftp", "smb", "webdav")) null else
+            Uri.parse(ref.documentId).authority?.takeIf { it.isNotBlank() }?.let { NetworkConnectionStatus.Key(ref.providerId, it) }
+    private fun <T> watchTransport(connection: NetworkConnectionStatus.Key?, work: () -> T): T {
+        val key = connection ?: return work()
+        return NetworkConnectionStatus.watchIo(key, work)
+    }
     private fun <T> call(operation: String, ref: ResourceRef, action: (StorageProvider) -> ProviderResult<T>): ProviderResult<T> = StorageActivity.track(
         if (operation in setOf("batch.begin", "replace", "replace-file", "write", "mkdir", "create", "rename", "delete", "seekable-write", "transfer-target", "metadata.apply"))
             StorageActivity.Kind.FILE_OPERATION else StorageActivity.Kind.LOADING
     ) {
+        // Metadata-only helpers do not prove that a network round trip succeeded.
+        val connectionRequest = if (ref.providerId in setOf("sftp", "ftp", "smb", "webdav") &&
+            operation in setOf("list", "stat", "read", "write", "mkdir", "create", "rename", "delete", "seekable", "seekable-write", "transfer-target", "replace", "replace-file")) {
+            Uri.parse(ref.documentId).authority?.takeIf { it.isNotBlank() }?.let {
+                NetworkConnectionStatus.begin(NetworkConnectionStatus.Key(ref.providerId, it))
+            }
+        } else null
         val result = try {
             byId[ref.providerId]?.let(action) ?: ProviderResult.Failure("Unknown provider: ${ref.providerId}")
         } catch (e: Exception) { ProviderResult.Failure(e.message ?: "$operation failed", e) }
+        connectionRequest?.let { request -> when (result) {
+            is ProviderResult.Success -> if (!result.isLoading) NetworkConnectionStatus.succeeded(request)
+                else NetworkConnectionStatus.failed(request, null)
+            is ProviderResult.Failure -> NetworkConnectionStatus.failed(request, result.cause, result.message)
+            is ProviderResult.Unsupported -> NetworkConnectionStatus.failed(request, null)
+        } }
         when (result) {
             is ProviderResult.Failure -> DiagnosticLog.record("storage.$operation.failed", "provider=${ref.providerId} ${result.message}", result.cause)
             is ProviderResult.Unsupported -> DiagnosticLog.record("storage.$operation.unsupported", "provider=${ref.providerId} capability=${result.capability}")
@@ -182,21 +202,27 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
     override fun openPartialRecovery(ref: ResourceRef): ProviderResult<RecoveryExport> =
         call("recovery.partial", ref) { it.openPartialRecovery(ref) }
     override fun openSeekable(ref: ResourceRef, writable: Boolean): ProviderResult<BlockDevice> = call(if (writable) "seekable-write" else "seekable", ref) { backend ->
-        checkedDevice(backend.openSeekable(ref, writable), writable)
+        checkedDevice(backend.openSeekable(ref, writable), writable, ref = ref)
     }
     override fun openTransferTarget(ref: ResourceRef): ProviderResult<BlockDevice> = call("transfer-target", ref) { backend ->
-        checkedDevice(backend.openTransferTarget(ref), writable = true, resizable = true)
+        checkedDevice(backend.openTransferTarget(ref), writable = true, resizable = true, ref = ref)
     }
     private fun checkedDevice(result: ProviderResult<BlockDevice>, writable: Boolean,
-                              resizable: Boolean = false): ProviderResult<BlockDevice> {
+                              resizable: Boolean = false, ref: ResourceRef): ProviderResult<BlockDevice> {
         val checked = validateSeekableResult(result, writable, resizable)
         if (checked is ProviderResult.Success) {
             val device = checked.value
+            val connection = connectionKey(ref)
             return checked.copy(value = object : BlockDevice by device {
                 override fun readAt(offset: Long, buffer: ByteArray, dstOffset: Int, length: Int): Int =
-                    device.readAt(offset, buffer, dstOffset, length).also {
+                    watchTransport(connection) { device.readAt(offset, buffer, dstOffset, length) }.also {
                         if (it > 0) StorageActivity.pulse(StorageActivity.Kind.LOADING)
                     }
+                override fun writeAt(offset: Long, buffer: ByteArray, srcOffset: Int, length: Int) =
+                    watchTransport(connection) { device.writeAt(offset, buffer, srcOffset, length) }
+                override fun flush() = watchTransport(connection) { device.flush() }
+                override fun truncate(newSize: Long) = watchTransport(connection) { device.truncate(newSize) }
+                override fun close() = watchTransport(connection) { device.close() }
             })
         }
         return checked
@@ -270,17 +296,32 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
     override fun replaceContentFromFile(ref: ResourceRef, file: java.io.File): ProviderResult<Unit> =
         call("replace-file", ref) { it.replaceContentFromFile(ref, file) }
     override fun openRead(ref: ResourceRef): ProviderResult<InputStream> = call("read", ref) { backend ->
+        val connection = connectionKey(ref)
         when (val result = backend.openRead(ref)) {
             is ProviderResult.Success -> result.copy(value = object : java.io.FilterInputStream(result.value) {
-                override fun read(): Int = super.read().also { if (it >= 0) StorageActivity.pulse(StorageActivity.Kind.LOADING) }
-                override fun read(bytes: ByteArray, offset: Int, length: Int): Int = super.read(bytes, offset, length).also {
+                override fun read(): Int = watchTransport(connection) { super.read() }.also { if (it >= 0) StorageActivity.pulse(StorageActivity.Kind.LOADING) }
+                override fun read(bytes: ByteArray, offset: Int, length: Int): Int = watchTransport(connection) { super.read(bytes, offset, length) }.also {
                     if (it > 0) StorageActivity.pulse(StorageActivity.Kind.LOADING)
                 }
+                override fun skip(count: Long): Long = watchTransport(connection) { super.skip(count) }
+                override fun close() = watchTransport(connection) { super.close() }
             })
             else -> result
         }
     }
-    override fun openWrite(ref: ResourceRef): ProviderResult<OutputStream> = call("write", ref) { it.openWrite(ref) }
+    override fun openWrite(ref: ResourceRef): ProviderResult<OutputStream> = call("write", ref) { backend ->
+        val connection = connectionKey(ref) ?: return@call backend.openWrite(ref)
+        when (val result = backend.openWrite(ref)) {
+            is ProviderResult.Success -> result.copy(value = object : OutputStream() {
+                override fun write(value: Int) = watchTransport(connection) { result.value.write(value) }
+                override fun write(bytes: ByteArray) = watchTransport(connection) { result.value.write(bytes) }
+                override fun write(bytes: ByteArray, offset: Int, length: Int) = watchTransport(connection) { result.value.write(bytes, offset, length) }
+                override fun flush() = watchTransport(connection) { result.value.flush() }
+                override fun close() = watchTransport(connection) { result.value.close() }
+            })
+            else -> result
+        }
+    }
     override fun createDirectory(parent: ResourceRef, name: String): ProviderResult<ResourceEntry> = call("mkdir", parent) { it.createDirectory(parent, name) }
     override fun createFile(parent: ResourceRef, name: String, mimeType: String): ProviderResult<ResourceEntry> = call("create", parent) {
         it.createFile(parent, name, MimeRegistry.effective(name, mimeType)).also { result ->

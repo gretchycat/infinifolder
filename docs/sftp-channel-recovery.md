@@ -101,3 +101,9 @@ session recreation as well as the explicit one-shot recovery path. They do not
 force disconnection, change the blink duration or hold red after an attempt ends.
 The next dump can establish whether a very brief reconnect indication was actually
 triggered. The tree-icon lifetime follow-up is documented in [resource icons](resource-icons.md).
+
+The 01:55/01:57 UTC dumps subsequently confirm reconnect signaling, but the owner
+did not see the requested badge on the icon. The original signal only affected
+the toolbar and ended after each attempt, including millisecond offline failures.
+New icon badges retain disconnected state and follow `.iflink` targets; see
+[connection icon badges](network-icon-badges.md).

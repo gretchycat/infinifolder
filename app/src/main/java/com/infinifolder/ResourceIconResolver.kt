@@ -53,12 +53,13 @@ class ResourceIconResolver(context: Context) {
         return key
     }
     fun close() { onArtworkChanged=null; retries.shutdownNow() }
-    fun invalidate() { rendered.evictAll(); identities.evictAll(); linkInfo.evictAll(); archives.clear(); audioArtwork.clear(); ResourceArtworkCache.clearMemory() }
+    fun invalidate() { rendered.evictAll(); identities.evictAll(); linkInfo.evictAll(); NetworkIconTargets.clear(); archives.clear(); audioArtwork.clear(); ResourceArtworkCache.clearMemory() }
     private fun linkKey(entry: ResourceEntry) = "${entry.uri}:${entry.metadata.modifiedAtMillis}:${entry.metadata.sizeBytes}"
     fun peekShortcut(entry: ResourceEntry): ShortcutInfo? = linkInfo.get(linkKey(entry))
     /** Worker-only metadata access shared by listing and pinned-link presentation. */
-    fun shortcutInfo(entry: ResourceEntry): ShortcutInfo? = peekShortcut(entry)
-        ?: IconWork.bounded(lane="metadata:${entry.ref.providerId}") { readShortcut(entry) }
+    fun shortcutInfo(entry: ResourceEntry): ShortcutInfo? = (peekShortcut(entry)
+        ?: IconWork.bounded(lane="metadata:${entry.ref.providerId}") { readShortcut(entry) })
+        ?.also { NetworkIconTargets.remember(entry, it.targetUri) }
     fun sidecar(entry: ResourceEntry): ResourceEntry? = artworkCache.sidecar(entry)
     fun sidecar(uri: Uri, name: String = ""): ResourceEntry? = artworkCache.sidecar(uri, name)
     private fun signature(entry: ResourceEntry,iconRevision:String=revision()): String {
@@ -93,6 +94,8 @@ class ResourceIconResolver(context: Context) {
     fun resolve(entry: ResourceEntry, size: Int, deferCacheWrite: Boolean = false): Icon {
         require(size>0)
         if(Thread.currentThread().isInterrupted) return fallback(entry,size)
+        // Link badges follow the destination even when explicit artwork/cache wins.
+        if (!entry.metadata.isDirectory && ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) shortcutInfo(entry)
         cached(entry,size)?.let { return it }
         val started=System.nanoTime()
         val result=runCatching { resolve(entry,size,mutableSetOf()) }.getOrElse { fallback(entry,size) }

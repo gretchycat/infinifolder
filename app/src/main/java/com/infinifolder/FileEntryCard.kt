@@ -129,6 +129,7 @@ class FileEntryCard(
             }
         }
 
+        NetworkConnectionBadge.attach(icon, entry = entry)
         container.addView(icon)
         icon
     }

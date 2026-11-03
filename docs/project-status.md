@@ -6,6 +6,13 @@ Updated 2026-11-02. This is the current status reference. Checked implementation
 
 ## Current priority
 
+Connection icon badges now show a red reconnect blink or a persistent unplugged
+symbol for observed failures, including `.iflink` destinations, remote archive
+sources, pins, tree and floating views. This corrects the earlier toolbar-only
+indicator; device acceptance is pending. See [connection badges](network-icon-badges.md).
+The static type inventory is available as [CSV](supported-types.csv), with
+[scope and regeneration](supported-types-inventory.md).
+
 The library migration is complete at [checkpoint 31](library-migration-completion.md).
 The 30 pre-migration storage failures were reproduced and resolved on 2026-11-02.
 The final storage suite passes all 354 cases with no skips; the full APK/library

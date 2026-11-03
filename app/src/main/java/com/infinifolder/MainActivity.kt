@@ -6069,6 +6069,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (item.needsAccessBadge) {
             iconFrame.addView(accessBadge().apply { setOnClickListener { activateHomeItem(item) } }, FrameLayout.LayoutParams(dp(20), dp(20), Gravity.END or Gravity.TOP))
         }
+        NetworkConnectionBadge.attach(iconFrame, target = targetTreeUri)
         box.addView(iconFrame)
         val labels = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -7050,7 +7051,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                     gravity = Gravity.CENTER
                 }
                 iconHolder.addView(image, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+                NetworkConnectionBadge.attach(iconHolder, target = pin.destination)
             }
+            NetworkConnectionBadge.attach(iconHolder, target = pin.destination)
             bindTarget()
             resourceIconResolver.peekCached(pin.entry, side)?.let { applyIcon(it) }
             card.setOnClickListener { openPinnedContainer(pin) }
@@ -7721,6 +7724,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         iconStack.addView(placeholder, FrameLayout.LayoutParams(dp(30), dp(32)))
         bindTreeIcon(node, iconStack, placeholder)
+        NetworkConnectionBadge.attach(iconStack, target = node.uri)
         if (isCreateDirNode) {
             iconStack.addView(
                 createDirBadge().apply { setOnClickListener { activateNode() } },

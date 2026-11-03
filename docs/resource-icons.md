@@ -175,6 +175,13 @@ Final command `gradle :app:assembleDebug --offline --console=plain` succeeded in
 2m 13s (410 tasks, 4 executed); the earlier build also passed in 2m 34s. Final log:
 `build/tree-icon-repair/app-build-final.log`. No device is connected through ADB.
 
+## Connection state emblems
+
+Remote icons and `.iflink` destinations share per-connection badges: blinking red
+while reconnecting and a persistent unplugged symbol after an observed transport
+failure. These decorate the primary icon across list/grid, tree, Virtual Root,
+pins and floating containers. See [state, targets and device checks](network-icon-badges.md).
+
 Validation: `gradle :app:assembleDebug --offline --console=plain`; logs under
 `build/pinned-link-repair/`. Handset display, picker return, copy/reopen, clear,
 restart and breadcrumb/hover checks were not performed by the agent: ADB has no
