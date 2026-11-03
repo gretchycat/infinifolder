@@ -9,7 +9,8 @@ Updated 2026-11-02. This is the current status reference. Checked implementation
 Connection icon badges now show a red reconnect blink or a persistent unplugged
 symbol for observed failures, including `.iflink` destinations, remote archive
 sources, pins, tree and floating views. This corrects the earlier toolbar-only
-indicator; device acceptance is pending. See [connection badges](network-icon-badges.md).
+indicator; the owner confirms the badges working on the handset (2026-11-02).
+See [connection badges and remaining variants](network-icon-badges.md).
 The static type inventory is available as [CSV](supported-types.csv), with
 [scope and regeneration](supported-types-inventory.md).
 

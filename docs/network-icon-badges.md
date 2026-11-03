@@ -1,6 +1,6 @@
 # Connection badges on remote icons
 
-Implemented 2026-11-02. Handset acceptance remains pending.
+Implemented 2026-11-02. Connection badges are owner-confirmed on the handset.
 
 ## Evidence and correction
 
@@ -56,9 +56,10 @@ credentials. `network.connection.state` records transitions alongside existing
 logs are in `build/network-icon-badges/`. Whitespace checks passed. No automated
 tests were added or run. The first build passed in 2m 43s; later builds include
 streaming error observation and final cleanup. ADB has no connected device.
-Appearance, offline/reconnect clearing, `.iflink` targets, account separation,
-pins/tree and floating-window behavior need handset acceptance. The reviewed
-dumps predate these icon badges.
+The owner subsequently confirms connection badges working (2026-11-02). This
+accepts the reported badge workflow. Offline/reconnect clearing, `.iflink`
+variants, account separation, pins/tree and floating-window cases were not
+individually specified. The reviewed dumps predate these icon badges.
 
 Final debug APK build passed in 11 seconds (410 tasks, 17 executed), including
 cached per-handle connection identity and preservation of local output stream
