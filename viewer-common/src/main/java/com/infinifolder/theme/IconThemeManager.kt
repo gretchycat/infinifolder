@@ -792,25 +792,58 @@ class IconThemeManager(private val context: Context) {
                 "document", "documents", "docs" -> {
                     list.add("folder-documents")
                 }
-                "music", "audio", "podcasts" -> {
+                "music" -> {
                     list.add("folder-music")
                     list.add("folder-audio")
                 }
-                "picture", "pictures", "photo", "photos", "images", "dcim" -> {
+                "audio" -> {
+                    list.add("folder-audio")
+                    list.add("folder-music")
+                }
+                "podcasts" -> {
+                    list.add("folder-podcasts")
+                    list.add("folder-music")
+                    list.add("folder-audio")
+                }
+                "picture", "pictures", "photo", "photos" -> {
                     list.add("folder-pictures")
                     list.add("folder-images")
                 }
-                "video", "videos", "movie", "movies" -> {
+                "images" -> {
+                    list.add("folder-images")
+                    list.add("folder-pictures")
+                }
+                "dcim" -> {
+                    list.add("folder-dcim")
+                    list.add("folder-camera")
+                    list.add("folder-pictures")
+                    list.add("folder-images")
+                }
+                "video", "videos" -> {
                     list.add("folder-videos")
                     list.add("folder-movies")
                 }
-                "desktop" -> list.add("user-desktop")
+                "movie", "movies" -> {
+                    list.add("folder-movies")
+                    list.add("folder-videos")
+                }
+                "desktop" -> {
+                    list.add("user-desktop")
+                    list.add("folder-desktop")
+                }
                 "android", ".android" -> list.add("folder-android")
                 "public" -> {
+                    list.add("folder-public")
                     list.add("folder-publicshare")
                     list.add("folder-remote")
                 }
-                "home", "root" -> list.add("user-home")
+                "home", "root" -> {
+                    list.add("user-home")
+                    list.add("folder-home")
+                }
+                // Shared with the custom theme packager: Ringtones,
+                // Notifications, Alarms, Fonts and every other declared role.
+                else -> BundledDefaultThemeInfo.DIRECTORY_ICONS[lower]?.let(list::add)
             }
 
             // Standard folder fallbacks

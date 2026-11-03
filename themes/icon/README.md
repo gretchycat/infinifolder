@@ -24,6 +24,12 @@ File extensions and URI schemes appear in uppercase on the bottom colored label.
 from each label; the app uses the same palette for unlisted MIME fallbacks. Folder variants
 show only their pictogram stamp, without a description plaque. Directory names,
 MIME types and inventory details remain in `../default theme/metadata.csv`.
+The theme packager generates folder-name recognition from every `directory_type`
+row, so Ringtones, Notifications and the other declared roles reach their artwork
+in listings. Logical names are `folder-<role>` (for example `folder-ringtones`).
+Music/Audio and Movies/Videos keep their individual artwork instead of sharing
+an alias that hides one of the supplied stamps. Existing standard theme aliases
+and plain-folder fallbacks remain available.
 The generic folder uses the plain folder base. The artwork is built from original,
 hand-authored SVG paths and shapes. Regeneration replaces source art and refreshes
 the importable theme layout/ZIP; ordinary app builds only package current sources.

@@ -20,6 +20,30 @@ Packaging preserves source SVG bytes. Generic folders use the unbadged folder
 base; generic archives use the archive base. Specific format icons retain their
 extension and MIME names.
 
+## Special-purpose folders
+
+`directory_type` rows in `metadata.csv` define the folder roles. For example,
+`directory:ringtones` packages its SVG as `folder-ringtones.svg`, and
+`directory:notifications` supplies `folder-notifications.svg`. The build also
+generates the app's folder-name lookup from these same rows. All declared roles
+are recognized, including Alarms, Podcasts, Recordings, Camera/DCIM, Screenshots,
+Fonts, Themes, Wallpapers, eBooks, Archives, Projects and Backups.
+
+Folder names match case-insensitively, by their whole name rather than a prefix.
+The active theme supplies the corresponding logical icon; imported themes can
+provide the same `folder-<role>` names. Existing desktop naming alternatives such
+as `folder-download`, `folder-publicshare` and `user-home` remain available.
+If the theme lacks a role icon, normal theme inheritance and the plain folder
+fallback apply. A folder's valid `cover.*` or `.icon.*` still takes priority.
+
+To change artwork for an existing role, edit its SVG here and run the export
+command above. To add a role, add its source SVG and `directory_type` metadata row;
+the next app build incorporates its name without a separate UI mapping. Changes
+to manually added roles must also be reflected in the artwork generator's
+`DIRECTORIES` list if you intend to regenerate all artwork later. Exported themes
+use ordinary freedesktop icon filenames; arbitrary folder-name recognition is
+an InfiniFolder behavior, not an additional standard `index.theme` field.
+
 `:viewer-common:prepareDefaultIconTheme` runs the same packager during app builds,
 writing only to the module's build directory. Its compiled content revision
 invalidates the app's local theme cache when artwork changes. Python 3.9+ is

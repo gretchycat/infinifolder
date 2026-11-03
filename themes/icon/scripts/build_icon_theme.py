@@ -96,9 +96,12 @@ def main(argv=None):
         "directory-home.svg": ["user-home", "folder-home"],
         "directory-desktop.svg": ["user-desktop"],
         "directory-downloads.svg": ["folder-download", "folder-downloads"],
-        "directory-images.svg": ["folder-images", "folder-pictures"],
-        "directory-videos.svg": ["folder-movies", "folder-videos"],
-        "directory-audio.svg": ["folder-music", "folder-audio"],
+        "directory-images.svg": ["folder-images"],
+        "directory-pictures.svg": ["folder-pictures"],
+        "directory-videos.svg": ["folder-videos"],
+        "directory-movies.svg": ["folder-movies"],
+        "directory-audio.svg": ["folder-audio"],
+        "directory-music.svg": ["folder-music"],
         "directory-public.svg": ["folder-publicshare"],
         "base-fallback-archive.svg": ["folder-archive", "package-x-generic"],
         "directory-apps.svg": ["start-here-android", "view-app-grid", "applications-all", "applications-other", "folder-android"],
@@ -145,6 +148,17 @@ MaxSize=1024
     extensions = {row["identifier"].lstrip("."): row["mime_type"] for row in rows
                   if row["category"] == "file_type" and row["mime_type"]}
     extension_source = ",\n".join(f'        "{ext}" to "{mime}"' for ext, mime in sorted(extensions.items()))
+    # Use the canonical directory metadata for runtime name recognition as well
+    # as artwork aliases, so new roles cannot be packaged but unreachable.
+    directory_icons = {}
+    for row in rows:
+        if row["category"] != "directory_type":
+            continue
+        role = row["identifier"].removeprefix("directory:")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", role) or role in directory_icons:
+            raise ValueError(f"Invalid or duplicate directory role: {role}")
+        directory_icons[role] = "folder-" + role
+    directory_source = ",\n".join(f'        "{role}" to "{icon}"' for role, icon in sorted(directory_icons.items()))
     if not args.no_layout:
         (SOURCE / "index.theme").write_text(index, encoding="utf-8")
         # Aliases are standard theme filenames, not a second copy of the art.
@@ -177,6 +191,9 @@ internal object BundledDefaultThemeInfo {{
     const val REVISION = "{version}"
     val EXTENSION_MIME_TYPES = mapOf(
 {extension_source}
+    )
+    val DIRECTORY_ICONS = mapOf(
+{directory_source}
     )
 }}
 ''')
