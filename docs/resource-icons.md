@@ -281,3 +281,5 @@ Saved user associations/overrides retain their existing precedence. No ROM parse
 or emulator was added, and Android registration does not advertise a native GEN
 viewer. The supported-type CSV, reviewed base assignment and default theme are
 regenerated from this identity.
+
+The owner confirmed GEN files display the binary icon on-device on 2026-11-03.

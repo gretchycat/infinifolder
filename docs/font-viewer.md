@@ -58,14 +58,20 @@ Actual native support, color fonts and shaping depend on the Android device.
 Android may supply fallback glyphs for characters missing from a loaded font;
 the specimen explicitly explains this. Viewing never installs a system font.
 
-## Build evidence and pending acceptance
+## Build evidence and acceptance
 
 `gradle :app:assembleDebug :viewer-host:assembleDebug --offline --console=plain`
 builds the app and combined host. A separate
 `gradle :viewer-host:assembleDebug -Pviewer=font --offline --console=plain` builds
 the dedicated font host. Logs are under `build/font-viewer/`.
 
-No tests were added or run. No ADB device is connected. Native rendering, face
-switching, sample/size controls, keyboard/system-bar bounds, rotation restoration,
-provider access, cancellation and failure UI still require device acceptance.
-Compilation and packaged manifest inspection do not verify those interactions.
+The owner confirmed local font preview, the size control, dark/light mode,
+rotation and the navigation-bar layout on 2026-11-03. The owner also confirmed
+that GEN files display the binary icon. These are user-reported device checks;
+the agent had no connected ADB device during implementation.
+
+`content://` font access remains unverified because the owner had no provider URI
+available. Collection face selection, custom sample editing, archive/remote
+sources, keyboard/status-bar layout, cancellation and failure cases were not
+separately confirmed. No automated tests were added or run. Builds and packaged
+manifest inspection are separate evidence from device interaction checks.
