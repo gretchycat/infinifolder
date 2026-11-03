@@ -104,7 +104,7 @@ def main(argv=None):
         "directory-music.svg": ["folder-music"],
         "directory-public.svg": ["folder-publicshare"],
         "base-fallback-archive.svg": ["folder-archive", "package-x-generic"],
-        "directory-apps.svg": ["start-here-android", "view-app-grid", "applications-all", "applications-other", "folder-android"],
+        "directory-apps.svg": ["start-here-android", "view-app-grid", "applications-all", "applications-other"],
         "directory-trash.svg": ["user-trash", "user-trash-full"],
         "base-fallback-document.svg": ["text-x-generic", "x-office-document"],
         "base-fallback-binary.svg": ["unknown", "application-x-generic"],

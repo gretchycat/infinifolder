@@ -19,6 +19,8 @@ eBooks, Downloads, Archives, Apps, Camera/DCIM, Screenshots, Podcasts, Recording
 Ringtones, Notifications, Alarms, Wallpapers, Fonts, Themes, Templates, Shared,
 Public, Cloud, Offline, Recent, Temporary, Contacts, Calendar, Favorites, Projects,
 Backups, Trash, and the generic folder.
+The Android directory has its own robot silhouette stamp at 50% opacity.
+The folder base stays fully opaque.
 File extensions and URI schemes appear in uppercase on the bottom colored label.
 `icon_style.py` supplies the shared readable palette, selected deterministically
 from each label; the app uses the same palette for unlisted MIME fallbacks. Folder variants
