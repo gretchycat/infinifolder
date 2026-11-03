@@ -511,7 +511,9 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
     private var forwardingHomeShortcut = false
     override fun onCreate(savedInstanceState: Bundle?) {
-        if (intent?.action == ACTION_HOME_ITEM) {
+        val restoringLaunch = savedInstanceState != null ||
+            intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+        if (intent?.action == ACTION_HOME_ITEM && !restoringLaunch) {
             forwardingHomeShortcut = true
             setTheme(R.style.HomeShortcutTheme)
             super.onCreate(savedInstanceState)
@@ -599,25 +601,13 @@ class MainActivity : Activity(), DebugDumpObserver {
                 openRoot(savedRoot)
             }
         }
-        handleCacheCopyRequest(intent)
-        handleExternalLinkIntent(intent)
-        handleHomeItemIntent(intent)
-        if (intent.getBooleanExtra("show_operations", false)) {
-            intent.removeExtra("show_operations")
-            pendingOperationsIntent = true
-            window.decorView.post {
-                if (browserResumed && pendingOperationsIntent && !isFinishing && !isDestroyed) {
-                    pendingOperationsIntent = false
-                    showOperations()
-                }
-            }
-        }
+        dispatchLaunchRequest(intent, restoringLaunch)
         io.execute { HomeShortcuts.refreshPinned(applicationContext) }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent.action == ACTION_HOME_ITEM) {
+        if (intent.action == ACTION_HOME_ITEM && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) {
             // Older pins may still target an existing browser task. Hide it before
             // handing off, so it cannot draw under the transparent dispatcher.
             window.decorView.visibility = View.INVISIBLE
@@ -626,12 +616,23 @@ class MainActivity : Activity(), DebugDumpObserver {
             overridePendingTransition(0, 0)
             return
         }
-        setIntent(intent)
-        handleCacheCopyRequest(intent)
-        handleExternalLinkIntent(intent)
-        handleHomeItemIntent(intent)
-        if (intent.getBooleanExtra("show_operations", false)) {
-            intent.removeExtra("show_operations")
+        dispatchLaunchRequest(intent, intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0)
+    }
+
+    /** Launch data is a one-shot command, never part of the browser's restored state. */
+    private fun dispatchLaunchRequest(request: Intent?, restoring: Boolean) {
+        val launch = request?.let(::Intent)
+        setIntent(Intent(this, MainActivity::class.java).setAction(Intent.ACTION_MAIN))
+        // A fresh browser launch also cancels older asynchronous resource opens.
+        browserNavigationGeneration++
+        if (launch == null || restoring) {
+            if (restoring) com.infinifolder.storage.DiagnosticLog.record("browser.launch.restored", "resourceRequest=ignored")
+            return
+        }
+        handleCacheCopyRequest(launch)
+        handleExternalLinkIntent(launch)
+        handleHomeItemIntent(launch)
+        if (launch.getBooleanExtra("show_operations", false)) {
             pendingOperationsIntent = true
             window.decorView.post {
                 if (browserResumed && pendingOperationsIntent && !isFinishing && !isDestroyed) {
@@ -652,11 +653,12 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (request?.action != ACTION_HOME_ITEM_IN_APP) return
         val uri = request.data ?: return
         request.action = null
+        val generation = ++browserNavigationGeneration
         io.execute {
             try {
                 val entry = provider.refForUri(uri)?.let { (provider.stat(it) as? ProviderResult.Success)?.value }
                 runOnUiThread {
-                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
                     when {
                         entry == null -> openContainerLinkUri(uri, null, requireContainer = false, origin = LinkNavigationOrigin.EXTERNAL_HISTORY)
                         entry.metadata.isDirectory -> navigate(entry.uri, displayName = entry.metadata.name)
@@ -664,7 +666,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                     }
                 }
             } catch (error: Exception) {
-                runOnUiThread { Toast.makeText(this, error.message ?: "Could not open home-screen item", Toast.LENGTH_LONG).show() }
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed && generation == browserNavigationGeneration)
+                        Toast.makeText(this, error.message ?: "Could not open home-screen item", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -810,6 +815,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val raw = request?.getStringExtra(com.infinifolder.viewer.CacheFailureUi.COPY_SOURCE_EXTRA) ?: return
         request.removeExtra(com.infinifolder.viewer.CacheFailureUi.COPY_SOURCE_EXTRA)
         val uri = runCatching { Uri.parse(raw) }.getOrNull() ?: return
+        val generation = browserNavigationGeneration
         io.execute {
             val result = runCatching {
                 val ref = provider.refForUri(uri) ?: throw java.io.IOException("No provider owns this source")
@@ -820,7 +826,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
             }
             runOnUiThread {
-                if (!isFinishing && !isDestroyed) result.onSuccess { source ->
+                if (!isFinishing && !isDestroyed && generation == browserNavigationGeneration) result.onSuccess { source ->
                     showBatchDestinationPicker(listOf(source), false)
                 }.onFailure { error ->
                     dialogBuilder().setTitle("Cannot copy file").setMessage(error.message).setPositiveButton("OK", null).show()

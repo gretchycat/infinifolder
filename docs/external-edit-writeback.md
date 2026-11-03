@@ -7,6 +7,36 @@ are implemented; device acceptance is pending.
 
 ## Workflow
 
+### One-shot file opens and startup
+
+The owner reported that a previously opened image launched again on a new app
+start. Source inspection found that Main replayed resource intents during task
+recreation and that the external picker could automatically resolve its saved
+target again. These are replay paths; no connected-device trace establishes
+which one caused the reported image launch.
+
+Main now copies each incoming launch command and immediately replaces its held
+intent with a plain browser MAIN intent. Restored/history launches rebuild browser
+state without executing old file, link or cache-copy commands. A new launch also
+invalidates earlier asynchronous resource-open/copy callbacks. The launcher
+dispatcher consumes its resource URI and records that consumption in saved state;
+its pending overlay-permission URI/name remain explicit state for that flow.
+
+A picker restored with an unfinished choice can show choices, but cannot use a
+saved default to auto-launch the old target. Completed/history picker restores
+finish without acting on the target. External-edit restoration may review a known
+session, but does not stage and launch an old source again when no session was
+saved. Retained working copies stay available for their existing URI grants and
+explicit recovery; their existence is not a new open request.
+
+Device checks remain pending for plain launcher start after an image open,
+process recreation, Recents, a new explicit file/pin open, picker rotation and
+permission return. No automated tests were added or run for this repair.
+
+`gradle :app:assembleDebug --offline --console=plain` passed in 26 seconds;
+log: `build/one-shot-file-launch/app-build.log`. The build includes existing
+workspace changes. ADB listed no connected device, so UI behavior is unverified.
+
 ### InfiniFolder-only external defaults
 
 File menus now expose **Open externally** (use saved local preferences) and

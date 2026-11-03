@@ -27,6 +27,7 @@ class ExternalAppPickerActivity : Activity() {
     private var dialog: AlertDialog? = null
     private var savedRemember = false
     private var savedFileScope = false
+    private var launched = false
     private val sourceKey get() = intent.getStringExtra(ExternalAppChooser.SOURCE)
     private val fileName get() = intent.getStringExtra(ExternalAppChooser.NAME).orEmpty()
     private val selectingEditor get() = intent.getBooleanExtra(ExternalAppChooser.SELECT_EDITOR, false)
@@ -35,6 +36,8 @@ class ExternalAppPickerActivity : Activity() {
     override fun onCreate(state: Bundle?) {
         setTheme(com.infinifolder.viewer.common.R.style.ExternalEditHandoffTheme)
         super.onCreate(state)
+        if (state?.getBoolean("launched", false) == true ||
+            intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) { finish(); return }
         ThemeManager.init(applicationContext)
         @Suppress("DEPRECATION")
         val requested = intent.getParcelableExtra<Intent>(ExternalAppChooser.TARGET)
@@ -43,7 +46,9 @@ class ExternalAppPickerActivity : Activity() {
         defaults = ExternalAppDefaults(this)
         savedRemember = state?.getBoolean("remember") ?: false
         savedFileScope = state?.getBoolean("file_scope") ?: false
-        loadChoices(useDefault = !intent.getBooleanExtra(ExternalAppChooser.FORCE_CHOOSER, false) && !selectingEditor)
+        // A restored picker may show choices, but must not repeat its old target automatically.
+        loadChoices(useDefault = state == null &&
+            !intent.getBooleanExtra(ExternalAppChooser.FORCE_CHOOSER, false) && !selectingEditor)
     }
     private fun choices(): List<Choice> {
         val actions = if (target.action == Intent.ACTION_EDIT) listOf(Intent.ACTION_EDIT, Intent.ACTION_VIEW) else listOf(Intent.ACTION_VIEW)
@@ -143,6 +148,8 @@ class ExternalAppPickerActivity : Activity() {
             if (rememberChoice) defaults.remember(target.action!!,
                 if (scope?.checkedRadioButtonId == 1) ExternalAppDefaults.FILE else ExternalAppDefaults.TYPE,
                 sourceKey, target.type, fileName, choice.component)
+            launched = true
+            intent.removeExtra(ExternalAppChooser.TARGET)
             DiagnosticLog.record("external-app.launched", "action=${choice.action} remembered=$rememberChoice")
             finish()
         } catch (error: Exception) {
@@ -153,6 +160,7 @@ class ExternalAppPickerActivity : Activity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("remember", remember?.isChecked ?: savedRemember)
         outState.putBoolean("file_scope", scope?.checkedRadioButtonId == 1)
+        outState.putBoolean("launched", launched)
         super.onSaveInstanceState(outState)
     }
     override fun onDestroy() { dialog?.dismiss(); super.onDestroy() }

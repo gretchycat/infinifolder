@@ -19,6 +19,7 @@ import com.infinifolder.overlay.FloatingContainerService
 class HomeItemActivity : Activity() {
     private var pendingContainer: Uri? = null
     private var pendingContainerName: String? = null
+    private var requestConsumed = false
     override fun onCreate(savedInstanceState: Bundle?) {
         val startupError = if (intent.data == null) com.infinifolder.viewer.DebugTools.startupError(this) else null
         if (startupError != null) setTheme(R.style.AppTheme)
@@ -32,7 +33,12 @@ class HomeItemActivity : Activity() {
         pendingContainer = savedInstanceState?.getString("container")?.let(Uri::parse)
         pendingContainerName = savedInstanceState?.getString("container_name")
         if (pendingContainer != null) return
-        val uri = intent.data
+        val restoredRequest = savedInstanceState?.getBoolean("request_consumed", false) == true ||
+            intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+        val uri = intent.data?.takeUnless { restoredRequest }
+        // Do not retain the file/cache URI as this dispatcher's next launch.
+        setIntent(Intent(this, HomeItemActivity::class.java).setAction(Intent.ACTION_MAIN))
+        requestConsumed = true
         if (uri == null) {
             // The ordinary application icon opens the browser; resource pins stay
             // in this independent transparent task until their destination is ready.
@@ -198,6 +204,7 @@ class HomeItemActivity : Activity() {
         super.onSaveInstanceState(outState)
         outState.putString("container", pendingContainer?.toString())
         outState.putString("container_name", pendingContainerName)
+        outState.putBoolean("request_consumed", requestConsumed)
     }
     @Deprecated("Android Activity result callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

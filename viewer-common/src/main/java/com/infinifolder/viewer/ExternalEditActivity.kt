@@ -73,6 +73,10 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
                     else if (!awaitingEditor) reviewChanges()
                 }
             }
+        } else if (intent.data != null && (savedInstanceState != null ||
+                intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0)) {
+            // The source in a restored task is not a new request to launch an editor.
+            finish()
         } else if (intent.data != null) {
             work("Preparing file…") {
                 val prepared = store.prepare(intent.data!!, ::report)
