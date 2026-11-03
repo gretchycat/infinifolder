@@ -107,3 +107,45 @@ did not see the requested badge on the icon. The original signal only affected
 the toolbar and ended after each attempt, including millisecond offline failures.
 New icon badges retain disconnected state and follow `.iflink` targets; see
 [connection icon badges](network-icon-badges.md).
+
+## Metadata-channel follow-up — 2026-11-03, 03:30 UTC
+
+The 03:26:00 and 03:30:02 dump windows report APK update time 03:00:44 UTC. Cache
+reuse is real and entry opens are shorter; see [transfer measurements](remote-archive-transfer-performance.md#handset-cache-evidence--0326--0330-utc).
+The move still fails when `StorageSafety.requireNewName` lists the destination
+before creating `file-bin-zst.svg`. No destination write for that member has begun.
+The nested `SftpException` from `ChannelSftp._stat` has an empty message. The same
+pattern ended the earlier Ringtones move.
+
+The [pinned JSch implementation](https://github.com/mwiede/jsch/blob/jsch-2.28.8/src/main/java/com/jcraft/jsch/ChannelSftp.java)
+can throw an empty `SSH_FX_FAILURE` on unexpected reply packet types. This is
+consistent with the traces; the dump does not independently capture packet types
+or prove the server's behavior. The provider did have a concrete lifetime gap:
+optional home/subject and symlink metadata queries caught every throwable inside
+the pool callback, hiding interrupted or broken I/O from the channel-discard path.
+There was also no cancellation check after a successful read callback.
+
+The repair:
+
+- Checks cancellation after each metadata read callback, while still inside the
+  pool's exception/discard boundary. A cancelled callback cannot return its channel
+  as a clean result; cancellation is never retried.
+- Keeps optional metadata fallbacks for complete server errors, including missing,
+  denied and unsupported metadata. Exceptions with underlying I/O causes, connection
+  loss, malformed-message status and empty generic failures propagate to the pool.
+- Retries an empty `SSH_FX_FAILURE` read once on the metadata channel recreated by
+  the existing discard path. If the SSH session is healthy, independent streams
+  and the range channel are retained. Existing dead-session recovery remains.
+- Leaves writes and partially completed mutations outside this retry. The failed
+  destination collision check can retry its listing before file creation runs once.
+- Emits `sftp.channel.read.retry` / `.failed`; repeated empty errors get an explicit
+  failure message and preserve the original exception chain. No target credentials
+  or URI tokens are added to diagnostics.
+
+This addresses a demonstrated error-handling gap and adds bounded read recovery;
+it does not claim that the observed server failure is eliminated on the handset.
+Source-attribute warnings and move-original retention remain separate. No new tests
+were added or run. `gradle :app:assembleDebug --offline --console=plain` passes
+after the final change in 12 seconds (410 tasks: 6 executed, 404 up-to-date);
+output is `build/sftp-metadata-recovery/app-build-final.log`. The earlier full
+test gate is historical evidence.

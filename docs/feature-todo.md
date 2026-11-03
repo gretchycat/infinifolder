@@ -14,7 +14,9 @@ Remaining portability, graph-planning and release items below are follow-up work
 - [x] Normalize SFTP/archive POSIX file-type bits at Store's permission-only transfer-metadata boundary; preserve special permission bits and unknown modes. See [migration closeout](library-migration-completion.md#closeout-follow-up--2026-11-02).
 - [x] Exercise the mode-conversion fix on the handset: the 02:52 UTC dump contains no prior validation exception. Unsupported attribute warnings remain; see [evidence](remote-archive-transfer-performance.md).
 - [x] Reuse bounded source read caches during an ordinary move's copy phase; bypass them for final source validation/deletion and undo.
-- [ ] Accept the remote archive move speed improvement; investigate the separate SFTP destination-listing failure and retain unsupported-attribute warnings. Warning-free completion and move restoration after original deletion remain unverified.
+- [x] Establish remote archive cache reuse on the handset: 67 reuses and a 759 ms median entry open in the 03:26/03:30 UTC dumps, on a different file set from the earlier run.
+- [x] Propagate broken optional SFTP metadata queries to channel cleanup, check cancellation after reads, and retry empty generic read failures once without replaying writes. See [SFTP follow-up](sftp-channel-recovery.md#metadata-channel-follow-up--2026-11-03-0330-utc).
+- [ ] Accept recovery from the recurring SFTP destination-listing failure. Unsupported-attribute warnings, warning-free move completion and move restoration after original deletion remain unverified.
 
 - [x] Align references with the supplied architecture; retain dated evidence and safety limits.
 - [x] Create/reuse the seven justified repositories, pin source submodules and build them independently.

@@ -71,3 +71,28 @@ increment. Build output and an aggregate log summary are under
 `build/remote-archive-transfer-cache/`. The earlier 958-case gate remains historical
 evidence. Live speed, cache invalidation and final-check/undo acceptance on this
 revision remain unverified.
+
+## Handset cache evidence — 03:26 / 03:30 UTC
+
+`build/infinifolder-debug-20261103-032600-324` reports APK update time
+03:00:44 UTC and a move of `icon` from the same remote `portrait.zip`. The
+03:25:59 capture overlaps this run; it is not a second transfer. The 03:30:02
+capture retains its final stages and failure.
+
+- The first source open takes 8,215 ms. Across 67 completed source opens, the
+  total is 62,001 ms and median is **759 ms**, versus 7,562 ms in the earlier
+  Ringtones run. These are different file sets, not a controlled throughput test.
+- The scope opens the 62,580,459-byte source, reuses it 67 times, and closes with
+  zero outstanding leases. This establishes actual cache reuse on the handset.
+- The move writes/verifies 67,468 payload bytes before another SFTP destination
+  listing failure, while creating `file-bin-zst.svg`. It is FAILED; no original
+  removal is recorded. Unsupported attribute warnings remain.
+- The earlier 03:06:32 dump records two Ringtones copies reaching COMPLETE,
+  each at 32,400,767 bytes with an attribute warning. Those are separate copy
+  workflows, not clean move completion or proof of cache use during moves.
+
+The recurring SFTP read failure is addressed separately in the
+[metadata-channel follow-up](sftp-channel-recovery.md#metadata-channel-follow-up--2026-11-03-0330-utc).
+Live cache use and reduced observed entry-open times are now supported; final
+move validation/deletion, cancellation undo on this revision and recovery from
+the listing failure still need acceptance.

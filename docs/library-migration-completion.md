@@ -126,6 +126,12 @@ copy phase, then bypasses it for final source validation/deletion and existing u
 The APK build passes; handset speed acceptance is pending. See
 [measurements, implementation and limits](remote-archive-transfer-performance.md).
 
+The 03:26/03:30 UTC follow-up establishes 67 cache reuses and a 759 ms median
+source-open time on a different file set. The recurring empty SFTP listing failure
+remains; Store now propagates broken optional metadata reads, checks cancellation
+before returning read results, and retries that read failure once on a fresh
+metadata channel. Writes are not replayed. See [cause, repair and acceptance limits](sftp-channel-recovery.md#metadata-channel-follow-up--2026-11-03-0330-utc).
+
 ## Work outside this migration
 
 The migration introduces no new language port, codec rewrite or binary blob.

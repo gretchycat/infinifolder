@@ -13,8 +13,12 @@ source-attribute validation warnings in the SAF move-tree log. The 02:52 UTC dum
 exercises the repair without that exception; unsupported attribute warnings remain.
 The move fails during an SFTP destination listing. Repeated ZIP-header reads caused
 most of its delay; Store now reuses bounded read caches during the move's copy phase
-with fresh reads for final source validation/deletion and undo. The APK builds;
-handset speed acceptance is pending. See [transfer performance](remote-archive-transfer-performance.md).
+with fresh reads for final source validation/deletion and undo. The 03:26/03:30
+UTC dumps show 67 cache reuses and a 759 ms median source open on a different
+file set. The same empty SFTP listing failure still ends the move. Store now
+propagates broken optional metadata reads and performs one bounded read retry;
+handset recovery acceptance is pending. See [transfer performance](remote-archive-transfer-performance.md)
+and [SFTP metadata recovery](sftp-channel-recovery.md#metadata-channel-follow-up--2026-11-03-0330-utc).
 Live acceptance and distributable release work remain separate from source
 extraction. See the [dated closeout record](library-migration-completion.md#closeout-follow-up--2026-11-02).
 
