@@ -14,6 +14,8 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import io.github.gretchycat.infiniscribe.DocumentFormats
+import io.github.gretchycat.infiniscribe.office.*
 import io.github.gretchycat.infiniscribe.DelimitedText
 import io.github.gretchycat.infiniscribe.TableDocument
 import io.github.gretchycat.infiniscribe.TableDocuments
@@ -29,6 +31,13 @@ import java.util.concurrent.Future
  * search/filter across columns, and in-place saving back to storage.
  */
 class CsvViewerActivity : ViewerActivity() {
+    private var workbookKind:DocumentFormats.Kind?=null
+    private var workbook:SpreadsheetBook?=null
+    private var workbookStage:DocumentResourceStaging?=null
+    private var workbookRows:List<SpreadsheetRow> = emptyList()
+    private var selectedSheet=-1
+    private lateinit var sheetSelector:Spinner
+    private lateinit var workbookNotice:TextView
     private var loadedRevision: com.infinifolder.storage.ContentRevision? = null
 
     private var tableMetadata: io.github.gretchycat.infinistream.StreamMetadata? = null
@@ -90,6 +99,8 @@ class CsvViewerActivity : ViewerActivity() {
             ?: uri?.lastPathSegment
             ?: "spreadsheet.csv"
 
+        workbookKind=DocumentFormats.detect(displayName,intent.type ?: intent.getStringExtra("mimeType"))
+            ?.takeIf {it==DocumentFormats.Kind.SHEET || it==DocumentFormats.Kind.ODF_SHEET}
         setupUI()
         loadSpreadsheet()
     }
@@ -172,6 +183,13 @@ class CsvViewerActivity : ViewerActivity() {
         DebugTools.attachToolbarButton(this, toolbar)
         mainColumn.addView(toolbar)
 
+        if(workbookKind!=null) {
+            sheetSelector=Spinner(this)
+            workbookNotice=TextView(this).apply {text="Read-only workbook • saved formula values";setTextColor(if(isDark)Color.LTGRAY else Color.DKGRAY);setPadding(dp(12),dp(4),dp(12),dp(4))}
+            mainColumn.addView(sheetSelector,LinearLayout.LayoutParams(-1,-2))
+            mainColumn.addView(workbookNotice,LinearLayout.LayoutParams(-1,-2))
+        }
+
         // Filter / Search bar + Stats
         val filterRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -181,7 +199,7 @@ class CsvViewerActivity : ViewerActivity() {
         }
 
         searchInput = EditText(this).apply {
-            hint = "Filter rows…"
+            hint = if(workbookKind!=null)"Filter loaded rows…" else "Filter rows…"
             setHintTextColor(if (isDark) 0xFF888888.toInt() else 0xFF999999.toInt())
             setTextColor(if (isDark) Color.WHITE else Color.BLACK)
             textSize = 13f
@@ -266,7 +284,89 @@ class CsvViewerActivity : ViewerActivity() {
         setContentView(rootLayout)
     }
 
+    private fun loadWorkbook() {
+        val target=uri ?: return
+        val request=++documentGeneration
+        documentTask?.cancel(true);progressBar.visibility=View.VISIBLE
+        val token=CancellationToken {isDestroyed || request!=documentGeneration || Thread.currentThread().isInterrupted}
+        documentTask=documentWorker.submit {
+            var stage:DocumentResourceStaging?=null
+            var opening:SpreadsheetBook?=null
+            try {
+                workbook?.close();workbook=null;workbookStage?.close();workbookStage=null
+                val flat=displayName.substringAfterLast('.').lowercase()=="fods"
+                stage=DocumentResourceStaging.open(this,target,displayName,intent.type,
+                    expand=workbookKind==DocumentFormats.Kind.ODF_SHEET && !flat,flatXml=flat,cancellation=token)
+                val book=if(workbookKind==DocumentFormats.Kind.ODF_SHEET)OpenDocuments.workbook(stage.resources,token)
+                    else SpreadsheetDocument.open(stage.source.file,token)
+                opening=book
+                token.check();stage.complete()
+                workbook=book;workbookStage=stage;opening=null;stage=null
+                runOnUiThread {
+                    if(request!=documentGeneration || isDestroyed)return@runOnUiThread
+                    sheetSelector.onItemSelectedListener=null
+                    sheetSelector.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,book.sheetNames)
+                    selectedSheet=-1
+                    sheetSelector.onItemSelectedListener=object:AdapterView.OnItemSelectedListener {
+                        override fun onNothingSelected(parent:AdapterView<*>?)=Unit
+                        override fun onItemSelected(parent:AdapterView<*>?,view:View?,position:Int,id:Long) {if(position!=selectedSheet)loadWorkbookSheet(position)}
+                    }
+                    if(book.sheetNames.isEmpty()){progressBar.visibility=View.GONE;workbookNotice.text="Workbook has no worksheets"}
+                    else loadWorkbookSheet(0)
+                    if(ViewerLaunch.requestsEdit(intent))Toast.makeText(this,"Office workbooks open read-only",Toast.LENGTH_LONG).show()
+                }
+            }catch(error:Throwable) {
+                if(error is ThreadDeath)throw error
+                showReadError(request,if(error is Exception)error else java.io.IOException("Workbook reader failed: ${error.message}",error))
+            }finally{opening?.close();stage?.close()}
+        }
+    }
+
+    private fun loadWorkbookSheet(index:Int) {
+        val book=workbook ?: return
+        selectedSheet=index
+        val request=++documentGeneration
+        documentTask?.cancel(true);progressBar.visibility=View.VISIBLE
+        val token=CancellationToken {isDestroyed || request!=documentGeneration || Thread.currentThread().isInterrupted}
+        documentTask=documentWorker.submit {
+            try {
+                val sheet=book.sheet(index,token)
+                token.check()
+                runOnUiThread {
+                    if(request!=documentGeneration || isDestroyed)return@runOnUiThread
+                    workbookRows=sheet.rows;columnOffset=0
+                    headerRow=(0 until sheet.columnCount).map(::spreadsheetColumn)
+                    workbookNotice.text="Read-only • saved formula values"+if(sheet.limited)" • preview limit reached" else ""
+                    filterWorkbook(searchInput.text.toString());progressBar.visibility=View.GONE
+                }
+            }catch(error:Throwable) {
+                if(error is ThreadDeath)throw error
+                showReadError(request,if(error is Exception)error else java.io.IOException("Worksheet reader failed: ${error.message}",error))
+            }
+        }
+    }
+
+    private fun filterWorkbook(query:String) {
+        val value=query.trim()
+        filteredData=workbookRows.filter {row -> value.isEmpty() || row.cells.any {it.contains(value,true)}}.map {it.number to it.cells}
+        renderTable(preservePosition=false)
+    }
+    private fun spreadsheetColumn(index:Int):String {
+        var value=index+1;val name=StringBuilder()
+        while(value>0){value--;name.append(('A'.code+value%26).toChar());value/=26}
+        return name.reverse().toString()
+    }
+    private fun inspectWorkbookCell(row:Long,column:Int,value:String) {
+        AlertDialog.Builder(this).setTitle("${spreadsheetColumn(column)}$row")
+            .setMessage(value.ifEmpty {"(empty cell)"})
+            .setPositiveButton("Copy") {_,_->
+                (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                    .setPrimaryClip(android.content.ClipData.newPlainText("cell",value))
+            }.setNegativeButton("Close",null).show()
+    }
+
     private fun loadSpreadsheet() {
+        if(workbookKind!=null){loadWorkbook();return}
         documentFullyLoaded = false
         val targetUri = uri ?: run { Toast.makeText(this, "No spreadsheet URI provided", Toast.LENGTH_SHORT).show(); finish(); return }
         val request = ++documentGeneration
@@ -292,7 +392,7 @@ class CsvViewerActivity : ViewerActivity() {
     private fun showReadError(request: Int, error: Exception) = runOnUiThread {
         if (request != documentGeneration || isDestroyed) return@runOnUiThread
         progressBar.visibility = View.GONE; edgeLoading = false
-        Toast.makeText(this, "Failed to load CSV: ${error.message}", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Failed to load spreadsheet: ${error.message}", Toast.LENGTH_LONG).show()
     }
 
     private fun showChunk(chunk: TableChunk) {
@@ -320,6 +420,7 @@ class CsvViewerActivity : ViewerActivity() {
     }
 
     private fun ensureRowCount() {
+        if(workbookKind!=null)return
         if (isDestroyed || isFinishing || totalDataRows != null || rowCountStarted) return
         val targetUri = uri ?: return
         rowCountStarted = true; rowCountRunning = true
@@ -346,6 +447,12 @@ class CsvViewerActivity : ViewerActivity() {
 
     private fun updateRowStats() {
         if (adjustingWindow || !::rowList.isInitialized || !::statsTextView.isInitialized || !::searchInput.isInitialized) return
+        if(workbookKind!=null) {
+            val first=filteredData.getOrNull(rowList.firstVisiblePosition)?.first
+            val last=filteredData.getOrNull(rowList.lastVisiblePosition)?.first
+            statsTextView.text=if(first==null)"${filteredData.size} rows" else "Rows $first–$last\n${filteredData.size} shown"
+            return
+        }
         val first = filteredData.getOrNull(rowList.firstVisiblePosition)?.first
         val last = filteredData.getOrNull(rowList.lastVisiblePosition)?.first
         statsTextView.text = CsvRowStats.label(first, last, totalDataRows, rowCountRunning,
@@ -397,6 +504,7 @@ class CsvViewerActivity : ViewerActivity() {
     }
 
     private fun applyFilter(query: String) {
+        if(workbookKind!=null){filterWorkbook(query);return}
         if (!documentFullyLoaded) { loadSpreadsheet(); return }
         val q = query.trim().lowercase()
         filteredData = originalData.mapIndexedNotNull { idx, row ->
@@ -440,7 +548,7 @@ class CsvViewerActivity : ViewerActivity() {
     override fun onDestroy() {
         documentGeneration++; documentTask?.cancel(true)
         countTask?.cancel(true); countWorker.shutdownNow()
-        documentWorker.execute { runCatching { chunkReader?.close() }; chunkReader = null }
+        documentWorker.execute { runCatching { chunkReader?.close() }; chunkReader = null;runCatching {workbook?.close()};runCatching {workbookStage?.close()};workbook=null;workbookStage=null }
         documentWorker.shutdown()
         super.onDestroy()
     }
@@ -517,7 +625,8 @@ class CsvViewerActivity : ViewerActivity() {
                 setTextColor(if (header) (if (isDark) 0xFF9CDCFE.toInt() else 0xFF0D47A1.toInt())
                     else (if (isDark) 0xFFD4D4D4.toInt() else 0xFF212121.toInt()))
                 setOnClickListener(if (header) null else View.OnClickListener {
-                    if (documentFullyLoaded) promptEditCell(id.toInt(), column, value) else loadForEditing(id, column)
+                    if(workbookKind!=null)inspectWorkbookCell(id,column,value)
+                    else if (documentFullyLoaded) promptEditCell(id.toInt(), column, value) else loadForEditing(id, column)
                 })
             }
         }
@@ -564,6 +673,7 @@ class CsvViewerActivity : ViewerActivity() {
     }
 
     private fun saveSpreadsheet() {
+        if(workbookKind!=null){Toast.makeText(this,"Office workbooks are read-only",Toast.LENGTH_LONG).show();return}
         if (!documentFullyLoaded) {
             Toast.makeText(this, "Only fully loaded documents can be edited or saved", Toast.LENGTH_LONG).show()
             return
@@ -625,15 +735,25 @@ class CsvViewerActivity : ViewerActivity() {
     }
 
     private fun openExternally() {
-        val u = uri ?: return
-        val extIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(u, if (delimiter == '\t') "text/tab-separated-values" else "text/csv")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
+        val original = uri ?: return
         try {
+            val file = if (workbookKind != null) workbookStage?.source?.file
+                else if (original.scheme == "file") original.path?.let { java.io.File(it) } else null
+            val shared = file?.let {
+                androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", it, displayName)
+            } ?: original
+            val mime = if (workbookKind != null) {
+                (intent.type ?: intent.getStringExtra("mimeType"))?.takeIf { DocumentFormats.forMime(it) != null }
+                    ?: com.infinifolder.mime.MimeRegistry.guess(displayName)
+            } else if (delimiter == '\t') "text/tab-separated-values" else "text/csv"
+            val extIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(shared, mime)
+                clipData = android.content.ClipData.newRawUri(displayName, shared)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
             startActivity(Intent.createChooser(extIntent, "Open with…"))
         } catch (e: Exception) {
-            Toast.makeText(this, "No external handler found", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Cannot open externally: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -662,6 +782,16 @@ class CsvViewerActivity : ViewerActivity() {
                 window.decorView.systemUiVisibility = if (isDark) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
             }
             setupUI()
+            workbook?.let { book ->
+                sheetSelector.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, book.sheetNames)
+                if (selectedSheet in book.sheetNames.indices) sheetSelector.setSelection(selectedSheet, false)
+                sheetSelector.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+                    override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                        if (position != selectedSheet) loadWorkbookSheet(position)
+                    }
+                }
+            }
             renderTable()
         }
     }

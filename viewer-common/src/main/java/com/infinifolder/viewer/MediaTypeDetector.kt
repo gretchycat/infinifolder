@@ -15,6 +15,8 @@ enum class MediaType {
     VIDEO,
     PDF,
     EPUB,
+    DOCUMENT,
+    EBOOK,
     SPREADSHEET,
     ARCHIVE_OR_CONTAINER,
     UNSUPPORTED
@@ -64,6 +66,8 @@ object MediaTypeDetector {
         val ext = lowerName.substringAfterLast('.', "")
         val lowerMime = safeMime.lowercase(Locale.ROOT).substringBefore(';').trim()
 
+        val documentKind=io.github.gretchycat.infiniscribe.DocumentFormats.forMime(lowerMime)
+        if(documentKind!=null)return documentMediaType(documentKind)
         when {
             lowerMime == "application/pdf" -> return MediaType.PDF
             lowerMime == "application/epub+zip" -> return MediaType.EPUB
@@ -83,6 +87,8 @@ object MediaTypeDetector {
                 else -> MediaType.TEXT
             }
         }
+
+        io.github.gretchycat.infiniscribe.DocumentFormats.detect(name)?.let {return documentMediaType(it)}
 
         // 1. Packaged formats (e.g. apk) should not be treated as generic archives/media
         if (ArchiveFormats.isPackagedFormat(name, safeMime) && safeMime != "application/epub+zip") {
@@ -151,6 +157,14 @@ object MediaTypeDetector {
         return MediaType.UNSUPPORTED
     }
 
+    private fun documentMediaType(kind:io.github.gretchycat.infiniscribe.DocumentFormats.Kind)=when(kind) {
+        io.github.gretchycat.infiniscribe.DocumentFormats.Kind.SHEET,
+        io.github.gretchycat.infiniscribe.DocumentFormats.Kind.ODF_SHEET -> MediaType.SPREADSHEET
+        io.github.gretchycat.infiniscribe.DocumentFormats.Kind.MOBI,
+        io.github.gretchycat.infiniscribe.DocumentFormats.Kind.FB2 -> MediaType.EBOOK
+        else -> MediaType.DOCUMENT
+    }
+
     fun detect(entry: ResourceEntry): MediaType {
         if (entry.metadata.isDirectory) return MediaType.UNSUPPORTED
         return detect(entry.metadata.name, entry.metadata.mimeType)
@@ -165,9 +179,14 @@ object MediaTypeDetector {
         MediaType.VIDEO,
         MediaType.PDF,
         MediaType.EPUB,
+        MediaType.DOCUMENT,
+        MediaType.EBOOK,
         MediaType.SPREADSHEET -> true
         else -> false
     }
+
+    fun isEditable(name:String,mimeType:String?=null):Boolean =
+        io.github.gretchycat.infiniscribe.DocumentFormats.detect(name,mimeType)==null && isEditable(detect(name,mimeType))
 
     fun isEditable(type: MediaType): Boolean = when (type) {
         MediaType.IMAGE,

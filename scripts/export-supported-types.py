@@ -14,6 +14,7 @@ IMAGE = 'viewer-common/src/main/java/com/infinifolder/preview/ImageFormats.kt'
 MEDIA = 'viewer-common/src/main/java/com/infinifolder/viewer/MediaTypeDetector.kt'
 AUDIO = 'libraries/libinfinisound/audio-processing/src/main/java/com/infinifolder/audio/AudioProcessing.kt'
 BUILTIN = 'libraries/libinfinisound/audio-core/src/main/java/com/infinifolder/audio/decoder/BuiltInAudioDecoders.kt'
+DOCUMENTS = 'libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/DocumentFormats.kt'
 
 def read(path):
     return (ROOT / path).read_text()
@@ -48,6 +49,7 @@ playlists = values(ARCHIVE, 'PLAYLIST_EXTENSIONS')
 archives = values(ARCHIVE, 'SIMPLE_EXTENSIONS') | set(packages)
 compounds = {item.lstrip('.') for item in values(ARCHIVE, 'TAR_COMPOUND_EXTENSIONS')}
 compounds |= {f'{ext}.{suffix}' for ext in discs for suffix in compression}
+document_formats = dict(re.findall(r'"([a-z0-9]+)"\s+to\s+Kind\.([A-Z0-9_]+)', read(DOCUMENTS).split('val mimeKinds', 1)[0]))
 rows = []
 
 def add(category, identifier, extensions='', mime_type='', capabilities='', support_level='',
@@ -64,6 +66,17 @@ def capability(ext, mime):
         return 'text/CP437/ANSI viewer; art preview by content', 'Scribe/Canvas/Sound', 'ANSI music uses the dedicated CP437 viewer; byte/content detection controls art handling.'
     if mime == 'application/pdf': return 'PDF viewer', 'Scribe', 'Android PDF backend; not general PostScript typesetting.'
     if ext == 'epub': return 'EPUB viewer; ZIP browse', 'Scribe/Vault', 'Supported EPUB layout subset.'
+    if ext in document_formats:
+        kind = document_formats[ext]
+        if kind in {'SHEET', 'ODF_SHEET'}:
+            return 'read-only worksheet viewer; sheet selection; cell copy', 'Scribe', 'Bounded preview; saved formula values, no recalculation. Android acceptance pending.'
+        if kind == 'MOBI':
+            return 'MOBI/KF8 ebook viewer; embedded cover icon', 'Scribe/libmobi', 'Unencrypted supported MOBI variants; no KFX. Native/source/resource limits apply. Android acceptance pending.'
+        if kind == 'FB2':
+            return 'FictionBook ebook viewer; embedded cover icon', 'Scribe', 'Reflowed text/tables and supported embedded images; Android acceptance pending.'
+        if kind == 'RTF':
+            return 'RTF text reader', 'Scribe/RTF Parser Kit', 'Unicode text extraction, not rich page layout or embedded-image rendering. Android acceptance pending.'
+        return 'read-only reflowed document/slide viewer' + ('; ZIP browse' if ext in packages else ''), 'Scribe', 'Basic text/tables/images; layout and embedded-object subsets. Android acceptance pending.'
     if ext in {'csv', 'tsv'}: return 'delimited spreadsheet viewer/editor', 'Scribe', ''
     if ext in markdown: return 'Markdown viewer', 'Scribe', ''
     if ext in html: return 'HTML viewer', 'Scribe', ''
@@ -90,12 +103,14 @@ for ext in sorted(exts):
     if mime: by_mime[mime].add(ext)
     caps, module, notes = capability(ext, mime)
     add('file_type', '.' + ext, '.' + ext, mime, caps,
-        'registered association/route' if mime else 'registered extension/pattern', module=module,
+        'registered association/route' if mime else 'registered extension/pattern',
+        write_support='read-only' if ext in document_formats else 'not asserted', module=module,
         notes=notes + ((' ' if notes else '') + 'MIME may be supplied dynamically by Android/providers or content detection.' if not mime else ''),
         source_paths='|'.join([MIME, MEDIA, IMAGE, ARCHIVE] +
-            (['app/src/main/java/com/infinifolder/MainActivity.kt'] if ext == 'torrent' else [])))
+            (['app/src/main/java/com/infinifolder/MainActivity.kt'] if ext == 'torrent' else []) +
+            ([DOCUMENTS] if ext in document_formats else [])))
 
-mime_sources = [MIME, MEDIA, IMAGE, ARCHIVE, STORE + 'storage/FileMagicDetector.kt',
+mime_sources = [MIME, MEDIA, IMAGE, ARCHIVE, DOCUMENTS, STORE + 'storage/FileMagicDetector.kt',
     'viewer-common/src/main/java/com/infinifolder/preview/AudioIconFormats.kt']
 all_mimes = set(by_mime) | set(aliases) | set(aliases.values())
 for path in mime_sources:

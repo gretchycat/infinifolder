@@ -73,10 +73,10 @@ appearance and navigation/theme acceptance remain unverified.
 
 ## Ebook icons
 
-The shared resolver now uses embedded EPUB cover images and PDF first pages as
-content icons. These are the current ebook/document formats with actual reading
-support; this does not add MOBI, AZW or FB2 decoding. No cover is fabricated for a
-book without usable artwork. Explicit per-file artwork stays first, and failed or
+The shared resolver uses embedded EPUB, MOBI/KF8 and FB2 cover images, and PDF
+first pages as content icons. The new MOBI/FB2 paths use the corresponding Scribe
+readers; see [document/ebook support and pending acceptance](document-and-ebook-readers.md).
+No cover is fabricated for a book without usable artwork. Explicit per-file artwork stays first, and failed or
 unsupported covers fall back through the normal MIME override/theme/type icons.
 Mounted book roots resolve their backing file's artwork too, after any explicit
 inner directory cover. List/grid/tree/pins/links use the shared resolver.
@@ -87,7 +87,7 @@ legacy EPUB 2 cover metadata, and [guide cover references](https://idpf.org/epub
 to images or XHTML/SVG image elements. Package-relative references use the existing
 normalized, confined path resolver and bounded XML reader. Vault supplies package
 members through the storage abstraction; Canvas supplies the image decoder.
-The book viewer's chapter rendering is unchanged.
+The EPUB viewer's chapter rendering is unchanged; the same reader controls now host the additional reflow formats.
 
 Scribe's existing Android PDF backend renders page zero at icon size. Real local
 PDFs are opened directly; provider PDFs are staged through the shared disk cache
@@ -103,6 +103,9 @@ image** restores theme/user artwork. Successful covers are stored as small PNGs
 in the shared disposable disk cache and reused across restarts, keyed by source
 identity, name, MIME, size, modification state and requested icon size. Missing
 artwork is cached briefly in memory; unknown modification states expire quickly.
+New MOBI/FB2 records default to content icons without resetting explicit persisted
+image-mode choices. `book-cover-v2` separates the expanded decoder cache. Local
+MOBI/PDF inputs can be opened directly; provider book staging is capped at 16 MiB.
 Book parsing/rendering runs off the UI thread in a bounded provider lane (3 s);
 XML has byte/event/depth limits, and resource reads/staging share a 16 MiB decoded
 byte budget. Underlying archive catalog/network access also uses the existing
@@ -112,6 +115,9 @@ provider implementation; a stalled provider cannot block the listing thread.
 or run. Existing EPUB fixtures were inventoried and contain no declared covers;
 handset cover display, remote provider behavior, editor toggles and link/tree
 acceptance remain unverified. Logs: `build/book-cover-icons/app-build-final.log`.
+
+The current default theme has 704 source SVGs after adding the new document
+extensions. Its MIME/extension labels use the same existing theme generation path.
 
 ## Exact filename and location
 

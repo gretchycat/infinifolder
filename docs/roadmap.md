@@ -2,7 +2,7 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
-Updated 2026-11-02. See [current status](project-status.md) for confirmed behavior and [detailed tasks](feature-todo.md) for acceptance work.
+Updated 2026-11-03. See [current status](project-status.md) for confirmed behavior and [detailed tasks](feature-todo.md) for acceptance work.
 
 ## Completed: recorded storage failure investigation
 
@@ -13,7 +13,7 @@ gate passes all 942 cases. Historical
 baselines remain intact. See [evidence and remaining device/provider acceptance](storage-failure-investigation.md).
 
 Pinned containers now survive app restarts; handset restart acceptance is pending.
-ANSI music playback is user-confirmed; its softer waveform remains a future task.
+ANSI music playback and its softer square/sine timbre are user-confirmed (2026-11-03).
 
 ## Completed: InfiniStream library migration
 
@@ -50,7 +50,8 @@ staging, cache policy, WebView, themes and font/navigation controls. EPUB 2/3,
 fallback and invalid fixtures cover the migrated boundaries; EPUB viewing is
 user-confirmed after the checkpoint 16 handoff. Broader interruption and live
 remote/provider acceptance remain. EPUB 3 NAV labels and on-demand package resource
-serving remain follow-up. PostScript/LaTeX and Office rendering are still planned.
+serving remain follow-up. A first reflowed Office/ebook reading pass is implemented;
+see [document readers](document-and-ebook-readers.md). PostScript/LaTeX remain planned.
 
 Video now uses the requested libVLC Android backend behind libinfinivideo's
 common playback controls and typed input/output metadata. The host retains
@@ -86,28 +87,26 @@ Most-used sorting; torrent device acceptance and seekable piece reads; Downloads
 
 ### Paged documents and Office formats
 
-Extend Scribe's document processing interfaces with replaceable backends for
-PostScript/EPS and LaTeX typesetting, followed by DOCX, XLSX, PPTX and OpenDocument
-(ODT/ODS/ODP) viewing. The host supplies sources and related resources; libraries
-own parsing, layout and rendering, with actual page/table/slide metadata. Android,
-Linux, Windows, macOS and iOS should share the public contracts while using
-appropriate platform backends. Existing Android PDF rendering remains supported.
+A first read-only reading pass is implemented in Scribe for MOBI/KF8/AZW3/PRC,
+FB2, DOC/DOCX, XLS/XLSX, PPT/PPTX, OpenDocument and RTF, including the supported
+macro/template containers. The owner accepted readable content without exact page
+layout. Word/slides reuse the reflow reader; worksheets reuse the CSV grid with
+sheet selection and saved formula values. App and standalone builds pass;
+runtime/device acceptance remains pending. See [formats, limits, ownership and
+remaining checks](document-and-ebook-readers.md).
 
-Choose source-buildable backends after checking licensing, Android packaging,
-font handling and layout fidelity. Render pages/slides on demand with bounded
-rasters, cancellation and explicit staging where the backend requires a file.
-Resolve embedded images, styles, equations, tables and related files through
-explicit resource inputs. Typesetting must have bounded execution and explicit
-file-access rules; opening a document must not enable macros or shell commands.
-Legacy binary DOC/XLS/PPT, encrypted documents, advanced spreadsheet calculations
-and editing are separate capability decisions; report unsupported cases clearly.
+Next, validate representative real documents on Android, including Unicode,
+embedded images, sheet coordinates, multiple sheets, formulas, read-only guards,
+invalid/encrypted files and remote/provider input. This first pass does not claim
+faithful pagination/slide positioning, charts, equations, embedded objects, editing,
+formula calculation, DRM/KFX or encrypted Office support. Broader conformance and
+cross-platform backends remain separate work.
 
-PDF/PostScript/EPS/LaTeX fixtures are in `filesystem-test-images/documents/`, with
-page counts, expected markers and a ZIP for archive reads. Add Office fixtures
-before implementing their backends, covering pagination, Unicode/fonts, images,
-tables, equations, worksheet values/formulas and slides. Compare actual rendered
-results and document semantics on each supported backend. New formats remain
-planned until their backend and acceptance checks are complete.
+Full PostScript/EPS rendering and LaTeX typesetting remain planned behind Scribe
+interfaces. Existing Android PDF rendering and limited raster previews remain.
+Source-buildable backends must preserve bounded execution, explicit resource inputs,
+font handling and file-access rules. PDF/PostScript/EPS/LaTeX fixtures in
+`filesystem-test-images/documents/` retain their existing scope.
 
 ### ANSI music playback
 
@@ -118,11 +117,10 @@ media playback with audio focus and lifecycle cleanup. Static art remains
 available independently. This does not claim general music-player routing or
 universal terminal/dialect support.
 
-Deferred: replace or supplement the current PC-speaker-style square wave with
-a less harsh waveform (for example, triangle or sine with short attack/release),
-preserving pitch, rhythm, rests and cancellation. The owner requests this as a
-to-do item, after documentation and storage-failure investigation. Broader dialect,
-malformed-input and synchronized-artwork work remains separate.
+The rounded square/sine waveform and short attack/release fades are implemented
+and user-confirmed sounding good (2026-11-03), preserving note timing, rests and
+peak level. Broader dialect, malformed-input and synchronized-artwork work remains
+separate.
 
 ### Large text and CSV editing
 

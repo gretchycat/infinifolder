@@ -14,6 +14,7 @@ import com.infinifolder.storage.StorageRuntime
 import com.infinifolder.viewer.MediaSourceAdapter
 import io.github.gretchycat.infiniscribe.*
 import io.github.gretchycat.infiniscribe.android.PdfDocuments
+import io.github.gretchycat.infiniscribe.mobi.MobiDocuments
 import io.github.gretchycat.infinistream.*
 import java.io.FilterInputStream
 import java.io.IOException
@@ -37,7 +38,7 @@ internal class BookArtworkResolver(context: Context, private val runtime: Storag
         val unknownRevision = if (entry.metadata.modifiedAtMillis == null) System.currentTimeMillis() / 30000 else 0
         val identity = "${entry.ref}:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:" +
             "${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$unknownRevision:$size"
-        val key = "book-cover-v1:" + MessageDigest.getInstance("SHA-256").digest(identity.toByteArray())
+        val key = "book-cover-v2:" + MessageDigest.getInstance("SHA-256").digest(identity.toByteArray())
             .joinToString("") { "%02x".format(it.toInt() and 255) }
         memory.get(key)?.takeIf { System.currentTimeMillis() < it.expires }?.let { return it.bitmap }
         val bitmap = IconWork.bounded(3000, lane = "book-cover:${entry.ref.providerId}") {
@@ -51,6 +52,15 @@ internal class BookArtworkResolver(context: Context, private val runtime: Storag
             val decoded = when (entry.metadata.mimeType) {
                 "application/epub+zip" -> epub(entry, size, budget)
                 "application/pdf" -> pdf(entry, size, budget)
+                "application/x-mobipocket-ebook", "application/vnd.amazon.ebook", "application/vnd.amazon.mobi8-ebook" ->
+                    withLocalSource(entry,budget) {file -> MobiDocuments.cover(file,CancellationToken {budget.check();false})?.let {decodeCover(it,size)}}
+                "application/x-fictionbook+xml" -> {
+                    val source=object:SourceResource {
+                        override val metadata=StreamMetadata()
+                        override fun open()=InputStreamSource(budget.wrap((runtime.provider.openRead(entry.ref) as? ProviderResult.Success)?.value ?: throw IOException("Book source unavailable")))
+                    }
+                    FictionBooks.cover(source,CancellationToken {budget.check();false})?.let {decodeCover(it,size)}
+                }
                 else -> null
             }?.takeIf(IconBitmapUsability::visible)
             if (decoded != null && !Thread.currentThread().isInterrupted) runCatching {
@@ -110,16 +120,22 @@ internal class BookArtworkResolver(context: Context, private val runtime: Storag
                 else document.renderPage(0, size, size).use { it.takeBitmap() }
             }
         }
-        // Real local PDFs need no encoded copy; pin managed sources for the render lifetime.
+        return withLocalSource(entry,budget,::render)
+    }
+    private fun decodeCover(bytes:ByteArray,size:Int):Bitmap? = CachedImageCodec.decode(bytes,size)?.frame?.takeBitmap()
+        ?: ThumbnailDecoder(app.contentResolver) {java.io.ByteArrayInputStream(bytes)}.decode(Uri.parse("book-cover://embedded/image"),size)
+
+    private fun withLocalSource(entry:ResourceEntry,budget:ReadBudget,read:(java.io.File)->Bitmap?):Bitmap? {
+        // Real local books need no encoded copy; pin managed sources for the read lifetime.
         val local = MediaSourceAdapter.resolveLocalFile(app, entry.uri)?.takeIf { it.isFile && it.canRead() }
-        if (local != null) return disk.pin(local).use { render(local) }
+        if (local != null) return disk.pin(local).use { read(local) }
         if ((entry.metadata.sizeBytes ?: 0) > MAX_BYTES) return null
-        // Platform PDF rendering requires a seekable file. Only small provider files
-        // are staged for an icon; the viewer can still open larger books normally.
-        return disk.stage("book-icon.pdf", entry.metadata.sizeBytes) {
+        // Seekable-file backends stage only small provider books for an icon.
+        // The viewer can still open larger books normally.
+        return disk.stage("book-icon.bin", entry.metadata.sizeBytes) {
             budget.wrap((runtime.provider.openRead(entry.ref) as? ProviderResult.Success)?.value
                 ?: throw IOException("Book source unavailable"))
-        }.use { render(it.file) }
+        }.use { read(it.file) }
     }
 
     private class ReadBudget {
@@ -145,7 +161,7 @@ internal class BookArtworkResolver(context: Context, private val runtime: Storag
     }
 
     companion object {
-        val MIME_TYPES = setOf("application/epub+zip", "application/pdf")
+        val MIME_TYPES = setOf("application/epub+zip", "application/pdf", "application/x-mobipocket-ebook", "application/vnd.amazon.ebook", "application/vnd.amazon.mobi8-ebook", "application/x-fictionbook+xml")
         private const val MAX_BYTES = 16L * 1024 * 1024
     }
 }

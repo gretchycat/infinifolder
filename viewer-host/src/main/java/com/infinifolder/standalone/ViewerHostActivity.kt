@@ -30,7 +30,7 @@ class ViewerHostActivity : ViewerActivity() {
         val mime = source.type ?: contentResolver.getType(uri)
         val type = MediaTypeDetector.detect(name, mime)
         val edit = source.action == Intent.ACTION_EDIT
-        if (edit && !MediaTypeDetector.isEditable(type)) {
+        if (edit && !MediaTypeDetector.isEditable(name,mime)) {
             Toast.makeText(this, "Editing is not supported for this format", Toast.LENGTH_LONG).show(); return
         }
         val ref = com.infinifolder.storage.StorageRuntime.get(this).provider.refForUri(uri)

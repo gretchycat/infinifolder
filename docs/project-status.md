@@ -97,8 +97,8 @@ separate checks. See [tree repair](resource-icons.md#tree-artwork-lifetime-repai
   behavior remain separate acceptance checks.
 
 - ANSI music playback in the dedicated CP437 viewer is user-confirmed working
-  (2026-11-02). Sound's current synthesizer uses a PC-speaker-style square wave.
-  A less harsh waveform is deferred to the [to-do list](feature-todo.md#ansi-music).
+  (2026-11-02). The rounded square/sine waveform with attack/release fades is
+  also user-confirmed sounding good (2026-11-03); see [ANSI music](feature-todo.md#ansi-music).
   This confirms the existing viewer path, not general music-player routing or
   every ANSI music dialect.
 
@@ -142,8 +142,8 @@ separate checks. See [tree repair](resource-icons.md#tree-artwork-lifetime-repai
   (2026-10-31). Checkpoint 15 moves the existing Android PDF backend into Scribe
   and adds serialized page work, bounded aspect-preserving rasters and explicit
   resource cleanup. Its updated UI and archive/remote opening need acceptance.
-  Full PostScript/EPS, LaTeX and Office viewing are planned;
-  new document fixtures do not enable those formats.
+  Full PostScript/EPS and LaTeX viewing remain planned. A first read-only
+  Office/ebook reading pass is now implemented; handset acceptance is pending.
 
 - Local MP3 seeking, including the previously slow copied songs, and linked gapless playback are user-confirmed working (2026-10-31, checkpoint 13). Checkpoint 14 adds exact high-resolution FLAC positioning, direct positional audio inputs and image common-source composition; its high-resolution/remote/image UI acceptance remains pending. The checkpoint records 683 cases with the same 30 known failures and 46 passing pipeline checks.
 
@@ -1055,3 +1055,16 @@ See [Resource icons](resource-icons.md).
 - [x] Enable EPUB/PDF content icons once in the persistent MIME registry; keep subsequent editor choices and other fields.
 - [x] Share backing-file artwork with mounted book roots and retain MIME fallback for unavailable covers.
 - [ ] Verify real covers, theme fallback, MIME toggles and link/tree display on a handset. No connected ADB device; automated tests not run. Build: `build/book-cover-icons/app-build.log`. Details: [Resource icons](resource-icons.md#ebook-icons).
+
+## Document and ebook reading pass — 2026-11-03
+
+Added optional Scribe Office, MOBI and RTF backends plus common FB2/OpenDocument
+reading. MOBI/KF8/AZW3/PRC, FB2, DOC/DOCX, XLS/XLSX, PPT/PPTX, ODT/ODS/ODP,
+flat OpenDocument, supported template/macro containers and RTF route to existing
+reader/grid controls. Content is read-only and reflowed; worksheets offer sheet
+selection, actual cell coordinates and bounded saved-value previews. MOBI/FB2
+embedded covers join the existing artwork resolver. Store associations, standalone
+filters, supported-types CSV and bundled theme labels are updated.
+
+Both debug APK builds pass; no tests were added/run and runtime/UI acceptance
+remains unverified. See [formats, dependencies, limits and pending checks](document-and-ebook-readers.md).

@@ -9,6 +9,7 @@ import android.graphics.Typeface
 import android.util.LruCache
 import com.infinifolder.mime.MimeRegistry
 import com.infinifolder.model.ResourceMetadata
+import io.github.gretchycat.infiniscribe.DocumentFormats
 import com.infinifolder.preview.AudioIconFormats
 import com.infinifolder.archive.ArchiveFormats
 import com.infinifolder.viewer.MediaType
@@ -97,7 +98,7 @@ object FileTypeIcons {
                 mime.startsWith("image/") -> "image"
                 mime.startsWith("video/") -> "video"
                 ArchiveFormats.isDefaultBrowsableArchive("", mime) -> "archive"
-                text -> "document"
+                text || DocumentFormats.forMime(mime)!=null -> "document"
                 else -> "binary"
             }
         val mimeLabel=when {
@@ -109,7 +110,8 @@ object FileTypeIcons {
             mime=="application/vnd.android.package-archive" -> "APK"
             else -> mime.substringAfter('/').removePrefix("x-").removePrefix("vnd.")
         }
-        val label = (audioLabel ?: mappedExtension ?: if(text)"TXT" else if(known)mimeLabel else extension.ifBlank {"FILE"}).uppercase(Locale.ROOT).filter { it.isLetterOrDigit() || it == '+' || it == '-' || it == '.' }.take(8).ifBlank { "FILE" }
+        val documentLabel=DocumentFormats.forMime(mime)?.let {DocumentFormats.canonicalExtension(meta.name,mime)}
+        val label = (audioLabel ?: mappedExtension ?: documentLabel ?: if(text)"TXT" else if(known)mimeLabel else extension.ifBlank {"FILE"}).uppercase(Locale.ROOT).filter { it.isLetterOrDigit() || it == '+' || it == '-' || it == '.' }.take(8).ifBlank { "FILE" }
         val size = requestedSize.coerceIn(1, 1024)
         val key = "$base:$label:$size"
         cache.get(key)?.let { return it }

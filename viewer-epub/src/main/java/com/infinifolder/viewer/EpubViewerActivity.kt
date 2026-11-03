@@ -22,6 +22,14 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import io.github.gretchycat.infiniscribe.DirectoryDocumentResources
+import io.github.gretchycat.infiniscribe.DocumentFormats
+import io.github.gretchycat.infiniscribe.FictionBooks
+import io.github.gretchycat.infiniscribe.office.OfficeDocuments
+import io.github.gretchycat.infiniscribe.office.OpenDocuments
+import io.github.gretchycat.infiniscribe.mobi.MobiDocuments
+import io.github.gretchycat.infiniscribe.rtf.RtfDocuments
+import io.github.gretchycat.infinistream.FileSourceResource
+import io.github.gretchycat.infinistream.CancellationToken
 import io.github.gretchycat.infiniscribe.EpubDocuments
 import io.github.gretchycat.infiniscribe.EpubReadLimits
 import io.github.gretchycat.infinistream.ContentType
@@ -50,6 +58,8 @@ class EpubViewerActivity : ViewerActivity() {
         val file: File
     )
 
+    private var documentKind:DocumentFormats.Kind?=null
+    private var preparedDocument:DocumentResourceStaging?=null
     private var uri: Uri? = null
     private var displayName: String = "Book.epub"
     private var stagedSource: MediaSourceAdapter.StagedSource? = null
@@ -92,6 +102,7 @@ class EpubViewerActivity : ViewerActivity() {
             ?: uri?.lastPathSegment
             ?: "document.epub"
 
+        documentKind=DocumentFormats.detect(displayName,intent.type ?: intent.getStringExtra("mimeType"))
         setupUI()
         loadEpub()
     }
@@ -224,8 +235,25 @@ class EpubViewerActivity : ViewerActivity() {
                 displayZoomControls = false
                 textZoom = currentTextZoom
                 cacheMode = WebSettings.LOAD_NO_CACHE
+                if(documentKind!=null) {
+                    blockNetworkLoads=true
+                    @Suppress("DEPRECATION")
+                    allowFileAccessFromFileURLs=false
+                    @Suppress("DEPRECATION")
+                    allowUniversalAccessFromFileURLs=false
+                }
             }
             webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(view:WebView?,request:WebResourceRequest?):android.webkit.WebResourceResponse? {
+                    if(documentKind!=null && request!=null) {
+                        val root=preparedDocument?.renderDirectory
+                        val allowed=request.url.scheme=="file" && root!=null && runCatching {
+                            File(request.url.path.orEmpty()).canonicalFile.toPath().startsWith(root.canonicalFile.toPath())
+                        }.getOrDefault(false)
+                        if(!allowed)return android.webkit.WebResourceResponse("text/plain","UTF-8",java.io.ByteArrayInputStream(byteArrayOf()))
+                    }
+                    return super.shouldInterceptRequest(view,request)
+                }
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     progressBar.visibility = View.GONE
@@ -310,10 +338,64 @@ class EpubViewerActivity : ViewerActivity() {
             loadChapter(matchedIndex, navUri.fragment)
             return true
         }
-        return false
+        return documentKind!=null
+    }
+
+    private fun loadPreparedDocument() {
+        val target=uri ?: return
+        val kind=documentKind ?: return
+        progressBar.visibility=View.VISIBLE
+        val token=CancellationToken {destroyed || Thread.currentThread().isInterrupted}
+        loadWork=bookWorker.submit {
+            var stage:DocumentResourceStaging?=null
+            try {
+                val extension=DocumentFormats.canonicalExtension(displayName,intent.type ?: intent.getStringExtra("mimeType"))
+                val flat=extension in setOf("fodt","fodp")
+                stage=DocumentResourceStaging.open(this,target,displayName,intent.type,
+                    expand=kind in setOf(DocumentFormats.Kind.ODF_TEXT,DocumentFormats.Kind.ODF_SLIDES) && !flat,
+                    flatXml=flat,cancellation=token)
+                val input=StreamMetadata(name=displayName,content=ContentType(mimeType=intent.type),provenance=Provenance(source=target.toString()))
+                val delegate=FileSourceResource(stage.source.file)
+                val source=object:io.github.gretchycat.infinistream.SourceResource {
+                    override val metadata=input
+                    override fun open()=delegate.open()
+                }
+                val book=when(kind) {
+                    DocumentFormats.Kind.WORD,DocumentFormats.Kind.SLIDES -> OfficeDocuments.read(stage.source.file,displayName,stage.output,token,extension,input)
+                    DocumentFormats.Kind.MOBI -> MobiDocuments.read(stage.source.file,displayName,stage.output,token,input)
+                    DocumentFormats.Kind.FB2 -> FictionBooks.read(source,displayName,stage.output,token)
+                    DocumentFormats.Kind.ODF_TEXT,DocumentFormats.Kind.ODF_SLIDES -> OpenDocuments.read(stage.resources,displayName,stage.output,token)
+                    DocumentFormats.Kind.RTF -> RtfDocuments.read(source,displayName,stage.output,token)
+                    else -> throw java.io.IOException("This document belongs in the spreadsheet viewer")
+                }
+                token.check()
+                val root=stage.renderDirectory
+                val loaded=book.chapters.mapIndexed {index,chapter ->ChapterItem("part_$index",chapter.path,chapter.title,File(root,chapter.path))}
+                stage.complete();preparedDocument=stage;stage=null
+                book.metadata.warnings.forEach {DiagnosticLog.record("document.warning",it)}
+                mainHandler.post {
+                    if(destroyed)return@post
+                    bookTitle=book.title;bookAuthor=book.author
+                    chapters.clear();chapters.addAll(loaded)
+                    titleTextView.text=if(bookAuthor.isBlank())bookTitle else "$bookTitle • $bookAuthor"
+                    progressBar.visibility=View.GONE
+                    if(chapters.isEmpty())Toast.makeText(this,"No readable content found",Toast.LENGTH_LONG).show() else loadChapter(0)
+                    book.metadata.warnings.firstOrNull()?.let {Toast.makeText(this,it,Toast.LENGTH_LONG).show()}
+                }
+            }catch(error:Throwable) {
+                if(error is ThreadDeath)throw error
+                if(error !is java.io.InterruptedIOException)DiagnosticLog.record("document.open.failed",displayName,error)
+                mainHandler.post {
+                    if(destroyed)return@post
+                    progressBar.visibility=View.GONE
+                    if(!CacheFailureUi.offerCopy(this,error,target))Toast.makeText(this,"Cannot read document: ${error.message ?: error.javaClass.simpleName}",Toast.LENGTH_LONG).show()
+                }
+            }finally{stage?.close()}
+        }
     }
 
     private fun loadEpub() {
+        if(documentKind!=null){loadPreparedDocument();return}
         val targetUri = uri ?: run {
             Toast.makeText(this, "No file provided", Toast.LENGTH_SHORT).show()
             finish()
@@ -495,6 +577,7 @@ class EpubViewerActivity : ViewerActivity() {
             webView.destroy()
         } catch (_: Exception) {}
         bookWorker.execute {
+            runCatching { preparedDocument?.close() };preparedDocument=null
             runCatching { resourceLease?.close() }
             resourceLease = null
             runCatching { stagedSource?.close() }

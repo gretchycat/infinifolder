@@ -99,8 +99,9 @@ See the [structured text formatting roadmap](roadmap.md#structured-text-formatti
 ## Paged documents and Office formats
 
 - [ ] Add full PostScript/EPS document rendering and LaTeX typesetting behind Scribe interfaces; retain existing raster-preview support and explicit platform capabilities.
-- [ ] Add DOCX/XLSX/PPTX and OpenDocument viewing with source-buildable backends; validate fonts, pagination, tables, images, equations, worksheet semantics and slides using format-specific fixtures.
-- [ ] Evaluate legacy DOC/XLS/PPT, encryption, calculations and editing separately; keep unsupported cases explicit.
+- [x] Implement a first read-only Scribe reading pass for MOBI/KF8, FB2, DOC/DOCX, XLS/XLSX, PPT/PPTX, OpenDocument and RTF; reuse the reflow reader and CSV grid. App/standalone builds pass (2026-11-03).
+- [ ] Accept the new readers on Android with real Unicode/image/worksheet/slide inputs, read-only guards and provider/remote/cancellation checks; runtime behavior is unverified. See [document readers](document-and-ebook-readers.md).
+- [ ] Extend layout fidelity and format conformance beyond the new Word 97+/Excel/PowerPoint reading subset; evaluate encryption, calculations and editing separately. Keep unsupported cases explicit.
 
 See [document rendering roadmap](roadmap.md#paged-documents-and-office-formats).
 
@@ -108,7 +109,7 @@ See [document rendering roadmap](roadmap.md#paged-documents-and-office-formats).
 
 - [x] Play supported ANSI/BASIC PLAY melodies in the dedicated CP437 viewer using Sound's `AnsiMusic` PCM output; user-confirmed 2026-11-02.
 - [x] Soften ANSI tones with a rounded square/sine waveform and short attack/release fades inside the existing note gates (2026-11-03). Same timing, rests and peak level; generated wavetable reused across streams.
-- [ ] Confirm the softened ANSI music timbre by listening on a handset. Build evidence: `build/ansi-music-soft-tone/app-build.log`; no tests added or run.
+- [x] User confirms the softened ANSI music timbre sounds good on the handset (2026-11-03). Build evidence: `build/ansi-music-soft-tone/app-build.log`; no tests added or run.
 - [ ] Extend dialect/malformed-input coverage and evaluate normal music-player routing and synchronized terminal presentation separately.
 
 ## Cloud storage

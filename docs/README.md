@@ -34,6 +34,7 @@ Updated 2026-10-27. Start with [project status](project-status.md), [task list](
 - [Library separation audit](library-separation-audit.md)
 - [Video formats](video-formats.md)
 - [Text, markup, document, and text-based media formats](text-and-document-formats.md)
+- [Document and ebook readers](document-and-ebook-readers.md)
 - [HFS image support](hfs-support.md)
 - [Directory-based image browsing](image-directory-browsing.md)
 - [Implementation status and open issues](implementation-status-open-issues.md)

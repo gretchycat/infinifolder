@@ -170,7 +170,7 @@ class IconRegistry(private val file: File) {
         } finally { temp.delete() }
     }
     companion object {
-        private val bookCoverMimeTypes = setOf("application/epub+zip", "application/pdf")
+        private val bookCoverMimeTypes = setOf("application/epub+zip", "application/pdf", "application/x-mobipocket-ebook", "application/vnd.amazon.ebook", "application/vnd.amazon.mobi8-ebook", "application/x-fictionbook+xml")
         private val listeners=java.util.concurrent.CopyOnWriteArrayList<Pair<String,()->Unit>>()
         fun listen(base:File,listener:()->Unit):AutoCloseable {
             val item=File(base,"icon_registry.json").absolutePath to listener
