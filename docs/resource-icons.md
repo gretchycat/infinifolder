@@ -166,9 +166,10 @@ reused immediately. Detached rows and results from a former theme cannot update
 the visible tree. No new registry or persisted icon settings are introduced.
 
 Validation: debug APK build and whitespace checks; no new automated tests added
-or run. Device acceptance remains pending for rapid navigation with the tree open,
-expansion/collapse, picker trees, missing grants, covers/provider icons, and theme
-switching. Build evidence is in `build/tree-icon-repair/`.
+or run. The owner subsequently confirms the tree-icon follow-up is better and
+working (2026-11-02). This accepts the reported improvement; rapid navigation,
+expansion/collapse, picker trees, missing grants, covers/provider icons and theme
+switching were not individually confirmed. Build evidence is in `build/tree-icon-repair/`.
 
 Final command `gradle :app:assembleDebug --offline --console=plain` succeeded in
 2m 13s (410 tasks, 4 executed); the earlier build also passed in 2m 34s. Final log:
