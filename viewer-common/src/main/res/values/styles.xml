@@ -1,4 +1,14 @@
 <resources>
+    <!-- Keep the caller's listing visible before and after the external app.
+         The activity reveals its themed dialog only for edits or an error. -->
+    <style name="ExternalEditHandoffTheme" parent="android:style/Theme.Material.Dialog.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
     <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">#52644F</item>

@@ -28,7 +28,44 @@ Each session contains one working copy and the original source identity/fingerpr
    SHA-256, publish through ContentReplacement with another content-revision guard
    and verify the saved bytes. Timestamp changes alone never constitute a conflict.
 
-Preparation, checking and verification show status and byte progress where available. Publication uses the backend's replacement/recovery implementation; it may be indeterminate while the backend commits.
+Preparation and the return-time checksum check run without a visible dialog.
+When changed edits need attention, checking, saving and verification show status
+and byte progress where available. Publication uses the backend's replacement/
+recovery implementation; it may be indeterminate while the backend commits.
+
+### Quiet external handoff (2026-11-03)
+
+Ordinary external opens now leave the existing browser screen visible while the
+working copy is prepared, while Android chooses/launches the external app, and
+while the returned copy is checked. The handoff activity starts with a translucent
+window and no preview, dimming or visible preparation dialog. It reveals its
+themed controls only for changed content, an actual error, or an explicit visit
+to the unfinished-edits screen. The native Android app chooser remains available.
+Its excluded-component list contains every activity and activity alias in the
+current app package, preventing selection of InfiniFolder and recursive external
+opens. The same chooser protects the browser's direct file/content handoff and
+its MIME-free fallback. It retains the original URI grants and clip data.
+
+Returning through task switching also triggers the local checksum check when an
+external app does not finish its activity. Result and resume callbacks share the
+same return state so one return does not check a deleted unchanged session twice.
+Reopening and session restoration perform their file work off the UI thread.
+
+The startup recovery notice now hashes retained local copies and includes only
+copies whose bytes differ from the baseline. Timestamp-only changes and an
+unchanged copy retained for an open writer do not trigger the edit notice.
+Unreadable sessions stay available under Settings → Unfinished external edits;
+the content check does not discard them or contact the original storage source.
+For shared Termux sessions the notice checks the recorded tool working file.
+
+Device checks remain pending: unchanged read-only open/return, editing and saving,
+task-switch return, chooser cancellation, light/dark presentation and recovery
+after process death. No automated tests were added or run for this follow-up.
+Both debug builds passed using `gradle :app:assembleDebug --offline --console=plain`;
+the final build with chooser exclusions took 30 seconds. Logs are
+`build/external-open-handoff/app-build.log` and `app-build-chooser.log` in the same
+directory. The build includes the workspace's existing unrelated changes. No
+ADB device was connected; chooser exclusions also require on-device acceptance.
 
 ## Conflict and failure behavior
 

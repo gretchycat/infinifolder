@@ -49,6 +49,17 @@ class ExternalEdits(private val context: Context) {
         }.getOrNull()?.takeIf { it.working.isFile }
     }
     fun pending(): List<Session> = root.listFiles().orEmpty().mapNotNull { find(it.name) }.sortedByDescending { it.directory.lastModified() }
+    /** Startup notices describe actual edits; unchanged retained handles are not edits.
+     * Call on a worker. Unreadable sessions remain available in the recovery list. */
+    fun pendingChanges(): List<Session> = pending().filter { session ->
+        synchronized(lock(session.id)) {
+            runCatching {
+                val working = externalToolFile(session) ?: session.working
+                working.inputStream().use(ContentRevision::read) != session.baseline.revision
+            }.onFailure { DiagnosticLog.record("external-edit.pending-check-failed", "session=${session.id}", it) }
+                .getOrDefault(false)
+        }
+    }
     private fun <T> result(value: ProviderResult<T>): T = when (value) {
         is ProviderResult.Success -> value.value
         is ProviderResult.Failure -> throw IOException(value.message, value.cause)

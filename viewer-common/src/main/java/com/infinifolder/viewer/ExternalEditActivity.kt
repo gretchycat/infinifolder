@@ -28,6 +28,9 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
     private var busy = false
     private var pendingCopyName: String? = null
     private var pendingReview = false
+    private var pendingLaunch = false
+    private var awaitingEditor = false
+    private var editorPaused = false
     private var reviewingWindow = false
     private var reviewWindowAlpha = 1f
     private var reviewWindowFlags = 0
@@ -37,9 +40,9 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeManager.init(applicationContext)
-        setTheme(if (ThemeManager.activeTheme.isDark) android.R.style.Theme_Material_Dialog_NoActionBar
-            else android.R.style.Theme_Material_Light_Dialog_NoActionBar)
+        setTheme(com.infinifolder.viewer.common.R.style.ExternalEditHandoffTheme)
         super.onCreate(savedInstanceState)
+        hideForReview()
         store = ExternalEdits(this)
         column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(16), dp(20), dp(12)) }
         title = TextView(this).apply { textSize = 18f; setTypeface(typeface, android.graphics.Typeface.BOLD); text = "External file" }
@@ -59,9 +62,17 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
         applyTheme(ThemeManager.activeTheme)
         val id = savedInstanceState?.getString("session") ?: intent.getStringExtra("session")
         pendingCopyName = savedInstanceState?.getString("copy_name")
+        awaitingEditor = savedInstanceState?.getBoolean("awaiting_editor", false) ?: false
+        editorPaused = awaitingEditor
         if (id != null) {
-            session = store.find(id)
-            if (session == null) finish() else reviewChanges()
+            work("Checking working copy…") {
+                val restored = store.find(id)
+                runOnUiThread {
+                    session = restored
+                    if (restored == null) finish()
+                    else if (!awaitingEditor) reviewChanges()
+                }
+            }
         } else if (intent.data != null) {
             work("Preparing file…") {
                 val prepared = store.prepare(intent.data!!, ::report)
@@ -72,6 +83,20 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
                 }
             }
         } else showPending()
+    }
+    override fun onPause() {
+        if (awaitingEditor) editorPaused = true
+        super.onPause()
+    }
+    override fun onResume() {
+        super.onResume()
+        // Some viewers keep their task alive and never deliver an activity
+        // result. Returning to this window must still check the local bytes.
+        if (awaitingEditor && editorPaused) {
+            awaitingEditor = false
+            editorPaused = false
+            reviewChanges()
+        }
     }
     override fun onThemeChanged(theme: ThemeColors) { runOnUiThread { if (!isDestroyed) applyTheme(theme) } }
     private fun applyTheme(theme: ThemeColors) {
@@ -131,7 +156,10 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
                 busy = false
                 if (!isDestroyed) {
                     progress.visibility = View.GONE
-                    if (pendingReview && !isFinishing) reviewChanges()
+                    if (!isFinishing) {
+                        if (pendingLaunch) launchEditor()
+                        else if (pendingReview) reviewChanges()
+                    }
                 }
             } }
         }, "ExternalEditSession").start()
@@ -310,24 +338,38 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
         }, "DiscardExternalEdits").start()
     }
     private fun launchEditor() {
+        pendingLaunch = true
+        if (busy) return
+        pendingLaunch = false
         val item = session ?: return
-        try {
+        hideForReview()
+        work("Preparing external program…") {
             store.reopen(item)
             val uri = store.uri(item)
             val handoff = Intent(Intent.ACTION_VIEW).setDataAndType(uri, item.mime.ifBlank { "application/octet-stream" })
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             handoff.clipData = android.content.ClipData.newRawUri(item.name, uri)
-            startActivityForResult(Intent.createChooser(handoff, "Open ${item.name}"), 701)
-            title.text = item.name
-            status.text = "Open in external program"
-            progress.visibility = View.GONE
-            clearActions()
-        } catch (error: Exception) { showFailure(error) }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                try {
+                    awaitingEditor = true
+                    editorPaused = false
+                    startActivityForResult(ExternalAppChooser.create(this, handoff, "Open ${item.name}"), 701)
+                } catch (error: Exception) {
+                    awaitingEditor = false
+                    showFailure(error)
+                }
+            }
+        }
     }
     @Deprecated("Legacy result callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 701) {
+            // A task-switch return may already have started the byte check.
+            if (!awaitingEditor) return
+            awaitingEditor = false
+            editorPaused = false
             reviewChanges()
         } else if (requestCode == 702 && resultCode == RESULT_OK && data?.data != null) {
             val target = data.data!!
@@ -443,6 +485,7 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
     override fun onSaveInstanceState(outState: Bundle) {
         session?.let { outState.putString("session", it.id) }
         outState.putString("copy_name", pendingCopyName)
+        outState.putBoolean("awaiting_editor", awaitingEditor)
         super.onSaveInstanceState(outState)
     }
     override fun onDestroy() { ThemeManager.removeListener(this); super.onDestroy() }

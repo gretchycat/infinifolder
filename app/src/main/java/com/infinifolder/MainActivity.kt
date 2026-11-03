@@ -566,7 +566,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         buildUi()
         if (savedInstanceState == null) io.execute {
             val copies = com.infinifolder.storage.SaveRecovery.pending(File(filesDir, "save_recovery"))
-            val edits = com.infinifolder.storage.ExternalEdits(this).pending()
+            val edits = com.infinifolder.storage.ExternalEdits(this).pendingChanges()
             if (copies.isNotEmpty() || edits.isNotEmpty()) runOnUiThread {
                 if (!isFinishing) {
                     val choices = mutableListOf<String>()
@@ -5591,18 +5591,19 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         val resInfoList = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
         for (resolveInfo in resInfoList) {
+            if (resolveInfo.activityInfo.packageName == packageName) continue
             grantUriPermission(resolveInfo.activityInfo.packageName, shareableUri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         }
         try {
-            startActivity(intent)
+            startActivity(com.infinifolder.viewer.ExternalAppChooser.create(this, intent, "Open $fileName"))
         } catch (_: Exception) {
             try {
                 val fallback = Intent(Intent.ACTION_VIEW, shareableUri).apply {
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                startActivity(fallback)
+                startActivity(com.infinifolder.viewer.ExternalAppChooser.create(this, fallback, "Open $fileName"))
             } catch (_: Exception) {
                 Toast.makeText(this, "No app can open this file or URI.", Toast.LENGTH_SHORT).show()
             }
