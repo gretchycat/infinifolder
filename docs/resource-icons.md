@@ -41,6 +41,48 @@ before the default MIME artwork, preserving explicit MIME icon customizations
 as the fallback when no album artwork is available. Existing registry records
 and user overrides are retained.
 
+## Ebook icons
+
+The shared resolver now uses embedded EPUB cover images and PDF first pages as
+content icons. These are the current ebook/document formats with actual reading
+support; this does not add MOBI, AZW or FB2 decoding. No cover is fabricated for a
+book without usable artwork. Explicit per-file artwork stays first, and failed or
+unsupported covers fall back through the normal MIME override/theme/type icons.
+Mounted book roots resolve their backing file's artwork too, after any explicit
+inner directory cover. List/grid/tree/pins/links use the shared resolver.
+
+Scribe's `EpubCovers.candidates` reads the package metadata without chapters or
+whole-book expansion. It supports the [EPUB 3 cover-image declaration](https://www.w3.org/TR/epub-33/#sec-cover-image),
+legacy EPUB 2 cover metadata, and [guide cover references](https://idpf.org/epub/20/spec/OPF_2.0_final_spec.html#Section2.6)
+to images or XHTML/SVG image elements. Package-relative references use the existing
+normalized, confined path resolver and bounded XML reader. Vault supplies package
+members through the storage abstraction; Canvas supplies the image decoder.
+The book viewer's chapter rendering is unchanged.
+
+Scribe's existing Android PDF backend renders page zero at icon size. Real local
+PDFs are opened directly; provider PDFs are staged through the shared disk cache
+only up to 16 MiB. Larger provider PDFs retain their MIME icon and remain readable
+in the full viewer. Password-protected, corrupt or unsupported documents fall
+back normally. PDF content icons represent the first page, which may be a title
+page rather than an embedded cover image.
+
+The one-time `bookCoverIconsEnabled` registry migration sets EPUB/PDF `isImage=true`
+and `overrideImageIcon=false`, preserving other fields and associations. Later
+MIME-editor changes remain authoritative: selecting **Use MIME icon instead of
+image** restores theme/user artwork. Successful covers are stored as small PNGs
+in the shared disposable disk cache and reused across restarts, keyed by source
+identity, name, MIME, size, modification state and requested icon size. Missing
+artwork is cached briefly in memory; unknown modification states expire quickly.
+Book parsing/rendering runs off the UI thread in a bounded provider lane (3 s);
+XML has byte/event/depth limits, and resource reads/staging share a 16 MiB decoded
+byte budget. Underlying archive catalog/network access also uses the existing
+provider implementation; a stalled provider cannot block the listing thread.
+
+`gradle :app:assembleDebug --offline --console=plain` passes. No tests were added
+or run. Existing EPUB fixtures were inventoried and contain no declared covers;
+handset cover display, remote provider behavior, editor toggles and link/tree
+acceptance remain unverified. Logs: `build/book-cover-icons/app-build-final.log`.
+
 ## Exact filename and location
 
 Generated program icons are saved **in the same directory as the program file or application link** as `.icon-<full filename>.png`. Manually supplied artwork can use the same naming convention for any resource:

@@ -15,6 +15,7 @@ dependencies {
     implementation(project(":viewer-epub"))
     implementation(project(":viewer-audio"))
     implementation(project(":viewer-video"))
+    implementation("io.github.gretchycat.libinfiniscribe:scribe-android:0.1.0")
 
     implementation("androidx.core:core:1.15.0")
     testImplementation("junit:junit:4.13.2")

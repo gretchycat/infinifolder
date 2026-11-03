@@ -31,6 +31,7 @@ class ResourceIconResolver(context: Context) {
         runtime.provider.refForUri(uri)?.let { (runtime.provider.openRead(it) as? ProviderResult.Success)?.value }
     }
     private val audioArtwork=AudioArtworkResolver(context,runtime,decoder)
+    private val bookArtwork=BookArtworkResolver(context,runtime)
     data class Icon(val bitmap: Bitmap?, val fallback: String, val label: String, val directory: Boolean,
         val program: Boolean = false, val source: String = "fallback", val mimeType: String = "", val pending: Boolean = false)
     private data class Cached(val icon: Icon, val expires: Long)
@@ -53,7 +54,7 @@ class ResourceIconResolver(context: Context) {
         return key
     }
     fun close() { onArtworkChanged=null; retries.shutdownNow() }
-    fun invalidate() { rendered.evictAll(); identities.evictAll(); linkInfo.evictAll(); NetworkIconTargets.clear(); archives.clear(); audioArtwork.clear(); ResourceArtworkCache.clearMemory() }
+    fun invalidate() { rendered.evictAll(); identities.evictAll(); linkInfo.evictAll(); NetworkIconTargets.clear(); archives.clear(); audioArtwork.clear(); bookArtwork.clear(); ResourceArtworkCache.clearMemory() }
     private fun linkKey(entry: ResourceEntry) = "${entry.uri}:${entry.metadata.modifiedAtMillis}:${entry.metadata.sizeBytes}"
     fun peekShortcut(entry: ResourceEntry): ShortcutInfo? = linkInfo.get(linkKey(entry))
     /** Worker-only metadata access shared by listing and pinned-link presentation. */
@@ -69,7 +70,7 @@ class ResourceIconResolver(context: Context) {
         } else ""
         val audioCover=if(AudioIconFormats.isAudio(MimeRegistry.effective(entry.metadata.name,entry.metadata.mimeType)))
             AudioArtworkResolver.coverRevision(entry) else ""
-        return "icons-v7:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
+        return "icons-v8:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
             "${sidecar?.uri}:${sidecar?.metadata?.modifiedAtMillis}:${sidecar?.metadata?.sizeBytes}:$covers:$audioCover"
     }
     fun cached(entry: ResourceEntry, size: Int): Icon? {
@@ -151,7 +152,7 @@ class ResourceIconResolver(context: Context) {
         if(AppsUri.isRoot(entry.uri))return installedApplications(entry.metadata.name,size)
         if(AppsUri.isAppUri(entry.uri))return base.copy(bitmap=AppsUri.getPackageName(entry.uri)?.let { runtime.apps.getAppIconBitmap(it,size,useDiskCache=false) } ?: base.bitmap,source="provider-app")
         if(AppsUri.isCategoryUri(entry.uri))return base.copy(bitmap=null,fallback=runtime.apps.getCategoryIcon(AppsUri.getCategoryName(entry.uri).orEmpty()),source="provider-category")
-        if(entry.metadata.isDirectory)return directory(entry,size)
+        if(entry.metadata.isDirectory)return directory(entry,size,seen)
         val id=identity(entry)
         val meta=entry.metadata.copy(mimeType=id.mimeType)
         val record=registry.mime(id.mimeType)
@@ -168,7 +169,9 @@ class ResourceIconResolver(context: Context) {
         for(step in IconPolicy.steps(record,genericArchive)) {
             if(Thread.currentThread().isInterrupted)break
             val bitmap:Bitmap?=when(step) {
-                IconPolicy.Step.THUMBNAIL -> IconWork.bounded(2000,lane="thumbnail:${entry.ref.providerId}") {
+                IconPolicy.Step.THUMBNAIL -> if(id.mimeType in BookArtworkResolver.MIME_TYPES)
+                    bookArtwork.resolve(entry.copy(metadata=meta),size)
+                else IconWork.bounded(2000,lane="thumbnail:${entry.ref.providerId}") {
                     if(id.mimeType=="application/vnd.android.package-archive")resolveApkIcon(entry,size)
                     else if(ImageFormats.hasDosTextPreview(meta))decoder.decodeTextPreview(entry.uri,size,true)
                     else decoder.decode(entry.uri,size,registry.rendererExtension(id.mimeType,entry.metadata.name))
@@ -237,8 +240,22 @@ class ResourceIconResolver(context: Context) {
             retries.schedule({notifyChanged(entry.uri)},500,TimeUnit.MILLISECONDS)
         if(!pending)retryCounts.remove(entry.uri.toString())
     }
-    private fun directory(entry: ResourceEntry,size: Int): Icon {
+    private fun directory(entry: ResourceEntry,size: Int,seen:MutableSet<ResourceRef>): Icon {
         val base=directoryTheme(entry,size)
+        fun sourceIcon(pending:Boolean):Icon {
+            // Mounting changes navigation capability, not the source file's icon.
+            // This also shares EPUB/PDF cover and per-file override behavior with
+            // the ordinary listing; explicit inner directory covers still win.
+            if(ArchiveUri.isArchiveUri(entry.uri) && ArchiveUri.getEntryPath(entry.uri).isEmpty()) {
+                val uri=ArchiveUri.getSourceUri(entry.uri)
+                val source=runtime.provider.refForUri(uri)?.let {ref ->
+                    (IconWork.bounded(lane="metadata:${ref.providerId}") {runtime.provider.stat(ref)} as? ProviderResult.Success)?.value
+                }
+                if(source!=null && !source.metadata.isDirectory)
+                    return resolve(source,size,seen).copy(label=entry.metadata.name,directory=true,pending=pending)
+            }
+            return base.copy(pending=pending)
+        }
         val observed=ResourceIconSidecars.directory(entry)?.takeIf {
             it.complete && System.currentTimeMillis()-it.observedAt in 0..5000
         }
@@ -250,7 +267,7 @@ class ResourceIconResolver(context: Context) {
         retryPending(entry,pending)
         if(success!=null)ResourceIconSidecars.observe(items,entry.uri,complete=!pending)
         val possible=observed?.candidates ?: DirectoryIconResolver.candidates(items)
-        if(possible.isEmpty())return base.copy(pending=pending)
+        if(possible.isEmpty())return sourceIcon(pending)
         val caseSensitive=(IconWork.bounded(300,lane="directory:${entry.ref.providerId}") {
             (runtime.provider.fileSystemInfo(entry.ref) as? ProviderResult.Success)?.value?.caseSensitive
         }) ?: (entry.ref.providerId!="smb")
@@ -261,7 +278,7 @@ class ResourceIconResolver(context: Context) {
             val bitmap=IconWork.bounded(1500,lane="thumbnail:${candidate.ref.providerId}") { if(ImageFormats.hasDosTextPreview(candidate.metadata))decoder.decodeTextPreview(candidate.uri,size,true) else decoder.decode(candidate.uri,size) }
             if(bitmap!=null && IconBitmapUsability.visible(bitmap))return base.copy(bitmap=bitmap,source=if(DirectoryIconResolver.priority(candidate.metadata.name)==0)"directory-cover" else "directory-icon",pending=pending)
         }
-        return base.copy(pending=pending)
+        return sourceIcon(pending)
     }
     fun resolveLocation(uri:Uri,name:String,size:Int):Icon {
         val rule=runCatching {uriRule(uri.toString(),size)}.getOrNull()

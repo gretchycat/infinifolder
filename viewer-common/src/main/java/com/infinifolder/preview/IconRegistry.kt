@@ -46,6 +46,19 @@ class IconRegistry(private val file: File) {
             root.put("imageContentIconsEnabled", true)
             persist()
         }
+        // User-requested book-cover defaults. Keep associations, artwork overrides
+        // and other MIME fields intact; subsequent individual edits remain saved.
+        if (readError == null && !root.optBoolean("bookCoverIconsEnabled", false)) {
+            val records = recordsJson()
+            for (key in bookCoverMimeTypes) {
+                val entry = records.optJSONObject(key) ?: JSONObject()
+                entry.put("isImage", true)
+                entry.put("overrideImageIcon", false)
+                records.put(key, entry)
+            }
+            root.put("bookCoverIconsEnabled", true)
+            persist()
+        }
     }
     val revision: Long get() = synchronized(lock) { load(); root.optLong("revision", 0) }
     private fun recordsJson() = root.optJSONObject("mime") ?: JSONObject().also { root.put("mime", it) }
@@ -157,6 +170,7 @@ class IconRegistry(private val file: File) {
         } finally { temp.delete() }
     }
     companion object {
+        private val bookCoverMimeTypes = setOf("application/epub+zip", "application/pdf")
         private val listeners=java.util.concurrent.CopyOnWriteArrayList<Pair<String,()->Unit>>()
         fun listen(base:File,listener:()->Unit):AutoCloseable {
             val item=File(base,"icon_registry.json").absolutePath to listener
@@ -176,7 +190,7 @@ class IconRegistry(private val file: File) {
             for (ext in imageExtensions) if (associations[ext] == null || associations[ext] == "application/octet-stream")
                 associations[ext] = "image/x-$ext"
             associations.entries.groupBy({ MimeRegistry.normalize(it.value) }, { it.key }).mapValues { (mime, ext) ->
-                MimeRecord(mime, ext.toSet(), defaultIcon(mime), isImage = mime=="application/vnd.android.package-archive" || ext.any { it in imageExtensions })
+                MimeRecord(mime, ext.toSet(), defaultIcon(mime), isImage = mime in bookCoverMimeTypes || mime=="application/vnd.android.package-archive" || ext.any { it in imageExtensions })
             }
         }
         fun normalizeUri(raw: String): String {

@@ -1048,3 +1048,10 @@ See [Resource icons](resource-icons.md).
 - [x] Build the default theme directly from `themes/`; export standard import ZIPs from theme scripts.
 - [x] Use the plain base for unspecified folders and MIME/extension artwork for mounted archive roots.
 - [ ] Verify the updated folder/archive artwork on a handset. Build evidence: `build/theme-source-integration/app-build.log`.
+
+### Ebook cover icons (2026-11-02)
+
+- [x] Use declared EPUB covers and PDF first pages through Scribe/Vault/Canvas, with bounded source work and local memory/disk caching.
+- [x] Enable EPUB/PDF content icons once in the persistent MIME registry; keep subsequent editor choices and other fields.
+- [x] Share backing-file artwork with mounted book roots and retain MIME fallback for unavailable covers.
+- [ ] Verify real covers, theme fallback, MIME toggles and link/tree display on a handset. No connected ADB device; automated tests not run. Build: `build/book-cover-icons/app-build.log`. Details: [Resource icons](resource-icons.md#ebook-icons).
