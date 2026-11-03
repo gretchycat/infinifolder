@@ -41,6 +41,36 @@ before the default MIME artwork, preserving explicit MIME icon customizations
 as the fallback when no album artwork is available. Existing registry records
 and user overrides are retained.
 
+## Default fallback style
+
+Unlisted or missing MIME artwork now uses the same base SVG set as the bundled
+default theme, with a type label on a colored plaque. The old separately drawn
+paper icon has been removed. The build compiles `base-fallback-*.svg` and the
+existing artwork metadata from `themes/default theme` into the app. Runtime
+fallbacks choose the associated base only when the extension agrees with the
+resolved MIME; otherwise they use MIME/category artwork, then the binary base.
+This selects artwork and does not change identity, associations or capabilities.
+Unknown binary extensions still receive their own label; extensionless sources
+use a MIME label or FILE. Shared MIME audio formats retain their useful labels.
+
+`themes/icon/scripts/icon_style.py` defines the deterministic label-color palette
+used both by generated SVGs and the compiled runtime style. Generated file/URI
+labels are uppercase and no longer stretch short strings across the whole plaque.
+Folder variants retain only their pictogram stamps. Generic folder and archive
+fallbacks also use the corresponding new SVG bases. The Android app drawer icon
+remains its distinctive existing artwork.
+
+Base SVGs are recorded once per category in memory and reused across sizes;
+completed icons retain the existing bounded bitmap cache. There are no filesystem
+or network reads to draw a fallback. Specific theme icons, per-file/MIME overrides
+and requested content thumbnails retain their normal priority. Default-theme
+revision keys and the listing artwork cache version invalidate old renders.
+
+Regenerated all 675 icons and the importable ZIP. Debug build command:
+`gradle :app:assembleDebug --offline --console=plain`. Logs:
+`build/unified-icon-style/app-build-final.log`. No tests were added or run; real-device
+appearance and navigation/theme acceptance remain unverified.
+
 ## Ebook icons
 
 The shared resolver now uses embedded EPUB cover images and PDF first pages as

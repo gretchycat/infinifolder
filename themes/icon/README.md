@@ -19,12 +19,17 @@ eBooks, Downloads, Archives, Apps, Camera/DCIM, Screenshots, Podcasts, Recording
 Ringtones, Notifications, Alarms, Wallpapers, Fonts, Themes, Templates, Shared,
 Public, Cloud, Offline, Recent, Temporary, Contacts, Calendar, Favorites, Projects,
 Backups, Trash, and the generic folder.
-File extensions and URI schemes appear in the bottom text badge. Folder variants
+File extensions and URI schemes appear in uppercase on the bottom colored label.
+`icon_style.py` supplies the shared readable palette, selected deterministically
+from each label; the app uses the same palette for unlisted MIME fallbacks. Folder variants
 show only their pictogram stamp, without a description plaque. Directory names,
 MIME types and inventory details remain in `../default theme/metadata.csv`.
 The generic folder uses the plain folder base. The artwork is built from original,
 hand-authored SVG paths and shapes. Regeneration replaces source art and refreshes
 the importable theme layout/ZIP; ordinary app builds only package current sources.
+The build also compiles the canonical base SVGs and artwork associations into the
+app, so runtime fallback icons use these bases without file or network reads.
+After editing the palette or generator bases, regenerate the source icons.
 
 `base-assignments.csv` stores a reviewed base-icon assignment for every file type,
 including its MIME type, inventory notes, source paths, and assignment rationale.
@@ -52,7 +57,7 @@ handoff process. Upload is a manual contributor workflow.
 
 - `bases/`: common pictograms, including the shared folder shape. Keep their SVG `viewBox` at `0 0 128 128`.
 - `base-assignments.csv`: one explicit, traceable pictogram choice per supported file extension.
-- `scripts/`: deterministic generators; Python standard library only.
+- `scripts/`: deterministic generators and shared label palette; Python standard library only.
 - `../default theme/svg/`: source icons used directly by the app.
 - `scripts/build_icon_theme.py`: generate freedesktop aliases and `../exports/infinifolder-default.zip` for import.
 - `../default theme/scalable/`: disposable logical filename aliases; ZIP exports dereference them.

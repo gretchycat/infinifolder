@@ -70,7 +70,7 @@ class ResourceIconResolver(context: Context) {
         } else ""
         val audioCover=if(AudioIconFormats.isAudio(MimeRegistry.effective(entry.metadata.name,entry.metadata.mimeType)))
             AudioArtworkResolver.coverRevision(entry) else ""
-        return "icons-v8:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
+        return "icons-v9:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
             "${sidecar?.uri}:${sidecar?.metadata?.modifiedAtMillis}:${sidecar?.metadata?.sizeBytes}:$covers:$audioCover"
     }
     fun cached(entry: ResourceEntry, size: Int): Icon? {
@@ -180,7 +180,7 @@ class ResourceIconResolver(context: Context) {
                 IconPolicy.Step.THEME_MIME -> if(AudioIconFormats.isAudio(id.mimeType))theme.resolveAudioIcon(meta,size,record.iconName)
                     else theme.resolveMimeSpecific(id.mimeType,size,record.iconName,meta.name)
                 IconPolicy.Step.ARCHIVE_FOLDER -> if(archives.inspect(entry.copy(metadata=meta)).browsable)
-                    theme.resolveLogicalIcon("folder-archive",size) ?: FileTypeIcons.folder(size,true) else null
+                    theme.resolveLogicalIcon("folder-archive",size) ?: FileTypeIcons.bitmap(meta,size,id.mimeType) else null
                 IconPolicy.Step.GENERATED_TYPE -> FileTypeIcons.bitmap(meta,size,id.mimeType)
                 IconPolicy.Step.THEME_CATEGORY -> theme.resolveMimeDefaults(id.mimeType,size) ?: theme.resolveMimeCategory(id.mimeType,size)
                 IconPolicy.Step.GENERIC -> FileTypeIcons.bitmap(meta,size,id.mimeType)

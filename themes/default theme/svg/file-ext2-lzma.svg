@@ -17,6 +17,6 @@
   <path xmlns="http://www.w3.org/2000/svg" d="M64 60v5q0 4 3 2l2-2" fill="none" stroke="#29445d" stroke-width="2.2" stroke-linecap="round" />
 
   
-  <rect x="5" y="96" width="118" height="27" rx="8" fill="#18324a" stroke="#ffffff" stroke-width="1.5"/>
-  <text x="64" y="115" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans,Arial,sans-serif" font-size="16" font-weight="700" textLength="108" lengthAdjust="spacingAndGlyphs">.ext2.lzma</text>
+  <rect x="5" y="96" width="118" height="27" rx="8" fill="#6f6860" stroke="#ffffff" stroke-width="1.5"/>
+  <text x="64" y="115" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans,Arial,sans-serif" font-size="16" font-weight="700">EXT2.LZM</text>
 </svg>

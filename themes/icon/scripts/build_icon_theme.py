@@ -11,6 +11,9 @@ import hashlib
 import re
 import shutil
 import zipfile
+import json
+from collections import Counter
+from icon_style import LABEL_COLORS
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "themes/default theme"
@@ -177,6 +180,44 @@ internal object BundledDefaultThemeInfo {{
     )
 }}
 ''')
+        def kotlin_string(value):
+            return json.dumps(value, ensure_ascii=True).replace("$", "\\$")
+        bases = {Path(row["filename"]).stem.removeprefix("base-fallback-"): row["filename"]
+                 for row in rows if row["category"] == "base_fallback"}
+        base_source = ",\n".join(f'        {kotlin_string(name)} to {kotlin_string(artwork[filename].decode("utf-8-sig"))}'
+                                 for name, filename in sorted(bases.items()))
+        extension_bases = {row["identifier"].lstrip("."): Path(row["base_artwork"]).stem
+                           for row in rows if row["category"] == "file_type"}
+        unknown_bases = sorted(set(extension_bases.values()) - bases.keys())
+        if unknown_bases:
+            raise ValueError(f"Missing base artwork for generated fallbacks: {', '.join(unknown_bases)}")
+        extension_base_source = ",\n".join(f'        {kotlin_string(ext)} to {kotlin_string(base)}'
+                                           for ext, base in sorted(extension_bases.items()))
+        mime_votes = {}
+        for row in rows:
+            if row["category"] == "file_type" and row["mime_type"]:
+                mime_votes.setdefault(row["mime_type"], Counter())[Path(row["base_artwork"]).stem] += 1
+        mime_base_source = ",\n".join(f'        {kotlin_string(mime)} to {kotlin_string(sorted(votes, key=lambda base: (-votes[base], base))[0])}'
+                                      for mime, votes in sorted(mime_votes.items()))
+        colors = ", ".join(f'0xff{color[1:]}.toInt()' for color in LABEL_COLORS)
+        (info.parent / "BundledIconStyle.kt").write_text(f'''package com.infinifolder.theme
+
+// Generated from the canonical theme's base SVGs/metadata and icon_style.py.
+internal object BundledIconStyle {{
+    val BASE_SVGS = mapOf(
+{base_source}
+    )
+    val EXTENSION_BASES = mapOf(
+{extension_base_source}
+    )
+    val MIME_BASES = mapOf(
+{mime_base_source}
+    )
+    private val labelColors = intArrayOf({colors})
+    fun labelColor(label: String): Int = labelColors[
+        (label.uppercase(java.util.Locale.ROOT).hashCode() and Int.MAX_VALUE) % labelColors.size]
+}}
+''', encoding="utf-8")
     print(f"Packaged {len(artwork)} source SVGs as {len(aliases)} logical icons: {asset}")
 
 

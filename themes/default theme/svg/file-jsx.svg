@@ -13,6 +13,6 @@
   <path xmlns="http://www.w3.org/2000/svg" d="m53 54-9 9 9 9m22-18 9 9-9 9M69 50 59 76" fill="none" stroke="url(#code)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
 
   
-  <rect x="5" y="96" width="118" height="27" rx="8" fill="#18324a" stroke="#ffffff" stroke-width="1.5"/>
-  <text x="64" y="115" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans,Arial,sans-serif" font-size="16" font-weight="700" textLength="108" lengthAdjust="spacingAndGlyphs">.jsx</text>
+  <rect x="5" y="96" width="118" height="27" rx="8" fill="#3d7373" stroke="#ffffff" stroke-width="1.5"/>
+  <text x="64" y="115" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans,Arial,sans-serif" font-size="16" font-weight="700">JSX</text>
 </svg>

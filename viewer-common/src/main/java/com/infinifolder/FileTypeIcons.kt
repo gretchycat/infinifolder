@@ -4,15 +4,20 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Path
+import android.graphics.Picture
 import android.graphics.Typeface
 import android.util.LruCache
 import com.infinifolder.mime.MimeRegistry
 import com.infinifolder.model.ResourceMetadata
 import com.infinifolder.preview.AudioIconFormats
+import com.infinifolder.archive.ArchiveFormats
 import com.infinifolder.viewer.MediaType
 import com.infinifolder.viewer.MediaTypeDetector
 import java.util.Locale
+import com.caverock.androidsvg.SVG
+import com.infinifolder.theme.BundledDefaultThemeInfo
+import com.infinifolder.theme.BundledIconStyle
+import com.infinifolder.storage.DiagnosticLog
 
 /** Type-specific fallback artwork; never reads a document to draw its icon. */
 object FileTypeIcons {
@@ -20,21 +25,41 @@ object FileTypeIcons {
         override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
     }
 
+    private val pictures = mutableMapOf<String, Picture?>()
+
+    /** Records the canonical SVG once per base, then draws from memory at any size. */
+    private fun drawBase(canvas: Canvas, base: String) {
+        if (!pictures.containsKey(base)) pictures[base] = runCatching {
+            val svg = SVG.getFromString(checkNotNull(BundledIconStyle.BASE_SVGS[base]))
+            svg.setDocumentWidth(128f); svg.setDocumentHeight(128f)
+            val picture = Picture()
+            val recording = picture.beginRecording(128, 128)
+            try { svg.renderToCanvas(recording) } finally { picture.endRecording() }
+            picture
+        }.onFailure { DiagnosticLog.record("icon.default.base.failed", "base=$base", it) }.getOrNull()
+        pictures[base]?.let(canvas::drawPicture)
+    }
+
+    @Synchronized
     fun folder(requestedSize: Int, archive: Boolean = false): Bitmap {
         val size=requestedSize.coerceIn(1,1024)
         val key="folder:$archive:$size"
         cache.get(key)?.let { return it }
         val bitmap=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888)
-        val canvas=Canvas(bitmap);canvas.scale(size/64f,size/64f)
-        val paint=Paint(Paint.ANTI_ALIAS_FLAG).apply { color=0xffe9b949.toInt() }
-        val path=Path().apply { moveTo(3f,15f);lineTo(26f,15f);lineTo(32f,21f);lineTo(61f,21f);lineTo(57f,55f);lineTo(7f,55f);close() }
-        canvas.drawPath(path,paint)
-        if(archive) {
-            paint.color=0xff72592d.toInt();canvas.drawRect(29f,21f,35f,55f,paint)
-            paint.color=Color.WHITE
-            for(y in 22..50 step 6)canvas.drawRect(30f,y.toFloat(),34f,y+3f,paint)
-        }
+        val canvas=Canvas(bitmap);canvas.scale(size/128f,size/128f)
+        drawBase(canvas,if(archive)"archive" else "folder")
         cache.put(key,bitmap);return bitmap
+    }
+
+    private fun associatedExtension(name: String, mime: String): String? {
+        val lower = name.lowercase(Locale.ROOT)
+        var dot = lower.indexOf('.')
+        while (dot >= 0) {
+            val extension = lower.substring(dot + 1)
+            if (BundledDefaultThemeInfo.EXTENSION_MIME_TYPES[extension] == mime) return extension
+            dot = lower.indexOf('.', dot + 1)
+        }
+        return null
     }
 
     /** App-drawer artwork for Android's virtual installed-applications root. */
@@ -65,7 +90,16 @@ object FileTypeIcons {
         val known=mime!="application/octet-stream"
         val audio=AudioIconFormats.isAudio(mime)
         val audioLabel=if(audio)AudioIconFormats.label(meta.name,mime) else null
-        val type = if (text) "text/plain" else if(audio)"$mime:$audioLabel" else if(known)mime else extension.ifBlank { mime }
+        val mappedExtension = associatedExtension(meta.name, mime)
+        val base = mappedExtension?.let(BundledIconStyle.EXTENSION_BASES::get)
+            ?: BundledIconStyle.MIME_BASES[mime] ?: when {
+                audio -> "audio"
+                mime.startsWith("image/") -> "image"
+                mime.startsWith("video/") -> "video"
+                ArchiveFormats.isDefaultBrowsableArchive("", mime) -> "archive"
+                text -> "document"
+                else -> "binary"
+            }
         val mimeLabel=when {
             audioLabel!=null -> audioLabel
             mime=="application/msword" -> "DOC"
@@ -75,39 +109,23 @@ object FileTypeIcons {
             mime=="application/vnd.android.package-archive" -> "APK"
             else -> mime.substringAfter('/').removePrefix("x-").removePrefix("vnd.")
         }
-        val label = (if(text)"TXT" else if(known)mimeLabel else extension.ifBlank {"FILE"}).uppercase(Locale.ROOT).filter { it.isLetterOrDigit() || it == '+' || it == '-' }.take(8).ifBlank { "FILE" }
+        val label = (audioLabel ?: mappedExtension ?: if(text)"TXT" else if(known)mimeLabel else extension.ifBlank {"FILE"}).uppercase(Locale.ROOT).filter { it.isLetterOrDigit() || it == '+' || it == '-' || it == '.' }.take(8).ifBlank { "FILE" }
         val size = requestedSize.coerceIn(1, 1024)
-        val key = "$type:$label:$size"
+        val key = "$base:$label:$size"
         cache.get(key)?.let { return it }
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        canvas.scale(size / 64f, size / 64f)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        val accent = Color.HSVToColor(floatArrayOf((type.hashCode().toLong() and 0x7fffffffL).rem(360).toFloat(), .65f, .65f))
-        val page = Path().apply {
-            moveTo(12f, 3f); lineTo(41f, 3f); lineTo(53f, 15f)
-            lineTo(53f, 60f); lineTo(12f, 60f); close()
-        }
-        paint.color = Color.rgb(245, 247, 250)
-        canvas.drawPath(page, paint)
-        paint.color = accent
-        paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.5f
-        canvas.drawPath(page, paint)
-        paint.style = Paint.Style.FILL
-        canvas.drawPath(Path().apply { moveTo(41f, 3f); lineTo(41f, 15f); lineTo(53f, 15f); close() }, paint)
-        if(audio) {
-            paint.style=Paint.Style.STROKE;paint.strokeWidth=2f
-            canvas.drawPath(Path().apply {moveTo(26f,25f);lineTo(26f,16f);lineTo(36f,14f);lineTo(36f,23f)},paint)
-            paint.style=Paint.Style.FILL
-            canvas.drawOval(20f,23f,27f,28f,paint);canvas.drawOval(30f,21f,37f,26f,paint)
-        }
-        canvas.drawRoundRect(4f, 30f, 60f, 53f, 3f, 3f, paint)
-        paint.color = Color.WHITE; paint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
-        paint.textSize = 15f
-        paint.textSize *= minOf(1f, 50f / paint.measureText(label).coerceAtLeast(1f))
+        canvas.scale(size / 128f, size / 128f)
+        drawBase(canvas, base)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BundledIconStyle.labelColor(label) }
+        canvas.drawRoundRect(5f, 96f, 123f, 123f, 8f, 8f, paint)
+        paint.color = Color.WHITE; paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.5f
+        canvas.drawRoundRect(5f, 96f, 123f, 123f, 8f, 8f, paint)
+        paint.style = Paint.Style.FILL; paint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+        paint.textSize = 16f
+        paint.textSize *= minOf(1f, 108f / paint.measureText(label).coerceAtLeast(1f))
         paint.textAlign = Paint.Align.CENTER
-        val metrics = paint.fontMetrics
-        canvas.drawText(label, 32f, 41.5f - (metrics.ascent + metrics.descent) / 2f, paint)
+        canvas.drawText(label, 64f, 115f, paint)
         cache.put(key, bitmap)
         return bitmap
     }

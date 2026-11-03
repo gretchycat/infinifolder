@@ -11,6 +11,7 @@ val prepareDefaultIconTheme by tasks.registering(Exec::class) {
     inputs.dir(themeSource.dir("svg"))
     inputs.file(themeSource.file("metadata.csv"))
     inputs.file(themeBuilder)
+    inputs.file(rootProject.layout.projectDirectory.file("themes/icon/scripts/icon_style.py"))
     outputs.dir(themeBuildRoot)
     commandLine(providers.gradleProperty("iconThemePython").orElse("python3").get(),
         themeBuilder.asFile.absolutePath, "--no-layout",
