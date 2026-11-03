@@ -3,6 +3,7 @@ package com.infinifolder
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.ActivityNotFoundException
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
@@ -68,6 +69,7 @@ class HomeItemActivity : Activity() {
                             }
                             finish()
                         }
+                        HomeItemRouting.opensExternally(target, result != null) -> openExternal(target)
                         result != null && (result.metadata.isDirectory ||
                             (!ArchiveFormats.isPackagedFormat(result.metadata.name, result.metadata.mimeType) &&
                                 (ArchiveFormats.isArchive(result.metadata.name, result.metadata.mimeType) ||
@@ -164,6 +166,20 @@ class HomeItemActivity : Activity() {
                 .setOnCancelListener { finish() }.show()
         }
     }
+    /** The resolved URL goes straight to its handler without constructing MainActivity. */
+    private fun openExternal(uri: Uri) {
+        val external = Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            startActivity(Intent(external).addCategory(Intent.CATEGORY_BROWSABLE))
+        } catch (_: ActivityNotFoundException) {
+            // Some non-web handlers accept VIEW without the browsable category.
+            startActivity(external)
+        }
+        DiagnosticLog.record("home.dispatch.external", "scheme=${uri.scheme}")
+        finish()
+        overridePendingTransition(0, 0)
+    }
+
     private fun openFull(uri: Uri) {
         startActivity(Intent(this, MainActivity::class.java).setAction(MainActivity.ACTION_HOME_ITEM_IN_APP).setData(uri)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))

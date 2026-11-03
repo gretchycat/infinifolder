@@ -1,7 +1,8 @@
 # Drag floating icons to Home screen
 
-Implemented 2026-11-03. The owner confirmed dragging folders and regular files
-onto the launcher on-device on 2026-11-03.
+Implemented 2026-11-03. The owner confirmed folders, regular files, archives,
+remote locations and public application directories on the launcher on-device
+on 2026-11-03.
 
 ## Use
 
@@ -15,6 +16,8 @@ The shortcut uses the existing `HomeItemActivity` dispatcher. Folders and recogn
 browsable archive/disk-image containers open in the floating browser; ordinary
 files follow their existing viewer/open route, application links launch the app,
 and `.iflink`/symbolic links resolve through the existing storage/link service.
+Resolved web links launch the browser or registered Android URI handler directly
+from the transparent dispatcher, without opening the InfiniFolder browser first.
 Overlay permission still uses the existing prompt and full-browser fallback.
 Office/EPUB/APK and other recognized package documents keep their existing open
 routes rather than becoming folders merely because they contain an archive.
@@ -67,14 +70,46 @@ No automated tests were added for the drag implementation. The subsequent full
 [regression gate](validation/font-gen-automated-2026-11-03.json) passes all 980 JVM
 cases; native launcher interactions remain separate device checks.
 
-The owner confirmed folder and regular-file drag/drop onto the launcher. Subsequent shortcut taps
-and floating-folder reopening, cancellation, other item types and other launchers
-were not separately confirmed. The agent had no connected ADB device during
-implementation.
+The owner confirmed folder and regular-file drag/drop onto the launcher, followed
+by archives, remote locations and public application directories. URL-link
+drag/drop also worked, but launching the resulting shortcut exposed the routing
+bug described below. Cancellation and other launchers remain unverified. The
+agent had no connected ADB device during implementation.
 
-For the remaining drag/drop coverage, check ZIP/disk-image containers, apps
-and `.iflink` from a moved/resized/scrolled floating window. Confirm its label and
-icon, container reopening, regular-file dispatch, quick release/cancel, Back,
+For the remaining coverage, check URL shortcut activation, application-launch
+links and `.iflink` from a moved/resized/scrolled floating window. Confirm its label and
+icon, quick release/cancel, Back,
 Recents/app switching, denied overlay permission, repeated drags and saved geometry.
-Try another launcher and remote/provider inputs separately. Compilation alone
+Try another launcher and Android content-provider inputs separately. Compilation alone
 cannot establish cross-launcher behavior.
+
+## Direct URL shortcut repair
+
+The 2026-11-03 `infinifolder-debug-20261103-210801-950.log` showed the Home
+dispatcher resolving the link, then starting the full file browser. A resolved
+HTTPS target has no storage entry, so it fell through to the in-app container
+route and produced a missing-storage-provider error.
+
+`HomeItemRouting` now distinguishes external URI handlers from storage targets
+after link resolution. The dispatcher sends external targets directly to Android
+`ACTION_VIEW`, trying the browsable category first and plain VIEW if no browsable
+handler exists. The exact target URI is retained. Native storage/protocol targets
+and owned entries keep their existing dispatch. Launch errors remain visible,
+and diagnostics record the external scheme without URI credentials or tokens.
+Existing pins use this path without needing to be recreated.
+
+Four JVM routing tests exercise web/custom URIs, native storage schemes and
+provider-owned entries. Verification command:
+
+```sh
+python3 scripts/verify-infinistream.py
+```
+
+The offline APK build and all 984 JVM tests passed (zero failures or skips,
+zero missing baseline cases); the 30 historical baseline failures remain resolved.
+Logs: `build/launcher-url-fix/gate-summary.log` and
+`build/launcher-url-fix/verification-gate.log`. This run includes existing
+uncommitted workspace changes outside the launcher repair; those changes are
+preserved separately. Real browser/handler launch, missing-handler presentation
+and the absence of a visible intermediate app screen still require on-device
+verification.
