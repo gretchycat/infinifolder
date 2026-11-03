@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">.nims</title>
+  <defs>
+    <linearGradient id="directory-light" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop stop-color="#ffffff" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.08"/>
+    </linearGradient>
+  </defs>
+  <defs xmlns="http://www.w3.org/2000/svg"><linearGradient id="paper" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#f8fffd" /><stop offset="1" stop-color="#dcefeb" /></linearGradient><linearGradient id="code" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#438f88" /><stop offset="1" stop-color="#29445d" /></linearGradient></defs>
+  <path xmlns="http://www.w3.org/2000/svg" d="M32 15h43l23 23v75H32z" fill="url(#paper)" stroke="#29445d" stroke-width="3.5" stroke-linejoin="round" />
+  <path xmlns="http://www.w3.org/2000/svg" d="M75 16v24h23" fill="#d6e9e4" stroke="#29445d" stroke-width="3.5" stroke-linejoin="round" />
+  <path xmlns="http://www.w3.org/2000/svg" d="m53 54-9 9 9 9m22-18 9 9-9 9M69 50 59 76" fill="none" stroke="url(#code)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+
+  
+  <rect x="5" y="96" width="118" height="27" rx="8" fill="#2f7487" stroke="#ffffff" stroke-width="1.5"/>
+  <text x="64" y="115" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans,Arial,sans-serif" font-size="16" font-weight="700">NIMS</text>
+</svg>

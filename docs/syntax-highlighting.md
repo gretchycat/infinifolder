@@ -47,6 +47,44 @@ supported theme subset:
   external `tokenColors` references are rejected explicitly. Unused UI/semantic
   theme keys do not add capabilities. Descriptors are limited to 256 KiB/512 rules.
 
+## Source-file identity
+
+Store supplies explicit source MIME associations rather than depending on the
+Android device's extension database. The editable MIME/icon registry, listing
+identity resolver and generated Android Open-with registrations use these same
+associations. Generic provider `text/plain` metadata is refined by a known suffix;
+saved user associations and icon choices retain their existing precedence.
+
+| Source | Default MIME |
+| --- | --- |
+| `.c`, `.h` | `text/x-csrc`, `text/x-chdr` |
+| `.cpp`/`.cc`/`.cxx`, `.hpp`/`.hh`/`.hxx` | `text/x-c++src`, `text/x-c++hdr` |
+| `.pas`/`.pp` | `text/x-pascal` |
+| `.ada`/`.adb`/`.ads` | `text/x-adasrc` |
+| `.bas`/`.bi` | `text/x-basic` |
+| `.bat`/`.cmd` | `application/x-bat` |
+
+These are conventional identities, including types from the
+[freedesktop shared MIME database](https://gitlab.freedesktop.org/xdg/shared-mime-info).
+The expanded associations also cover Java/C#/Kotlin/Scala, Python/Ruby/Perl/PHP,
+JavaScript/TypeScript, Rust/Go/Swift/Dart, shells/PowerShell, Fortran/COBOL,
+assembly, Lisp/Scheme/Clojure, Haskell/Erlang/Elixir/F#, Julia/Nim, web styles,
+SQL, XML schemas, build scripts and patches. Scripts open as editable text.
+Association does not add an interpreter or compiler.
+
+The bundled theme uses the existing code artwork and extension label for these
+files. A theme can provide a separate icon for each MIME. Headers default to C
+unless their suffix identifies C++; ambiguous language preferences can be changed
+in the MIME registry. Existing case-insensitive extension matching is retained
+(`.C` therefore follows `.c`). The complete associations are in
+[supported-types.csv](supported-types.csv).
+
+Specific MIME identity is separate from syntax coloring. Only the lexical profiles
+listed below are implemented; Pascal, Ada, BASIC and other additional languages
+remain readable/editable without a dedicated highlighter. Existing profiles now
+also recognize alternate C++/Python/TypeScript suffixes and source MIME types when
+the provider supplies no useful filename.
+
 ## Bounds and context
 
 Language detection uses extension, MIME and an initial shebang. Profiles cover

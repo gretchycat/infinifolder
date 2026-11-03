@@ -116,8 +116,9 @@ or run. Existing EPUB fixtures were inventoried and contain no declared covers;
 handset cover display, remote provider behavior, editor toggles and link/tree
 acceptance remain unverified. Logs: `build/book-cover-icons/app-build-final.log`.
 
-The current default theme has 704 source SVGs after adding the new document
-extensions. Its MIME/extension labels use the same existing theme generation path.
+The current default theme has 774 source SVGs after adding the document and
+source-code associations. Its MIME/extension labels use the same existing theme
+generation path.
 
 ## Exact filename and location
 
