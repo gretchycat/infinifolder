@@ -132,6 +132,13 @@ remains; Store now propagates broken optional metadata reads, checks cancellatio
 before returning read results, and retries that read failure once on a fresh
 metadata channel. Writes are not replayed. See [cause, repair and acceptance limits](sftp-channel-recovery.md#metadata-channel-follow-up--2026-11-03-0330-utc).
 
+The 03:51 UTC snapshot still shows poor whole-transfer performance despite cache
+reuse. Further library repairs replace parent-listing SFTP stat with direct lookup,
+share the existing entry mapper, avoid full metadata mapping for creation collision
+checks, and skip archive write probes during read-only attribute capture. Fresh
+revision checks and mutation safeguards remain. The APK builds; handset speed
+acceptance is pending. See [remaining overhead and repair](remote-archive-transfer-performance.md#remaining-per-file-overhead--0351-utc-snapshot).
+
 ## Work outside this migration
 
 The migration introduces no new language port, codec rewrite or binary blob.

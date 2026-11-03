@@ -17,7 +17,12 @@ with fresh reads for final source validation/deletion and undo. The 03:26/03:30
 UTC dumps show 67 cache reuses and a 759 ms median source open on a different
 file set. The same empty SFTP listing failure still ends the move. Store now
 propagates broken optional metadata reads and performs one bounded read retry;
-handset recovery acceptance is pending. See [transfer performance](remote-archive-transfer-performance.md)
+handset recovery acceptance is pending. The 03:51 UTC snapshot is still slow:
+111 small files / 94,021 bytes over about four minutes. Further Store/Vault changes
+replace parent-listing stat with direct lookup, simplify fresh collision checks,
+cache channel subject inference and avoid archive write probes for attribute reads.
+The APK builds; the resulting whole-transfer speed remains unverified.
+See [transfer performance](remote-archive-transfer-performance.md)
 and [SFTP metadata recovery](sftp-channel-recovery.md#metadata-channel-follow-up--2026-11-03-0330-utc).
 Live acceptance and distributable release work remain separate from source
 extraction. See the [dated closeout record](library-migration-completion.md#closeout-follow-up--2026-11-02).

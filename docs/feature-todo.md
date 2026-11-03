@@ -16,6 +16,8 @@ Remaining portability, graph-planning and release items below are follow-up work
 - [x] Reuse bounded source read caches during an ordinary move's copy phase; bypass them for final source validation/deletion and undo.
 - [x] Establish remote archive cache reuse on the handset: 67 reuses and a 759 ms median entry open in the 03:26/03:30 UTC dumps, on a different file set from the earlier run.
 - [x] Propagate broken optional SFTP metadata queries to channel cleanup, check cancellation after reads, and retry empty generic read failures once without replaying writes. See [SFTP follow-up](sftp-channel-recovery.md#metadata-channel-follow-up--2026-11-03-0330-utc).
+- [x] Address the 03:51 snapshot's repeated metadata overhead: direct SFTP stat with a shared entry mapper, cached channel subject inference, fresh names-only creation collision checks and no archive write probe for source attribute capture.
+- [ ] Accept whole-transfer speed after the metadata changes; cache reuse alone leaves the small-file workflow slow. See [measurements and limits](remote-archive-transfer-performance.md#remaining-per-file-overhead--0351-utc-snapshot).
 - [ ] Accept recovery from the recurring SFTP destination-listing failure. Unsupported-attribute warnings, warning-free move completion and move restoration after original deletion remain unverified.
 
 - [x] Align references with the supplied architecture; retain dated evidence and safety limits.
