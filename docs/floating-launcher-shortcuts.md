@@ -1,6 +1,7 @@
 # Drag floating icons to Home screen
 
-Implemented 2026-11-03; handset acceptance is pending.
+Implemented 2026-11-03. The owner confirmed dragging folders onto the launcher
+on-device on 2026-11-03.
 
 ## Use
 
@@ -62,10 +63,16 @@ gradle :app:assembleDebug --offline --console=plain
 ```
 
 Debug APK build passes. Log: `build/floating-launcher-drag/app-build-final.log`.
-No tests were added or run. ADB lists no connected device; actual launcher drag,
-confirmation, cancellation and subsequent shortcut taps remain unverified.
+No automated tests were added for the drag implementation. The subsequent full
+[regression gate](validation/font-gen-automated-2026-11-03.json) passes all 980 JVM
+cases; native launcher interactions remain separate device checks.
 
-On a handset, check a local folder, ZIP/disk-image container, ordinary file, app
+The owner confirmed folder drag/drop onto the launcher. Subsequent shortcut taps
+and floating-folder reopening, cancellation, other item types and other launchers
+were not separately confirmed. The agent had no connected ADB device during
+implementation.
+
+For the remaining coverage, check ZIP/disk-image containers, ordinary files, apps
 and `.iflink` from a moved/resized/scrolled floating window. Confirm its label and
 icon, container reopening, regular-file dispatch, quick release/cancel, Back,
 Recents/app switching, denied overlay permission, repeated drags and saved geometry.
