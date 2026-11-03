@@ -13,6 +13,4 @@
   <path xmlns="http://www.w3.org/2000/svg" d="M23 53h72" stroke="#fff0d2" stroke-width="2.5" stroke-linecap="round" opacity=".6" />
 
   <g stroke-opacity="0.5"><path d="m49 85 14-30h3l14 30M55 73h19M78 58h7m-3-4v31m-4 0h8" fill="none" stroke="#18324a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></g>
-  <rect x="5" y="96" width="118" height="27" rx="8" fill="#18324a" stroke="#ffffff" stroke-width="1.5"/>
-  <text x="64" y="115" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans,Arial,sans-serif" font-size="16" font-weight="700" textLength="108" lengthAdjust="spacingAndGlyphs">FONTS</text>
 </svg>

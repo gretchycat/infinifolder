@@ -13,6 +13,4 @@
   <path xmlns="http://www.w3.org/2000/svg" d="M23 53h72" stroke="#fff0d2" stroke-width="2.5" stroke-linecap="round" opacity=".6" />
 
   <g stroke-opacity="0.5"><path d="M64 53c-11 0-20 8-20 18s8 18 19 18h2c4 0 7-3 7-7 0-3-2-5-2-7 0-3 2-5 6-5h4c4 0 7-3 6-7-2-6-11-10-22-10z" fill="#fbfaf6" stroke="#18324a" stroke-width="3" stroke-linejoin="round"/><circle cx="54" cy="68" r="2.6" fill="#f39b62"/><circle cx="63" cy="60" r="2.6" fill="#75b5cb"/><circle cx="74" cy="63" r="2.6" fill="#87d9a7"/><circle cx="59" cy="78" r="2.6" fill="#f0c45f"/></g>
-  <rect x="5" y="96" width="118" height="27" rx="8" fill="#18324a" stroke="#ffffff" stroke-width="1.5"/>
-  <text x="64" y="115" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans,Arial,sans-serif" font-size="16" font-weight="700" textLength="108" lengthAdjust="spacingAndGlyphs">THEMES</text>
 </svg>

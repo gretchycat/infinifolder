@@ -19,8 +19,9 @@ eBooks, Downloads, Archives, Apps, Camera/DCIM, Screenshots, Podcasts, Recording
 Ringtones, Notifications, Alarms, Wallpapers, Fonts, Themes, Templates, Shared,
 Public, Cloud, Offline, Recent, Temporary, Contacts, Calendar, Favorites, Projects,
 Backups, Trash, and the generic folder.
-File extensions, URI schemes, and directory names appear in the badge; MIME type
-and inventory details are recorded in `../default theme/metadata.csv`.
+File extensions and URI schemes appear in the bottom text badge. Folder variants
+show only their pictogram stamp, without a description plaque. Directory names,
+MIME types and inventory details remain in `../default theme/metadata.csv`.
 The generic folder uses the plain folder base. The artwork is built from original,
 hand-authored SVG paths and shapes. Regeneration replaces source art and refreshes
 the importable theme layout/ZIP; ordinary app builds only package current sources.

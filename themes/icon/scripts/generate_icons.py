@@ -105,6 +105,11 @@ def svg_for(row: dict[str, str], base_svg: str, label: str, marker: str = "") ->
     safe_label = html.escape(label, quote=True)
     safe_title = html.escape(row["identifier"])
     marker_art = f'<g stroke-opacity="0.5">{marker}</g>' if row["category"] == "directory_type" else marker
+    # Folder variants are identified by their pictogram stamp. Keep the bottom
+    # description plaque for file extensions and URI schemes only.
+    badge = "" if row["category"] == "directory_type" else f'''  <rect x="5" y="96" width="118" height="27" rx="8" fill="#18324a" stroke="#ffffff" stroke-width="1.5"/>
+  <text x="64" y="115" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans,Arial,sans-serif" font-size="16" font-weight="700" textLength="108" lengthAdjust="spacingAndGlyphs">{safe_label}</text>
+'''
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="{SVG_NS}" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title">
   <title id="title">{safe_title}</title>
@@ -116,9 +121,7 @@ def svg_for(row: dict[str, str], base_svg: str, label: str, marker: str = "") ->
   </defs>
   {art}
   {marker_art}
-  <rect x="5" y="96" width="118" height="27" rx="8" fill="#18324a" stroke="#ffffff" stroke-width="1.5"/>
-  <text x="64" y="115" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans,Arial,sans-serif" font-size="16" font-weight="700" textLength="108" lengthAdjust="spacingAndGlyphs">{safe_label}</text>
-</svg>
+{badge}</svg>
 '''
 
 

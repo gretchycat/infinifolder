@@ -13,6 +13,4 @@
   <path xmlns="http://www.w3.org/2000/svg" d="M23 53h72" stroke="#fff0d2" stroke-width="2.5" stroke-linecap="round" opacity=".6" />
 
   <g stroke-opacity="0.5"><circle cx="64" cy="70" r="17" fill="url(#directory-light)" stroke="#18324a" stroke-width="3"/><path d="M64 59v12l9 5" fill="none" stroke="#18324a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></g>
-  <rect x="5" y="96" width="118" height="27" rx="8" fill="#18324a" stroke="#ffffff" stroke-width="1.5"/>
-  <text x="64" y="115" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans,Arial,sans-serif" font-size="16" font-weight="700" textLength="108" lengthAdjust="spacingAndGlyphs">RECENT</text>
 </svg>
