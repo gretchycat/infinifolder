@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">.ext4</title>
+  <defs>
+    <linearGradient id="directory-light" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop stop-color="#ffffff" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.08"/>
+    </linearGradient>
+  </defs>
+  <defs xmlns="http://www.w3.org/2000/svg"><linearGradient id="case" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#c9b9f5" /><stop offset="1" stop-color="#8067c5" /></linearGradient><linearGradient id="panel" x1="0%" y1="0%" x2="0%" y2="100%"><stop stop-color="#fff" /><stop offset="1" stop-color="#f0ebfb" /></linearGradient></defs>
+  <path xmlns="http://www.w3.org/2000/svg" d="M25 18h65l15 15v78H25z" fill="url(#case)" stroke="#29445d" stroke-width="4" stroke-linejoin="round" />
+  <path xmlns="http://www.w3.org/2000/svg" d="M42 19v31h43V19M43 111V70h44v41" fill="url(#panel)" stroke="#29445d" stroke-width="3.5" stroke-linejoin="round" />
+  <circle xmlns="http://www.w3.org/2000/svg" cx="65" cy="88" r="8" fill="#55bea0" stroke="#29445d" stroke-width="3" />
+  <path xmlns="http://www.w3.org/2000/svg" d="M48 77h15" stroke="#fff" stroke-width="3" stroke-linecap="round" />
+
+  
+  <rect x="5" y="96" width="118" height="27" rx="8" fill="#18324a" stroke="#ffffff" stroke-width="1.5"/>
+  <text x="64" y="115" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans,Arial,sans-serif" font-size="16" font-weight="700" textLength="108" lengthAdjust="spacingAndGlyphs">.ext4</text>
+</svg>

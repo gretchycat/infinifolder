@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">.pc2</title>
+  <defs>
+    <linearGradient id="directory-light" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop stop-color="#ffffff" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.08"/>
+    </linearGradient>
+  </defs>
+  <defs xmlns="http://www.w3.org/2000/svg"><linearGradient id="frame" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#f8fffd" /><stop offset="1" stop-color="#d9f0ed" /></linearGradient><linearGradient id="land" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#89c9d0" /><stop offset="1" stop-color="#4f91ac" /></linearGradient><linearGradient id="brush" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#ffc17c" /><stop offset="1" stop-color="#ed875d" /></linearGradient></defs>
+  <rect xmlns="http://www.w3.org/2000/svg" x="15" y="18" width="82" height="76" rx="9" fill="url(#frame)" stroke="#29445d" stroke-width="4" />
+  <circle xmlns="http://www.w3.org/2000/svg" cx="40" cy="42" r="8" fill="#f4bd69" />
+  <path xmlns="http://www.w3.org/2000/svg" d="m22 81 23-25 15 15 12-13 18 23z" fill="url(#land)" stroke="#477f98" stroke-width="2.5" stroke-linejoin="round" />
+  <path xmlns="http://www.w3.org/2000/svg" d="m84 100 23-36 9 6-22 38-14 8z" fill="url(#brush)" stroke="#29445d" stroke-width="3" stroke-linejoin="round" />
+  <path xmlns="http://www.w3.org/2000/svg" d="m87 67 8 5" stroke="#fff1d9" stroke-width="2.5" stroke-linecap="round" />
+
+  
+  <rect x="5" y="96" width="118" height="27" rx="8" fill="#18324a" stroke="#ffffff" stroke-width="1.5"/>
+  <text x="64" y="115" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans,Arial,sans-serif" font-size="16" font-weight="700" textLength="108" lengthAdjust="spacingAndGlyphs">.pc2</text>
+</svg>

@@ -32,12 +32,87 @@ class IconThemeManager(private val context: Context) {
     private val diskCacheDir=File(context.cacheDir,"icon_theme_renders")
     private val themeCache = ConcurrentHashMap<String, FreeDesktopIconTheme>()
     @Volatile private var activeTheme: FreeDesktopIconTheme? = null
+    @Volatile private var defaultPrepared = false
+    @Volatile private var defaultPreparationFailed = false
+    private val defaultThemeRoot = File(context.filesDir,
+        "bundled_icon_themes/${BundledDefaultThemeInfo.REVISION}/${BundledDefaultThemeInfo.ID}")
+
+    private fun defaultThemeInfo() = IconThemeInfo(BundledDefaultThemeInfo.PREFERENCE_ID,
+        BundledDefaultThemeInfo.NAME, "Bundled InfiniFolder artwork", defaultThemeRoot,
+        inherits = listOf("hicolor"), directories = listOf(ThemeDirectory("scalable", 128,
+            type = DirectoryType.Scalable, minSize = 16, maxSize = 1024)))
+
+    /** Existing bounded theme extraction, published into a versioned private directory. */
+    private fun prepareDefaultArtwork(): Boolean {
+        if (defaultPrepared) return true
+        if (defaultPreparationFailed) return false
+        // Setup owns its worker: cancelling a scrolled-away icon must not abort
+        // the shared first-install task or poison the default for this process.
+        val pending = defaultInstalls.computeIfAbsent(defaultThemeRoot.absolutePath) {
+            java.util.concurrent.CompletableFuture.supplyAsync({ installDefaultArtwork() }, defaultInstaller)
+        }
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) return false
+        while (true) {
+            com.infinifolder.archive.RecoveryCancellation.check()
+            try {
+                val ready = pending.get(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                defaultPrepared = ready
+                defaultPreparationFailed = !ready
+                return ready
+            } catch (_: java.util.concurrent.TimeoutException) { /* Keep caller cancellation responsive. */ }
+            catch (error: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw java.io.InterruptedIOException("Bundled theme wait cancelled").apply { initCause(error) }
+            } catch (error: java.util.concurrent.ExecutionException) {
+                defaultPreparationFailed = true
+                com.infinifolder.storage.DiagnosticLog.record("icon-theme.default.prepare.failed", error = error.cause ?: error)
+                return false
+            }
+        }
+    }
+
+    private fun installDefaultArtwork(): Boolean {
+        return synchronized(defaultInstallLock) {
+            if (defaultPrepared) return@synchronized true
+            val marker = File(defaultThemeRoot, ".ready")
+            if (marker.isFile && File(defaultThemeRoot, "index.theme").isFile) {
+                defaultPrepared = true
+                return@synchronized true
+            }
+            val parent = defaultThemeRoot.parentFile!!
+            val staging = File(parent, ".install-${java.util.UUID.randomUUID()}")
+            try {
+                check(staging.mkdirs()) { "Cannot prepare bundled icon theme directory" }
+                extractArchive({ context.assets.open("icon-themes/${BundledDefaultThemeInfo.ID}.zip") }, "default.zip", staging)
+                val unpacked = File(staging, BundledDefaultThemeInfo.ID)
+                check(FreeDesktopThemeParser.parse(File(unpacked, "index.theme"), unpacked) != null) {
+                    "Invalid bundled icon theme index"
+                }
+                File(unpacked, ".ready").writeText(BundledDefaultThemeInfo.REVISION)
+                if (defaultThemeRoot.exists()) check(defaultThemeRoot.deleteRecursively()) { "Cannot replace incomplete bundled icon theme" }
+                check(unpacked.renameTo(defaultThemeRoot)) { "Cannot publish bundled icon theme" }
+                defaultPrepared = true
+                true
+            } catch (error: Exception) {
+                defaultPreparationFailed = true
+                com.infinifolder.storage.DiagnosticLog.record("icon-theme.default.prepare.failed", error = error)
+                false
+            } finally { staging.deleteRecursively() }
+        }
+    }
+
+    private fun bundledDefaultTheme(): FreeDesktopIconTheme = themeCache.getOrPut(BundledDefaultThemeInfo.PREFERENCE_ID) {
+        val inheritedThemes by lazy { listAvailableThemes() }
+        FreeDesktopIconTheme(defaultThemeInfo()) { inheritName ->
+            resolveInheritedTheme(inheritName, inheritedThemes)
+        }.apply { prepareArtwork = ::prepareDefaultArtwork }
+    }
 
     @Volatile private var loadedThemeId: String? = null
     @Volatile private var loadedRevision: Int = shared.getInt("icon_theme_revision", 0)
 
     init {
-        val savedThemeId = shared.getString("active_icon_theme", null)
+        val savedThemeId = getActiveThemeId()
         if (!savedThemeId.isNullOrBlank()) {
             loadTheme(savedThemeId)
             loadedThemeId = savedThemeId
@@ -45,7 +120,7 @@ class IconThemeManager(private val context: Context) {
     }
 
     private fun refreshActiveTheme() {
-        val saved = shared.getString("active_icon_theme", null)
+        val saved = getActiveThemeId()
         val revision = shared.getInt("icon_theme_revision", 0)
         if (saved != loadedThemeId || revision != loadedRevision) synchronized(this) {
             if (saved != loadedThemeId || revision != loadedRevision) {
@@ -61,12 +136,14 @@ class IconThemeManager(private val context: Context) {
 
     fun getActiveThemeInfo(): IconThemeInfo? { refreshActiveTheme(); return activeTheme?.info }
 
-    fun getActiveThemeId(): String? = shared.getString("active_icon_theme", null)
+    fun getActiveThemeId(): String? = shared.getString("active_icon_theme", BundledDefaultThemeInfo.PREFERENCE_ID)?.takeIf { it.isNotBlank() }
 
     @Synchronized
     fun setActiveTheme(themeId: String?) {
         if (themeId.isNullOrBlank()) {
-            shared.edit().remove("active_icon_theme").apply()
+            // Absence means the bundled default; an explicit empty value keeps
+            // the user's legacy generated-icon selection across restarts.
+            shared.edit().putString("active_icon_theme", "").apply()
             activeTheme = null
             loadedThemeId = null
         } else {
@@ -80,6 +157,10 @@ class IconThemeManager(private val context: Context) {
 
     @Synchronized
     private fun loadTheme(themeId: String) {
+        if (themeId == BundledDefaultThemeInfo.PREFERENCE_ID) {
+            activeTheme = bundledDefaultTheme()
+            return
+        }
         val allThemes = listAvailableThemes()
         val targetInfo = allThemes.firstOrNull { it.id == themeId || it.name.equals(themeId, ignoreCase = true) }
         if (targetInfo == null) {
@@ -96,6 +177,7 @@ class IconThemeManager(private val context: Context) {
 
     /** Preview another theme without changing the user's active theme. Call on a worker. */
     fun previewThemeIcon(themeId: String, iconName: String, size: Int): Bitmap? {
+        if (themeId == BundledDefaultThemeInfo.PREFERENCE_ID) return cachedThemeIcon(bundledDefaultTheme(), iconName, size)
         val themes = listAvailableThemes()
         val info = themes.firstOrNull { it.id == themeId } ?: return null
         val theme = themeCache.getOrPut(info.id) {
@@ -106,7 +188,8 @@ class IconThemeManager(private val context: Context) {
 
     private fun resolveInheritedTheme(inheritName: String, allThemes: List<IconThemeInfo>): FreeDesktopIconTheme? {
         val found = allThemes.firstOrNull { it.id.equals(inheritName, ignoreCase = true) || it.name.equals(inheritName, ignoreCase = true) }
-            ?: return null
+            ?: return if (inheritName == BundledDefaultThemeInfo.ID) bundledDefaultTheme() else null
+        if (found.id == BundledDefaultThemeInfo.PREFERENCE_ID) return bundledDefaultTheme()
         return themeCache.getOrPut(found.id) {
             FreeDesktopIconTheme(found) { nextInherit ->
                 resolveInheritedTheme(nextInherit, allThemes)
@@ -119,8 +202,8 @@ class IconThemeManager(private val context: Context) {
      * Termux user themes, and system icon themes.
      */
     fun listAvailableThemes(): List<IconThemeInfo> {
-        val themes = mutableListOf<IconThemeInfo>()
-        val seenIds = mutableSetOf<String>()
+        val themes = mutableListOf(defaultThemeInfo())
+        val seenIds = mutableSetOf(BundledDefaultThemeInfo.PREFERENCE_ID)
 
         // 1. Scan imported themes in app storage
         scanDirectoryForThemes(importedThemesDir, isSystem = false, themes, seenIds)
@@ -243,6 +326,7 @@ class IconThemeManager(private val context: Context) {
     }
 
     fun deleteImportedTheme(themeId: String): Boolean {
+        if (themeId == BundledDefaultThemeInfo.PREFERENCE_ID) return false
         val target = File(importedThemesDir, themeId)
         if (target.isDirectory && target.parentFile == importedThemesDir) {
             themeCache.remove(themeId)
@@ -523,7 +607,8 @@ class IconThemeManager(private val context: Context) {
         return bitmap
     }
 
-    fun revision(): String = "${getActiveThemeId()}:${shared.getInt("icon_theme_revision", 0)}"
+    fun revision(): String = "${getActiveThemeId()}:${shared.getInt("icon_theme_revision", 0)}:" +
+        if (getActiveThemeId() == BundledDefaultThemeInfo.PREFERENCE_ID) BundledDefaultThemeInfo.REVISION else ""
     fun resolveLogicalIcon(name: String, size: Int): Bitmap? {
         refreshActiveTheme(); if(name.isBlank() || name.contains('/') || name.contains('\\')) return null
         val key=revision()
@@ -536,7 +621,8 @@ class IconThemeManager(private val context: Context) {
     fun peekFileIcon(meta:ResourceMetadata,size:Int):Bitmap? {
         val id=getActiveThemeId()
         if(id.isNullOrBlank())return null
-        val candidates=if(meta.isDirectory)buildFolderIconCandidates(meta.name) else buildMimeIconCandidates(meta)
+        val candidates=if(meta.isDirectory)buildFolderIconCandidates(meta.name)
+            else bundledExtensionIcons(meta.name, com.infinifolder.mime.MimeRegistry.effective(meta.name,meta.mimeType)) + buildMimeIconCandidates(meta)
         val key=revision()
         return candidates.filterNot { !meta.isDirectory && it in setOf("application-octet-stream","unknown",
             "text-x-generic","image-x-generic","video-x-generic","audio-x-generic","font-x-generic","package-x-generic") }
@@ -545,10 +631,32 @@ class IconThemeManager(private val context: Context) {
 
     /** Broad theme placeholders must not hide the generated MIME/extension label. */
     fun resolveMimeSpecific(mime:String,size:Int,iconName:String?=null):Bitmap? =
-        (listOfNotNull(iconName)+com.infinifolder.mime.MimeRegistry.iconCandidates(mime)).distinct()
+        resolveMimeSpecific(mime,size,iconName,null)
+
+    fun resolveMimeSpecific(mime:String,size:Int,iconName:String?,fileName:String?):Bitmap? {
+        val defaults = com.infinifolder.mime.MimeRegistry.iconCandidates(mime)
+        val custom = iconName?.takeIf { it != defaults.firstOrNull() }
+        return (listOfNotNull(custom) + bundledExtensionIcons(fileName,mime) + listOfNotNull(iconName) + defaults).distinct()
         .filterNot {it in setOf("application-octet-stream","unknown","text-x-generic","image-x-generic",
             "video-x-generic","audio-x-generic","font-x-generic","package-x-generic")}
         .firstNotNullOfOrNull {resolveLogicalIcon(it,size)}
+    }
+
+    private fun bundledExtensionIcons(fileName:String?,mime:String):List<String> {
+        if (getActiveThemeId() != BundledDefaultThemeInfo.PREFERENCE_ID || fileName == null) return emptyList()
+        val name = fileName.lowercase(Locale.ROOT)
+        // Match longest first, and only within the resolved MIME identity. An
+        // intentional user mapping to another MIME keeps that MIME's artwork.
+        val normalizedMime = com.infinifolder.mime.MimeRegistry.normalize(mime)
+        var dot = name.indexOf('.')
+        while (dot >= 0) {
+            val ext = name.substring(dot + 1)
+            if (BundledDefaultThemeInfo.EXTENSION_MIME_TYPES[ext] == normalizedMime)
+                return listOf("application-x-extension-$ext")
+            dot = name.indexOf('.', dot + 1)
+        }
+        return emptyList()
+    }
 
     /** MP1/MP2/MP3 and other shared-MIME families can have extension-specific theme artwork. */
     fun resolveAudioIcon(meta:ResourceMetadata,size:Int,iconName:String):Bitmap? {
@@ -578,13 +686,14 @@ class IconThemeManager(private val context: Context) {
             "content" -> listOf("folder-documents", "text-x-generic")
             else -> listOf("x-scheme-handler-$scheme", "emblem-symbolic-link")
         }
-        return keys.firstNotNullOfOrNull { resolveLogicalIcon(it, size) }
+        return (listOf("x-scheme-handler-${scheme.lowercase(Locale.ROOT)}") + keys).distinct()
+            .firstNotNullOfOrNull { resolveLogicalIcon(it, size) }
     }
 
     fun resolveFileIcon(meta: ResourceMetadata, targetSizePx: Int, includeGenericFallback: Boolean = true): Bitmap? {
         refreshActiveTheme()
         val theme = activeTheme ?: return null
-        val candidates = buildMimeIconCandidates(meta)
+        val candidates = bundledExtensionIcons(meta.name, com.infinifolder.mime.MimeRegistry.effective(meta.name,meta.mimeType)) + buildMimeIconCandidates(meta)
         for (candidate in candidates) {
             if (!includeGenericFallback && candidate in setOf("application-octet-stream", "unknown")) continue
             val bmp = resolveLogicalIcon(candidate, targetSizePx)
@@ -643,6 +752,12 @@ class IconThemeManager(private val context: Context) {
     }
 
     companion object {
+        const val DEFAULT_THEME_ID = BundledDefaultThemeInfo.PREFERENCE_ID
+        private val defaultInstallLock = Any()
+        private val defaultInstalls = ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Boolean>>()
+        private val defaultInstaller = java.util.concurrent.Executors.newSingleThreadExecutor { work ->
+            Thread(work, "BundledIconTheme").apply { isDaemon = true }
+        }
         private val diskRenderMemory=object:LruCache<String,Bitmap>(6*1024*1024) {
             override fun sizeOf(key:String,value:Bitmap)=value.allocationByteCount
         }

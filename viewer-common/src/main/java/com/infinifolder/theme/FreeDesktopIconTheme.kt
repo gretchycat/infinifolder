@@ -14,6 +14,9 @@ class FreeDesktopIconTheme(
     val info: IconThemeInfo,
     private val fallbackResolver: ((String) -> FreeDesktopIconTheme?)? = null
 ) {
+    // Bundled artwork is materialized once on a worker before file lookup.
+    // Ordinary imported themes keep their existing constructor and lookup path.
+    internal var prepareArtwork: (() -> Boolean)? = null
     // Decoded artwork is limited by byte size, including high-density icon requests.
     private val bitmapCache = object : LruCache<String, Bitmap>(8 * 1024 * 1024) {
         override fun sizeOf(key:String,value:Bitmap)=value.allocationByteCount
@@ -28,6 +31,7 @@ class FreeDesktopIconTheme(
     }
 
     private fun findIconFile(iconName: String, targetSizePx: Int, visited: MutableSet<String>): File? {
+        if (prepareArtwork?.invoke() == false) return null
         val topLevel = visited.isEmpty()
         if (!visited.add(info.rootDir.absolutePath)) return null
         val cacheKey = "$iconName:$targetSizePx"

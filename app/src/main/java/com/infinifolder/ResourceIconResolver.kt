@@ -97,8 +97,12 @@ class ResourceIconResolver(context: Context) {
         // Link badges follow the destination even when explicit artwork/cache wins.
         if (!entry.metadata.isDirectory && ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) shortcutInfo(entry)
         cached(entry,size)?.let { return it }
+        val requestRevision = revision()
         val started=System.nanoTime()
         val result=runCatching { resolve(entry,size,mutableSetOf()) }.getOrElse { fallback(entry,size) }
+        // A cancelled first-install wait or a theme switch must not cache old
+        // artwork/fallback as a completed result for the current theme.
+        if (Thread.currentThread().isInterrupted || revision() != requestRevision) return result
         val lifetime=when {
             result.pending -> 500L
             entry.metadata.isDirectory -> 5000L
@@ -106,7 +110,7 @@ class ResourceIconResolver(context: Context) {
                 entry.metadata.modifiedAtMillis==null -> 30000L
             else -> 300000L
         }
-        rendered.put("${signature(entry)}:$size",Cached(result,System.currentTimeMillis()+lifetime))
+        rendered.put("${signature(entry,requestRevision)}:$size",Cached(result,System.currentTimeMillis()+lifetime))
         val elapsed=(System.nanoTime()-started)/1_000_000
         if(elapsed>=100)DiagnosticLog.record("artwork.resolve.slow",
             "name=${entry.metadata.name} provider=${entry.ref.providerId} source=${result.source} elapsedMs=$elapsed")
@@ -171,7 +175,7 @@ class ResourceIconResolver(context: Context) {
                 }
                 IconPolicy.Step.MIME_OVERRIDE -> overrideBitmap(record.overrideIcon,id.mimeType,size)
                 IconPolicy.Step.THEME_MIME -> if(AudioIconFormats.isAudio(id.mimeType))theme.resolveAudioIcon(meta,size,record.iconName)
-                    else theme.resolveMimeSpecific(id.mimeType,size,record.iconName)
+                    else theme.resolveMimeSpecific(id.mimeType,size,record.iconName,meta.name)
                 IconPolicy.Step.ARCHIVE_FOLDER -> if(archives.inspect(entry.copy(metadata=meta)).browsable)
                     theme.resolveLogicalIcon("folder-archive",size) ?: FileTypeIcons.folder(size,true) else null
                 IconPolicy.Step.GENERATED_TYPE -> FileTypeIcons.bitmap(meta,size,id.mimeType)

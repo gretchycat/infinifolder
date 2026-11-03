@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">.fat.lzma</title>
+  <defs>
+    <linearGradient id="directory-light" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop stop-color="#ffffff" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.08"/>
+    </linearGradient>
+  </defs>
+  <defs xmlns="http://www.w3.org/2000/svg"><linearGradient id="top" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#ffe3ae" /><stop offset="1" stop-color="#f4bd70" /></linearGradient><linearGradient id="left" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#f5c879" /><stop offset="1" stop-color="#d99a4f" /></linearGradient><linearGradient id="right" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#e7ab5e" /><stop offset="1" stop-color="#c87c3f" /></linearGradient></defs>
+  <path xmlns="http://www.w3.org/2000/svg" d="m24 37 40-19 40 19-40 19z" fill="url(#top)" stroke="#29445d" stroke-width="4" stroke-linejoin="round" />
+  <path xmlns="http://www.w3.org/2000/svg" d="M24 37 64 56v43L24 80z" fill="url(#left)" stroke="#29445d" stroke-width="4" stroke-linejoin="round" />
+  <path xmlns="http://www.w3.org/2000/svg" d="M104 37 64 56v43l40-19z" fill="url(#right)" stroke="#29445d" stroke-width="4" stroke-linejoin="round" />
+  <path xmlns="http://www.w3.org/2000/svg" d="m60 25 4-2 4 2v59l-4 4-4-4z" fill="#fff4da" stroke="#9c6840" stroke-width="2" stroke-linejoin="round" />
+  <path xmlns="http://www.w3.org/2000/svg" d="M61.5 27v57m5-57v57M61.5 31h5m-5 7h5m-5 7h5m-5 21h5m-5 7h5m-5 7h5" fill="none" stroke="#805b3c" stroke-width="1.8" stroke-linecap="round" />
+  <path xmlns="http://www.w3.org/2000/svg" d="M59 48h10v12H59z" fill="#f7fafc" stroke="#29445d" stroke-width="2.2" stroke-linejoin="round" />
+  <path xmlns="http://www.w3.org/2000/svg" d="M64 60v5q0 4 3 2l2-2" fill="none" stroke="#29445d" stroke-width="2.2" stroke-linecap="round" />
+
+  
+  <rect x="5" y="96" width="118" height="27" rx="8" fill="#18324a" stroke="#ffffff" stroke-width="1.5"/>
+  <text x="64" y="115" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans,Arial,sans-serif" font-size="16" font-weight="700" textLength="108" lengthAdjust="spacingAndGlyphs">.fat.lzma</text>
+</svg>

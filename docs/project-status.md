@@ -6,6 +6,13 @@ Updated 2026-11-02. This is the current status reference. Checked implementation
 
 ## Current priority
 
+The owner's artwork under `themes/default theme` is packaged as the freedesktop.org
+**InfiniFolder Default** theme. It is the default when no selection is stored;
+existing named themes, icon overrides and thumbnail settings are retained. Worker
+setup and versioned local caching reuse the existing importer/renderer. The APK
+build passes; handset display and restart acceptance are pending. See
+[theme format, regeneration and limits](icon-themes.md#infinifolder-default).
+
 Finish the library migration closeout before new features. The extraction is
 complete at [checkpoint 31](library-migration-completion.md); the final follow-up
 normalizes full POSIX modes at Store's transfer-metadata boundary, addressing the

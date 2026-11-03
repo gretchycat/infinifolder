@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">smb:</title>
+  <defs>
+    <linearGradient id="directory-light" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop stop-color="#ffffff" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.08"/>
+    </linearGradient>
+  </defs>
+  <defs xmlns="http://www.w3.org/2000/svg"><linearGradient id="paper" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#fff9e8" /><stop offset="1" stop-color="#f2dfb2" /></linearGradient><linearGradient id="link" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#68869b" /><stop offset="1" stop-color="#29445d" /></linearGradient></defs>
+  <path xmlns="http://www.w3.org/2000/svg" d="M32 15h43l23 23v75H32z" fill="url(#paper)" stroke="#29445d" stroke-width="3.5" stroke-linejoin="round" />
+  <path xmlns="http://www.w3.org/2000/svg" d="M75 16v24h23" fill="#f1dfb7" stroke="#29445d" stroke-width="3.5" stroke-linejoin="round" />
+  <g xmlns="http://www.w3.org/2000/svg" transform="translate(36 38) scale(2.4)" fill="none" stroke="url(#link)" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  </g>
+
+  
+  <rect x="5" y="96" width="118" height="27" rx="8" fill="#18324a" stroke="#ffffff" stroke-width="1.5"/>
+  <text x="64" y="115" text-anchor="middle" fill="#ffffff" font-family="DejaVu Sans,Arial,sans-serif" font-size="16" font-weight="700" textLength="108" lengthAdjust="spacingAndGlyphs">smb:</text>
+</svg>

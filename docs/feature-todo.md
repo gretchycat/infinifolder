@@ -4,6 +4,12 @@
 
 Updated: 2026-11-02. [Current confirmations and priorities](project-status.md) distinguish implementation from handset acceptance. Unchecked items below are remaining work, unless explicitly described as historical evidence.
 
+## Bundled default icon theme
+
+- [x] Package the supplied Freeicon SVG/CSV artwork as a freedesktop.org default theme, with logical MIME/extension, directory and URI mappings and persistent local caches.
+- [x] Retain existing named theme selections, user icon overrides, image-mode preferences and an explicit legacy generated-icon choice.
+- [ ] Accept cold/warm startup, representative file/folder/URI icons, theme switching and restart persistence on the handset. See [default theme](icon-themes.md#infinifolder-default).
+
 ## InfiniStream architecture migration
 
 The existing application migration is [complete at checkpoint 31](library-migration-completion.md).

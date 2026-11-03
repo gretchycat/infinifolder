@@ -8692,7 +8692,12 @@ class MainActivity : Activity(), DebugDumpObserver {
                     setTextColor(textColor); textSize = 17f
                 })
                 row.addView(TextView(this).apply {
-                    text = if (theme == null) "InfiniFolder fallback artwork" else if (theme.isSystem) "System / Termux" else "Installed"
+                    text = when {
+                        theme == null -> "InfiniFolder fallback artwork"
+                        theme.id == IconThemeManager.DEFAULT_THEME_ID -> "Bundled default"
+                        theme.isSystem -> "System / Termux"
+                        else -> "Installed"
+                    }
                     setTextColor(textColor)
                 })
                 val previews = LinearLayout(this)
