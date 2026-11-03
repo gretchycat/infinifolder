@@ -16,8 +16,9 @@ Each session contains one working copy and the original source identity/fingerpr
 3. Move the working copy into durable app-private edit storage before launching the external program. It is no longer an evictable cache entry.
 4. On return, hash the local working copy on a worker. If its checksum is unchanged,
    close the return screen automatically without contacting the source. No edit or
-   conflict choices are shown. Known active writable handles keep the session
-   available for later review; otherwise the unchanged session is removed.
+   conflict choices are shown. The shared working copy remains available for
+   delayed or repeated reads until explicit completion or discard; returning to
+   the browser does not prove that the external program has finished with it.
 5. Show **Save changes**, **Save a copy…** and **More…** only when local content
    differs from the baseline. Saving remains explicit. Android programs do not all
    report completion reliably; known writable editor descriptors must close before
@@ -47,9 +48,8 @@ opens. The same chooser protects the browser's direct file/content handoff and
 its MIME-free fallback. It retains the original URI grants and clip data.
 
 Returning through task switching also triggers the local checksum check when an
-external app does not finish its activity. Result and resume callbacks share the
-same return state so one return does not check a deleted unchanged session twice.
-Reopening and session restoration perform their file work off the UI thread.
+external app does not finish its activity. Reopening and session restoration
+perform their file work off the UI thread.
 
 The startup recovery notice now hashes retained local copies and includes only
 copies whose bytes differ from the baseline. Timestamp-only changes and an
@@ -66,6 +66,47 @@ the final build with chooser exclusions took 30 seconds. Logs are
 `build/external-open-handoff/app-build.log` and `app-build-chooser.log` in the same
 directory. The build includes the workspace's existing unrelated changes. No
 ADB device was connected; chooser exclusions also require on-device acceptance.
+
+### External VIEW lifetime investigation (2026-11-03)
+
+The owner reported that LÖVE opens to a black screen while other loaders work,
+and appears to run inside InfiniFolder. Source inspection found a generic handoff
+bug: we requested an activity result for `ACTION_VIEW`, then treated that result
+as completion. Android explicitly warns that VIEW has no result contract and a
+separate-task launch can send cancellation immediately:
+[Activity.startActivityForResult](https://developer.android.com/reference/android/app/Activity#startActivityForResult(android.content.Intent,%20int)).
+
+The official LÖVE 11.5 [app manifest](https://github.com/love2d/love-android/blob/11.5/app/src/main/AndroidManifest.xml)
+declares `singleInstance`. Its [normal-build filters](https://github.com/love2d/love-android/blob/11.5/app/src/normal/AndroidManifest.xml)
+accept `content` with `application/x-love-game`, matching our registry and provider.
+Its [GameActivity](https://github.com/love2d/love-android/blob/11.5/love/src/main/java/org/love2d/android/GameActivity.java)
+copies the supplied content stream into its own cache. InfiniFolder's old result
+handler could hash an unchanged copy, remove it and revoke access before a receiver
+opened the stream. This is a plausible loading failure, not a confirmed diagnosis
+of the owner's black screen. The available dump predates the report and contains
+no LÖVE failure trace; no device was connected for reproduction.
+
+The shared handoff now uses ordinary `startActivity` and `FLAG_ACTIVITY_NEW_TASK`
+for every external file target. It does not request VIEW results or place a normal
+receiver in the file manager's task. The checksum check still runs when the sender
+resumes, but unchanged bytes no longer cause revocation or deletion. Read-only
+provider opens remain permitted while an edit is being checked or awaiting an
+explicit save decision; new writable opens are still blocked during those phases.
+Diagnostics record successful provider opens/closes and external launches without
+file contents or URI credentials. There are no LÖVE package-name or format branches.
+
+Retained shared copies occupy app storage and remain visible in Settings →
+Unfinished external edits, where they can be explicitly discarded after closing
+the receiver. Unchanged copies do not trigger save controls or automatic recovery
+notices. Saving/discarding explicitly still releases the copy. Automatic return
+cannot safely establish when a different app has finished all future URI reads.
+
+Device checks remain pending: LÖVE startup, another external viewer/editor,
+return/Recents behavior, delayed/repeated read-only URI opens, actual edit/save
+and chooser cancellation. No automated tests were added or run for this follow-up.
+`gradle :app:assembleDebug --offline --console=plain` passed in 17 seconds;
+log: `build/love-investigation/app-build.log`. The build includes existing
+unrelated workspace changes.
 
 ## Conflict and failure behavior
 

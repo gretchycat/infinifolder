@@ -90,8 +90,8 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
     }
     override fun onResume() {
         super.onResume()
-        // Some viewers keep their task alive and never deliver an activity
-        // result. Returning to this window must still check the local bytes.
+        // VIEW receivers have no completion callback. Returning to this window
+        // is an opportunity to check bytes, not permission to revoke their URI.
         if (awaitingEditor && editorPaused) {
             awaitingEditor = false
             editorPaused = false
@@ -347,14 +347,19 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
             store.reopen(item)
             val uri = store.uri(item)
             val handoff = Intent(Intent.ACTION_VIEW).setDataAndType(uri, item.mime.ifBlank { "application/octet-stream" })
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_ACTIVITY_NEW_TASK)
             handoff.clipData = android.content.ClipData.newRawUri(item.name, uri)
+            val chooser = ExternalAppChooser.create(this, handoff, "Open ${item.name}")
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 try {
                     awaitingEditor = true
                     editorPaused = false
-                    startActivityForResult(ExternalAppChooser.create(this, handoff, "Open ${item.name}"), 701)
+                    // VIEW has no completion-result contract. A separate-task
+                    // receiver may return CANCELLED before it has read the URI.
+                    startActivity(chooser)
+                    DiagnosticLog.record("external-edit.launched", "session=${item.id} mime=${item.mime} taskMode=external")
                 } catch (error: Exception) {
                     awaitingEditor = false
                     showFailure(error)
@@ -365,13 +370,7 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
     @Deprecated("Legacy result callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 701) {
-            // A task-switch return may already have started the byte check.
-            if (!awaitingEditor) return
-            awaitingEditor = false
-            editorPaused = false
-            reviewChanges()
-        } else if (requestCode == 702 && resultCode == RESULT_OK && data?.data != null) {
+        if (requestCode == 702 && resultCode == RESULT_OK && data?.data != null) {
             val target = data.data!!
             val name = pendingCopyName ?: session?.name ?: "edited-file"
             pendingCopyName = null

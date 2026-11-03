@@ -134,12 +134,15 @@ class ExternalEdits(private val context: Context) {
     fun openFile(session: Session, mode: String): android.os.ParcelFileDescriptor = synchronized(lock(session.id)) {
         val flags = android.os.ParcelFileDescriptor.parseMode(mode)
         val writes = flags and android.os.ParcelFileDescriptor.MODE_READ_WRITE != android.os.ParcelFileDescriptor.MODE_READ_ONLY
-        if (properties(session).getProperty("phase") != "editing") throw IOException("Finish or reopen this edit session before opening its working file")
+        val currentPhase = properties(session).getProperty("phase")
+        if (currentPhase == "closed" || (writes && currentPhase != "editing"))
+            throw IOException("Finish or reopen this edit session before opening its working file")
         if (writes) writers[session.id] = (writers[session.id] ?: 0) + 1
         try {
             android.os.ParcelFileDescriptor.open(session.working, flags, android.os.Handler(android.os.Looper.getMainLooper())) {
                 if (writes) synchronized(lock(session.id)) { writers[session.id] = ((writers[session.id] ?: 1) - 1).coerceAtLeast(0) }
-            }
+                DiagnosticLog.record("external-edit.handle-closed", "session=${session.id} writable=$writes")
+            }.also { DiagnosticLog.record("external-edit.opened", "session=${session.id} writable=$writes phase=$currentPhase") }
         } catch (error: Throwable) {
             if (writes) writers[session.id] = ((writers[session.id] ?: 1) - 1).coerceAtLeast(0)
             throw error
@@ -201,11 +204,13 @@ class ExternalEdits(private val context: Context) {
         try {
             val revision = fingerprint(session.working.inputStream(), "Checking for local edits…", session.working.length(), progress)
             val changed = revision != session.baseline.revision
-            if (!changed && !hasWriters) discard(session)
-            else if (!hasWriters) phase(session, "pending")
+            // Returning to the sender is not proof that a VIEW receiver has
+            // finished. Keep its URI readable for delayed/repeated opens, even
+            // when it holds no descriptor at the instant of this checksum.
+            if (!hasWriters) phase(session, if (changed) "pending" else "editing")
             DiagnosticLog.record("external-edit.review", "session=${session.id} changed=$changed writers=$hasWriters")
-            // A program still holding a writable handle may save later. Keep its
-            // session, but do not show save/conflict controls for unchanged bytes.
+            // No save/conflict controls for unchanged bytes; explicit completion
+            // or discard remains responsible for releasing the shared copy.
             changed
         } catch (error: Throwable) {
             if (!hasWriters) runCatching { phase(session, "pending") }
