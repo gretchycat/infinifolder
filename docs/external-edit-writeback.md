@@ -101,7 +101,12 @@ the receiver. Unchanged copies do not trigger save controls or automatic recover
 notices. Saving/discarding explicitly still releases the copy. Automatic return
 cannot safely establish when a different app has finished all future URI reads.
 
-Device checks remain pending: LÖVE startup, another external viewer/editor,
+The owner confirmed that the interpreter now opens separately from InfiniFolder.
+LÖVE still fails to load the program; the owner elected to treat that remaining
+failure as a LÖVE issue. Its cause remains unconfirmed, and successful LÖVE startup
+is not recorded as verified.
+
+Device checks remain pending: another external viewer/editor,
 return/Recents behavior, delayed/repeated read-only URI opens, actual edit/save
 and chooser cancellation. No automated tests were added or run for this follow-up.
 `gradle :app:assembleDebug --offline --console=plain` passed in 17 seconds;
