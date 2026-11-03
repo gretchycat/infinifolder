@@ -1084,3 +1084,18 @@ Build: `gradle :app:assembleDebug --offline --console=plain`, log
 for three-button Recents, gesture overview/quick switching, normal folder browsing
 and restored window geometry remain pending. Android system-event behavior can
 vary by launcher; focus-loss and outside-touch dismissal remain active.
+
+### Floating icons to launcher shortcuts — 2026-11-03
+
+Floating item holds now start native Android drag/drop, reveal Home and request a
+real pinned shortcut only on drop. Existing shortcut IDs, displayed artwork/labels
+and the transparent `HomeItemActivity` dispatcher are reused. Container taps open
+the floating browser; ordinary files/apps keep their existing routes. Empty-space
+holds still open the full browser. A temporary private activity owns the foreground
+pin request; its cancellation and the native drag end release the hidden source
+window and retain geometry. The launcher can ask for confirmation and determines
+final placement; arbitrary launcher hover/page placement is not emulated.
+
+Debug APK builds successfully; no tests added/run and no connected ADB device.
+Handset drag/drop, cancellation, launcher confirmation and resulting shortcut taps
+remain unverified. See [implementation, limits and checks](floating-launcher-shortcuts.md).

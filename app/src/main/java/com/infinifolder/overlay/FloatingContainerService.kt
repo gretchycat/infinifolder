@@ -2,6 +2,8 @@ package com.infinifolder.overlay
 
 import android.app.Service
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipDescription
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -9,8 +11,12 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.net.Uri
 import android.os.IBinder
+import android.os.Bundle
+import android.os.Handler
+import android.os.ResultReceiver
 import android.provider.Settings
 import android.view.Gravity
+import android.view.DragEvent
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -26,6 +32,8 @@ import com.infinifolder.FileEntryCard
 import com.infinifolder.FileViewGrid
 import com.infinifolder.ResourceIconResolver
 import com.infinifolder.HomeItemActivity
+import com.infinifolder.HomeShortcuts
+import com.infinifolder.HomeShortcutDragActivity
 import com.infinifolder.FileIconView
 import com.infinifolder.PullToRefreshScrollView
 import com.infinifolder.preview.CustomIconStore
@@ -76,6 +84,10 @@ class FloatingContainerService : Service() {
     private var startWindowX = 0
     private var startWindowY = 0
     private var resizeReflowScheduled = false
+    private data class DragItem(val card: View, val icon: View, val entry: ResourceEntry)
+    private data class LauncherDrag(val token: String, var observer: ResultReceiver? = null)
+    private val dragItems = mutableListOf<DragItem>()
+    private var launcherDrag: LauncherDrag? = null
     private var systemDialogsRegistered = false
     private val systemDialogs = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -142,7 +154,18 @@ class FloatingContainerService : Service() {
             this.background = ThemeManager.createFloatingFrameDrawable(theme, density)
             setPadding(dp(3), dp(3), dp(3), dp(3))
             elevation = dp(12).toFloat()
-
+            setOnDragListener { _, event ->
+                if (launcherDrag == null) false
+                else when (event.action) {
+                    DragEvent.ACTION_DRAG_STARTED -> event.clipDescription?.hasMimeType(HomeShortcutDragActivity.MIME_TYPE) == true
+                    DragEvent.ACTION_DRAG_ENDED -> {
+                        clearLauncherDrag(cancel = false)
+                        dismissWindow()
+                        true
+                    }
+                    else -> false // The Home drop activity owns shortcut creation.
+                }
+            }
         }
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -211,7 +234,16 @@ class FloatingContainerService : Service() {
             updateHeaderTheme(theme.isDark)
             viewTreeObserver.addOnScrollChangedListener { loadVisibleIcons() }
             viewTreeObserver.addOnGlobalLayoutListener { loadVisibleIcons() }
-            // This action belongs to the whole displayed location, even over an icon.
+            onGridLongPressAt = { event ->
+                val bounds = android.graphics.Rect()
+                val origin = IntArray(2)
+                dragItems.lastOrNull { item ->
+                    item.card.getLocationOnScreen(origin)
+                    item.card.getLocalVisibleRect(bounds) &&
+                        bounds.contains((event.rawX - origin[0]).toInt(), (event.rawY - origin[1]).toInt())
+                }?.let(::startLauncherDrag) ?: false
+            }
+            // Empty-space holds still open this location in the full browser.
             onGridLongPress = {
                 current?.let {
                     launchInMain(it, inApp = true)
@@ -492,10 +524,12 @@ class FloatingContainerService : Service() {
     }
 
     private fun render(entries: List<ResourceEntry>) {
+        if (launcherDrag != null) return // Keep the native drag source attached.
         currentEntries = entries
         com.infinifolder.ResourceIconSidecars.observe(entries, current,complete=currentListingComplete)
         val iconGeneration = ++renderGeneration
         pendingIcons.clear()
+        dragItems.clear()
         scroll.isRefreshing = false
         grid.removeAllViews()
         val density = resources.displayMetrics.density
@@ -573,8 +607,10 @@ class FloatingContainerService : Service() {
                     }
                 }
             })
-            // Only tap-to-open is installed. Movement and per-item menus belong to the full browser.
+            val dragItem = DragItem(card.container, icon, entry)
+            dragItems += dragItem
             card.container.setOnClickListener { activate(entry) }
+            card.container.setOnLongClickListener { startLauncherDrag(dragItem) }
             card.container
         }
         grid.addView(table)
@@ -584,6 +620,77 @@ class FloatingContainerService : Service() {
             setTextColor(ThemeManager.activeTheme.textPrimary)
             setPadding(18, 28, 18, 12)
         })
+    }
+
+    private fun startLauncherDrag(item: DragItem): Boolean {
+        if (launcherDrag != null || windowView == null) return true
+        var started = false
+        try {
+            val manager = getSystemService(android.content.pm.ShortcutManager::class.java)
+            if (manager?.isRequestPinShortcutSupported != true) {
+                Toast.makeText(this, "This launcher does not support pinned shortcuts", Toast.LENGTH_LONG).show()
+                return true
+            }
+            val label = (item.icon.tag as? ResourceIconResolver.Icon)?.label ?: item.entry.metadata.name.let { name ->
+                if (com.infinifolder.shortcut.ShortcutInfo.isShortcut(name, item.entry.metadata.mimeType)) name.substringBeforeLast('.') else name
+            }
+            // The artwork child excludes the card's transient pressed selector
+            // and connection badges, which must not be baked into a launcher icon.
+            val artwork = (item.icon as? android.view.ViewGroup)?.getChildAt(0) ?: item.icon
+            val shortcut = HomeShortcuts.createFromIcon(this, item.entry, artwork, label)
+            val drag = LauncherDrag(java.util.UUID.randomUUID().toString())
+            launcherDrag = drag
+            val cancellation = object : ResultReceiver(Handler(mainLooper)) {
+                override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
+                    if (resultCode == HomeShortcutDragActivity.ATTACH_OBSERVER) {
+                        val observer = androidx.core.os.BundleCompat.getParcelable(resultData ?: Bundle.EMPTY,
+                            HomeShortcutDragActivity.EXTRA_OBSERVER, ResultReceiver::class.java)
+                        if (launcherDrag === drag) {
+                            drag.observer = observer
+                            observer?.send(HomeShortcutDragActivity.DRAG_ACTIVE, Bundle.EMPTY)
+                        } else observer?.send(HomeShortcutDragActivity.DRAG_ENDED, Bundle.EMPTY)
+                    } else if (launcherDrag === drag) {
+                        clearLauncherDrag(cancel = true)
+                        dismissWindow()
+                    }
+                }
+            }
+            // Only an opaque, single-use token crosses the native drag surface;
+            // the resource URI and artwork travel in our private activity intent.
+            val clip = ClipData(ClipDescription(label, arrayOf(HomeShortcutDragActivity.MIME_TYPE)), ClipData.Item(drag.token))
+            started = item.icon.startDragAndDrop(clip, View.DragShadowBuilder(item.icon), null, View.DRAG_FLAG_GLOBAL)
+            if (!started) {
+                clearLauncherDrag(cancel = false)
+                Toast.makeText(this, "Could not start shortcut drag", Toast.LENGTH_SHORT).show()
+                return true
+            }
+            loadGeneration++
+            renderGeneration++
+            pendingIcons.clear()
+            saveWindowPlacement()
+            startActivities(arrayOf(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                HomeShortcutDragActivity.intent(this, shortcut, drag.token, cancellation)
+            ))
+            // Keep the source window attached for ACTION_DRAG_ENDED while Home
+            // receives the drag through the temporary transparent activity.
+            root.alpha = 0f
+            params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            windows.updateViewLayout(root, params)
+        } catch (error: Exception) {
+            com.infinifolder.storage.DiagnosticLog.record("home.shortcut.drag-failed", error = error)
+            clearLauncherDrag(cancel = started)
+            if (started) dismissWindow()
+            Toast.makeText(this, error.message ?: "Cannot drag shortcut", Toast.LENGTH_LONG).show()
+        }
+        return true
+    }
+
+    private fun clearLauncherDrag(cancel: Boolean) {
+        val drag = launcherDrag ?: return
+        launcherDrag = null
+        if (cancel) root.cancelDragAndDrop()
+        drag.observer?.send(HomeShortcutDragActivity.DRAG_ENDED, Bundle.EMPTY)
     }
 
     private fun activate(entry: ResourceEntry) {
@@ -617,7 +724,9 @@ class FloatingContainerService : Service() {
     }
 
     private fun dismissWindow() {
-        if (windowView == null) return
+        // Going to Home deliberately changes focus during a shortcut drag. Its
+        // activity/native drag callbacks handle cancellation and final dismissal.
+        if (windowView == null || launcherDrag != null) return
         removeWindow()
         stopSelf()
     }
@@ -630,6 +739,7 @@ class FloatingContainerService : Service() {
         loadGeneration++
         renderGeneration++
         pendingIcons.clear()
+        dragItems.clear()
         view.visibility = View.GONE
         runCatching { windows.removeView(view) }.onFailure {
             com.infinifolder.storage.DiagnosticLog.record("floating.dismiss.failed", error = it)
@@ -641,6 +751,7 @@ class FloatingContainerService : Service() {
             unregisterReceiver(systemDialogs)
             systemDialogsRegistered = false
         }
+        clearLauncherDrag(cancel = true)
         removeWindow()
         registrySubscription?.close()
         getSharedPreferences("browser",MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(iconPreferencesListener)

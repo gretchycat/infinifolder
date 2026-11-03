@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.drawable.Icon
+import android.view.View
 import com.infinifolder.model.*
 import com.infinifolder.storage.StorageRuntime
 import com.infinifolder.theme.ThemeManager
@@ -49,10 +50,27 @@ object HomeShortcuts {
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 112f; textAlign = Paint.Align.CENTER }
             canvas.drawText(resolved.fallback, 96f, 96f-(paint.ascent()+paint.descent())/2f, paint)
         }
-        return ShortcutInfo.Builder(context, id).setShortLabel(title.take(40)).setLongLabel(title.take(100))
+        return build(context, entry, id, title, bitmap)
+    }
+
+    /** Capture the artwork already displayed by the floating browser. Called on
+     * the UI thread; a drag must not wait for storage or network icon discovery. */
+    fun createFromIcon(context: Context, entry: ResourceEntry, icon: View, label: String): ShortcutInfo {
+        require(icon.width > 0 && icon.height > 0) { "The icon is not ready to drag" }
+        val bitmap = Bitmap.createBitmap(192, 192, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val scale = 176f / maxOf(icon.width, icon.height)
+        canvas.translate((192 - icon.width * scale) / 2f, (192 - icon.height * scale) / 2f)
+        canvas.scale(scale, scale)
+        icon.draw(canvas)
+        val id = "home_${entry.uri.toString().hashCode().toUInt().toString(16)}"
+        return build(context, entry, id, label.ifBlank { "InfiniFolder item" }, bitmap)
+    }
+
+    private fun build(context: Context, entry: ResourceEntry, id: String, title: String, bitmap: Bitmap): ShortcutInfo =
+        ShortcutInfo.Builder(context, id).setShortLabel(title.take(40)).setLongLabel(title.take(100))
             .setActivity(ComponentName(context, HomeItemActivity::class.java))
             .setIcon(Icon.createWithBitmap(bitmap)).setIntent(HomeItemActivity.intent(context, entry.uri)).build()
-    }
 
     /** Migrate existing pins to the transparent dispatcher and refresh their actual resource icons. */
     fun refreshPinned(context: Context) {

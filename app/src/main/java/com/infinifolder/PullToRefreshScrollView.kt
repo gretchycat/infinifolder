@@ -17,10 +17,17 @@ class PullToRefreshScrollView(context: Context) : ScrollView(context) {
 
     /** Optional read-only grid action, covering both cards and empty space. */
     var onGridLongPress: (() -> Unit)? = null
+    /** Optional item hit test/action; unclaimed holds use onGridLongPress. */
+    var onGridLongPressAt: ((MotionEvent) -> Boolean)? = null
     private var gridLongPressHandled = false
     private val gridHoldDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(event: MotionEvent) = true
         override fun onLongPress(event: MotionEvent) {
+            if (onGridLongPressAt?.invoke(event) == true) {
+                gridLongPressHandled = true
+                cancelGridTouch(event)
+                return
+            }
             val action = onGridLongPress ?: return
             gridLongPressHandled = true
             cancelGridTouch(event)
@@ -118,7 +125,7 @@ class PullToRefreshScrollView(context: Context) : ScrollView(context) {
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) interceptionLogged = false
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) gridLongPressHandled = false
-        if (onGridLongPress != null) {
+        if (onGridLongPress != null || onGridLongPressAt != null) {
             if (ev.pointerCount > 1) {
                 val cancel = MotionEvent.obtain(ev).apply { action = MotionEvent.ACTION_CANCEL }
                 try { gridHoldDetector.onTouchEvent(cancel) } finally { cancel.recycle() }

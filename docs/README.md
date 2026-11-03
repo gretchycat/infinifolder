@@ -18,6 +18,7 @@ Updated 2026-10-27. Start with [project status](project-status.md), [task list](
 - [Container mutation batches](container-batching.md)
 - [Container integrity and publication validation](container-integrity-validation.md)
 - [Container links and Virtual root](container-links.md)
+- [Drag floating icons to Home screen](floating-launcher-shortcuts.md)
 - [Common locations and destination suggestions](common-locations.md)
 - [Copying into mounted images and ZIP containers](container-targets.md)
 - [Device dump follow-up](device-dump-follow-up.md)

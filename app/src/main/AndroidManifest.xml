@@ -84,6 +84,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".HomeShortcutDragActivity"
+            android:exported="false"
+            android:theme="@style/HomeShortcutTheme"
+            android:excludeFromRecents="true"
+            android:taskAffinity="" />
         <activity android:name=".TermuxEditActivity" android:exported="false" />
         <activity-alias android:name=".TermuxFileHandler" android:targetActivity=".TermuxEditActivity"
             android:exported="true" android:enabled="false" android:label="Open with Termux">
