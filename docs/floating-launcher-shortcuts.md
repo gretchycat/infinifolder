@@ -137,3 +137,29 @@ were added or run for this repair.
 took 18 seconds. Logs: `build/launcher-container-name/app-build.log` and
 `app-build-final.log` in the same directory. Existing unrelated workspace changes
 were included in the build and preserved separately.
+
+## Breadcrumb title bar
+
+The floating window's existing title area now shows clickable breadcrumbs. Each
+newly opened container starts a fresh trail at that container, using its link
+display name when supplied. Entering child folders or nested archives appends
+their names; tapping an ancestor trims the trail back to that location. Refresh
+keeps the same trail. There is no parent-navigation entry above the opened root.
+
+The trail scrolls horizontally when it exceeds the title area. The header's
+container icon remains the window drag handle; breadcrumb taps navigate and
+horizontal swipes scroll the trail. No extra toolbar row consumes file space.
+
+The requested identical embedded widget is deferred by agreement: Android
+[Home-screen widgets](https://developer.android.com/develop/ui/views/appwidgets/overview#limitations)
+accept restricted remote layouts and gestures, rather than the floating window's
+custom View tree. No substitute widget or separate browser implementation was
+added.
+
+Device checks are pending for root/ancestor taps, nested archive navigation,
+refresh, long labels, horizontal scrolling, and window movement using the icon.
+No automated tests were added or run for this change.
+
+`gradle :app:assembleDebug --offline --console=plain` passed in 14 seconds.
+Log: `build/floating-breadcrumbs/app-build.log`. The build includes existing
+unrelated workspace changes, which remain separate from this change.

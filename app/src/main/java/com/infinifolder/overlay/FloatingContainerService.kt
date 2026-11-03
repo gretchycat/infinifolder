@@ -20,9 +20,11 @@ import android.view.DragEvent
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageButton
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -54,11 +56,14 @@ class FloatingContainerService : Service() {
     private lateinit var params: WindowManager.LayoutParams
     private lateinit var root: FrameLayout
     private lateinit var containerIcon: android.widget.FrameLayout
-    private lateinit var title: TextView
+    private lateinit var breadcrumbs: LinearLayout
+    private lateinit var breadcrumbScroll: HorizontalScrollView
     private lateinit var grid: LinearLayout
     private lateinit var scroll: PullToRefreshScrollView
     private var current: Uri? = null
     private var currentDisplayName: String? = null
+    private data class Crumb(val uri: Uri, val name: String)
+    private val trail = mutableListOf<Crumb>()
     private var iconDp = 56
     private val icons by lazy { CustomIconStore(filesDir) }
     private val iconTheme by lazy { IconThemeManager(applicationContext) }
@@ -125,7 +130,7 @@ class FloatingContainerService : Service() {
             return START_NOT_STICKY
         }
         if (windowView == null) createWindow()
-        show(uri, intent?.getStringExtra(EXTRA_DISPLAY_NAME))
+        show(uri, intent?.getStringExtra(EXTRA_DISPLAY_NAME), resetRoot = true)
         return START_NOT_STICKY
     }
 
@@ -176,17 +181,18 @@ class FloatingContainerService : Service() {
         }
         containerIcon = android.widget.FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(dp(TOOLBAR_HEIGHT_DP - 8), -1).apply { marginEnd = dp(6) }
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            contentDescription = "Drag to move window"
+            tooltipText = "Drag to move window"
         }
-        title = TextView(this).apply {
-            textSize = TOOLBAR_HEIGHT_DP * 0.38f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        breadcrumbs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            includeFontPadding = false
-            setTextColor(theme.toolbarText)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+        }
+        breadcrumbScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = true
             layoutParams = LinearLayout.LayoutParams(0, -1, 1f)
+            addView(breadcrumbs, ViewGroup.LayoutParams(-2, -1))
         }
         val dragHandle = View.OnTouchListener { _, event ->
             when (event.actionMasked) {
@@ -221,12 +227,11 @@ class FloatingContainerService : Service() {
                 else -> true
             }
         }
-        title.setOnTouchListener(dragHandle)
         containerIcon.setOnTouchListener(dragHandle)
         val openFull = openInAppButton {
             current?.let { launchInMain(it, inApp = true) }
         }
-        bar.addView(containerIcon); bar.addView(title); bar.addView(openFull)
+        bar.addView(containerIcon); bar.addView(breadcrumbScroll); bar.addView(openFull)
         grid = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -445,19 +450,24 @@ class FloatingContainerService : Service() {
         setOnClickListener { action() }
     }
 
-    private fun show(uri: Uri, displayName: String? = null) {
+    private fun show(uri: Uri, displayName: String? = null, resetRoot: Boolean = false) {
         current = uri
         val headerName = displayName?.takeIf { it.isNotBlank() } ?: containerName(uri)
         currentDisplayName = headerName
+        if (resetRoot) trail.clear()
+        val previous = trail.indexOfLast { it.uri == uri }
+        if (previous >= 0) {
+            while (trail.size > previous + 1) trail.removeAt(trail.lastIndex)
+        } else trail.add(Crumb(uri, headerName))
+        renderBreadcrumbs()
         renderGeneration++
         pendingIcons.clear()
         currentEntries = emptyList()
         listingReady = false
         val generation = ++loadGeneration
-        title.text = headerName
         val headerSize = ((TOOLBAR_HEIGHT_DP - 12) * resources.displayMetrics.density).roundToInt()
         val headerEntry = runtime.provider.refForUri(uri)?.let { ref ->
-            ResourceEntry(ref, com.infinifolder.model.ResourceMetadata(title.text.toString(), "", null, null, true), uri)
+            ResourceEntry(ref, com.infinifolder.model.ResourceMetadata(headerName, "", null, null, true), uri)
         }
         showContainerIcon(null)
         grid.removeAllViews()
@@ -504,6 +514,40 @@ class FloatingContainerService : Service() {
                 }
             }
         }.start()
+    }
+
+    private fun renderBreadcrumbs() {
+        breadcrumbs.removeAllViews()
+        val theme = ThemeManager.activeTheme
+        val density = resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).roundToInt()
+        trail.toList().forEachIndexed { index, crumb ->
+            if (index > 0) breadcrumbs.addView(TextView(this).apply {
+                text = "›"; textSize = 16f; setTextColor(theme.toolbarText)
+                gravity = Gravity.CENTER; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, LinearLayout.LayoutParams(dp(14), -1))
+            val currentCrumb = index == trail.lastIndex
+            breadcrumbs.addView(TextView(this).apply {
+                text = crumb.name
+                textSize = TOOLBAR_HEIGHT_DP * .38f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                gravity = Gravity.CENTER_VERTICAL
+                includeFontPadding = false
+                maxLines = 1; maxEms = 22
+                ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                setPadding(dp(5), 0, dp(5), 0)
+                setTextColor(theme.toolbarText)
+                isSelected = currentCrumb
+                contentDescription = when {
+                    index == 0 -> "Root container: ${crumb.name}"
+                    currentCrumb -> "Current folder: ${crumb.name}"
+                    else -> "Go to ${crumb.name}"
+                }
+                tooltipText = crumb.name
+                setOnClickListener { show(crumb.uri, crumb.name) }
+            }, LinearLayout.LayoutParams(-2, -1))
+        }
+        breadcrumbScroll.post { breadcrumbScroll.fullScroll(View.FOCUS_RIGHT) }
     }
 
     private fun containerName(uri: Uri): String {
