@@ -1,0 +1,5 @@
+exports/
+default theme/scalable/
+icon/generated/
+icon/freeicon-pack/
+**/__pycache__/

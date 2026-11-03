@@ -1,26 +1,39 @@
 # Default Theme
 
-Project-facing copy of the Infinifolder Freeicon SVG icon set. The `svg/` directory contains the generated file type, URI, directory, and base fallback icons; `metadata.csv` maps each SVG to its type.
+This is the canonical icon source used directly by the app build. Edit artwork in
+`svg/`; `metadata.csv` supplies logical MIME, extension, directory and URI aliases.
+Gradle packages these files automatically. Do not copy artwork into module assets.
 
-## App-ready theme
+## Export an importable theme
 
-From the project root, run:
+From the project root:
 
 ```sh
-python3 scripts/build-default-icon-theme.py
+python3 themes/icon/scripts/build_icon_theme.py
 ```
 
-This reads these SVGs and the CSV without regenerating the artwork. It creates
-`viewer-common/src/main/assets/icon-themes/infinifolder-default.zip`, a freedesktop.org
-theme named **InfiniFolder Default**, and updates its compiled content revision and
-extension/MIME artwork associations. The archive includes `index.theme`, a scalable
-icon directory, the original metadata CSV and logical MIME, extension, folder and
-URI icon names. It can also be imported with the existing icon-theme importer.
+Import `themes/exports/infinifolder-default.zip` from the icon theme settings.
+The script also prepares `index.theme` and generated `scalable/` aliases here for
+folder-based import. The ZIP contains real files rather than symlinks. Derived
+layouts and exports are ignored by Git; the artwork and metadata are tracked.
+Packaging preserves source SVG bytes. Generic folders use the unbadged folder
+base; generic archives use the archive base. Specific format icons retain their
+extension and MIME names.
 
-The app bundles this theme as its default when no theme selection is stored.
-Existing named theme selections remain in effect. Choose **InfiniFolder Default**
-in the icon theme browser to switch explicitly.
+`:viewer-common:prepareDefaultIconTheme` runs the same packager during app builds,
+writing only to the module's build directory. Its compiled content revision
+invalidates the app's local theme cache when artwork changes. Python 3.9+ is
+required; select another executable with `-PiconThemePython=/path/to/python3`.
+The root `scripts/build-default-icon-theme.py` remains a compatible entry point.
 
-The source generators under `icon/scripts/` are a separate workflow. Running
-`generate_icons.py` and `build_freeicon_pack.py` recreates the source set and can
-replace artwork here; use them only when that is intended.
+## Regenerate artwork deliberately
+
+```sh
+python3 themes/icon/scripts/generate_icons.py
+```
+
+This replaces generated source art here from `themes/icon/bases/`, reviewed
+`base-assignments.csv` and `themes/supported-types.csv`, then refreshes the import
+layout and ZIP. Ordinary app builds do not regenerate the artwork.
+`build_freeicon_pack.py` exports these current sources for Freeicon review and
+refreshes the import ZIP; it never copies an older export back over this theme.

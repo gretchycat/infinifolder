@@ -1042,3 +1042,9 @@ and `ContentReplacement.replace` fallback for sidecar persistence and refresh.
 Remote and archived `.apk` files stage temporarily to extract real package artwork and
 participate in `.icon-<apk>.png` sibling caching. User-confirmed working on the handset.
 See [Resource icons](resource-icons.md).
+
+### Theme source integration (2026-11-02)
+
+- [x] Build the default theme directly from `themes/`; export standard import ZIPs from theme scripts.
+- [x] Use the plain base for unspecified folders and MIME/extension artwork for mounted archive roots.
+- [ ] Verify the updated folder/archive artwork on a handset. Build evidence: `build/theme-source-integration/app-build.log`.

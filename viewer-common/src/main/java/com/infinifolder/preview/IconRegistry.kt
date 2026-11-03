@@ -176,7 +176,7 @@ class IconRegistry(private val file: File) {
             for (ext in imageExtensions) if (associations[ext] == null || associations[ext] == "application/octet-stream")
                 associations[ext] = "image/x-$ext"
             associations.entries.groupBy({ MimeRegistry.normalize(it.value) }, { it.key }).mapValues { (mime, ext) ->
-                MimeRecord(mime, ext.toSet(), if(mime in setOf("application/zip","application/x-tar","application/x-7z-compressed","application/vnd.rar")) "folder-archive" else defaultIcon(mime), isImage = mime=="application/vnd.android.package-archive" || ext.any { it in imageExtensions })
+                MimeRecord(mime, ext.toSet(), defaultIcon(mime), isImage = mime=="application/vnd.android.package-archive" || ext.any { it in imageExtensions })
             }
         }
         fun normalizeUri(raw: String): String {

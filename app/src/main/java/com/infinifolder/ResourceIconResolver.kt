@@ -190,7 +190,28 @@ class ResourceIconResolver(context: Context) {
     fun directoryTheme(entry:ResourceEntry,size:Int):Icon {
         if(AppsUri.isRoot(entry.uri))return installedApplications(entry.metadata.name,size)
         val original=fallback(entry,size)
+        val metadata=directoryIconMetadata(entry)
+        if(!metadata.isDirectory) {
+            val id=identityResolver.resolve(metadata.name,metadata.mimeType) {null}
+            val record=registry.mime(id.mimeType)
+            val artwork=overrideBitmap(record.overrideIcon,id.mimeType,size)
+                ?: theme.resolveMimeSpecific(id.mimeType,size,record.iconName,metadata.name)
+                ?: theme.resolveLogicalIcon("package-x-generic",size)
+                ?: FileTypeIcons.bitmap(metadata.copy(mimeType=id.mimeType),size,id.mimeType)
+            return original.copy(bitmap=artwork,source="container-theme",mimeType=id.mimeType)
+        }
         return original.copy(bitmap=theme.resolveFolderIcon(entry.metadata.name,size) ?: original.bitmap,source="directory-theme")
+    }
+    /** A mounted container is navigable like a directory, but keeps its file identity.
+     * Internal archive directories continue to use normal folder artwork. No I/O. */
+    fun directoryIconMetadata(entry:ResourceEntry):ResourceMetadata {
+        if(!ArchiveUri.isArchiveUri(entry.uri) || ArchiveUri.getEntryPath(entry.uri).isNotEmpty())return entry.metadata
+        val source=ArchiveUri.getSourceUri(entry.uri)
+        val sourceName=if(ArchiveUri.isArchiveUri(source))ArchiveUri.getEntryPath(source).substringAfterLast('/')
+            else source.lastPathSegment?.substringAfterLast('/').orEmpty()
+        val name=entry.metadata.name.takeIf {MimeRegistry.guess(it)!="application/octet-stream"}
+            ?: sourceName.ifBlank {entry.metadata.name}
+        return entry.metadata.copy(name=name,mimeType=MimeRegistry.guess(name),isDirectory=false)
     }
     private fun installedApplications(name:String,size:Int)=Icon(
         theme.resolvePlaceIcon("installed_apps",size) ?: FileTypeIcons.installedApplications(size),

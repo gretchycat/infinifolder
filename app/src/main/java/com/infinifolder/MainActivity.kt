@@ -7805,7 +7805,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 providerAuthority != null -> resourceIconResolver.peekAppStorageIcon(providerAuthority, size)
                 node.key == "application_public" -> iconThemeManager.peekPlaceIcon("application_public", size)
                 uri != null && AppsUri.isRoot(uri) -> iconThemeManager.peekPlaceIcon("installed_apps", size)
-                else -> iconThemeManager.peekFileIcon(metadata, size)
+                else -> iconThemeManager.peekFileIcon(entry?.let(resourceIconResolver::directoryIconMetadata) ?: metadata, size)
             }
             image.setImageBitmap(hot)
             // A cold selected theme reserves the slot until its worker can decode it.

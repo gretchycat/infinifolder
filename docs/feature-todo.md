@@ -523,3 +523,9 @@ Floating/full-browser switching: the floating title-bar maximize button now open
 - [x] Save each newly verified piece immediately during downloads and file verification, including partially completed startup scans; log saved-piece counts and checkpoint rejection reasons. 95 focused/regression checks pass; physical-device interruption acceptance remains pending.
 
 - [x] Rename the torrent stop action to **Finish later**, preserve saved progress through interrupt-aware shutdown, fence queued writes and show paused history. 102 targeted/regression checks pass; device confirmation remains pending.
+
+### Theme source integration (2026-11-02)
+
+- [x] Build the default theme directly from `themes/`; export standard import ZIPs from theme scripts.
+- [x] Use the plain base for unspecified folders and MIME/extension artwork for mounted archive roots.
+- [ ] Verify the updated folder/archive artwork on a handset. Build evidence: `build/theme-source-integration/app-build.log`.

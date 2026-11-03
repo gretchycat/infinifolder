@@ -45,21 +45,39 @@ magnet and other supplied schemes can retain their own artwork.
 Regenerate only the app-ready package from the project root:
 
 ```sh
-python3 scripts/build-default-icon-theme.py
+python3 themes/icon/scripts/build_icon_theme.py
 gradle :app:assembleDebug --offline --console=plain
 ```
 
-The packager reads the supplied source set and creates
-`viewer-common/src/main/assets/icon-themes/infinifolder-default.zip` plus
-`BundledDefaultThemeInfo.kt`. ZIP member order, timestamps and content revision are
-deterministic. Rebuild the package after editing the source SVGs/CSV. The original
-Freeicon source generators are a separate workflow that can replace source art.
+The theme source is used directly by the build. `:viewer-common:prepareDefaultIconTheme`
+reads `themes/default theme/svg`, `metadata.csv` and the packager, then writes the
+asset ZIP and Kotlin revision/extension map under `viewer-common/build/generated/`.
+Gradle tracks these inputs; editing source art invalidates the generated outputs.
+There is no checked-in asset copy to refresh. Python 3.9+ is required (override the
+executable with `-PiconThemePython=/path/to/python3`).
 
-The final APK build passes (`build/bundled-default-theme/app-build-complete.log`).
-Inspection of the actual APK finds the theme asset with 2,876 members, including
-the index and PDF/DOCX/MP3/folder/magnet mappings. No tests were added or run. Handset
-display, cold-start preparation, theme switching and restart persistence on this
-revision remain unverified. Logs are under `build/bundled-default-theme/`.
+The explicit packaging command above also creates `index.theme` and generated
+`scalable/` aliases inside the source theme, plus the portable import archive
+`themes/exports/infinifolder-default.zip`. ZIP entries contain real SVG bytes,
+including on platforms without symlink support. Import that ZIP through Settings.
+Member order, timestamps and the compiled content revision are deterministic.
+The old `scripts/build-default-icon-theme.py` command forwards to this packager.
+`generate_icons.py` explicitly regenerates source art from the reviewed base
+assignments directly into the canonical source directory. `build_freeicon_pack.py`
+exports the current source for contributor review without copying old exports
+back over edited artwork.
+
+Unspecified folders use `base-fallback-folder.svg`, without the FOLDER badge or
+nested folder marker. Known special directories retain their variants. Mounted
+archive roots use their backing file's MIME/extension theme icon, including ZIP,
+7Z and package-specific artwork; internal archive directories remain folders.
+Saved MIME customizations retain priority. Generic archive fallbacks use the
+archive base instead of the directory-with-archive subtype. Directory covers
+retain their normal precedence.
+
+The debug app build passes (`build/theme-source-integration/app-build.log`). No
+tests were added or run. Handset folder/archive display, theme switching and
+restart persistence on this revision remain unverified.
 
 ## Other bundled desktop themes
 
