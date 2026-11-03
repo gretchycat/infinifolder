@@ -58,6 +58,7 @@ class FloatingContainerService : Service() {
     private lateinit var grid: LinearLayout
     private lateinit var scroll: PullToRefreshScrollView
     private var current: Uri? = null
+    private var currentDisplayName: String? = null
     private var iconDp = 56
     private val icons by lazy { CustomIconStore(filesDir) }
     private val iconTheme by lazy { IconThemeManager(applicationContext) }
@@ -124,7 +125,7 @@ class FloatingContainerService : Service() {
             return START_NOT_STICKY
         }
         if (windowView == null) createWindow()
-        show(uri)
+        show(uri, intent?.getStringExtra(EXTRA_DISPLAY_NAME))
         return START_NOT_STICKY
     }
 
@@ -249,7 +250,7 @@ class FloatingContainerService : Service() {
                     launchInMain(it, inApp = true)
                 }
             }
-            onRefreshListener = { current?.let(::show) }
+            onRefreshListener = { current?.let { show(it, currentDisplayName) } }
             addView(grid, android.widget.FrameLayout.LayoutParams(-1, -1))
             setOnScaleGestureListener(object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
                 private var initialSize = 56
@@ -444,14 +445,16 @@ class FloatingContainerService : Service() {
         setOnClickListener { action() }
     }
 
-    private fun show(uri: Uri) {
+    private fun show(uri: Uri, displayName: String? = null) {
         current = uri
+        val headerName = displayName?.takeIf { it.isNotBlank() } ?: containerName(uri)
+        currentDisplayName = headerName
         renderGeneration++
         pendingIcons.clear()
         currentEntries = emptyList()
         listingReady = false
         val generation = ++loadGeneration
-        title.text = uri.lastPathSegment?.substringAfterLast('/') ?: "Container"
+        title.text = headerName
         val headerSize = ((TOOLBAR_HEIGHT_DP - 12) * resources.displayMetrics.density).roundToInt()
         val headerEntry = runtime.provider.refForUri(uri)?.let { ref ->
             ResourceEntry(ref, com.infinifolder.model.ResourceMetadata(title.text.toString(), "", null, null, true), uri)
@@ -471,7 +474,6 @@ class FloatingContainerService : Service() {
                 when (val result = runtime.provider.list(ref)) {
                     is ProviderResult.Success -> onMain {
                         if (generation == loadGeneration) {
-                            title.text = uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { "Container" } ?: "Container"
                             listingReady = true
                             currentListingComplete=!result.isLoading
                             render(result.value)
@@ -502,6 +504,17 @@ class FloatingContainerService : Service() {
                 }
             }
         }.start()
+    }
+
+    private fun containerName(uri: Uri): String {
+        var location = uri
+        repeat(16) {
+            if (!ArchiveUri.isArchiveUri(location))
+                return location.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: "Container"
+            ArchiveUri.getEntryPath(location).trimEnd('/').substringAfterLast('/').takeIf { it.isNotBlank() }?.let { return it }
+            location = runCatching { ArchiveUri.getSourceUri(location) }.getOrNull() ?: return "Container"
+        }
+        return "Container"
     }
 
     private fun showContainerIcon(artwork: ResourceIconResolver.Icon?) {
@@ -695,12 +708,12 @@ class FloatingContainerService : Service() {
 
     private fun activate(entry: ResourceEntry) {
         when {
-            entry.metadata.isDirectory -> show(entry.uri)
+            entry.metadata.isDirectory -> show(entry.uri, entry.metadata.name)
             !com.infinifolder.apps.AppsUri.isAppUri(entry.uri) &&
                 !ArchiveFormats.isPackagedFormat(entry.metadata.name, entry.metadata.mimeType) &&
                 (ArchiveFormats.isArchive(entry.metadata.name, entry.metadata.mimeType) || ArchiveFormats.isDiscImage(entry.metadata.name, entry.metadata.mimeType)) -> {
                 val mounted = ArchiveUri.toArchiveUri(entry.uri)
-                if (runtime.provider.refForUri(mounted) != null) show(mounted) else launchInMain(entry.uri)
+                if (runtime.provider.refForUri(mounted) != null) show(mounted, entry.metadata.name) else launchInMain(entry.uri)
             }
             else -> launchInMain(entry.uri)
         }
@@ -768,6 +781,9 @@ class FloatingContainerService : Service() {
     companion object {
         private const val TOOLBAR_HEIGHT_DP = 39
         const val EXTRA_URI = "com.infinifolder.overlay.URI"
+        const val EXTRA_DISPLAY_NAME = "com.infinifolder.overlay.DISPLAY_NAME"
         fun intent(context: android.content.Context, uri: Uri) = Intent(context, FloatingContainerService::class.java).setData(uri)
+        fun intent(context: android.content.Context, uri: Uri, displayName: String?) = intent(context, uri)
+            .putExtra(EXTRA_DISPLAY_NAME, displayName)
     }
 }

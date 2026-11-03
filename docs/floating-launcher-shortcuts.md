@@ -113,3 +113,27 @@ uncommitted workspace changes outside the launcher repair; those changes are
 preserved separately. Real browser/handler launch, missing-handler presentation
 and the absence of a visible intermediate app screen still require on-device
 verification.
+
+## Container shortcut titles
+
+The launcher dispatcher now passes the resolved link display name into the
+floating-window service. Store's shared link resolver retains the outermost
+nonblank explicit `.iflink` name for storage-backed targets and nested links,
+without changing the destination entry's identity or filename. The pending
+overlay-permission flow also retains the title.
+
+The window uses that name immediately and keeps it after the asynchronous
+listing completes and after pull-to-refresh. Entering a child directory or
+archive uses the newly opened item's name. Without an explicit label, archive
+roots fall back to the source archive's filename and internal directories use
+their entry name; an archive URI's empty path no longer forces "Container".
+Existing launcher pins resolve their link again and need not be recreated.
+
+Device checks remain pending for a named archive `.iflink`, nested links,
+refresh, opening children and overlay permission return. No automated tests
+were added or run for this repair.
+
+`gradle :app:assembleDebug --offline --console=plain` passed; the final build
+took 18 seconds. Logs: `build/launcher-container-name/app-build.log` and
+`app-build-final.log` in the same directory. Existing unrelated workspace changes
+were included in the build and preserved separately.

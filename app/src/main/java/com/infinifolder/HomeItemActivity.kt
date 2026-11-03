@@ -18,6 +18,7 @@ import com.infinifolder.overlay.FloatingContainerService
 /** Transparent shortcut dispatcher: container launches never construct the full browser UI. */
 class HomeItemActivity : Activity() {
     private var pendingContainer: Uri? = null
+    private var pendingContainerName: String? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         val startupError = if (intent.data == null) com.infinifolder.viewer.DebugTools.startupError(this) else null
         if (startupError != null) setTheme(R.style.AppTheme)
@@ -29,6 +30,7 @@ class HomeItemActivity : Activity() {
         com.infinifolder.theme.ThemeManager.init(applicationContext)
         DiagnosticLog.record("home.dispatch.created", "action=${intent.action} task=$taskId root=$isTaskRoot restored=${savedInstanceState != null}")
         pendingContainer = savedInstanceState?.getString("container")?.let(Uri::parse)
+        pendingContainerName = savedInstanceState?.getString("container_name")
         if (pendingContainer != null) return
         val uri = intent.data
         if (uri == null) {
@@ -48,14 +50,20 @@ class HomeItemActivity : Activity() {
                 if (stat is ProviderResult.Failure) throw java.io.IOException(stat.message)
                 var entry = (stat as? ProviderResult.Success)?.value
                 var target = uri
+                var displayName = entry?.metadata?.name
                 if (entry != null && LinkResolver.kind(entry.metadata) != null) {
                     when (val link = LinkResolver.resolve(provider, entry)) {
-                        is ProviderResult.Success -> { entry = link.value.entry; target = link.value.uri }
+                        is ProviderResult.Success -> {
+                            entry = link.value.entry
+                            target = link.value.uri
+                            displayName = link.value.name
+                        }
                         is ProviderResult.Failure -> throw java.io.IOException(link.message)
                         else -> Unit
                     }
                 }
                 val result = entry
+                val containerName = displayName?.takeIf { it.isNotBlank() } ?: result?.metadata?.name
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     try {
@@ -75,7 +83,7 @@ class HomeItemActivity : Activity() {
                                 (ArchiveFormats.isArchive(result.metadata.name, result.metadata.mimeType) ||
                                     ArchiveFormats.isDiscImage(result.metadata.name, result.metadata.mimeType)))) -> {
                             val container = if (result.metadata.isDirectory) result.uri else ArchiveUri.toArchiveUri(result.uri)
-                            openContainer(container)
+                            openContainer(container, containerName)
                         }
                         else -> openFull(target)
                     }
@@ -149,14 +157,15 @@ class HomeItemActivity : Activity() {
         androidx.core.view.ViewCompat.requestApplyInsets(layout)
     }
 
-    private fun openContainer(uri: Uri) {
+    private fun openContainer(uri: Uri, displayName: String? = null) {
         if (Settings.canDrawOverlays(this)) {
             DiagnosticLog.record("home.dispatch.overlay", "task=$taskId uri=$uri")
-            startService(FloatingContainerService.intent(this, uri))
+            startService(FloatingContainerService.intent(this, uri, displayName))
             finish()
             overridePendingTransition(0, 0)
         } else {
             pendingContainer = uri
+            pendingContainerName = displayName
             val theme = if (com.infinifolder.theme.ThemeManager.activeTheme.isDark) R.style.AppTheme_Dark else R.style.AppTheme
             android.app.AlertDialog.Builder(android.view.ContextThemeWrapper(this, theme)).setTitle("Display over other apps")
                 .setMessage("Allow InfiniFolder to open this container in a floating window?")
@@ -188,11 +197,12 @@ class HomeItemActivity : Activity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString("container", pendingContainer?.toString())
+        outState.putString("container_name", pendingContainerName)
     }
     @Deprecated("Android Activity result callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        pendingContainer?.let { if (Settings.canDrawOverlays(this)) openContainer(it) else openFull(it) }
+        pendingContainer?.let { if (Settings.canDrawOverlays(this)) openContainer(it, pendingContainerName) else openFull(it) }
     }
     companion object {
         fun intent(context: Context, uri: Uri) = Intent(context, HomeItemActivity::class.java)
