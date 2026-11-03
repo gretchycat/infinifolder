@@ -143,7 +143,7 @@ separate checks. See [tree repair](resource-icons.md#tree-artwork-lifetime-repai
   and adds serialized page work, bounded aspect-preserving rasters and explicit
   resource cleanup. Its updated UI and archive/remote opening need acceptance.
   Full PostScript/EPS and LaTeX viewing remain planned. A first read-only
-  Office/ebook reading pass is now implemented; handset acceptance is pending.
+  Office/ebook reading pass is implemented and user-confirmed working (2026-11-03); broader format checks remain.
 
 - Local MP3 seeking, including the previously slow copied songs, and linked gapless playback are user-confirmed working (2026-10-31, checkpoint 13). Checkpoint 14 adds exact high-resolution FLAC positioning, direct positional audio inputs and image common-source composition; its high-resolution/remote/image UI acceptance remains pending. The checkpoint records 683 cases with the same 30 known failures and 46 passing pipeline checks.
 
@@ -1066,5 +1066,21 @@ selection, actual cell coordinates and bounded saved-value previews. MOBI/FB2
 embedded covers join the existing artwork resolver. Store associations, standalone
 filters, supported-types CSV and bundled theme labels are updated.
 
-Both debug APK builds pass; no tests were added/run and runtime/UI acceptance
-remains unverified. See [formats, dependencies, limits and pending checks](document-and-ebook-readers.md).
+Both debug APK builds pass; no tests were added/run. The user confirmed document
+support working on the handset (2026-11-03); broader format/edge-case checks remain.
+See [formats, dependencies, limits and pending checks](document-and-ebook-readers.md).
+
+### Floating-window task switching — 2026-11-03
+
+The overlay now receives Android's [system-dialog dismissal event](https://developer.android.com/reference/android/content/Intent#ACTION_CLOSE_SYSTEM_DIALOGS) in addition
+to its existing focus-loss/outside-touch callbacks, covering Recents/Home paths
+that leave overlays focused. It hides and detaches immediately, saves its geometry,
+invalidates queued listing/artwork updates and stops the service. The receiver is
+registered only for the service lifetime and removed during destruction. No usage
+access, accessibility service, task polling or new permission is required.
+
+Build: `gradle :app:assembleDebug --offline --console=plain`, log
+`build/floating-task-dismiss/app-build.log`. No tests added or run. Handset checks
+for three-button Recents, gesture overview/quick switching, normal folder browsing
+and restored window geometry remain pending. Android system-event behavior can
+vary by launcher; focus-loss and outside-touch dismissal remain active.

@@ -1,7 +1,10 @@
 package com.infinifolder.overlay
 
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.net.Uri
@@ -17,6 +20,7 @@ import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import com.infinifolder.MainActivity
 import com.infinifolder.FileEntryCard
 import com.infinifolder.FileViewGrid
@@ -72,6 +76,14 @@ class FloatingContainerService : Service() {
     private var startWindowX = 0
     private var startWindowY = 0
     private var resizeReflowScheduled = false
+    private var systemDialogsRegistered = false
+    private val systemDialogs = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            // Recents/Home can leave an application overlay focused. Receiving
+            // this system event does not request that Android close its own UI.
+            if (intent.action == Intent.ACTION_CLOSE_SYSTEM_DIALOGS) dismissWindow()
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -83,6 +95,9 @@ class FloatingContainerService : Service() {
         iconDp = getSharedPreferences("floating_window", MODE_PRIVATE)
             .getInt("icon_size_dp", defaultIconDp).coerceIn(32, 120)
         windows = getSystemService(WINDOW_SERVICE) as WindowManager
+        ContextCompat.registerReceiver(this, systemDialogs,
+            IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS), ContextCompat.RECEIVER_EXPORTED)
+        systemDialogsRegistered = true
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -113,12 +128,12 @@ class FloatingContainerService : Service() {
             override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
                 super.onWindowFocusChanged(hasWindowFocus)
                 if (hasWindowFocus) receivedFocus = true
-                else if (receivedFocus) stopSelf()
+                else if (receivedFocus) dismissWindow()
             }
 
             override fun dispatchTouchEvent(event: MotionEvent): Boolean {
                 if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
-                    stopSelf()
+                    dismissWindow()
                     return true
                 }
                 return super.dispatchTouchEvent(event)
@@ -590,7 +605,7 @@ class FloatingContainerService : Service() {
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         else HomeItemActivity.intent(this, uri)
         startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        stopSelf()
+        dismissWindow()
     }
 
     private fun loadVisibleIcons() {
@@ -601,13 +616,32 @@ class FloatingContainerService : Service() {
         jobs.forEach { it.second() }
     }
 
-    override fun onDestroy() {
+    private fun dismissWindow() {
+        if (windowView == null) return
+        removeWindow()
+        stopSelf()
+    }
+
+    private fun removeWindow() {
+        val view = windowView ?: return
         saveWindowPlacement()
+        // Invalidate work before detaching: removal can deliver focus callbacks.
+        windowView = null
         loadGeneration++
         renderGeneration++
         pendingIcons.clear()
-        windowView?.let { runCatching { windows.removeView(it) } }
-        windowView = null
+        view.visibility = View.GONE
+        runCatching { windows.removeView(view) }.onFailure {
+            com.infinifolder.storage.DiagnosticLog.record("floating.dismiss.failed", error = it)
+        }
+    }
+
+    override fun onDestroy() {
+        if (systemDialogsRegistered) {
+            unregisterReceiver(systemDialogs)
+            systemDialogsRegistered = false
+        }
+        removeWindow()
         registrySubscription?.close()
         getSharedPreferences("browser",MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(iconPreferencesListener)
         iconResolver.close()

@@ -100,7 +100,8 @@ See the [structured text formatting roadmap](roadmap.md#structured-text-formatti
 
 - [ ] Add full PostScript/EPS document rendering and LaTeX typesetting behind Scribe interfaces; retain existing raster-preview support and explicit platform capabilities.
 - [x] Implement a first read-only Scribe reading pass for MOBI/KF8, FB2, DOC/DOCX, XLS/XLSX, PPT/PPTX, OpenDocument and RTF; reuse the reflow reader and CSV grid. App/standalone builds pass (2026-11-03).
-- [ ] Accept the new readers on Android with real Unicode/image/worksheet/slide inputs, read-only guards and provider/remote/cancellation checks; runtime behavior is unverified. See [document readers](document-and-ebook-readers.md).
+- [x] User confirms document support working on the handset (2026-11-03).
+- [ ] Broaden document checks to format variants, Unicode/images/worksheets/slides, read-only guards and provider/remote/cancellation paths. See [document readers](document-and-ebook-readers.md).
 - [ ] Extend layout fidelity and format conformance beyond the new Word 97+/Excel/PowerPoint reading subset; evaluate encryption, calculations and editing separately. Keep unsupported cases explicit.
 
 See [document rendering roadmap](roadmap.md#paged-documents-and-office-formats).
@@ -538,3 +539,8 @@ Floating/full-browser switching: the floating title-bar maximize button now open
 - [x] Enable EPUB/PDF content icons once in the persistent MIME registry; keep subsequent editor choices and other fields.
 - [x] Share backing-file artwork with mounted book roots and retain MIME fallback for unavailable covers.
 - [ ] Verify real covers, theme fallback, MIME toggles and link/tree display on a handset. No connected ADB device; automated tests not run. Build: `build/book-cover-icons/app-build.log`. Details: [Resource icons](resource-icons.md#ebook-icons).
+
+Floating task switching (2026-11-03): the overlay now dismisses on Android's
+system-dialog/Recents/Home event as well as focus loss/outside touch, with immediate
+hiding and preserved geometry. Debug build passes; handset overview/quick-switch
+and reopen checks remain pending. See [status](project-status.md#floating-window-task-switching--2026-11-03).

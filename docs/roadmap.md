@@ -92,7 +92,8 @@ FB2, DOC/DOCX, XLS/XLSX, PPT/PPTX, OpenDocument and RTF, including the supported
 macro/template containers. The owner accepted readable content without exact page
 layout. Word/slides reuse the reflow reader; worksheets reuse the CSV grid with
 sheet selection and saved formula values. App and standalone builds pass;
-runtime/device acceptance remains pending. See [formats, limits, ownership and
+the user confirms document support working on the handset (2026-11-03).
+Broader format/edge-case checks remain; see [formats, limits, ownership and
 remaining checks](document-and-ebook-readers.md).
 
 Next, validate representative real documents on Android, including Unicode,
