@@ -1009,3 +1009,27 @@ The Android app_process harness loaded the current full APK and passed 12 portab
 - Original-code licensing remains pending owner choice. Each repository states that status; public visibility is not a license grant. Existing 7-Zip/zstd/JPEG XL/JPEG2000 AAR/native packaging requires F-Droid source-build/licensing review. The requested libVLC backend adds a pinned published native AAR with source/override details; no native binary is committed and no language port is introduced.
 
 Previously recorded full debug APK SHA-256: `a20e9a1cf3595a6221ec0045ce700582046bd0ceb6169f5ca03d5b5c5d1f50d4`.
+
+## Automated follow-up — 2026-11-03
+
+The font/GEN verification run reports **980 passing cases, zero failures, zero
+skips and zero missing protected cases**. All **30 historical baseline failures
+now pass** in the tested workspace. The original baseline and checkpoint files
+remain unchanged; dated failure counts above describe their original runs.
+
+The gate builds the app and exercises all existing app/viewer/library JVM suites.
+It includes 22 new font/MIME/GEN tests: 14 portable Scribe inspection cases, four
+Store association/signature cases and four shared-viewer/registry cases, including
+the actual bundled CP437 font. No native glyph rendering or content-provider
+grant behavior is inferred from these JVM results. Owner-confirmed font controls
+and the remaining device cases are recorded in [font preview](font-viewer.md).
+
+The run includes existing pending workspace changes, which were preserved.
+Missing dependency artifacts and a damaged Gradle transform cache were repaired
+before tests could execute. The first full run used
+`python3 scripts/verify-infinistream.py --online`; the ordinary offline command is
+`python3 scripts/verify-infinistream.py`. Both succeeded. The initial cold run
+executed 535 tasks in 15m 59s; the offline repeat took 2m 55s, executing four
+changed test tasks and reusing 531 up-to-date tasks with their passing reports. See the
+[machine-readable results](validation/font-gen-automated-2026-11-03.json) and
+`build/font-viewer/automated/` for logs.

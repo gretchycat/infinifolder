@@ -66,12 +66,37 @@ builds the app and combined host. A separate
 the dedicated font host. Logs are under `build/font-viewer/`.
 
 The owner confirmed local font preview, the size control, dark/light mode,
-rotation and the navigation-bar layout on 2026-11-03. The owner also confirmed
-that GEN files display the binary icon. These are user-reported device checks;
+rotation, navigation-bar layout and use with the keyboard open on 2026-11-03.
+The owner also confirmed that GEN files display the binary icon. These are user-reported device checks;
 the agent had no connected ADB device during implementation.
 
 `content://` font access remains unverified because the owner had no provider URI
 available. Collection face selection, custom sample editing, archive/remote
-sources, keyboard/status-bar layout, cancellation and failure cases were not
-separately confirmed. No automated tests were added or run. Builds and packaged
+sources, status-bar layout, cancellation and error presentation were not
+separately confirmed on-device. Builds, automated parser checks and packaged
 manifest inspection are separate evidence from device interaction checks.
+
+### Automated regression coverage — 2026-11-03
+
+The full app/viewer/library gate reports **980 cases, all passing**, with no skips,
+new failures or missing protected cases. All 30 historical baseline failures now
+pass in the tested workspace. Historical baseline files are retained. The run
+includes existing pending workspace changes.
+
+Twenty-two new tests exercise the actual portable font reader, MIME/detection
+services and shared viewer/icon registry contracts:
+
+- Fourteen Scribe tests cover Unicode/typographic names, metrics, collection
+  offsets and face names, variable-axis metadata, unnamed fonts, malformed tables,
+  truncated/unsupported inputs, the 64 MiB size limit and cancellation.
+- Four Store tests cover font MIME aliases and signatures, source MIME refinement
+  and the non-audio GEN association.
+- Four shared-viewer tests cover read-only font dispatch, unsupported font routes,
+  GEN identity/user overrides and inspection of the real bundled CP437 TTF without
+  modifying its bytes.
+
+These JVM tests inspect metadata and routing; native glyph rendering and provider
+grants remain Android runtime behavior. See the
+[recorded results](validation/font-gen-automated-2026-11-03.json). Repeat with
+`python3 scripts/verify-infinistream.py`; the initial dependency-cache recovery
+used `--online`. The gate also builds the debug APK.

@@ -1,0 +1,325 @@
+{
+  "schemaVersion": 1,
+  "recordedAtUtc": "2026-11-03T20:57:01.820905+00:00",
+  "commands": [
+    "python3 scripts/verify-infinistream.py --online",
+    "python3 scripts/verify-infinistream.py"
+  ],
+  "result": "passed",
+  "reportedCases": 980,
+  "passed": 980,
+  "failed": 0,
+  "skipped": 0,
+  "newFocusedCases": 22,
+  "protectedBaselineCases": 915,
+  "resolvedHistoricalFailures": [
+    "com.infinifolder.archive.ArchiveStorageTest.testLargeRemoteDiscImageSizeLimit",
+    "com.infinifolder.archive.DiscImageReaderTest.testLvmLogicalVolumesStandaloneAndInsidePartition",
+    "com.infinifolder.ops.FileOperationsTest.destinationCollisionKeepsExistingBytes",
+    "com.infinifolder.ops.FileOperationsTest.failedRemovalReportsPartialMoveAndRetainsBothCopies",
+    "com.infinifolder.ops.FileOperationsTest.incompleteListingsNeverDeleteOrCreateAnything",
+    "com.infinifolder.ops.FileOperationsTest.shortReadRetainsOriginal",
+    "com.infinifolder.ops.FileOperationsTest.testBatchTransferCopy",
+    "com.infinifolder.ops.FileOperationsTest.testBatchTransferMove",
+    "com.infinifolder.ops.FileOperationsTest.testCancellationCleanup",
+    "com.infinifolder.ops.RecoveryTransferTest.cancellationBeforeCreationLeavesSourceAndDestinationAlone",
+    "com.infinifolder.ops.RecoveryTransferTest.cancellationDuringReportWritingRemovesBothNewFiles",
+    "com.infinifolder.ops.RecoveryTransferTest.cancellationDuringWritingRemovesPartialDestination",
+    "com.infinifolder.ops.RecoveryTransferTest.explicitPartialRecoveryCanExportBlockedSourceWithVerifiedSidecar",
+    "com.infinifolder.ops.RecoveryTransferTest.failedCleanupIsReportedAndNeverDeletesTheSource",
+    "com.infinifolder.ops.RecoveryTransferTest.failedDestinationRemovesPartialCopy",
+    "com.infinifolder.ops.RecoveryTransferTest.failedSourceStagingRemovesTheEmptyDestination",
+    "com.infinifolder.ops.RecoveryTransferTest.fullDestinationNeverCreatesAFile",
+    "com.infinifolder.ops.RecoveryTransferTest.independentDestinationCanShareTheOuterLocalFilesystem",
+    "com.infinifolder.ops.RecoveryTransferTest.loadingRecoveryFolderIsNotTreatedAsComplete",
+    "com.infinifolder.ops.RecoveryTransferTest.multipleCandidatesAreCopiedAndEachRemainsUnverified",
+    "com.infinifolder.ops.RecoveryTransferTest.recoveryFoldersAllowInformationalNoticesAndSkipBlockedChildren",
+    "com.infinifolder.ops.RecoveryTransferTest.thrownDestinationOpenRemovesThePartialDataCopy",
+    "com.infinifolder.ops.RecoveryTransferTest.thrownPartialReadFailureAlsoCleansCreatedDestination",
+    "com.infinifolder.ops.RecoveryTransferTest.verifiedCopyStillReportsUnverifiedOriginalContents",
+    "com.infinifolder.torrent.TorrentTransferLifecycleTest.finishLaterLabelUsesResumabilityRatherThanChangingStatusWords",
+    "com.infinifolder.torrent.TorrentVerificationCheckpointTest.dirtyStatePrecedesDestinationWrites",
+    "com.infinifolder.torrent.TorrentVerificationCheckpointTest.failedFlushCannotPublishNewCleanState",
+    "com.infinifolder.torrent.TorrentVerificationCheckpointTest.firstDownloadedPieceIsPersistedImmediately",
+    "com.infinifolder.torrent.TorrentVerificationCheckpointTest.interruptedUncheckpointedWriteForcesRecheck",
+    "com.infinifolder.torrent.TorrentVerificationCheckpointTest.noCheckpointWritePermissionFallsBackWithoutTrust"
+  ],
+  "regressions": [],
+  "missingBaselineCases": [],
+  "baselineFile": "docs/validation/infinistream-checkpoint.json",
+  "baselineSha256": "3d4de0fd140de5083c91b7df7d04da8c19aed893a00d17d22cac5debcb6ea601",
+  "baselineFilesChanged": false,
+  "modules": [
+    {
+      "task": ":app:testDebugUnitTest",
+      "results": "app/build/test-results/testDebugUnitTest",
+      "cases": 17,
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":viewer-csv:testDebugUnitTest",
+      "results": "viewer-csv/build/test-results/testDebugUnitTest",
+      "cases": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":storage-engine:testDebugUnitTest",
+      "results": "storage-engine/build/test-results/testDebugUnitTest",
+      "cases": 370,
+      "passed": 370,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":viewer-common:testDebugUnitTest",
+      "results": "viewer-common/build/test-results/testDebugUnitTest",
+      "cases": 121,
+      "passed": 121,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":viewer-audio:testDebugUnitTest",
+      "results": "viewer-audio/build/test-results/testDebugUnitTest",
+      "cases": 70,
+      "passed": 70,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":viewer-image:testDebugUnitTest",
+      "results": "viewer-image/build/test-results/testDebugUnitTest",
+      "cases": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":viewer-epub:testDebugUnitTest",
+      "results": "viewer-epub/build/test-results/testDebugUnitTest",
+      "cases": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":libinfinistream:stream-core:test",
+      "results": "libraries/libinfinistream/stream-core/build/test-results/test",
+      "cases": 33,
+      "passed": 33,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":libinfinisound:audio-core:test",
+      "results": "libraries/libinfinisound/audio-core/build/test-results/test",
+      "cases": 100,
+      "passed": 100,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":libinfinistore:store-android:testDebugUnitTest",
+      "results": "libraries/libinfinistore/store-android/build/test-results/testDebugUnitTest",
+      "cases": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":libinfinivault:vault-android:testDebugUnitTest",
+      "results": "libraries/libinfinivault/vault-android/build/test-results/testDebugUnitTest",
+      "cases": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":libinfinicanvas:canvas-android:testDebugUnitTest",
+      "results": "libraries/libinfinicanvas/canvas-android/build/test-results/testDebugUnitTest",
+      "cases": 69,
+      "passed": 69,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":libinfiniscribe:scribe-core:test",
+      "results": "libraries/libinfiniscribe/scribe-core/build/test-results/test",
+      "cases": 113,
+      "passed": 113,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":libinfiniscribe:scribe-reparse-api:test",
+      "results": "libraries/libinfiniscribe/scribe-reparse-api/build/test-results/test",
+      "cases": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":libinfiniscribe:scribe-reparse-xml:test",
+      "results": "libraries/libinfiniscribe/scribe-reparse-xml/build/test-results/test",
+      "cases": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":libinfiniscribe:scribe-reparse-yaml:test",
+      "results": "libraries/libinfiniscribe/scribe-reparse-yaml/build/test-results/test",
+      "cases": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":libinfiniscribe:scribe-reparse-toml:test",
+      "results": "libraries/libinfiniscribe/scribe-reparse-toml/build/test-results/test",
+      "cases": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "task": ":libinfinivideo:video-api:test",
+      "results": "libraries/libinfinivideo/video-api/build/test-results/test",
+      "cases": 31,
+      "passed": 31,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "focusedCases": [
+    {
+      "name": "com.infinifolder.viewer.FontViewerRoutingTest.realBundledFontIsInspectedAndRoutedWithoutChangingItsBytes",
+      "status": "passed"
+    },
+    {
+      "name": "com.infinifolder.viewer.FontViewerRoutingTest.unsupportedFontContainersAreNotRoutedToTheFontRenderer",
+      "status": "passed"
+    },
+    {
+      "name": "com.infinifolder.viewer.FontViewerRoutingTest.genesisIdentityAndExplicitUserMappingsSurviveMisleadingSuppliedAudioMime",
+      "status": "passed"
+    },
+    {
+      "name": "com.infinifolder.viewer.FontViewerRoutingTest.nativeFontsReachTheReadOnlyFontActivityThroughTheSharedCatalog",
+      "status": "passed"
+    },
+    {
+      "name": "com.infinifolder.storage.FontAndSourceMimeTest.magicIdentifiesNativeFontPrefixesWithoutAFilename",
+      "status": "passed"
+    },
+    {
+      "name": "com.infinifolder.storage.FontAndSourceMimeTest.sourceAssociationsRefineGenericProviderText",
+      "status": "passed"
+    },
+    {
+      "name": "com.infinifolder.storage.FontAndSourceMimeTest.fontExtensionsAndLegacyProviderMimeTypesResolveConsistently",
+      "status": "passed"
+    },
+    {
+      "name": "com.infinifolder.storage.FontAndSourceMimeTest.genesisRomsHaveANonAudioAssociationInsteadOfGenericMagicFallback",
+      "status": "passed"
+    },
+    {
+      "name": "io.github.gretchycat.infiniscribe.FontDocumentsTest.trueTypeNamesAndMetricsAreDecodedFromTheFile",
+      "status": "passed"
+    },
+    {
+      "name": "io.github.gretchycat.infiniscribe.FontDocumentsTest.invalidVariationRangesAreRejected",
+      "status": "passed"
+    },
+    {
+      "name": "io.github.gretchycat.infiniscribe.FontDocumentsTest.nameStringsCannotEscapeTheirTable",
+      "status": "passed"
+    },
+    {
+      "name": "io.github.gretchycat.infiniscribe.FontDocumentsTest.fileSizeLimitIsCheckedWithoutReadingAnOversizedBody",
+      "status": "passed"
+    },
+    {
+      "name": "io.github.gretchycat.infiniscribe.FontDocumentsTest.unsupportedContainersAndTruncatedHeadersAreRejected",
+      "status": "passed"
+    },
+    {
+      "name": "io.github.gretchycat.infiniscribe.FontDocumentsTest.openTypeAndTypographicNamesRetainTheirIdentity",
+      "status": "passed"
+    },
+    {
+      "name": "io.github.gretchycat.infiniscribe.FontDocumentsTest.unnamedFontsKeepMetricsWithoutInventingNames",
+      "status": "passed"
+    },
+    {
+      "name": "io.github.gretchycat.infiniscribe.FontDocumentsTest.tableRangesAndUnsignedOffsetsAreChecked",
+      "status": "passed"
+    },
+    {
+      "name": "io.github.gretchycat.infiniscribe.FontDocumentsTest.truncatedDirectoriesAndDuplicateTablesAreRejected",
+      "status": "passed"
+    },
+    {
+      "name": "io.github.gretchycat.infiniscribe.FontDocumentsTest.invalidCollectionsAndExcessiveFaceCountsAreRejected",
+      "status": "passed"
+    },
+    {
+      "name": "io.github.gretchycat.infiniscribe.FontDocumentsTest.supportedRoutesDoNotClaimEveryFontContainer",
+      "status": "passed"
+    },
+    {
+      "name": "io.github.gretchycat.infiniscribe.FontDocumentsTest.variableFontAxesComeFromTheirEncodedRanges",
+      "status": "passed"
+    },
+    {
+      "name": "io.github.gretchycat.infiniscribe.FontDocumentsTest.interruptionCancelsInspectionAndDoesNotModifyTheFile",
+      "status": "passed"
+    },
+    {
+      "name": "io.github.gretchycat.infiniscribe.FontDocumentsTest.collectionFacesUseAbsoluteTableOffsetsAndKeepSeparateNames",
+      "status": "passed"
+    }
+  ],
+  "newTestSources": [
+    {
+      "path": "libraries/libinfiniscribe/scribe-core/src/test/kotlin/io/github/gretchycat/infiniscribe/FontDocumentsTest.kt",
+      "sha256": "2e024a181112fa3f6384e17c70ad62aa1a2133e4ad8822308d2a66ae7f271438"
+    },
+    {
+      "path": "libraries/libinfinistore/store-android/src/test/java/com/infinifolder/storage/FontAndSourceMimeTest.kt",
+      "sha256": "dd914a4c0dbc2250ba08c939cede11e507c3ff745f303b066b2592db7e74c8d3"
+    },
+    {
+      "path": "viewer-common/src/test/java/com/infinifolder/viewer/FontViewerRoutingTest.kt",
+      "sha256": "63ad094f98506235e2ea482008fc4956a0c776a5c44a9deb1d56bc7b52f9a73c"
+    }
+  ],
+  "realFontFixture": {
+    "path": "libraries/libinfinicanvas/canvas-android/src/main/assets/fonts/cp437.ttf",
+    "sha256": "c4551ce2ac42bed743f065fdc9fdc29fbc52fbb3481833dc5662365cabc2d03e"
+  },
+  "apk": {
+    "path": "app/build/outputs/apk/debug/app-debug.apk",
+    "build": "passed",
+    "sha256": "910735c09bac14090309abfcc418915eee858251e74ab4a0c88cc601499d21dc"
+  },
+  "testedBaseRevision": "85f5c30b17e4609c390a99ebb3548a5c4a47d8ac",
+  "existingPendingWorkspaceChangesIncluded": true,
+  "logs": {
+    "finalGate": "build/infinistream-migration/verification-gate.log",
+    "finalSummary": "build/font-viewer/automated/full-gate-summary.log",
+    "initialFullRun": "build/font-viewer/automated/full-gate-online.log"
+  },
+  "environmentRecovery": [
+    "Initial offline attempt stopped before tests because dependency artifacts were absent.",
+    "Initial online retry stopped before tests because cached Gradle transform analysis was damaged.",
+    "Stopped Gradle and moved the damaged transform cache aside; online dependency recovery and full execution then succeeded.",
+    "The normal offline gate also succeeded; unchanged test tasks reused their passing reports and changed test suites reran."
+  ],
+  "runtimeScope": "JVM parser, MIME, registry and routing tests. Native rendering, content-provider grants and unconfirmed device interactions are separate acceptance checks."
+}
