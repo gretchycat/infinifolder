@@ -107,7 +107,8 @@ See [document rendering roadmap](roadmap.md#paged-documents-and-office-formats).
 ## ANSI music
 
 - [x] Play supported ANSI/BASIC PLAY melodies in the dedicated CP437 viewer using Sound's `AnsiMusic` PCM output; user-confirmed 2026-11-02.
-- [ ] Use a less harsh waveform than the current square wave, with suitable attack/release while preserving melody timing. Deferred at the owner's request while storage failures are investigated.
+- [x] Soften ANSI tones with a rounded square/sine waveform and short attack/release fades inside the existing note gates (2026-11-03). Same timing, rests and peak level; generated wavetable reused across streams.
+- [ ] Confirm the softened ANSI music timbre by listening on a handset. Build evidence: `build/ansi-music-soft-tone/app-build.log`; no tests added or run.
 - [ ] Extend dialect/malformed-input coverage and evaluate normal music-player routing and synchronized terminal presentation separately.
 
 ## Cloud storage

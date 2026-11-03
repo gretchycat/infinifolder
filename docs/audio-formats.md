@@ -4,7 +4,7 @@
 
 Updated 2026-11-02. This document tracks audio and sound format support across MIME/magic classification (`MediaTypeDetector`, `MimeRegistry`, `FileMagicDetector`) and the modular audio playback engine (`:viewer-audio` / `AudioPlayerActivity`, `AudioPlayerService`, `PcmAudioEngine`, and `UniversalAudioDecoder`). Parsing, codec adapters, metadata probing and analysis now live in the external `libinfinisound` library (`audio-api` / `audio-core` / Android `audio-processing`); see [audio library boundaries](audio-processing-library.md). Playback/output remains in `:viewer-audio`.
 
-> **ANSI music playback in the dedicated CP437 viewer is user-confirmed (2026-11-02).** Sound’s `AnsiMusic` parses supported BBS/BASIC PLAY melodies and produces mono PCM; the viewer prepares a temporary WAVE for Android media playback. The current PC-speaker-style square wave works but sounds harsh. A softer waveform is deferred to the [to-do list](feature-todo.md#ansi-music). General music-player routing, broader dialects and synchronized presentation remain separate follow-up work.
+> **ANSI music playback in the dedicated CP437 viewer is user-confirmed (2026-11-02).** Sound’s `AnsiMusic` parses supported BBS/BASIC PLAY melodies and produces mono PCM; the viewer prepares a temporary WAVE for Android media playback. The tone generator now uses a rounded waveform between square and sine, with reduced third/fifth harmonics and short attack/release fades. Timing, rests and peak level are preserved. The new timbre needs handset listening confirmation; see the [to-do list](feature-todo.md#ansi-music). General music-player routing, broader dialects and synchronized presentation remain separate follow-up work.
 
 ## Decoder correctness correction
 
