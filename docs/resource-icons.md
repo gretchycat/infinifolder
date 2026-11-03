@@ -116,8 +116,8 @@ or run. Existing EPUB fixtures were inventoried and contain no declared covers;
 handset cover display, remote provider behavior, editor toggles and link/tree
 acceptance remain unverified. Logs: `build/book-cover-icons/app-build-final.log`.
 
-The current default theme has 774 source SVGs after adding the document and
-source-code associations. Its MIME/extension labels use the same existing theme
+The current default theme has 779 source SVGs after adding document, source-code, font and
+GEN ROM associations. Its MIME/extension labels use the same existing theme
 generation path.
 
 ## Exact filename and location
@@ -268,3 +268,16 @@ connected device. The owner subsequently reports the current follow-up working
 (2026-11-02); copy/reopen, restart and backend/hover variants were not individually
 confirmed. The previous 942-test gate predates this follow-up and is not new
 evidence for its UI behavior.
+
+
+## GEN ROM identity
+
+`.gen` has an explicit `application/x-genesis-rom` association and a generated
+binary pictogram with a `GEN` label. It is not an audio extension. Without an
+association, unknown binary files enter magic detection; the existing broad MPEG
+frame-sync probe can mistake ROM vector bytes for audio. The specific association
+keeps the normal local MIME and listing identity paths out of that fallback.
+Saved user associations/overrides retain their existing precedence. No ROM parser
+or emulator was added, and Android registration does not advertise a native GEN
+viewer. The supported-type CSV, reviewed base assignment and default theme are
+regenerated from this identity.

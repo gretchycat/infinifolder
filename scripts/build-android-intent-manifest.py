@@ -47,7 +47,7 @@ def main():
     parser.add_argument('--template', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--host', choices=['app', 'viewer'], required=True)
-    parser.add_argument('--viewer', default='all', choices=['all', 'image', 'text', 'markdown', 'html', 'pdf', 'csv', 'epub', 'audio', 'video'])
+    parser.add_argument('--viewer', default='all', choices=['all', 'image', 'text', 'markdown', 'html', 'pdf', 'csv', 'epub', 'font', 'audio', 'video'])
     args = parser.parse_args()
     inventory = runpy.run_path(str(ROOT / 'scripts/export-supported-types.py'))
     rows = inventory['rows']
@@ -70,6 +70,8 @@ def main():
         if extension in inventory['html']:
             return {'html'}
         result = set()
+        if extension in inventory['fonts'] or mime in inventory['font_mimes']:
+            result.add('font')
         if extension in inventory['images'] or mime.startswith('image/'):
             result.add('text' if mime == 'image/x-ansi' else 'image')
         if extension in inventory['audio'] or mime.startswith('audio/'):
@@ -118,6 +120,8 @@ def main():
         mimes.add('text/*')
     if args.host == 'app' or args.viewer in {'all', 'text'}:
         mimes.update(text_mimes)
+    if args.host == 'app' or args.viewer in {'all', 'font'}:
+        mimes.update(inventory['font_mimes'])
     if args.host == 'app' or args.viewer in {'all', 'audio'}:
         mimes.update(inventory['values'](inventory['MEDIA'], 'AUDIO_MIME_TYPES'))
     if args.host == 'viewer':

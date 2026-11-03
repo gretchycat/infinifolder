@@ -14,6 +14,7 @@ enum class MediaType {
     AUDIO,
     VIDEO,
     PDF,
+    FONT,
     EPUB,
     DOCUMENT,
     EBOOK,
@@ -81,6 +82,7 @@ object MediaTypeDetector {
         val ext = lowerName.substringAfterLast('.', "")
         val lowerMime = safeMime.lowercase(Locale.ROOT).substringBefore(';').trim()
 
+        if (io.github.gretchycat.infiniscribe.FontFormats.supports("", lowerMime)) return MediaType.FONT
         val documentKind=io.github.gretchycat.infiniscribe.DocumentFormats.forMime(lowerMime)
         if(documentKind!=null)return documentMediaType(documentKind)
         when {
@@ -104,6 +106,8 @@ object MediaTypeDetector {
         }
 
         io.github.gretchycat.infiniscribe.DocumentFormats.detect(name)?.let {return documentMediaType(it)}
+
+        if (io.github.gretchycat.infiniscribe.FontFormats.supports(name, lowerMime)) return MediaType.FONT
 
         // 1. Packaged formats (e.g. apk) should not be treated as generic archives/media
         if (ArchiveFormats.isPackagedFormat(name, safeMime) && safeMime != "application/epub+zip") {
@@ -193,6 +197,7 @@ object MediaTypeDetector {
         MediaType.AUDIO,
         MediaType.VIDEO,
         MediaType.PDF,
+        MediaType.FONT,
         MediaType.EPUB,
         MediaType.DOCUMENT,
         MediaType.EBOOK,

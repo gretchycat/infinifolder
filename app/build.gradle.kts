@@ -13,6 +13,7 @@ dependencies {
     implementation(project(":viewer-pdf"))
     implementation(project(":viewer-csv"))
     implementation(project(":viewer-epub"))
+    implementation(project(":viewer-font"))
     implementation(project(":viewer-audio"))
     implementation(project(":viewer-video"))
     implementation("io.github.gretchycat.libinfiniscribe:scribe-android:0.1.0")
@@ -73,6 +74,7 @@ val generateIntentManifest by tasks.registering(Exec::class) {
         "libraries/libinfinisound/audio-processing/src/main/java/com/infinifolder/audio/AudioProcessing.kt",
         "libraries/libinfinisound/audio-core/src/main/java/com/infinifolder/audio/decoder/BuiltInAudioDecoders.kt",
         "libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/DocumentFormats.kt",
+        "libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/FontDocuments.kt",
         "libraries/libinfinistore/store-android/src/main/java/com/infinifolder/storage/FileMagicDetector.kt"))
     inputs.property("host", "app")
     outputs.file(generatedIntentManifest)

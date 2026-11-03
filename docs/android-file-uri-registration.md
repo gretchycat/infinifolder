@@ -5,7 +5,7 @@ intent filters from the live supported-type definitions at build time.
 
 ## Registered handlers
 
-The main APK declares 318 MIME entries (including generic `text/*`), 897 filename
+The main APK declares 328 MIME entries (including generic `text/*`), 901 filename
 suffixes including multipart RAR/ARJ volume names, and 19 native URI schemes:
 
 | Group | Schemes |
@@ -16,7 +16,7 @@ suffixes including multipart RAR/ARJ volume names, and 19 native URI schemes:
 | Torrents | `magnet`, `torrent` |
 | Command links | `infinifolder-termux` |
 
-Image/audio/video, text/source/ANSI, PDF/ebooks/Office/RTF, archives, supported disk
+Native TTF/OTF/TTC/OTC fonts, image/audio/video, text/source/ANSI, PDF/ebooks/Office/RTF, archives, supported disk
 images/filesystems, playlists, torrent/resume files, InfiniFolder links and Winamp
 skins use their existing reader, player, browser or import paths. Registration
 describes a supported route; actual codec/container variants still require valid
@@ -34,7 +34,7 @@ External `infinifolder-termux` URIs show the command and working directory with
 files resolving to a command receive the same review, including recursive links.
 Existing trusted in-app shortcut behavior is preserved.
 
-The combined standalone host declares 272 MIME entries and 380 filename suffixes.
+The combined standalone host declares 282 MIME entries and 384 filename suffixes.
 Selected viewer builds generate filters for their included representation; they
 keep the existing major-type contracts. Text-only builds display structured text
 as source, while audio-only builds can request audio from supported 3GP/MP4
@@ -93,6 +93,9 @@ Android registrations and the bundled theme consume the expanded identities; no
 new handwritten manifest list is required. The combined standalone host declares
 149 editable MIME entries. See [source identity and highlighting](syntax-highlighting.md#source-file-identity)
 for the distinction between file identity, text editing and lexical profiles.
+Read-only [font previews](font-viewer.md) add four filename suffixes and ten
+MIME identifiers/aliases; dedicated `-Pviewer=font` builds register only these
+font inputs. GEN ROM identity/icons do not advertise a parser or native opener.
 
 Generated summaries:
 
@@ -105,10 +108,10 @@ Command:
 gradle :app:assembleDebug :viewer-host:assembleDebug --offline --console=plain
 ```
 
-Both debug APKs build successfully. Log: `build/source-mime/build.log`.
+Both debug APKs build successfully. Log: `build/font-viewer/build-final.log`.
 Packaged APK manifests were inspected using `aapt2 dump xmltree`, including MIME
 entries, URI schemes and compiled suffix/pattern constraints. The supported-types
-CSV was refreshed from source (1,410 rows). No tests were added or run. Individual
+CSV was refreshed from source (1,426 rows). No tests were added or run. Individual
 viewer configurations and Android chooser/permission/default-app behavior still
 need handset acceptance; no connected ADB device is available.
 

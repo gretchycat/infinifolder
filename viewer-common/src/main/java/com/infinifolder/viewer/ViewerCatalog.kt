@@ -14,6 +14,7 @@ object ViewerCatalog {
         MediaType.MARKDOWN -> "MarkdownViewerActivity"
         MediaType.HTML -> "HtmlViewerActivity"
         MediaType.PDF -> "PdfViewerActivity"
+        MediaType.FONT -> "FontViewerActivity"
         MediaType.EPUB, MediaType.EBOOK, MediaType.DOCUMENT -> "EpubViewerActivity"
         MediaType.SPREADSHEET -> "CsvViewerActivity"
         MediaType.AUDIO -> "AudioPlayerActivity"

@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 val viewerKind = providers.gradleProperty("viewer").orElse("all").get()
-val viewers = listOf("image", "text", "markdown", "html", "pdf", "csv", "epub", "audio", "video")
+val viewers = listOf("image", "text", "markdown", "html", "pdf", "csv", "epub", "font", "audio", "video")
 require(viewerKind == "all" || viewerKind in viewers) { "Unknown viewer: $viewerKind" }
 android {
     namespace = "com.infinifolder.standalone"
@@ -44,6 +44,7 @@ val generateIntentManifest by tasks.registering(Exec::class) {
         "libraries/libinfinisound/audio-processing/src/main/java/com/infinifolder/audio/AudioProcessing.kt",
         "libraries/libinfinisound/audio-core/src/main/java/com/infinifolder/audio/decoder/BuiltInAudioDecoders.kt",
         "libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/DocumentFormats.kt",
+        "libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/FontDocuments.kt",
         "libraries/libinfinistore/store-android/src/main/java/com/infinifolder/storage/FileMagicDetector.kt"))
     inputs.property("host", viewerKind)
     outputs.file(generatedIntentManifest)

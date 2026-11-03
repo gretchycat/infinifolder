@@ -37,6 +37,7 @@ Updated 2026-10-27. Start with [project status](project-status.md), [task list](
 - [Video formats](video-formats.md)
 - [Text, markup, document, and text-based media formats](text-and-document-formats.md)
 - [Document and ebook readers](document-and-ebook-readers.md)
+- [Font preview and Scribe ownership](font-viewer.md)
 - [HFS image support](hfs-support.md)
 - [Directory-based image browsing](image-directory-browsing.md)
 - [Implementation status and open issues](implementation-status-open-issues.md)

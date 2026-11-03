@@ -94,6 +94,7 @@ object FileTypeIcons {
         val mappedExtension = associatedExtension(meta.name, mime)
         val base = mappedExtension?.let(BundledIconStyle.EXTENSION_BASES::get)
             ?: BundledIconStyle.MIME_BASES[mime] ?: when {
+                mime.startsWith("font/") || mime == "application/font-sfnt" -> "document"
                 audio -> "audio"
                 mime.startsWith("image/") -> "image"
                 mime.startsWith("video/") -> "video"

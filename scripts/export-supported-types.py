@@ -14,6 +14,7 @@ IMAGE = 'viewer-common/src/main/java/com/infinifolder/preview/ImageFormats.kt'
 MEDIA = 'viewer-common/src/main/java/com/infinifolder/viewer/MediaTypeDetector.kt'
 AUDIO = 'libraries/libinfinisound/audio-processing/src/main/java/com/infinifolder/audio/AudioProcessing.kt'
 BUILTIN = 'libraries/libinfinisound/audio-core/src/main/java/com/infinifolder/audio/decoder/BuiltInAudioDecoders.kt'
+FONTS = 'libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/FontDocuments.kt'
 DOCUMENTS = 'libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/DocumentFormats.kt'
 
 def read(path):
@@ -37,6 +38,8 @@ packages = {ext: (mime, container) for ext, mime, container in re.findall(
 mapping.update({ext: value[0] for ext, value in packages.items()})
 aliases = dict(re.findall(r'"([^"]+)"\s+to\s+"([^"]+)"',
     mime_text.split('private val aliases =', 1)[1].split('private val extensions', 1)[0]))
+fonts = values(FONTS, 'extensions')
+font_mimes = values(FONTS, 'mimeTypes')
 images = values(IMAGE, 'decodableExtensions')
 audio = values(MEDIA, 'AUDIO_EXTENSIONS') | values(AUDIO, 'platformExtensions') | values(BUILTIN, 'SUPPORTED_EXTENSIONS')
 video = values(MEDIA, 'VIDEO_EXTENSIONS')
@@ -59,6 +62,10 @@ def add(category, identifier, extensions='', mime_type='', capabilities='', supp
         write_support=write_support, module=module, notes=notes, source_paths=source_paths))
 
 def capability(ext, mime):
+    if ext in fonts or mime in font_mimes:
+        return 'read-only font preview; native glyph rendering; collection face selection', 'Scribe/Android', 'TTF/OTF/TTC/OTC; 64 MiB limit. Device font support applies; not WOFF/WOFF2, Type 1 or legacy bitmap fonts.'
+    if ext == 'gen':
+        return 'MIME identity/icon; external open fallback', 'Store/host', 'Sega Genesis ROM association with a binary icon. No built-in ROM parser, emulator or audio decoder is asserted.'
     if ext == 'bin': return 'generic binary identity; optional magic/container probe', 'Store/Vault', 'No disc-image identity is assumed from .bin alone.'
     if ext == 'torrent': return 'torrent metadata parse/browse/download', 'Store/host', 'Opened by the host torrent path; peer/tracker availability applies.'
     if ext == 'lnk': return 'legacy InfiniFolder JSON shortcut', 'Store/host', 'Not a general Windows Shell Link binary decoder.'
@@ -96,7 +103,7 @@ def capability(ext, mime):
     if ext == 'incomplete': return 'torrent resume', 'Store', 'Requires compatible saved torrent/session metadata.'
     return 'MIME identity/icon; external open fallback', 'Store/host', 'No built-in viewer is asserted by this association alone.'
 
-exts = set(mapping) | images | audio | video | text | markdown | html | archives | discs | compounds | {'csv', 'tsv', 'pdf', 'epub', 'iflink', 'torrent'}
+exts = set(mapping) | fonts | images | audio | video | text | markdown | html | archives | discs | compounds | {'csv', 'tsv', 'pdf', 'epub', 'iflink', 'torrent'}
 by_mime = defaultdict(set)
 for ext in sorted(exts):
     mime = mapping.get(ext, '')
@@ -104,13 +111,13 @@ for ext in sorted(exts):
     caps, module, notes = capability(ext, mime)
     add('file_type', '.' + ext, '.' + ext, mime, caps,
         'registered association/route' if mime else 'registered extension/pattern',
-        write_support='read-only' if ext in document_formats else 'not asserted', module=module,
+        write_support='read-only' if ext in document_formats or ext in fonts else 'not asserted', module=module,
         notes=notes + ((' ' if notes else '') + 'MIME may be supplied dynamically by Android/providers or content detection.' if not mime else ''),
         source_paths='|'.join([MIME, MEDIA, IMAGE, ARCHIVE] +
             (['app/src/main/java/com/infinifolder/MainActivity.kt'] if ext == 'torrent' else []) +
-            ([DOCUMENTS] if ext in document_formats else [])))
+            ([DOCUMENTS] if ext in document_formats else []) + ([FONTS] if ext in fonts else [])))
 
-mime_sources = [MIME, MEDIA, IMAGE, ARCHIVE, DOCUMENTS, STORE + 'storage/FileMagicDetector.kt',
+mime_sources = [MIME, MEDIA, IMAGE, ARCHIVE, DOCUMENTS, FONTS, STORE + 'storage/FileMagicDetector.kt',
     'viewer-common/src/main/java/com/infinifolder/preview/AudioIconFormats.kt']
 all_mimes = set(by_mime) | set(aliases) | set(aliases.values())
 for path in mime_sources:

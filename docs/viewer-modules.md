@@ -14,11 +14,15 @@ The supplied `:viewer-host` provides a launcher document picker, Android VIEW/ED
 gradle :viewer-host:assembleDebug -Pviewer=pdf --offline
 ```
 
-Replace `pdf` with `image`, `text`, `markdown`, `html`, `csv`, `epub`, `audio`, `video`, or `all` (default). The selected application's ID is `com.infinifolder.standalone.<kind>` and its APK is under `viewer-host/build/outputs/apk/debug/`. On ARM Termux use the configured native AAPT2 override if required, as for the main app.
+Replace `pdf` with `image`, `text`, `markdown`, `html`, `csv`, `epub`, `font`, `audio`, `video`, or `all` (default). The selected application's ID is `com.infinifolder.standalone.<kind>` and its APK is under `viewer-host/build/outputs/apk/debug/`. On ARM Termux use the configured native AAPT2 override if required, as for the main app.
 
 Text, Markdown, HTML, and CSV include editing subject to complete load and source revision checks. Image edits export PNG copies. PDF/EPUB/audio/video currently expose viewing/playback. ACTION_EDIT is rejected for unsupported formats. A missing viewer library produces an explanatory message.
 
 Audio parsing/processing is provided by the external `libinfinisound` build (`audio-api`, portable `audio-core` and Android `audio-processing`); the audio viewer retains playback/output, queue and Cast integration. See [audio library boundaries](audio-processing-library.md).
+
+Font preview uses `viewer-font`, Scribe's portable font-table inspection and its
+Android Typeface backend. TTF/OTF/TTC/OTC previews are read-only; collection face
+selection, specimen controls and limits are described in [font preview](font-viewer.md).
 
 Shared UI/resources, image codecs, network backends, and themes currently remain common dependencies. Further size reduction can split those dependencies without bringing back a browser dependency. Document access and retained URI permissions still depend on the supplying Android provider. Standalone runtime use and editing require device acceptance checks in addition to build validation.
 

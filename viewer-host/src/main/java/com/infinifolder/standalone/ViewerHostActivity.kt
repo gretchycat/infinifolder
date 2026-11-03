@@ -37,6 +37,7 @@ class ViewerHostActivity : ViewerActivity() {
             "markdown" -> MediaType.MARKDOWN
             "html" -> MediaType.HTML
             "pdf" -> MediaType.PDF
+            "font" -> MediaType.FONT
             "csv" -> MediaType.SPREADSHEET
             "epub" -> MediaType.EPUB // The reader selects its Scribe document backend.
             "audio" -> MediaType.AUDIO

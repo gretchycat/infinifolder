@@ -192,15 +192,48 @@ object MediaSourceAdapter {
         override fun close() { lease?.close() }
     }
 
-    fun stage(context: Context, uri: Uri, fileName: String? = null): StagedSource {
+    fun stage(context: Context, uri: Uri, fileName: String? = null): StagedSource =
+        stageInternal(context, uri, fileName, null)
+
+    /** Native decoders can require a complete local file while imposing their own byte limit. */
+    fun stageBounded(context: Context, uri: Uri, maxBytes: Long, fileName: String? = null): StagedSource {
+        require(maxBytes > 0)
+        return stageInternal(context, uri, fileName, maxBytes)
+    }
+
+    private fun stageInternal(context: Context, uri: Uri, fileName: String?, maxBytes: Long?): StagedSource {
+        fun checkSize(length: Long?) {
+            if (maxBytes != null && length != null && length > maxBytes)
+                throw IOException("This viewer supports files up to ${maxBytes / (1024 * 1024)} MiB")
+        }
         val cache = com.infinifolder.storage.DiskCache.get(context)
         val local = resolveLocalFile(context, uri)
-        if (local != null && local.isFile && local.canRead()) return StagedSource(local, cache.pin(local))
+        if (local != null && local.isFile && local.canRead()) {
+            checkSize(local.length())
+            return StagedSource(local, cache.pin(local))
+        }
         val provider = com.infinifolder.storage.StorageRuntime.get(context).provider
         val metadata = provider.refForUri(uri)?.let { (provider.stat(it) as? ProviderResult.Success)?.value?.metadata }
+        checkSize(metadata?.sizeBytes)
         val key = metadata?.takeIf { it.sizeBytes != null && (it.modifiedAtMillis ?: 0) > 0 }
             ?.let { "viewer:$uri:${it.sizeBytes}:${it.modifiedAtMillis}" }
-        val lease = cache.stage(fileName ?: metadata?.name ?: "media", metadata?.sizeBytes, key) { openStream(context, uri) }
+        val lease = cache.stage(fileName ?: metadata?.name ?: "media", metadata?.sizeBytes, key) {
+            val input = openStream(context, uri)
+            if (maxBytes == null) input else object : java.io.FilterInputStream(input) {
+                private var total = 0L
+                override fun read(): Int {
+                    val one = ByteArray(1)
+                    return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 255
+                }
+                override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                    if (Thread.currentThread().isInterrupted) throw java.io.InterruptedIOException("Viewer load cancelled")
+                    val count = super.read(bytes, offset, minOf(length.toLong(), maxBytes - total + 1).toInt())
+                    if (count > 0) { total += count; checkSize(total) }
+                    return count
+                }
+            }
+        }
+        try { checkSize(lease.file.length()) } catch (error: Throwable) { lease.close(); throw error }
         return StagedSource(lease.file, lease)
     }
 

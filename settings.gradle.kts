@@ -24,6 +24,7 @@ include(":viewer-html")
 include(":viewer-pdf")
 include(":viewer-csv")
 include(":viewer-epub")
+include(":viewer-font")
 include(":viewer-audio")
 include(":viewer-video")
 
