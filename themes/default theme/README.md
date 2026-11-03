@@ -29,6 +29,9 @@ generates the app's folder-name lookup from these same rows. All declared roles
 are recognized, including Alarms, Podcasts, Recordings, Camera/DCIM, Screenshots,
 Fonts, Themes, Wallpapers, eBooks, Archives, Projects and Backups.
 
+The owner confirmed on-device that the new special-folder icons display correctly
+on 2026-11-03.
+
 Folder names match case-insensitively, by their whole name rather than a prefix.
 The active theme supplies the corresponding logical icon; imported themes can
 provide the same `folder-<role>` names. Existing desktop naming alternatives such
