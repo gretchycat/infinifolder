@@ -112,6 +112,20 @@ sources remains unverified, as does move restoration after originals are deleted
 The owner's earlier copy/cancel, SAF move-output cleanup, tree icons and connection
 badge confirmations remain recorded separately.
 
+### Handset follow-up — 2026-11-03, 02:52 UTC
+
+The new APK exercises archive metadata conversion without the prior validation
+exception. Remaining warnings concern missing ACL/extended-attribute export and
+unsupported destination attribute preservation; affected originals remain protected.
+This move fails during an SFTP destination listing after copying 9,072,343 bytes,
+so warning-free completion and restoration after deletion remain unverified.
+
+The same log identifies repeated remote ZIP-header reads as the dominant delay.
+The follow-up reuses Store's bounded read-device cache during an ordinary move's
+copy phase, then bypasses it for final source validation/deletion and existing undo.
+The APK build passes; handset speed acceptance is pending. See
+[measurements, implementation and limits](remote-archive-transfer-performance.md).
+
 ## Work outside this migration
 
 The migration introduces no new language port, codec rewrite or binary blob.

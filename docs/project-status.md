@@ -9,8 +9,13 @@ Updated 2026-11-02. This is the current status reference. Checked implementation
 Finish the library migration closeout before new features. The extraction is
 complete at [checkpoint 31](library-migration-completion.md); the final follow-up
 normalizes full POSIX modes at Store's transfer-metadata boundary, addressing the
-source-attribute warnings in the SAF move-tree log. The repair needs a handset
-retest; live acceptance and distributable release work remain separate from source
+source-attribute validation warnings in the SAF move-tree log. The 02:52 UTC dump
+exercises the repair without that exception; unsupported attribute warnings remain.
+The move fails during an SFTP destination listing. Repeated ZIP-header reads caused
+most of its delay; Store now reuses bounded read caches during the move's copy phase
+with fresh reads for final source validation/deletion and undo. The APK builds;
+handset speed acceptance is pending. See [transfer performance](remote-archive-transfer-performance.md).
+Live acceptance and distributable release work remain separate from source
 extraction. See the [dated closeout record](library-migration-completion.md#closeout-follow-up--2026-11-02).
 
 Connection icon badges now show a red reconnect blink or a persistent unplugged

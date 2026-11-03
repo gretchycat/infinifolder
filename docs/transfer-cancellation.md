@@ -130,3 +130,13 @@ The final zero-byte snapshot follows undo; it does not mean nothing was copied.
 The log also contains source attribute capture warnings (`TransferMetadata`
 validation, “Failed requirement”; originals retained). Attribute handling remains
 a separate follow-up; the warning-free move completion path is not accepted here.
+
+## Slow move follow-up: 2026-11-03, 02:52 UTC dump
+
+The updated APK no longer throws the source permission-mode validation exception.
+The move copies 49 files / 9,072,343 bytes before failing during an SFTP destination
+listing. Unsupported source/destination attributes still keep affected originals;
+no original deletion or undo appears in the retained log. Repeated remote ZIP
+header reads dominate its timings. The follow-up enables bounded read-cache reuse
+for the copy phase of ordinary moves, with the final source check/deletion and
+existing undo outside that cache. See [measurements and verification limits](remote-archive-transfer-performance.md).
