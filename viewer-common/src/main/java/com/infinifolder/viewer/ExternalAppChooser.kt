@@ -1,19 +1,24 @@
 package com.infinifolder.viewer
 
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 
-/** A native app chooser that cannot route an external handoff back to this host. */
+/** Shared picker contract; local preferences never alter Android's defaults. */
 object ExternalAppChooser {
-    fun create(context: Context, target: Intent, title: CharSequence): Intent {
-        // Enumerate our own package, including aliases. This does not depend on
-        // Android package visibility exposing every other installed handler.
-        val ownActivities = context.packageManager.getPackageInfo(context.packageName,
-            PackageManager.GET_ACTIVITIES or PackageManager.MATCH_DISABLED_COMPONENTS).activities.orEmpty()
-        val excluded = ownActivities.map { ComponentName(it.packageName, it.name) }.distinct().toTypedArray()
-        return Intent.createChooser(target, title)
-            .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, excluded)
-    }
+    internal const val TARGET = "external_target"
+    internal const val TITLE = "external_title"
+    internal const val SOURCE = "external_source_key"
+    internal const val NAME = "external_name"
+    const val FORCE_CHOOSER = "external_force_chooser"
+    internal const val SELECT_EDITOR = "select_default_editor"
+    fun create(context: Context, target: Intent, title: CharSequence): Intent =
+        create(context, target, title, target.data?.toString()?.let(ExternalAppDefaults::uriKey), title.toString(), false)
+    fun create(context: Context, target: Intent, title: CharSequence, sourceKey: String?, name: String,
+        forceChooser: Boolean): Intent = Intent(context, ExternalAppPickerActivity::class.java)
+        .putExtra(TARGET, Intent(target)).putExtra(TITLE, title).putExtra(SOURCE, sourceKey)
+        .putExtra(NAME, name).putExtra(FORCE_CHOOSER, forceChooser)
+        .apply {
+            clipData = target.clipData
+            addFlags(target.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION))
+        }
 }

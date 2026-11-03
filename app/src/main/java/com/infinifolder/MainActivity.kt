@@ -742,6 +742,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         (name.endsWith(".torrent", true) || mime == "application/x-bittorrent") && ref.providerId != "torrent" -> openTorrentFile(entry)
                         name.endsWith(".wsz", true) || mime == "application/x-winamp-skin" -> importWinampSkin(uri, applyToAudio = true)
                         com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null || AppsUri.isAppUri(uri) -> open(entry, confirmCommands = true)
+                        com.infinifolder.viewer.ExternalAppDefaults(this).hasOpenPreference(entry.ref, mime) -> open(entry)
                         com.infinifolder.viewer.ViewerCatalog.activity(type) != null -> launchBuiltInViewer(entry, type)
                         (ArchiveFormats.isArchive(name, mime) && !name.endsWith(".bin", true)) || magic?.isArchiveOrDiscImage == true ->
                             navigate(ArchiveUri.toArchiveUri(uri), displayName = name)
@@ -5391,7 +5392,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
 
-    private fun open(entry: ResourceEntry, externalOnly: Boolean = false, confirmCommands: Boolean = false) {
+    private fun open(entry: ResourceEntry, externalOnly: Boolean = false, confirmCommands: Boolean = false,
+        forceExternalChooser: Boolean = false) {
         if (!entry.metadata.isDirectory && entry.metadata.name.endsWith(".incomplete", true) && !externalOnly) {
             resumeIncompleteDownload(entry.ref)
             return
@@ -5433,9 +5435,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 else TermuxCommandLink.launch(this, target.uri)
                                 return@runOnUiThread
                             }
-                            if (targetEntry == null) launchExternalViewIntent(target.uri, target.mime, target.name)
+                            if (targetEntry == null) launchExternalViewIntent(target.uri, target.mime, target.name, forceExternalChooser)
                             else if (targetEntry.metadata.isDirectory && !externalOnly) navigate(targetEntry.uri, displayName = targetEntry.metadata.name)
-                            else open(targetEntry, externalOnly, confirmCommands)
+                            else open(targetEntry, externalOnly, confirmCommands, forceExternalChooser)
                         }
                         is ProviderResult.Failure -> Toast.makeText(this, resolved.message, Toast.LENGTH_LONG).show()
                         else -> Unit
@@ -5466,13 +5468,15 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             return
         }
-        val termuxRule = if (!externalOnly && !entry.metadata.isDirectory) TermuxAssociations(this).find(entry.metadata.name) else null
+        val cachedMagic = ambiguousMagicCache.get(entry.uri.toString())
+        val effectiveMime = com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType, cachedMagic?.mimeType)
+        val hasExternalDefault = !entry.metadata.isDirectory &&
+            com.infinifolder.viewer.ExternalAppDefaults(this).hasOpenPreference(entry.ref, effectiveMime)
+        val termuxRule = if (!externalOnly && !hasExternalDefault && !entry.metadata.isDirectory) TermuxAssociations(this).find(entry.metadata.name) else null
         if (termuxRule != null && TermuxEditorAvailability.state(this, termuxRule.command) == TermuxEditorAvailability.State.AVAILABLE) {
             startActivity(Intent(this, TermuxEditActivity::class.java).setData(entry.uri))
             return
         }
-        val cachedMagic = ambiguousMagicCache.get(entry.uri.toString())
-        val effectiveMime = com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType, cachedMagic?.mimeType)
         val isPkg = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isPackagedFormat(entry.metadata.name, effectiveMime)
         val isPlaylist = !AppsUri.isAppUri(entry.uri) && (
             ArchiveFormats.isPlaylist(entry.metadata.name, effectiveMime) ||
@@ -5482,11 +5486,11 @@ class MainActivity : Activity(), DebugDumpObserver {
             ArchiveFormats.isArchive(entry.metadata.name, effectiveMime) ||
             (cachedMagic != null && (cachedMagic.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(entry.metadata.name, cachedMagic.mimeType)))
         )
-        if (isArchiveOrDisc && !isPkg && !externalOnly) {
+        if (isArchiveOrDisc && !isPkg && !externalOnly && !hasExternalDefault) {
             navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
             return
         }
-        if (useBuiltInViewersAndPlayers && !externalOnly) {
+        if (useBuiltInViewersAndPlayers && !externalOnly && !hasExternalDefault) {
             val mediaType = com.infinifolder.viewer.MediaTypeDetector.detect(entry.metadata.name, effectiveMime)
             if (mediaType != com.infinifolder.viewer.MediaType.UNSUPPORTED && mediaType != com.infinifolder.viewer.MediaType.ARCHIVE_OR_CONTAINER) {
                 if (launchBuiltInViewer(entry.copy(metadata = entry.metadata.copy(mimeType = effectiveMime)), mediaType)) {
@@ -5499,8 +5503,9 @@ class MainActivity : Activity(), DebugDumpObserver {
             ?: cachedMagic?.mimeType?.takeIf { it.isNotEmpty() }
             ?: entry.metadata.mimeType
         if (provider.refForUri(entry.uri) != null) {
-            startActivity(Intent(this, com.infinifolder.viewer.ExternalEditActivity::class.java).setData(entry.uri))
-        } else launchExternalViewIntent(entry.uri, externalMime, entry.metadata.name)
+            startActivity(Intent(this, com.infinifolder.viewer.ExternalEditActivity::class.java).setData(entry.uri)
+                .putExtra(com.infinifolder.viewer.ExternalAppChooser.FORCE_CHOOSER, forceExternalChooser))
+        } else launchExternalViewIntent(entry.uri, externalMime, entry.metadata.name, forceExternalChooser)
     }
 
     /** Enter a blank torrent directory first, then parse local .torrent metadata off the UI thread. */
@@ -5540,7 +5545,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
 
-    private fun launchExternalViewIntent(targetUri: Uri, mimeType: String? = null, displayName: String? = null) {
+    private fun launchExternalViewIntent(targetUri: Uri, mimeType: String? = null, displayName: String? = null,
+        forceChooser: Boolean = false) {
         if (TermuxCommandLink.owns(targetUri)) {
             TermuxCommandLink.launch(this, targetUri)
             return
@@ -5596,14 +5602,16 @@ class MainActivity : Activity(), DebugDumpObserver {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         }
         try {
-            startActivity(com.infinifolder.viewer.ExternalAppChooser.create(this, intent, "Open $fileName"))
+            startActivity(com.infinifolder.viewer.ExternalAppChooser.create(this, intent, "Open $fileName",
+                com.infinifolder.viewer.ExternalAppDefaults.uriKey(targetUri.toString()), fileName, forceChooser))
         } catch (_: Exception) {
             try {
                 val fallback = Intent(Intent.ACTION_VIEW, shareableUri).apply {
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                startActivity(com.infinifolder.viewer.ExternalAppChooser.create(this, fallback, "Open $fileName"))
+                startActivity(com.infinifolder.viewer.ExternalAppChooser.create(this, fallback, "Open $fileName",
+                    com.infinifolder.viewer.ExternalAppDefaults.uriKey(targetUri.toString()), fileName, forceChooser))
             } catch (_: Exception) {
                 Toast.makeText(this, "No app can open this file or URI.", Toast.LENGTH_SHORT).show()
             }
@@ -8409,6 +8417,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 action("Browse icon themes…") { showIconThemeDialog() },
                 action("Import freedesktop.org icon theme…") { showImportThemeOptionsDialog() },
                 action("Termux file associations…") { TermuxAssociationSettings.show(this) },
+                action("External apps and default editor…") { startActivity(Intent(this, com.infinifolder.viewer.ExternalAppSettingsActivity::class.java)) },
                 action("Common locations…") { showCommonLocationsSettings() },
                 action("Copy verification: ${if (shared.getBoolean("verify_copies", true)) "on" else "off"}…") { showCopyVerificationSettings() },
                 action("Disk cache…") { com.infinifolder.viewer.DiskCacheSettings.show(this) },
@@ -10821,7 +10830,14 @@ class MainActivity : Activity(), DebugDumpObserver {
             else -> listOf("Open", "Open with external app")
         }
 
-        val openGroup = baseOpenGroup + if (canShowDeleted) listOf("Show deleted files") else emptyList()
+        val openGroup = baseOpenGroup.flatMap {
+            when (it) {
+                "Open with external app" -> listOf("Open externally", "Open with…")
+                "Open target with external app" -> listOf("Open target externally", "Open target with…")
+                else -> listOf(it)
+            }
+        } + (if (isFile && entry.metadata.canRead && entry.metadata.recoveryNote == null) listOf("Edit externally") else emptyList()) +
+            (if (canShowDeleted) listOf("Show deleted files") else emptyList())
         val canCopyContents = !entry.metadata.isDirectory && !isApp && !isCategory &&
             (isTextEntry(entry, detectedMagic) || isImageEntry(entry, detectedMagic))
         val canPaste = StorageActionPolicy.action(StorageAction.CREATE, entry.metadata, capabilities).mayAttempt
@@ -10970,7 +10986,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                     }
                 }
                 "Open link", "Open target URI", "Open target folder", "Open target file" -> openShortcut(entry)
-                "Open target with external app" -> openShortcutWithExternalApp(entry)
+                "Open target externally" -> open(entry, externalOnly = true)
+                "Open target with external app", "Open target with…" -> openShortcutWithExternalApp(entry)
                 "Show deleted files" -> navigate(ArchiveUri.deletedFiles(entry.uri), displayName = "Deleted files — ${entry.metadata.name}")
                 "Recover partial copy…" -> showDestinationPicker(entry, false, partialRecovery = true)
                 "Undelete…" -> {
@@ -10986,7 +11003,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                     else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
                 "Browse archive", "Browse" -> if(ArchiveUri.isArchiveUri(entry.uri))browseNestedArchive(entry)
                     else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
-                "Open with external app" -> open(entry, externalOnly = true)
+                "Open externally" -> open(entry, externalOnly = true)
+                "Open with external app", "Open with…" -> open(entry, externalOnly = true, forceExternalChooser = true)
+                "Edit externally" -> startActivity(Intent(this, com.infinifolder.viewer.ExternalEditActivity::class.java)
+                    .setAction(Intent.ACTION_EDIT).setData(entry.uri))
                 "Open" -> if (entry.metadata.isDirectory) navigate(entry.uri, displayName = entry.metadata.name) else open(entry)
                 "Use as debug dump folder" -> {
                     com.infinifolder.storage.DebugDumpDestination.set(this, entry.ref)
@@ -11866,7 +11886,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         dialog.show()
     }
-    private fun openShortcutWithExternalApp(entry: ResourceEntry) = open(entry, externalOnly = true)
+    private fun openShortcutWithExternalApp(entry: ResourceEntry) = open(entry, externalOnly = true, forceExternalChooser = true)
 
     private fun promptCreateShortcut(entry: ResourceEntry) {
         val defaultTargetFolder = current?.takeIf { !ArchiveUri.isArchiveUri(it) && !AppsUri.isAppsUri(it) }

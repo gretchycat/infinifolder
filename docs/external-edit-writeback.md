@@ -7,6 +7,55 @@ are implemented; device acceptance is pending.
 
 ## Workflow
 
+### InfiniFolder-only external defaults
+
+File menus now expose **Open externally** (use saved local preferences) and
+**Open with…** (always show the picker). The picker shows other installed apps
+that can handle the file; InfiniFolder and its aliases are excluded by package.
+It uses themed Android controls so it can include **Remember in InfiniFolder**
+with **This file only** and **All files of this type** scopes. Leaving the box
+unchecked opens once without changing a saved default. Android's own associations
+are never changed.
+
+Preferences are persistent and separate for opening and editing. A file-specific
+choice precedes its canonical MIME-type choice. File identity is derived from the
+original provider/resource reference, not the temporary working-copy URI; remote
+URI credentials are not stored as preference keys. A rename that changes that
+reference needs a new file-specific choice. Different extensions sharing a MIME
+type share the type-wide default.
+
+**Open with…** can replace either scope. Saving a new type-wide choice also clears
+the current file's exception, so it applies to the file being opened; exceptions
+for other files remain. Saved open preferences also take priority over built-in
+viewers and Termux fallback on normal file opens. Existing dedicated theme imports,
+torrent handling and container-shortcut navigation retain their own routes.
+
+**Settings → External apps and default editor…** selects/clears the default editor
+and lists saved rules with individual clear controls. **Edit externally** uses
+the file's edit rule, then its MIME edit rule, then the global editor. EDIT handlers
+are preferred; apps declaring VIEW support can also receive the writable working
+copy. A saved component is used only if it is among the compatible installed
+handlers for the actual request. Incompatible, disabled or removed choices fall
+through to compatible alternatives or the picker. Empty/error results are shown
+honestly and do not record a successful selection.
+
+The shared picker preserves the target URI, MIME, read/write flags and ClipData,
+launches the chosen component in its own task, and saves a remembered selection
+only after Android accepts the launch. This does not prove the receiving app
+successfully renders or edits the file. Existing working-copy and content-check
+behavior still applies. Editor selection in Settings only saves a preference;
+it does not launch a fabricated document.
+
+Device checks remain pending: one-time open, both remember scopes and persistence,
+default bypass/replacement with Open with…, normal taps, editor selection/clear,
+uninstalled/incompatible handlers, denied URI access, cancellation and light/dark
+layout. No automated tests were added or run for this change.
+
+The debug APK builds passed with `gradle :app:assembleDebug --offline --console=plain`.
+The final build took 23 seconds; logs are `build/local-external-defaults/app-build.log`
+and `app-build-final.log` in the same directory. No ADB device was available for
+UI acceptance. The builds include existing unrelated workspace changes.
+
 External file opens from the browser now use a shared external-edit activity/provider in viewer-common and a durable session manager in storage-engine. The external application receives a read/write URI for a working copy, never a writable grant to the original source.
 
 Each session contains one working copy and the original source identity/fingerprint. Successful completion removes the session; this is not a version-history feature.
@@ -41,10 +90,9 @@ working copy is prepared, while Android chooses/launches the external app, and
 while the returned copy is checked. The handoff activity starts with a translucent
 window and no preview, dimming or visible preparation dialog. It reveals its
 themed controls only for changed content, an actual error, or an explicit visit
-to the unfinished-edits screen. The native Android app chooser remains available.
-Its excluded-component list contains every activity and activity alias in the
-current app package, preventing selection of InfiniFolder and recursive external
-opens. The same chooser protects the browser's direct file/content handoff and
+to the unfinished-edits screen. The later local-default picker replaces the native
+chooser and filters every activity and alias in the current app package, preventing
+selection of InfiniFolder and recursive external opens. The same picker protects the browser's direct file/content handoff and
 its MIME-free fallback. It retains the original URI grants and clip data.
 
 Returning through task switching also triggers the local checksum check when an

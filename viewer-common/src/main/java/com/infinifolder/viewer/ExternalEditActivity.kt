@@ -346,11 +346,15 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
         work("Preparing external program…") {
             store.reopen(item)
             val uri = store.uri(item)
-            val handoff = Intent(Intent.ACTION_VIEW).setDataAndType(uri, item.mime.ifBlank { "application/octet-stream" })
+            val action = if (intent.action == Intent.ACTION_EDIT) Intent.ACTION_EDIT else Intent.ACTION_VIEW
+            val handoff = Intent(action).setDataAndType(uri, item.mime.ifBlank { "application/octet-stream" })
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
                     Intent.FLAG_ACTIVITY_NEW_TASK)
             handoff.clipData = android.content.ClipData.newRawUri(item.name, uri)
-            val chooser = ExternalAppChooser.create(this, handoff, "Open ${item.name}")
+            val chooser = ExternalAppChooser.create(this, handoff,
+                if (action == Intent.ACTION_EDIT) "Edit ${item.name}" else "Open ${item.name}",
+                ExternalAppDefaults.sourceKey(item.ref), item.name,
+                intent.getBooleanExtra(ExternalAppChooser.FORCE_CHOOSER, false))
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 try {
