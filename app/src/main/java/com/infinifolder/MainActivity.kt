@@ -7720,30 +7720,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             text = node.icon; textSize = 17f; gravity = Gravity.CENTER
         }
         iconStack.addView(placeholder, FrameLayout.LayoutParams(dp(30), dp(32)))
-        val providerAuthority=node.providerAuthority
-        if(providerAuthority!=null || node.key=="application_public" || (node.uri!=null && !node.needsAccessBadge)) {
-            val image=ImageView(this).apply {scaleType=ImageView.ScaleType.FIT_CENTER}
-            iconStack.addView(image,FrameLayout.LayoutParams(dp(30),dp(32)))
-            val generation=loadGeneration
-            imageIo.execute {
-                val resolved=when {
-                    providerAuthority!=null -> resourceIconResolver.resolveAppStorage(providerAuthority,node.name,dp(30))
-                    node.key=="application_public" -> resourceIconResolver.resolveApplicationPublic(node.name,dp(30))
-                    node.uri!=null -> {
-                        val ref=provider.refForUri(node.uri) ?: return@execute
-                        val metadata=ResourceMetadata(node.name,"vnd.android.document/directory",null,null,true)
-                        resourceIconResolver.resolve(ResourceEntry(ref,metadata,node.uri),dp(30))
-                    }
-                    else -> return@execute
-                }
-                runOnUiThread {
-                    if(generation==loadGeneration && !isDestroyed) {
-                        image.setImageBitmap(resolved.bitmap);image.tag=resolved
-                        placeholder.visibility=if(resolved.bitmap==null)View.VISIBLE else View.GONE
-                    }
-                }
-            }
-        }
+        bindTreeIcon(node, iconStack, placeholder)
         if (isCreateDirNode) {
             iconStack.addView(
                 createDirBadge().apply { setOnClickListener { activateNode() } },
@@ -7787,6 +7764,76 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         }
     }
+    /** Tree rows survive file-list loads; their artwork must have the same lifetime as the row. */
+    private fun bindTreeIcon(node: TreeNode, stack: FrameLayout, placeholder: TextView) {
+        val size = dp(30)
+        val metadata = ResourceMetadata(node.name, "vnd.android.document/directory", null, null, true)
+        val providerAuthority = node.providerAuthority
+        val uri = node.uri
+        val entry = uri?.let { target -> provider.refForUri(target)?.let { ResourceEntry(it, metadata, target) } }
+        val themeRevision = iconThemeManager.revision()
+        val hasTheme = !iconThemeManager.getActiveThemeId().isNullOrBlank()
+        val image = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+        val request = Any()
+        val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+        image.tag = request
+        image.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) = Unit
+            override fun onViewDetachedFromWindow(view: View) { cancelled.set(true) }
+        })
+        stack.addView(image, FrameLayout.LayoutParams(size, dp(32)))
+        var authoritativeApplied = false
+        fun currentRequest() = !cancelled.get() && !isDestroyed && !isFinishing &&
+            iconThemeManager.revision() == themeRevision
+        fun applyIcon(icon: ResourceIconResolver.Icon, authoritative: Boolean) {
+            if (!currentRequest() || image.tag !== request || (!authoritative && authoritativeApplied)) return
+            if (authoritative) authoritativeApplied = true
+            image.setImageBitmap(icon.bitmap)
+            image.contentDescription = "${node.name}: ${icon.source}"
+            placeholder.text = icon.fallback
+            placeholder.visibility = if (icon.bitmap != null) View.GONE else View.VISIBLE
+        }
+        // Cached artwork is immediately usable, including while a file-list load is in flight.
+        val cached = if (providerAuthority == null) entry?.let { resourceIconResolver.peekCached(it, size) }
+            ?.takeUnless { it.source == "fallback" } else null
+        if (cached != null) { applyIcon(cached, true); return } else {
+            val hot = when {
+                providerAuthority != null -> resourceIconResolver.peekAppStorageIcon(providerAuthority, size)
+                node.key == "application_public" -> iconThemeManager.peekPlaceIcon("application_public", size)
+                uri != null && AppsUri.isRoot(uri) -> iconThemeManager.peekPlaceIcon("installed_apps", size)
+                else -> iconThemeManager.peekFileIcon(metadata, size)
+            }
+            image.setImageBitmap(hot)
+            // A cold selected theme reserves the slot until its worker can decode it.
+            // Do not flash platform emoji and leave them there after navigation.
+            placeholder.visibility = if (hot != null || hasTheme) View.GONE else View.VISIBLE
+        }
+        ResourceArtworkCache.reads.execute {
+            if (!currentRequest()) return@execute
+            val baseline = runCatching { when {
+                node.key == "application_public" || providerAuthority != null ->
+                    resourceIconResolver.resolveApplicationPublic(node.name, size)
+                entry != null -> resourceIconResolver.directoryTheme(entry, size)
+                else -> ResourceIconResolver.Icon(
+                    iconThemeManager.resolveFolderIcon(node.name, size) ?: FileTypeIcons.folder(size),
+                    node.icon, node.name, true, source = "directory-theme")
+            } }.getOrElse { ResourceIconResolver.Icon(FileTypeIcons.folder(size), node.icon, node.name, true) }
+            runOnUiThread { applyIcon(baseline, false) }
+            if (providerAuthority == null && (entry == null || node.needsAccessBadge || isCreateDirectoryNode(node))) return@execute
+            val sourceWorker = entry?.let(ResourceArtworkCache::sourceExecutor) ?: imageIo
+            sourceWorker.execute sourceRead@ {
+                if (!currentRequest()) return@sourceRead
+                val resolved = runCatching {
+                    if (providerAuthority != null) resourceIconResolver.resolveAppStorage(providerAuthority, node.name, size)
+                    else resourceIconResolver.resolve(requireNotNull(entry), size)
+                }.getOrNull() ?: return@sourceRead
+                // Source failure must not replace an already resolved theme baseline.
+                if (resolved.source == "fallback") return@sourceRead
+                runOnUiThread { applyIcon(resolved, true) }
+            }
+        }
+    }
+
     private fun createDirBadge(): TextView = TextView(this).apply {
         text = "+"; textSize = 11f; gravity = Gravity.CENTER
         typeface = android.graphics.Typeface.DEFAULT_BOLD

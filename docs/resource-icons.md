@@ -140,6 +140,40 @@ removal. Saving other edited link fields retains the selected embedded image.
 Malformed/absent images fall through to normal target/URI/theme artwork. Existing
 link JSON and icon precedence remain compatible; no new link-file format exists.
 
+## Tree artwork lifetime repair — 2026-11-02
+
+Tree rows previously started with a platform emoji and applied their asynchronous
+icon only if the file listing's `loadGeneration` still matched. Navigation can
+advance that counter while retaining the same tree row, permanently discarding
+the selected-theme result. Rows awaiting storage permission skipped theme lookup
+entirely. These are code-path findings; the 00:06 UTC dump screenshot shows the
+main file grid, not the reported tree regression.
+
+`MainActivity.bindTreeIcon` now gives each row an independent request token,
+detachment cancellation and a theme-revision check. File-list navigation cannot
+invalidate a surviving tree row. It first uses the shared resolver's valid memory
+cache or cached theme artwork, then resolves a theme folder/application baseline
+on the cache executor before probing any source. Authoritative artwork cannot be
+overwritten by a delayed baseline. Source resolution stays in the existing shared
+resolver and its directory/program/source executors; cover precedence is unchanged.
+An interrupted/failed resolver's generic fallback cannot replace the theme baseline.
+Rows awaiting access receive theme artwork without enumerating that directory.
+The access/create emblems retain their existing separate overlays.
+
+A cold selected theme reserves its slot until the baseline worker supplies real
+artwork. Decode failure has the built-in fallback; successful cached artwork is
+reused immediately. Detached rows and results from a former theme cannot update
+the visible tree. No new registry or persisted icon settings are introduced.
+
+Validation: debug APK build and whitespace checks; no new automated tests added
+or run. Device acceptance remains pending for rapid navigation with the tree open,
+expansion/collapse, picker trees, missing grants, covers/provider icons, and theme
+switching. Build evidence is in `build/tree-icon-repair/`.
+
+Final command `gradle :app:assembleDebug --offline --console=plain` succeeded in
+2m 13s (410 tasks, 4 executed); the earlier build also passed in 2m 34s. Final log:
+`build/tree-icon-repair/app-build-final.log`. No device is connected through ADB.
+
 Validation: `gradle :app:assembleDebug --offline --console=plain`; logs under
 `build/pinned-link-repair/`. Handset display, picker return, copy/reopen, clear,
 restart and breadcrumb/hover checks were not performed by the agent: ADB has no

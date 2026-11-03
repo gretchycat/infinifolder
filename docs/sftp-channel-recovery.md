@@ -82,3 +82,22 @@ interrupt and restore connectivity while observing the red badge; confirm errors
 remain visible if reconnect fails. New reason codes distinguish further server
 limits from interrupted setup. Serialized range reads and the stream cap may
 reduce peak parallel throughput; current fixes need this live comparison.
+
+## First repaired-build dump: 2026-11-03 00:06 UTC
+
+`build/infinifolder-debug-20261103-000635-639.{log,json,png}` reports APK update
+time 2026-11-02 23:43:13 UTC, after the repair. The owner reports the connection
+problem did not recur and a brief network interruption was too quick to observe
+the red badge. The retained dump contains no “channel is not opened” error or
+`sftp.session.reconnect` event. It does contain hostname-resolution failures at
+00:04:11 and FTP/WebDAV/SMB connection timeouts, then successful SFTP listings and
+range reads after connectivity returned. Permission-denied and cancelled icon
+probes remain present. This supports the exercised browsing recovery; it does not
+establish a particular reconnect route or visual badge acceptance.
+
+Added `storage.reconnect.begin` / `storage.reconnect.end` diagnostics to the shared
+activity signal, reporting active counts and attempt duration. These cover pooled
+session recreation as well as the explicit one-shot recovery path. They do not
+force disconnection, change the blink duration or hold red after an attempt ends.
+The next dump can establish whether a very brief reconnect indication was actually
+triggered. The tree-icon lifetime follow-up is documented in [resource icons](resource-icons.md).

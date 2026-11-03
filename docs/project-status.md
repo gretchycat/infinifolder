@@ -24,6 +24,14 @@ failures once. The toolbar dot blinks red during reconnect attempts. The 23:27,
 23:30 and 23:36 UTC dumps precede the repair; handset retry remains pending. See
 [evidence, changes and limits](sftp-channel-recovery.md).
 
+The first repaired-build dump (2026-11-03 00:06 UTC) contains no channel-opening
+error; the owner reports it did not recur. Hostname/network errors and later SFTP
+success are recorded, but the brief red reconnect badge is not visually accepted.
+Follow-up adds reconnect begin/end duration logging and repairs tree rows whose
+theme-icon completions were discarded by unrelated file-list navigation. Shared
+cached theme icons and an asynchronous baseline now precede source probes; live
+tree/picker/theme-switch acceptance remains pending. See [tree repair](resource-icons.md#tree-artwork-lifetime-repair--2026-11-02).
+
 ## Confirmed on the handset
 
 - Copy, Cancel and restricted-destination failure are owner-confirmed working
