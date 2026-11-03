@@ -11,6 +11,8 @@ Remaining portability, graph-planning and release items below are follow-up work
 
 - [x] Finish the host processing/transfer audit, standalone builds and checkpoint 31 evidence.
 - [x] Reproduce and resolve the 30 recorded pre-migration storage failures; final storage run passes 354 cases with no skips, retaining historical baselines. See [causes, evidence and acceptance limits](storage-failure-investigation.md).
+- [x] Normalize SFTP/archive POSIX file-type bits at Store's permission-only transfer-metadata boundary; preserve special permission bits and unknown modes. See [migration closeout](library-migration-completion.md#closeout-follow-up--2026-11-02).
+- [ ] Retest source-attribute capture on SFTP/Unix archive moves on the handset; move restoration after original deletion remains separate acceptance work.
 
 - [x] Align references with the supplied architecture; retain dated evidence and safety limits.
 - [x] Create/reuse the seven justified repositories, pin source submodules and build them independently.

@@ -59,7 +59,7 @@ Sound/Canvas/Scribe/Video have no application/viewer dependency. Public transiti
 exports still have callers and remain for compatibility. No unused parallel codec
 or IO framework was introduced or removed by name alone.
 
-## Verification
+## Checkpoint 31 verification (historical)
 
 Final full gate: 917 observed cases, 887 passed, the same 30 known failures,
 zero regressions/skips/missing protected cases. The protected checkpoint contains
@@ -80,6 +80,37 @@ The final APK also passes the JSON/XML/YAML/TOML runtime harness. The owner's
 903,633-byte file reparses to 912,621 characters / 1,281 logical lines, with tokens
 and source unchanged (129 ms in this local run, not a cross-device guarantee).
 Local build logs live under `build/`; they are not source artifacts.
+
+## Closeout follow-up — 2026-11-02
+
+The existing application's library extraction is complete. The 30 known failures
+above were subsequently reproduced and resolved; they are not outstanding migration
+failures. The [storage investigation](storage-failure-investigation.md) records
+their causes and the 942-case repair gate. The later
+[transfer cancellation gate](transfer-cancellation.md#validation-and-limits)
+passes 958 cases, including 370 storage cases, with zero failures, errors or skips.
+These are dated results at their recorded revisions, not a fresh run for every
+subsequent change. The checkpoint snapshots and original baseline remain intact.
+
+The final boundary repair addresses source-attribute warnings in the owner's
+23:38 UTC move-tree log. SFTP and Unix archive entries can expose full POSIX modes,
+including file-type bits, through `ResourceMetadata.permissionsMode`. Store's
+default `StorageProvider.readTransferMetadata` converts these through
+`TransferMetadata.from`, whose strict permission-only constructor previously
+rejected them. Conversion now keeps the low twelve permission/special bits and
+treats negative unknown modes as unknown. Permission-only values, ownership,
+timestamps, persistent metadata encoding and constructor validation are preserved.
+Genuine attribute failures still retain move originals under the existing safety
+policy. No provider, container or transfer engine is duplicated in the app.
+
+Build verification for this repair:
+`gradle :app:assembleDebug --offline --console=plain` passed in 30 seconds
+(410 tasks: 7 executed, 403 up-to-date). Output is retained at
+`build/library-migration-closeout/app-build.log`. No new tests were added or run in
+this closeout pass. Handset confirmation of attribute capture on SFTP/Unix archive
+sources remains unverified, as does move restoration after originals are deleted.
+The owner's earlier copy/cancel, SAF move-output cleanup, tree icons and connection
+badge confirmations remain recorded separately.
 
 ## Work outside this migration
 

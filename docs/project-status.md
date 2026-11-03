@@ -6,6 +6,13 @@ Updated 2026-11-02. This is the current status reference. Checked implementation
 
 ## Current priority
 
+Finish the library migration closeout before new features. The extraction is
+complete at [checkpoint 31](library-migration-completion.md); the final follow-up
+normalizes full POSIX modes at Store's transfer-metadata boundary, addressing the
+source-attribute warnings in the SAF move-tree log. The repair needs a handset
+retest; live acceptance and distributable release work remain separate from source
+extraction. See the [dated closeout record](library-migration-completion.md#closeout-follow-up--2026-11-02).
+
 Connection icon badges now show a red reconnect blink or a persistent unplugged
 symbol for observed failures, including `.iflink` destinations, remote archive
 sources, pins, tree and floating views. This corrects the earlier toolbar-only
@@ -16,8 +23,10 @@ The static type inventory is available as [CSV](supported-types.csv), with
 
 The library migration is complete at [checkpoint 31](library-migration-completion.md).
 The 30 pre-migration storage failures were reproduced and resolved on 2026-11-02.
-The final storage suite passes all 354 cases with no skips; the full APK/library
-gate passes all 942 cases. Repairs cover stale
+That repair's storage suite passed all 354 cases with no skips; its full APK/library
+gate passed all 942 cases. The later cancellation gate passed 958 cases, including
+370 storage cases. Those results predate the final mode-conversion repair; they
+are not a fresh closeout test run. Repairs cover stale
 backend contracts/expectations, the synthetic LVM layout and the batch-transfer
 cancellation exception boundary; historical baseline evidence is preserved. See
 [commands, causes and acceptance limits](storage-failure-investigation.md).

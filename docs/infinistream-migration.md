@@ -4,7 +4,7 @@ Design authority: [implementation assignment](infinistream_architecture_codex.md
 
 ## Published repositories and pinned dependency graph
 
-Repository publication was verified at the earlier checkpoints. The final revisions below are committed locally; this completion pass does not claim they were pushed. Sound's existing history is preserved; the other six repositories were created for this assignment. Each repository records standalone dependencies and source provenance. The workspace pins all seven as Git submodules and Gradle composite builds; no unpublished Maven artifact or vendored library tree is required.
+Repository publication was verified at the earlier checkpoints. The checkpoint 31 revisions below were committed locally; that completion pass did not claim they were pushed. Later repairs and verification are recorded in the [migration closeout](library-migration-completion.md#closeout-follow-up--2026-11-02); the host's submodule gitlinks identify current revisions. Sound's existing history is preserved; the other six repositories were created for this assignment. Each repository records standalone dependencies and source provenance. The workspace pins all seven as Git submodules and Gradle composite builds; no unpublished Maven artifact or vendored library tree is required.
 
 | Repository | Status | Pinned commit |
 | --- | --- | --- |
