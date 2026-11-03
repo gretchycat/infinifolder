@@ -58,3 +58,29 @@ android {
         }
     }
 }
+
+val generatedIntentManifest = layout.buildDirectory.file("generated/android-intents/AndroidManifest.xml")
+val generateIntentManifest by tasks.registering(Exec::class) {
+    description = "Register supported file types and URI handlers with Android"
+    inputs.file(layout.projectDirectory.file("src/main/AndroidManifest.xml"))
+    inputs.file(rootProject.file("scripts/build-android-intent-manifest.py"))
+    inputs.file(rootProject.file("scripts/export-supported-types.py"))
+    inputs.files(rootProject.files(
+        "libraries/libinfinistore/store-android/src/main/java/com/infinifolder/mime/MimeRegistry.kt",
+        "libraries/libinfinistore/store-android/src/main/java/com/infinifolder/archive/ArchiveFormats.kt",
+        "viewer-common/src/main/java/com/infinifolder/preview/ImageFormats.kt",
+        "viewer-common/src/main/java/com/infinifolder/viewer/MediaTypeDetector.kt",
+        "libraries/libinfinisound/audio-processing/src/main/java/com/infinifolder/audio/AudioProcessing.kt",
+        "libraries/libinfinisound/audio-core/src/main/java/com/infinifolder/audio/decoder/BuiltInAudioDecoders.kt",
+        "libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/DocumentFormats.kt",
+        "libraries/libinfinistore/store-android/src/main/java/com/infinifolder/storage/FileMagicDetector.kt"))
+    inputs.property("host", "app")
+    outputs.file(generatedIntentManifest)
+    outputs.file(generatedIntentManifest.map { it.asFile.resolveSibling("AndroidManifest.json") })
+    commandLine(providers.gradleProperty("intentManifestPython").orElse("python3").get(),
+        rootProject.file("scripts/build-android-intent-manifest.py"),
+        "--template", layout.projectDirectory.file("src/main/AndroidManifest.xml").asFile,
+        "--output", generatedIntentManifest.get().asFile, "--host", "app", "--viewer", "all")
+}
+android.sourceSets.getByName("main").manifest.srcFile(generatedIntentManifest)
+tasks.named("preBuild").configure { dependsOn(generateIntentManifest) }

@@ -27,8 +27,22 @@ class ViewerHostActivity : ViewerActivity() {
         val uri = source.data ?: return
         val name = runCatching { contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null } }.getOrNull()
             ?: uri.lastPathSegment.orEmpty()
-        val mime = source.type ?: contentResolver.getType(uri)
-        val type = MediaTypeDetector.detect(name, mime)
+        val mime = source.type ?: runCatching { contentResolver.getType(uri) }.getOrNull()
+        // A selected standalone viewer owns the representation it advertises:
+        // text shows source, and audio can play the audio track of a 3GP/MP4.
+        // The combined host keeps the regular MIME-aware dispatch.
+        val type = when (BuildConfig.VIEWER_KIND) {
+            "text" -> MediaType.TEXT
+            "image" -> if (MediaTypeDetector.detect(name, mime) == MediaType.TEXT) MediaType.TEXT else MediaType.IMAGE
+            "markdown" -> MediaType.MARKDOWN
+            "html" -> MediaType.HTML
+            "pdf" -> MediaType.PDF
+            "csv" -> MediaType.SPREADSHEET
+            "epub" -> MediaType.EPUB // The reader selects its Scribe document backend.
+            "audio" -> MediaType.AUDIO
+            "video" -> MediaType.VIDEO
+            else -> MediaTypeDetector.detect(name, mime)
+        }
         val edit = source.action == Intent.ACTION_EDIT
         if (edit && !MediaTypeDetector.isEditable(name,mime)) {
             Toast.makeText(this, "Editing is not supported for this format", Toast.LENGTH_LONG).show(); return

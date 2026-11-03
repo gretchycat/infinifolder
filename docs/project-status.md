@@ -1099,3 +1099,22 @@ final placement; arbitrary launcher hover/page placement is not emulated.
 Debug APK builds successfully; no tests added/run and no connected ADB device.
 Handset drag/drop, cancellation, launcher confirmation and resulting shortcut taps
 remain unverified. See [implementation, limits and checks](floating-launcher-shortcuts.md).
+
+### Android file and URI handlers — 2026-11-03
+
+Replaced the main app's narrow torrent/network registrations and the standalone
+host's fixed MIME slots with source-generated Open-with filters. The main APK
+registers 260 MIME entries, 827 suffixes (including multipart volume names) and 19
+native URI schemes; the combined standalone registers 214 MIME entries and 310
+suffixes. File/content grants, typed/untyped paths and native scheme handlers are
+separate. Delegated web/mail/phone/IRC and unimplemented NFS stay external.
+
+Fixed ordinary external files being treated as torrent resume, preserved supplied
+specific MIME identity, and routed actual viewers/containers/import/link actions.
+Externally supplied Termux command URIs/links get Run/Cancel review; existing
+trusted in-app command shortcuts retain their behavior. Added missing application
+text/audio MIME routes and viewer-specific standalone dispatch.
+
+Both APK builds pass; compiled manifests were inspected. No tests added/run and
+no connected ADB device; Android chooser, provider grants and native URI acceptance
+remain pending. See [registration, matching limits and checks](android-file-uri-registration.md).

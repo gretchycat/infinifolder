@@ -416,7 +416,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private data class ExternalLinkVisit(val uri: String, val title: String, val openedAt: Long)
     private enum class LinkNavigationOrigin { DIRECTORY_LINK, VIRTUAL_ROOT, EXTERNAL_HISTORY, PINNED }
     private val externalLinkHistoryKey = "external_link_history_v1"
-    private val externalLinkSchemes = setOf("ftp", "ftps", "sftp", "ssh", "sshfs", "smb", "webdav", "dav", "davs", "magnet", "torrent")
+    private val externalLinkSchemes = setOf("ftp", "ftps", "sftp", "ssh", "sshfs", "smb", "cifs", "webdav", "dav", "davs", "magnet", "torrent")
     private val pickTreeRequest = 4101
     private val pickCustomIconRequest = 4103
     private val pickThemeArchiveRequest = 4104
@@ -672,14 +672,90 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun handleExternalLinkIntent(request: Intent?) {
         if (request?.action != Intent.ACTION_VIEW) return
         val uri = request.data ?: return
-        if (uri.scheme in setOf("content", "file")) {
-            val ref = provider.refForUri(uri)
-            if (ref != null) resumeIncompleteDownload(ref)
+        val scheme = uri.scheme?.lowercase(Locale.ROOT)
+        if (scheme == "infinifolder-termux") {
+            request.action = null
+            reviewExternalTermuxCommand(uri)
             return
         }
-        if (uri.scheme?.lowercase(Locale.ROOT) !in externalLinkSchemes) return
+        if (scheme !in externalLinkSchemes) {
+            val suppliedMime = request.type
+            request.action = null
+            openExternalResource(uri, suppliedMime)
+            return
+        }
+        request.action = null
         val title = uri.host ?: "${uri.scheme?.uppercase(Locale.ROOT) ?: "External"} link"
-        openContainerLinkUri(uri, title, requireContainer = true, origin = LinkNavigationOrigin.EXTERNAL_HISTORY)
+        openContainerLinkUri(uri, title, requireContainer = false, origin = LinkNavigationOrigin.EXTERNAL_HISTORY)
+    }
+
+    private fun reviewExternalTermuxCommand(uri: Uri) {
+        val command = runCatching { uri.getQueryParameter("command") }.getOrNull()
+        val cwd = runCatching { uri.getQueryParameter("cwd") }.getOrNull()
+        if (!TermuxCommandLink.owns(uri) || command.isNullOrBlank() || (cwd != null && !cwd.startsWith('/'))) {
+            Toast.makeText(this, "Invalid Termux command link", Toast.LENGTH_LONG).show()
+            return
+        }
+        dialogBuilder().setTitle("Run Termux command?")
+            .setMessage(command + (cwd?.let { "\n\nWorking directory: $it" } ?: ""))
+            .setPositiveButton("Run") { _, _ -> TermuxCommandLink.launch(this, uri) }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    /** Open-with uses the real reader/container path. In particular a regular
+     * document must never be mistaken for a request to resume a torrent. */
+    private fun openExternalResource(uri: Uri, suppliedMime: String?) {
+        val generation = ++browserNavigationGeneration
+        io.execute {
+            try {
+                val ref = provider.refForUri(uri) ?: throw java.io.IOException("No storage provider owns this URI")
+                val original = when (val result = provider.stat(ref)) {
+                    is ProviderResult.Success -> result.value
+                    is ProviderResult.Failure -> throw java.io.IOException(result.message, result.cause)
+                    else -> throw java.io.IOException("Cannot inspect this item")
+                }
+                val name = original.metadata.name
+                var mime = com.infinifolder.mime.MimeRegistry.effective(name, suppliedMime ?: original.metadata.mimeType)
+                val genericMime = mime in setOf("application/octet-stream", "application/binary", "text/plain",
+                    "application/x-archive", "application/x-compressed", "application/x-raw-disk-image")
+                val magic = if (!original.metadata.isDirectory && genericMime && FileMagicDetector.isAmbiguousOrUnknown(name, mime)) {
+                    if (localProvider.owns(uri)) FileMagicDetector.detect(localProvider.fileFor(uri), true)
+                    else FileMagicDetector.detectFromStream {
+                        when (val result = provider.openRead(ref)) {
+                            is ProviderResult.Success -> result.value
+                            is ProviderResult.Failure -> throw java.io.IOException(result.message, result.cause)
+                            else -> throw java.io.IOException("Cannot read this item")
+                        }
+                    }
+                } else null
+                if (magic != null) {
+                    ambiguousMagicCache.put(uri.toString(), magic)
+                    mime = com.infinifolder.mime.MimeRegistry.effective(name, mime, magic.mimeType)
+                }
+                val entry = original.copy(metadata = original.metadata.copy(mimeType = mime))
+                val type = com.infinifolder.viewer.MediaTypeDetector.detect(name, mime)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
+                    when {
+                        entry.metadata.isDirectory -> openRoot(uri, rememberAuthorizedRoot = false)
+                        name.endsWith(".incomplete", true) || mime == "application/vnd.infinifolder.torrent-partial" -> resumeIncompleteDownload(ref)
+                        (name.endsWith(".torrent", true) || mime == "application/x-bittorrent") && ref.providerId != "torrent" -> openTorrentFile(entry)
+                        name.endsWith(".wsz", true) || mime == "application/x-winamp-skin" -> importWinampSkin(uri, applyToAudio = true)
+                        com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null || AppsUri.isAppUri(uri) -> open(entry, confirmCommands = true)
+                        com.infinifolder.viewer.ViewerCatalog.activity(type) != null -> launchBuiltInViewer(entry, type)
+                        (ArchiveFormats.isArchive(name, mime) && !name.endsWith(".bin", true)) || magic?.isArchiveOrDiscImage == true ->
+                            navigate(ArchiveUri.toArchiveUri(uri), displayName = name)
+                        else -> Toast.makeText(this, "No built-in viewer or container browser supports this item", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed && generation == browserNavigationGeneration &&
+                        !com.infinifolder.viewer.CacheFailureUi.offerCopy(this, error, uri))
+                        Toast.makeText(this, error.message ?: "Cannot open item", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun externalLinkVisits(): List<ExternalLinkVisit> = runCatching {
@@ -5315,7 +5391,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
 
-    private fun open(entry: ResourceEntry, externalOnly: Boolean = false) {
+    private fun open(entry: ResourceEntry, externalOnly: Boolean = false, confirmCommands: Boolean = false) {
         if (!entry.metadata.isDirectory && entry.metadata.name.endsWith(".incomplete", true) && !externalOnly) {
             resumeIncompleteDownload(entry.ref)
             return
@@ -5353,12 +5429,13 @@ class MainActivity : Activity(), DebugDumpObserver {
                             val targetEntry = target.entry
                             if (TermuxCommandLink.owns(target.uri)) {
                                 if (linkNavigationToken != null && sourceLocation != null) navigate(sourceLocation, push = false)
-                                TermuxCommandLink.launch(this, target.uri)
+                                if (confirmCommands) reviewExternalTermuxCommand(target.uri)
+                                else TermuxCommandLink.launch(this, target.uri)
                                 return@runOnUiThread
                             }
                             if (targetEntry == null) launchExternalViewIntent(target.uri, target.mime, target.name)
                             else if (targetEntry.metadata.isDirectory && !externalOnly) navigate(targetEntry.uri, displayName = targetEntry.metadata.name)
-                            else open(targetEntry, externalOnly)
+                            else open(targetEntry, externalOnly, confirmCommands)
                         }
                         is ProviderResult.Failure -> Toast.makeText(this, resolved.message, Toast.LENGTH_LONG).show()
                         else -> Unit

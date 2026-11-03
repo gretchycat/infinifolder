@@ -35,36 +35,7 @@
             android:exported="true"
             android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|uiMode">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/vnd.infinifolder.torrent-partial" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="content" />
-                <data android:scheme="file" />
-                <data android:host="*" android:pathPattern=".*\\.incomplete" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="ftp" />
-                <data android:scheme="ftps" />
-                <data android:scheme="sftp" />
-                <data android:scheme="ssh" />
-                <data android:scheme="sshfs" />
-                <data android:scheme="smb" />
-                <data android:scheme="webdav" />
-                <data android:scheme="dav" />
-                <data android:scheme="davs" />
-                <data android:scheme="magnet" />
-                <data android:scheme="torrent" />
-            </intent-filter>
+            <!-- Open-with filters are generated from the supported-type registry. -->
         </activity>
 
 

@@ -57,7 +57,13 @@ object MediaTypeDetector {
     private val TEXT_MIME_TYPES = setOf(
         "application/json", "application/xml", "application/x-yaml", "application/yaml",
         "application/javascript", "application/x-javascript", "application/x-sh",
-        "application/x-csh", "application/x-python", "application/x-ruby"
+        "application/x-csh", "application/x-python", "application/x-ruby",
+        "application/ld+json", "application/toml", "application/ecmascript",
+        "application/x-shellscript", "application/x-perl", "application/sql"
+    )
+
+    private val AUDIO_MIME_TYPES = setOf(
+        "application/vnd.smaf", "application/x-smaf", "application/x-guitar-pro", "application/x-gtp"
     )
 
     fun detect(name: String, mimeType: String? = null): MediaType {
@@ -77,7 +83,7 @@ object MediaTypeDetector {
             lowerMime == "image/x-ansi" -> return MediaType.TEXT
             lowerMime.startsWith("image/") -> return MediaType.IMAGE
             // Some providers use the RealAudio MIME even for RealMedia videos.
-            lowerMime in setOf("application/vnd.smaf", "application/x-smaf", "application/x-guitar-pro") -> return MediaType.AUDIO
+            lowerMime in AUDIO_MIME_TYPES -> return MediaType.AUDIO
             lowerMime.startsWith("audio/") -> return if (ext in setOf("rm", "rmvb")) MediaType.VIDEO else MediaType.AUDIO
             lowerMime.startsWith("video/") -> return MediaType.VIDEO
             lowerMime.startsWith("text/") || lowerMime in TEXT_MIME_TYPES -> return when {

@@ -546,3 +546,11 @@ Floating task switching (2026-11-03): the overlay now dismisses on Android's
 system-dialog/Recents/Home event as well as focus loss/outside touch, with immediate
 hiding and preserved geometry. Debug build passes; handset overview/quick-switch
 and reopen checks remain pending. See [status](project-status.md#floating-window-task-switching--2026-11-03).
+
+### Android file and URI registration — 2026-11-03
+
+- [x] Generate main/standalone Open-with MIME and filename filters from the actual supported-type inventory; register native URI schemes and aliases including `cifs`.
+- [x] Route ordinary external documents to their real reader/container actions, retain torrent/link/import behavior and review external command links.
+- [ ] Accept Android chooser/default-app selection, opaque content grants, binary-MIME filename fallback, native network/container/torrent URIs and standalone selected-viewer variants on a handset.
+
+Builds pass; no automated tests added/run. See [Android registration](android-file-uri-registration.md).

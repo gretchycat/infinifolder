@@ -29,6 +29,7 @@ Updated 2026-10-27. Start with [project status](project-status.md), [task list](
 - [FAT deleted-file recovery](fat-deleted-file-recovery.md)
 - [Feature to-do list](feature-todo.md)
 - [File formats and resource types](file-formats.md)
+- [Android file and URI registration](android-file-uri-registration.md)
 - [Image formats](image-formats.md)
 - [Audio and sound formats](audio-formats.md)
 - [Audio parsing and processing library](audio-processing-library.md)

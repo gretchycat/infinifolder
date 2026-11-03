@@ -178,9 +178,14 @@ for scheme, (caps, level, module, notes) in sorted(uris.items()):
     add('uri_type', scheme + ':', capabilities=caps, support_level=level, module=module, notes=notes,
         source_paths=STORE + 'storage/ContainerUris.kt|app/src/main/java/com/infinifolder/ResourceIconResolver.kt|docs/file-formats.md')
 
-destination = ROOT / 'docs/supported-types.csv'
-with destination.open('w', encoding='utf-8-sig', newline='') as out:
-    writer = csv.DictWriter(out, fieldnames=list(rows[0]), lineterminator='\n')
-    writer.writeheader()
-    writer.writerows(sorted(rows, key=lambda row: (row['category'], row['identifier'])))
-print(f'{destination}: {len(rows)} rows; {dict(Counter(row["category"] for row in rows))}')
+def main():
+    destination = ROOT / 'docs/supported-types.csv'
+    with destination.open('w', encoding='utf-8-sig', newline='') as out:
+        writer = csv.DictWriter(out, fieldnames=list(rows[0]), lineterminator='\n')
+        writer.writeheader()
+        writer.writerows(sorted(rows, key=lambda row: (row['category'], row['identifier'])))
+    print(f'{destination}: {len(rows)} rows; {dict(Counter(row["category"] for row in rows))}')
+
+
+if __name__ == '__main__':
+    main()
