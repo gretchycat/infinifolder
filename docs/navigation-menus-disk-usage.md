@@ -44,6 +44,7 @@ current folder. Dropping files into their current directory also requests a
 confirmed copy with unused names; dropping directly on the source icon still opens
 its context menu.
 
-The 2026-11-04 app/combined-host build passes. Same-folder selection, confirmation
-Cancel, repeated copies, selected sets and backend-specific name/publication cases
-remain device checks; this change did not rerun automated tests.
+The 2026-11-04 app/combined-host build passes. The owner confirms copying after
+the same-directory drag correction. Confirmation Cancel, broader Copy to/Paste
+variants, repeated copies, selected sets and backend-specific publication remain
+separate checks. No automated tests were rerun for this acceptance record.

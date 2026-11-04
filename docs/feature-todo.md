@@ -28,12 +28,15 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 
 ## Transfer warning checks
 
-- [ ] Confirm timestamp-only SAF warnings identify modification time; exercise per-message hiding across restart, different warnings, reset and move-source retention. See [metadata notices](metadata-integrity.md#document-provider-timestamp-notices--2026-11-04).
+- [x] Owner confirms the warning checkbox works (2026-11-04).
+- [ ] Extend warning checks to restart persistence, different messages, reset and move-source retention. See [metadata notices](metadata-integrity.md#document-provider-timestamp-notices--2026-11-04).
 
 ## Latest chooser and copy checks
 
-- [ ] Check Open internally is first for supported files and absent for unsupported formats, normal built-in defaults, remembered internal/external file/type choices, Open externally, Cancel before staging and remote/archive handoff. See [opening rules](external-edit-writeback.md).
-- [ ] Check Copy to/Paste into the source directory, confirmation Cancel, repeated unique names, same-directory drag duplication, selected sets and source retention; Move remains blocked there. See [copy behavior](navigation-menus-disk-usage.md#copy-into-the-source-directory).
+- [x] Owner confirms normal file launching uses the internal viewer after the tap-path correction (2026-11-04).
+- [ ] Extend chooser checks to unsupported formats, remembered internal/external file/type choices, Open externally, Cancel before staging and remote/archive handoff. See [opening rules](external-edit-writeback.md).
+- [x] Owner confirms copying after the same-directory drag correction (2026-11-04).
+- [ ] Extend copy checks to Copy to/Paste variants, confirmation Cancel, repeated names, selected sets and source retention; Move remains blocked there. See [copy behavior](navigation-menus-disk-usage.md#copy-into-the-source-directory).
 
 ## Link target icon checks
 

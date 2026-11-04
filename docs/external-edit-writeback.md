@@ -295,4 +295,7 @@ select supported internal viewers unless an explicit saved external association 
 Termux rule applies. Missing, disabled or incompatible saved external apps do not
 suppress internal viewing; their saved rules remain available if reinstalled.
 The legacy global switch is replaced by file/type choices in Settings; its saved value no longer disables internal viewing. Explicit Open
-externally/Open with actions remain available. Device acceptance remains pending.
+externally/Open with actions remain available. The owner confirmed normal file
+launching and copying on 2026-11-04. Saved-rule permutations, unsupported types,
+provider/remote handoff, chooser cancellation and lifecycle variants remain separate
+checks. This confirmation does not extend external-editor write-back acceptance.

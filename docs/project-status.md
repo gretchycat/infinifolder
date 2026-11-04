@@ -22,7 +22,8 @@ The Open-with follow-up restores **Open internally** as the first supported choi
 allows remembering it for a file/type and keeps explicit external preferences.
 Choosing an internal viewer avoids external staging. Same-folder Copy to/Paste uses
 the existing unused-name transfer handling with confirmation; Move restrictions stay.
-Both APKs build; these new chooser/copy interactions remain device-unverified.
+Both APKs build. On 2026-11-04, the owner confirmed copying and normal file
+launching after the drag/tap correction, and the warning-suppression checkbox.
 A follow-up also removes the same-parent drag no-op and the legacy global viewer
 switch that could still bypass internal defaults. File/type choices control external
 opening; current-directory drops use confirmed copy/unused-name handling.
@@ -52,7 +53,8 @@ variant or the latest runtime-discovery change has been exercised on a device.
 | Browser | Two-finger selection, pane switching, tree drops/autoscroll, Virtual root links, loading-light behavior, notifications and automatic successful-dialog dismissal |
 | File icons | Themed tree improvement, connection/disconnection badges including link targets, hidden-file badges, special folder icons and GEN binary identity |
 | Cache/external editing | Core LRU/active-file protection/settings persistence; real-editor handoff, conflicts, preserved edits/Save As and unfinished-session recovery |
-| Transfers | Copy, Cancel and restricted-destination failures; cancelled SAF move cleanup before originals were removed; earlier ZIP/FAT16 behavior and native FAT32 file moves |
+| Opening | Normal file taps use the internal viewer after the default-route correction; broader chooser/provider cases remain separate |
+| Transfers | Current-directory copying and the warning-suppression checkbox; Copy, Cancel and restricted-destination failures; cancelled SAF move cleanup before originals were removed; earlier ZIP/FAT16 behavior and native FAT32 file moves |
 | Recovery/formats | General delivered FAT recovery fixtures and partial recovery; reported RAR/ARJ/CAB, UFS, NTFS and HFS-family browsing; individual subsets remain documented |
 | Audio | ANSI music and the softer waveform, local MP3 seeking/gapless and playable playlist lengths were confirmed |
 | Documents/fonts | EPUB and the first Office/ebook reading pass; font display, rotation, navigation/keyboard insets |

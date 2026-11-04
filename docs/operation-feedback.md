@@ -122,3 +122,7 @@ messages still count as warnings in Activity and keep their full diagnostic reco
 metadata/source-retention policy is unaffected. A timestamp-preservation limitation
 is described as a timestamp notice, not a fabricated permissions error. See
 [metadata reporting](metadata-integrity.md#document-provider-timestamp-notices--2026-11-04).
+
+The owner confirmed the warning checkbox, copying and normal file launching on
+2026-11-04. Restart/reset and other-warning behavior remain focused regression
+checks; this confirmation does not establish every provider or move-undo path.

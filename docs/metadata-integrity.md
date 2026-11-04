@@ -96,5 +96,7 @@ Each warning offers **Don't show this message again**. Suppression persists for 
 exact message across restarts and applies only to its popup. Warning counts, logs,
 byte checks and move-source retention remain active. Other warnings and operation
 failures still appear. **Settings → Reset hidden transfer warnings** restores them.
-The setting stores message hashes rather than filenames/error text. UI acceptance
-and the new wording remain device checks; no new automated tests were run.
+The setting stores message hashes rather than filenames/error text. The owner
+confirmed the checkbox and copying on 2026-11-04. Restart persistence, reset,
+different warnings and move-retention variants remain separate checks. No new
+automated tests were run for this acceptance record.
