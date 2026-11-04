@@ -70,6 +70,24 @@ retained if export cannot complete and retried on the next launch. Release build
 do not perform this automatic stall export. Actual freeze capture/export and the
 reported crash still require device evidence.
 
+Startup recovery also covers exceptions and linkage failures during application
+initialization: these are saved before opening the lightweight recovery screen,
+without deleting settings or user files. The fatal handler is installed before
+diagnostic initialization. Transparent dispatch activities no longer mark startup
+successful; readiness is recorded after a content activity's full resume callback.
+This repairs gaps in error reporting, not the still-unidentified underlying crash.
+Missing bundled-theme installations are created from APK assets; absent pin-board
+directories and legacy preferences already have creation/migration paths. No
+manual copying of those files is required when upgrading. A current recovery
+report is still needed to establish whether a particular saved file is involved.
+
+Recovery-build evidence: `gradle :app:assembleDebug :viewer-host:assembleDebug
+--offline --console=plain` (`build/docs-audit/startup-recovery-build.log`). Android
+ART verification compilation of the preceding APK completed without reported
+verifier errors; this does not exercise application initialization or UI startup.
+Documentation link checks passed (133 files, 632 links). No automated tests were
+added or run for this change; device startup/recovery checks remain pending.
+
 ## Public pin board directory
 
 The compact pin board is a view of **Internal storage → InfiniFolder → Pin board**.

@@ -16,7 +16,7 @@ import com.infinifolder.storage.*
 import com.infinifolder.overlay.FloatingContainerService
 
 /** Transparent dispatcher: storage containers float; browser-page links open their normal UI. */
-class HomeItemActivity : Activity() {
+class HomeItemActivity : Activity(), com.infinifolder.viewer.StartupDispatcher {
     private var pendingContainer: Uri? = null
     private var pendingContainerName: String? = null
     private var requestConsumed = false
@@ -155,6 +155,9 @@ class HomeItemActivity : Activity() {
                     startActivity(Intent(this@HomeItemActivity, MainActivity::class.java).setAction(Intent.ACTION_MAIN))
                     finish()
                 } catch (error: Exception) {
+                    val nextReport = com.infinifolder.viewer.DebugTools.saveStartupError(this@HomeItemActivity, Thread.currentThread(), error)
+                    showStartupRecovery(nextReport)
+                } catch (error: LinkageError) {
                     val nextReport = com.infinifolder.viewer.DebugTools.saveStartupError(this@HomeItemActivity, Thread.currentThread(), error)
                     showStartupRecovery(nextReport)
                 }

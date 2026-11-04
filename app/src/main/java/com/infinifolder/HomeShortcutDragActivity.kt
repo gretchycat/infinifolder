@@ -21,7 +21,7 @@ import com.infinifolder.storage.DiagnosticLog
 /** Temporary transparent drop surface above Home. Android launchers do not share
  * a general external-shortcut drop protocol, so the actual drop requests a pin
  * through the public API while this activity is foreground. */
-class HomeShortcutDragActivity : Activity() {
+class HomeShortcutDragActivity : Activity(), com.infinifolder.viewer.StartupDispatcher {
     private var cancellation: ResultReceiver? = null
     private var dragEnded = false
     private var pinRequested = false

@@ -32,6 +32,9 @@ interface DebugDumpObserver {
     fun debugCaptureWindow(): android.view.Window? = null
 }
 
+/** A routing activity is not evidence that the destination screen started successfully. */
+interface StartupDispatcher
+
 /** User-triggered app-window captures. No system screen-capture permission or background screenshots. */
 object DebugTools : Application.ActivityLifecycleCallbacks {
     private val installed = AtomicBoolean(false)
@@ -69,6 +72,16 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
         private set
     fun install(application: Application) {
         if (installed.compareAndSet(false, true)) {
+            val previous = Thread.getDefaultUncaughtExceptionHandler()
+            Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+                // Save recovery evidence before touching optional logging/runtime services.
+                if (!startupReady.get()) runCatching { saveStartupError(application, thread, error) }
+                runCatching { DiagnosticLog.record("uncaught", "application failure", error) }
+                if (application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    runCatching { crashExporter.submit { exportPendingCrash(application) }.get(2500, java.util.concurrent.TimeUnit.MILLISECONDS) }
+                }
+                previous?.uncaughtException(thread, error)
+            }
             DiagnosticLog.providerResolver = { com.infinifolder.storage.StorageRuntime.get(it).provider }
             DiagnosticLog.init(application)
             UiResponsivenessMonitor.install()
@@ -102,19 +115,6 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
                         }
                     }
                 }
-            }
-            val previous = Thread.getDefaultUncaughtExceptionHandler()
-            Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-                DiagnosticLog.record("uncaught", "application failure", error)
-                if (!startupReady.get()) {
-                    runCatching {
-                        saveStartupError(application, thread, error)
-                    }
-                }
-                if (application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
-                    runCatching { crashExporter.submit { exportPendingCrash(application) }.get(2500, java.util.concurrent.TimeUnit.MILLISECONDS) }
-                }
-                previous?.uncaughtException(thread, error)
             }
             application.registerActivityLifecycleCallbacks(this)
             if (application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
@@ -162,8 +162,13 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
         }
     }
     override fun onActivityResumed(activity: Activity) {
-        startupReady.set(true)
         UiResponsivenessMonitor.resumed(activity)
+        if (activity !is StartupDispatcher) {
+            // Run after the complete onResume chain, including subclass work.
+            Handler(Looper.getMainLooper()).post {
+                if (!activity.isFinishing && !activity.isDestroyed) startupReady.set(true)
+            }
+        }
     }
 
     /** Explicit toolbar attachment keeps the control out of document and file content. */
