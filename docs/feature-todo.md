@@ -34,6 +34,13 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
   refreshed evidence. Icon-registry revision/migration/fingerprint work now runs
   off the UI thread, with elapsed-time logging; verify cold-start responsiveness
   and registry/theme changes on return to the app.
+  Reinstall reports `(2)`/`(3)` contain restored October 29 app-private history
+  and a new application session with no activity entry. Keep the watchdog active
+  across Application/Activity construction and dispatcher handoff (implemented);
+  collect that pending startup stack and phase markers. Underlying cause remains
+  unresolved; no further data reset is required to collect this evidence.
+  Owner confirms a subsequent launch opens the app; cold-start timing and the
+  newer watchdog's stack capture remain unverified.
 
 - [ ] Device-check repeated audio theme switches (including while playing),
   listener attachment/detachment, WMP Aero portrait/landscape and system insets,

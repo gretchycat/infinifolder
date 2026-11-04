@@ -140,6 +140,30 @@ run. Startup time, responsiveness, resumed registry/theme edits and shortcut
 forwarding still require device verification; this is not a measured complete
 resolution of the startup delay.
 
+The owner then supplied `infinifolder-startup-report.log (2)` and `(3)` after
+uninstall/reinstall. Report `(3)` was captured at 17:49:38 CST: its new session
+starts at 17:49:31 and records application services, but no launcher/browser entry
+or captured startup stall. Older October 29 app-private session content returned
+after reinstall, indicating restored data; reinstall alone did not establish a
+clean settings/data state. The termination record is SIGKILL (signal 9), without
+an attributed cause; package-update termination is recorded separately. This does
+not establish a Java exception or the cause of the startup delay.
+
+The watchdog previously cleared its `Application startup` label on the first
+queued main-thread callback. That can precede Activity class loading/construction;
+a transparent dispatcher's stop also left a gap before its destination entered.
+Startup monitoring now continues through those gaps until a content activity has
+completed resume. Browser construction is tagged before its field initializers,
+and application, launcher entry/theme and browser creation phases are logged.
+These changes repair missing evidence; they do not identify or fix the underlying
+delay. The debug reporter also names package-update/state/freezer exit reasons.
+Build evidence: `build/docs-audit/startup-handoff-monitor-build.log`, using the
+app/standalone-host debug build command above. No automated tests were added or
+run; startup-stack capture and the actual launch behavior need device evidence.
+The owner subsequently confirms that running the app again opens it. This
+confirms a repeat launch only; cold-start timing and installation/exercise of
+the newer watchdog build were not reported. The initial delay remains unresolved.
+
 ## Public pin board directory
 
 The compact pin board is a view of **Internal storage → InfiniFolder → Pin board**.

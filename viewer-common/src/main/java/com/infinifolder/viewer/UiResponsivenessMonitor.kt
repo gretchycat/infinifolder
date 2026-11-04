@@ -24,6 +24,7 @@ internal object UiResponsivenessMonitor {
     private val resumed = Collections.newSetFromMap(WeakHashMap<Activity, Boolean>())
     private val starting = Collections.newSetFromMap(WeakHashMap<Activity, Boolean>())
     @Volatile private var activityName: String? = null
+    @Volatile private var startupPending = true
     @Volatile private var postedAt = 0L
     private var lastStallReport = 0L
     @Volatile private var stallReported = false
@@ -80,8 +81,11 @@ internal object UiResponsivenessMonitor {
                 }
             }
         }, 250, 250, TimeUnit.MILLISECONDS)
-        main.post { if (activityName == "Application startup") activityName = null }
+        // The queue can drain between Application.onCreate and Activity construction.
+        // Keep watching that gap, including a transparent dispatcher's handoff.
     }
+
+    fun contentReady() { startupPending = false }
 
     fun resumed(activity: Activity) {
         starting.remove(activity)
@@ -94,6 +98,7 @@ internal object UiResponsivenessMonitor {
     fun paused(activity: Activity) {
         resumed.remove(activity)
         activityName = resumed.lastOrNull()?.javaClass?.simpleName ?: starting.lastOrNull()?.javaClass?.simpleName
+            ?: if (startupPending) "Application startup" else null
     }
     fun stopped(activity: Activity) { starting.remove(activity); paused(activity) }
 }

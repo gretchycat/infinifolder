@@ -178,6 +178,9 @@ public final class StartupReportActivity extends Activity {
             case ApplicationExitInfo.REASON_DEPENDENCY_DIED: return "Dependency died";
             case ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE: return "Excessive resource use";
             case ApplicationExitInfo.REASON_PERMISSION_CHANGE: return "Permission changed";
+            case ApplicationExitInfo.REASON_PACKAGE_UPDATED: return "Package updated";
+            case ApplicationExitInfo.REASON_PACKAGE_STATE_CHANGE: return "Package state changed";
+            case ApplicationExitInfo.REASON_FREEZER: return "Frozen process terminated";
             case ApplicationExitInfo.REASON_OTHER: return "Other";
             default: return "Unknown reason";
         }

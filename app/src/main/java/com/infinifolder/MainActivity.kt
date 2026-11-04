@@ -117,6 +117,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class MainActivity : Activity(), DebugDumpObserver {
+    init {
+        // This does not access Context: Android has not attached it yet.
+        com.infinifolder.viewer.DebugTools.activityStarting(this)
+        com.infinifolder.storage.DiagnosticLog.record("startup.browser.constructing")
+    }
     private data class BrowserDragPayload(
         val entries: List<ResourceEntry>,
         val canMove: Boolean,
@@ -549,6 +554,8 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         com.infinifolder.viewer.DebugTools.activityStarting(this)
+        val started = SystemClock.uptimeMillis()
+        com.infinifolder.storage.DiagnosticLog.record("startup.browser.creating")
         val restoringLaunch = savedInstanceState != null ||
             intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
         if (intent?.action == ACTION_HOME_ITEM && !restoringLaunch) {
@@ -641,6 +648,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         dispatchLaunchRequest(intent, restoringLaunch)
         io.execute { HomeShortcuts.refreshPinned(applicationContext) }
+        com.infinifolder.storage.DiagnosticLog.record("startup.browser.created", "elapsedMs=${SystemClock.uptimeMillis() - started}")
     }
 
     override fun onNewIntent(intent: Intent) {

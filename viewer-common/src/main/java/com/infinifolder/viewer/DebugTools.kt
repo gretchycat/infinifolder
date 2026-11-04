@@ -166,7 +166,10 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
         if (activity !is StartupDispatcher) {
             // Run after the complete onResume chain, including subclass work.
             Handler(Looper.getMainLooper()).post {
-                if (!activity.isFinishing && !activity.isDestroyed) startupReady.set(true)
+                if (!activity.isFinishing && !activity.isDestroyed) {
+                    startupReady.set(true)
+                    UiResponsivenessMonitor.contentReady()
+                }
             }
         }
     }

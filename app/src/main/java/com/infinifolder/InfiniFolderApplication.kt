@@ -14,9 +14,13 @@ class InfiniFolderApplication : Application() {
             (getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager).runningAppProcesses
                 ?.firstOrNull { it.pid == android.os.Process.myPid() }?.processName
         if (processName == "$packageName:startup_report") return
+        val started = android.os.SystemClock.uptimeMillis()
         try {
             DebugTools.install(this)
-            if (DebugTools.startupError(this) == null) initializeNormal()
+            val recovering = DebugTools.startupError(this) != null
+            if (!recovering) initializeNormal()
+            com.infinifolder.storage.DiagnosticLog.record("startup.application.ready",
+                "elapsedMs=${android.os.SystemClock.uptimeMillis() - started} recovery=$recovering")
         } catch (error: Exception) {
             // Application.onCreate runs before the launcher can display recovery.
             // Preserve the failure, then let the existing recovery screen open.

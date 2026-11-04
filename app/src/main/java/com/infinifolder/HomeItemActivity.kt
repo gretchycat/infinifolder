@@ -21,6 +21,9 @@ class HomeItemActivity : Activity(), com.infinifolder.viewer.StartupDispatcher {
     private var pendingContainerName: String? = null
     private var requestConsumed = false
     override fun onCreate(savedInstanceState: Bundle?) {
+        com.infinifolder.viewer.DebugTools.activityStarting(this)
+        val started = android.os.SystemClock.uptimeMillis()
+        DiagnosticLog.record("home.dispatch.entered", "action=${intent.action}")
         val startupError = if (intent.data == null) com.infinifolder.viewer.DebugTools.startupError(this) else null
         if (startupError != null) setTheme(R.style.AppTheme)
         super.onCreate(savedInstanceState)
@@ -28,8 +31,9 @@ class HomeItemActivity : Activity(), com.infinifolder.viewer.StartupDispatcher {
             showStartupRecovery(startupError)
             return
         }
-        com.infinifolder.theme.ThemeManager.init(applicationContext)
         DiagnosticLog.record("home.dispatch.created", "action=${intent.action} task=$taskId root=$isTaskRoot restored=${savedInstanceState != null}")
+        com.infinifolder.theme.ThemeManager.init(applicationContext)
+        DiagnosticLog.record("home.dispatch.theme-ready", "elapsedMs=${android.os.SystemClock.uptimeMillis() - started}")
         pendingContainer = savedInstanceState?.getString("container")?.let(Uri::parse)
         pendingContainerName = savedInstanceState?.getString("container_name")
         if (pendingContainer != null) return
