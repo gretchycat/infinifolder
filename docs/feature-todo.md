@@ -26,6 +26,10 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 - [ ] Device-check generic binary/sidecar opening and real signature-selected archive listing.
 - [ ] Accept continuous Cast transitions/seek/failure fallback on a receiver, plus shared Back/scroll and browser breadcrumb/position changes.
 
+## Transfer warning checks
+
+- [ ] Confirm timestamp-only SAF warnings identify modification time; exercise per-message hiding across restart, different warnings, reset and move-source retention. See [metadata notices](metadata-integrity.md#document-provider-timestamp-notices--2026-11-04).
+
 ## Latest chooser and copy checks
 
 - [ ] Check Open internally is first for supported files and absent for unsupported formats, normal built-in defaults, remembered internal/external file/type choices, Open externally, Cancel before staging and remote/archive handoff. See [opening rules](external-edit-writeback.md).

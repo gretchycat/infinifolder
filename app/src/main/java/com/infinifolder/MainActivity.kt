@@ -8638,6 +8638,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                 action("Default viewers, apps and editor…") { startActivity(Intent(this, com.infinifolder.viewer.ExternalAppSettingsActivity::class.java)) },
                 action("Common locations…") { showCommonLocationsSettings() },
                 action("Copy verification: ${if (shared.getBoolean("verify_copies", true)) "on" else "off"}…") { showCopyVerificationSettings() },
+                action("Reset hidden transfer warnings", !shared.getStringSet("hidden_transfer_warning_ids", emptySet()).isNullOrEmpty()) {
+                    shared.edit().remove("hidden_transfer_warning_ids").apply()
+                    Toast.makeText(this, "Transfer warning messages restored", Toast.LENGTH_SHORT).show()
+                },
                 action("Disk cache…") { com.infinifolder.viewer.DiskCacheSettings.show(this) },
                 action("Unfinished external edits…") { startActivity(Intent(this, com.infinifolder.viewer.ExternalEditActivity::class.java)) },
                 action("Recover interrupted saves…") { startActivity(Intent(this, com.infinifolder.viewer.SaveRecoveryActivity::class.java)) },
@@ -12894,12 +12898,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             } finally {
                 runOnUiThread {
                     if (isDestroyed) return@runOnUiThread
-                    if (transferWarnings.isNotEmpty()) {
-                        val shown = transferWarnings.take(20).joinToString("\n\n")
-                        val extra = if (transferWarnings.size > 20) "\n\n${transferWarnings.size - 20} more warnings. Full details are in the debug log." else ""
-                        dialogBuilder().setTitle("Transfer warnings (${transferWarnings.size})")
-                            .setMessage(shown + extra).setPositiveButton("OK", null).show()
-                    }
+                    showTransferWarnings(transferWarnings)
                     directoryIconCache.evictAll()
                     val refreshDestination = { refreshTreeAfterTransfer(destination) }
                     if (destination == localProvider.rootUri) refreshInternalSharedTree(refreshDestination)
@@ -13187,6 +13186,45 @@ class MainActivity : Activity(), DebugDumpObserver {
                 startCreateArchive(items, normalized, targetUri)
             }
             .show()
+    }
+
+    private fun transferWarningId(message: String): String = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(message.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+    /** Hiding a message is presentation policy only; counts, logging and move guards remain active. */
+    private fun showTransferWarnings(warnings: List<String>) {
+        val hidden = shared.getStringSet("hidden_transfer_warning_ids", emptySet()).orEmpty()
+        val visible = warnings.distinct().filterNot { transferWarningId(it) in hidden }
+        if (visible.isEmpty()) return
+        val context = dialogContext()
+        val theme = com.infinifolder.theme.ThemeManager.activeTheme
+        val body = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+        }
+        val choices = mutableListOf<Pair<CheckBox, String>>()
+        visible.take(20).forEach { message ->
+            body.addView(TextView(context).apply {
+                text = message; setTextColor(theme.textPrimary); setPadding(0, dp(8), 0, dp(4))
+            })
+            val checkbox = CheckBox(context).apply {
+                text = "Don't show this message again"; setTextColor(theme.textSecondary)
+            }
+            body.addView(checkbox)
+            choices += checkbox to transferWarningId(message)
+        }
+        if (visible.size > 20) body.addView(TextView(context).apply {
+            text = "${visible.size - 20} more warnings. Full details are in the debug log."
+            setTextColor(theme.textSecondary)
+        })
+        val dialog = dialogBuilder().setTitle("Transfer warnings (${visible.size})")
+            .setView(ScrollView(context).apply { addView(body) }).setPositiveButton("OK", null).create()
+        dialog.setOnDismissListener {
+            val selected = choices.filter { it.first.isChecked }.map { it.second }
+            if (selected.isNotEmpty()) shared.edit().putStringSet("hidden_transfer_warning_ids",
+                shared.getStringSet("hidden_transfer_warning_ids", emptySet()).orEmpty() + selected).apply()
+        }
+        dialog.show()
     }
 
     private fun startCreateArchive(entries: List<ResourceEntry>, archiveName: String, destinationFolderUri: Uri) {

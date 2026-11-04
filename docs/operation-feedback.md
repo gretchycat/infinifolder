@@ -111,3 +111,14 @@ Backend-assigned unique names are retained. PixelCopy captures the app window;
 view-drawing fallback can omit video surfaces. Logs may contain resource names and
 screenshots show visible content. Dump export is owner-confirmed; backend/grant
 variants remain conditional.
+
+## Remembering warning visibility
+
+Warning dialogs display a **Don't show this message again** checkbox for each shown
+message. Selecting it hides that same message on future transfers, including after
+restart. Different messages still appear; errors use their existing failure path.
+**Settings → Reset hidden transfer warnings** restores suppressed popups. Hidden
+messages still count as warnings in Activity and keep their full diagnostic records;
+metadata/source-retention policy is unaffected. A timestamp-preservation limitation
+is described as a timestamp notice, not a fabricated permissions error. See
+[metadata reporting](metadata-integrity.md#document-provider-timestamp-notices--2026-11-04).

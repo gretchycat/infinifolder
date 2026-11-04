@@ -4,8 +4,8 @@
 
 Implemented 2026-10-26; device acceptance pending.
 
-Transfer warnings summarize metadata loss once per operation; detailed reasons and
-affected entries remain in the diagnostic log. Moves keep affected originals.
+Transfer warnings summarize metadata loss once per affected field set; detailed
+reasons and affected entries remain in the diagnostic log. Moves keep affected originals.
 
 ## Shared metadata contract
 
@@ -79,3 +79,22 @@ attributes, precise timestamps, native move retention, inconsistent ACL rejectio
 and filesystem checks on disposable images. Log: `build/metadata-integrity-tests.log`.
 No new torrent tests were run for the finalization fix. The combined debug APK
 built successfully and opened with `xdg-open`; handset acceptance remains pending.
+
+## Document-provider timestamp notices — 2026-11-04
+
+The 21:06 UTC dump records two completed same-directory SAF copies: `specular.fli`
+and `transparency-disposal.png`. Both created unused destination names and copied
+the expected byte lengths; optional read-back verification was disabled. Their only
+transfer warning came from unsupported metadata import after writing. SAF exported
+modification time but no Unix mode/owner/group; the old generic permissions warning
+was misleading. The message now names the actual requested fields, such as
+**The destination does not support preserving modification time.** This does not
+add timestamp-setting support to providers or treat unsupported import as success.
+Separate SMB/SFTP icon-probe access errors in that dump were not the copy failure.
+
+Each warning offers **Don't show this message again**. Suppression persists for that
+exact message across restarts and applies only to its popup. Warning counts, logs,
+byte checks and move-source retention remain active. Other warnings and operation
+failures still appear. **Settings → Reset hidden transfer warnings** restores them.
+The setting stores message hashes rather than filenames/error text. UI acceptance
+and the new wording remain device checks; no new automated tests were run.
