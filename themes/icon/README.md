@@ -21,6 +21,8 @@ Public, Cloud, Offline, Recent, Temporary, Contacts, Calendar, Favorites, Projec
 Backups, Trash, and the generic folder.
 The Android directory has its own robot silhouette stamp at 50% opacity.
 The folder base stays fully opaque.
+Media and Multimedia share a video/music stamp. Books shares the eBooks stamp;
+Audiobooks uses a book with headphones. These folder names match regardless of case.
 File extensions and URI schemes appear in uppercase on the bottom colored label.
 `icon_style.py` supplies the shared readable palette, selected deterministically
 from each label; the app uses the same palette for unlisted MIME fallbacks. Folder variants

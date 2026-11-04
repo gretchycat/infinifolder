@@ -22,6 +22,9 @@ OUTPUT_DIR = THEME_DIR / "svg"
 SVG_NS = "http://www.w3.org/2000/svg"
 ET.register_namespace("", SVG_NS)
 
+BOOK_STAMP = '<path d="M45 58q11-5 19 2 8-7 19-2v27q-11-5-19 2-8-7-19-2zM64 61v26" fill="url(#directory-light)" stroke="#18324a" stroke-width="3" stroke-linejoin="round"/>'
+MEDIA_STAMP = '<rect x="44" y="55" width="32" height="27" rx="3" fill="url(#directory-light)" stroke="#18324a" stroke-width="3"/><path d="m55 61 13 8-13 8z" fill="#75b5cb" stroke="#18324a" stroke-width="2" stroke-linejoin="round"/><path d="M84 79V60l6 3" fill="none" stroke="#18324a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="79" cy="82" rx="6" ry="4" transform="rotate(-18 79 82)" fill="#f39b62" stroke="#18324a" stroke-width="2"/>'
+
 DIRECTORIES = [
     ("directory", "FOLDER", '<path d="M48 63h32v24H48zM53 58h22l5 5H48z" fill="url(#directory-light)" stroke="#18324a" stroke-width="3" stroke-linejoin="round"/>'),
     ("home", "HOME", '<path d="m42 68 22-19 22 19v19H70V74H57v13H42z" fill="url(#directory-light)" stroke="#18324a" stroke-width="4" stroke-linejoin="round"/>'),
@@ -29,7 +32,11 @@ DIRECTORIES = [
     ("images", "IMAGES", '<rect x="45" y="56" width="39" height="30" rx="3" fill="url(#directory-light)" stroke="#18324a" stroke-width="3"/><circle cx="56" cy="65" r="3" fill="#f2bd72"/><path d="m48 81 10-10 7 7 6-6 10 9" fill="none" stroke="#18324a" stroke-width="3" stroke-linejoin="round"/>'),
     ("videos", "VIDEOS", '<rect x="45" y="56" width="39" height="30" rx="4" fill="url(#directory-light)" stroke="#18324a" stroke-width="3"/><path d="m59 62 15 9-15 9z" fill="#75b5cb" stroke="#18324a" stroke-width="2" stroke-linejoin="round"/>'),
     ("audio", "AUDIO", '<path d="M47 68h9l12-10v28L56 76h-9zM74 65q9 7 0 14M80 61q15 10 0 22" fill="none" stroke="#18324a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>'),
-    ("ebooks", "EBOOKS", '<path d="M45 58q11-5 19 2 8-7 19-2v27q-11-5-19 2-8-7-19-2zM64 61v26" fill="url(#directory-light)" stroke="#18324a" stroke-width="3" stroke-linejoin="round"/>'),
+    ("media", "MEDIA", MEDIA_STAMP),
+    ("multimedia", "MULTIMEDIA", MEDIA_STAMP),
+    ("ebooks", "EBOOKS", BOOK_STAMP),
+    ("books", "BOOKS", BOOK_STAMP),
+    ("audiobooks", "AUDIOBOOKS", '<path d="M45 75V68a19 19 0 0 1 38 0v7" fill="none" stroke="#18324a" stroke-width="4" stroke-linecap="round"/><rect x="42" y="66" width="6" height="13" rx="3" fill="#75b5cb" stroke="#18324a" stroke-width="2"/><rect x="80" y="66" width="6" height="13" rx="3" fill="#75b5cb" stroke="#18324a" stroke-width="2"/><path d="M50 72q8-4 14 1 6-5 14-1v18q-8-4-14 1-6-5-14-1zM64 73v18" fill="url(#directory-light)" stroke="#18324a" stroke-width="3" stroke-linejoin="round"/>'),
     ("downloads", "DOWNLOADS", '<path d="M64 53v24m-10-10 10 10 10-10M49 82v6h30v-6" fill="none" stroke="#18324a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>'),
     ("archives", "ARCHIVES", '<path d="M48 58h32v28H48zM44 54h40v8H44zM60 66h8v5h-8zm0 9h8v5h-8z" fill="url(#directory-light)" stroke="#18324a" stroke-width="3" stroke-linejoin="round"/>'),
     ("apps", "APPS", '<g fill="url(#directory-light)" stroke="#18324a" stroke-width="3"><rect x="48" y="56" width="13" height="13" rx="2"/><rect x="67" y="56" width="13" height="13" rx="2"/><rect x="48" y="74" width="13" height="13" rx="2"/><rect x="67" y="74" width="13" height="13" rx="2"/></g>'),

@@ -28,6 +28,9 @@ extension and MIME names.
 generates the app's folder-name lookup from these same rows. All declared roles
 are recognized, including Alarms, Podcasts, Recordings, Camera/DCIM, Screenshots,
 Fonts, Themes, Wallpapers, eBooks, Archives, Projects and Backups.
+Media and Multimedia use the same video/music artwork; Books uses the eBooks
+artwork, and Audiobooks has a book with headphones. Their logical theme keys are
+`folder-media`, `folder-multimedia`, `folder-books` and `folder-audiobooks`.
 
 The owner confirmed on-device that the new special-folder icons display correctly
 on 2026-11-03.

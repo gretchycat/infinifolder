@@ -736,7 +736,11 @@ directory-documents.svg,bases/folder.svg,directory_type,directory:documents,DOCS
 directory-images.svg,bases/folder.svg,directory_type,directory:images,IMAGES,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
 directory-videos.svg,bases/folder.svg,directory_type,directory:videos,VIDEOS,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
 directory-audio.svg,bases/folder.svg,directory_type,directory:audio,AUDIO,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
+directory-media.svg,bases/folder.svg,directory_type,directory:media,MEDIA,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
+directory-multimedia.svg,bases/folder.svg,directory_type,directory:multimedia,MULTIMEDIA,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
 directory-ebooks.svg,bases/folder.svg,directory_type,directory:ebooks,EBOOKS,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
+directory-books.svg,bases/folder.svg,directory_type,directory:books,BOOKS,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
+directory-audiobooks.svg,bases/folder.svg,directory_type,directory:audiobooks,AUDIOBOOKS,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
 directory-downloads.svg,bases/folder.svg,directory_type,directory:downloads,DOWNLOADS,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
 directory-archives.svg,bases/folder.svg,directory_type,directory:archives,ARCHIVES,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
 directory-apps.svg,bases/folder.svg,directory_type,directory:apps,APPS,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
