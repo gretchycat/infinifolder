@@ -25,7 +25,10 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 - [ ] Diagnose the reported failure before the first browser screen on upgrade.
   Startup recovery now retains application-initialization exceptions/linkage
   failures and does not consider the transparent launcher a successful startup.
-  The underlying failure and recovery UI remain unverified; retain existing data.
+  Owner reports that `41b04e6` still cannot show recovery. Debug builds now include
+  an isolated **InfiniFolder startup report** launcher (Android 11+) with Android
+  exit history and Copy/Save actions. Obtain that report; the underlying failure
+  and reporter UI remain unverified. Retain existing data.
 
 - [ ] Device-check repeated audio theme switches (including while playing),
   listener attachment/detachment, WMP Aero portrait/landscape and system insets,

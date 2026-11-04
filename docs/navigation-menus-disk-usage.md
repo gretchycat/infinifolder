@@ -88,6 +88,32 @@ verifier errors; this does not exercise application initialization or UI startup
 Documentation link checks passed (133 files, 632 links). No automated tests were
 added or run for this change; device startup/recovery checks remain pending.
 
+The owner reports that `41b04e6` still opens neither the browser nor the recovery
+screen, including after force stop/relaunch. The installed APK matches that build;
+Android resolves the launcher to `HomeItemActivity`. Available storage was 6.7 GiB.
+Shell launch/crash-history commands are denied by Android permissions. These checks
+do not identify the underlying failure.
+
+Debug builds on Android 11+ now expose **InfiniFolder startup report**, an additional
+launcher entry in the separate `:startup_report` process. Application initialization
+returns before normal diagnostics, storage, operation restoration, themes or
+decoders run there. Its native Android screen reads this package's retained
+[Android exit records](https://developer.android.com/reference/android/app/ActivityManager#getHistoricalProcessExitReasons(java.lang.String,int,int)),
+the saved Java startup error, pending stall report and session-log tail. It labels
+exit reasons/timestamps, including force stops, to distinguish current evidence
+from older crashes. **Copy report** has an explicit clipboard bound; **Save report**
+exports the complete collected report using Android's document picker. Android
+12+ native tombstones can be saved as binary protobuf; missing/expired traces or
+export failures are reported. Retained OS history may be incomplete. The reporter
+uses framework APIs and its own diagnostic files, without constructing the browser
+or library graph; default-process content providers are not started in its process.
+
+Build command: `gradle :app:assembleDebug :viewer-host:assembleDebug --offline
+--console=plain`; evidence: `build/docs-audit/isolated-startup-report-build.log`.
+No automated tests were added or run. Opening the isolated reporter and obtaining
+current evidence still require a device check; the reported startup failure is
+**not confirmed fixed**. Existing settings and user files are retained.
+
 ## Public pin board directory
 
 The compact pin board is a view of **Internal storage → InfiniFolder → Pin board**.
