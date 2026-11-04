@@ -593,11 +593,10 @@ class FloatingContainerService : Service() {
         val columns = FileViewGrid.columns((params.width / density).roundToInt(), iconDp)
         val cellWidth = params.width / columns
         val preferences = getSharedPreferences("browser", MODE_PRIVATE)
-        val showHidden = preferences.getBoolean("show_hidden", false)
         val sortByName = preferences.getBoolean("sort_name", true)
         val sortKey = preferences.getString("sort_key", if (sortByName) "name" else "modified") ?: "name"
         val descending = preferences.getBoolean("sort_descending", !sortByName)
-        val rows = FileViewGrid.sortedEntries(entries, showHidden, sortKey, descending)
+        val rows = FileViewGrid.sortedEntries(entries, showHidden = false, sortKey, descending)
         val iconRevision=iconResolver.revision()
         val table = FileViewGrid.build(this, rows, columns) { entry ->
             val card = FileEntryCard(this, entry, true, iconDp, ThemeManager.activeTheme.isDark)

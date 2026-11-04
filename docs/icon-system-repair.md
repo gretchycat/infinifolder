@@ -39,6 +39,15 @@ preserved.
 
 ## Behavior and persistence
 
+- Visible hidden files and folders have an eye-with-slash badge in browser
+  list/grid and tree rows, using the provider's hidden flag. Floating windows
+  always filter hidden items, independently of the browser's Show hidden setting.
+  This decoration uses metadata only, adds no reads, and remains outside cached
+  theme/thumbnail artwork. The badge leaves item gestures available and moves
+  beside the selection check on selected cards. The debug APK build passed in
+  10 seconds (`build/hidden-file-badge/app-build-final.log`); no automated tests
+  were added/run for this addition. ADB has no device: badge appearance, selection,
+  gestures and floating-window filtering still require device checks.
 - Directory enumeration uses the storage provider, with valid `cover.*` before
   `.icon.*`. Corrupt, transparent and unsupported renders fall through. Candidate
   ordering is stable by supported format then name. Known backend case rules

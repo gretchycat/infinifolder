@@ -130,6 +130,7 @@ class FileEntryCard(
         }
 
         NetworkConnectionBadge.attach(icon, entry = entry)
+        HiddenFileBadge.attach(icon, entry.metadata.isHidden, entry.metadata.isDirectory, selectedItem)
         container.addView(icon)
         icon
     }

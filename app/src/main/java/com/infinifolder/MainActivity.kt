@@ -449,7 +449,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         val treeParentKey: String? = null,
         val needsAccessBadge: Boolean = false,
         val providerAuthority: String? = null,
-        val linkEntry: ResourceEntry? = null
+        val linkEntry: ResourceEntry? = null,
+        val isHidden: Boolean = title.startsWith(".")
     )
     private inner class TreeBranchView(
         context: android.content.Context,
@@ -7506,6 +7507,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             node.onOpen = action
             node.canExpand = item.treeExpandable
             node.onLongPress = item.longAction
+            node.isHidden = item.isHidden
             node.needsAccessBadge = item.needsAccessBadge && key != "installed_apps" && !key.startsWith("sftp_") && !key.startsWith("ftp_") && !key.startsWith("smb_")
             node.onRequestAccess = when {
                 !node.needsAccessBadge -> null
@@ -7524,7 +7526,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         val uri = if (container) ArchiveUri.toArchiveUri(entry.uri) else entry.uri
                         HomeItem(if (container) "📦" else "📁", entry.metadata.name, if (container) "Container" else "Folder",
                             { openRoot(uri, rememberAuthorizedRoot = false) }, longAction = { showEntryMenu(entry) },
-                            treeKey = "local_$uri", treeUri = uri, treeExpandable = true)
+                            treeKey = "local_$uri", treeUri = uri, treeExpandable = true, isHidden = entry.metadata.isHidden)
                     }
                     else homeItems.filter { it.treeParentKey == key }.distinctBy { it.treeUri?.let(::sourceIdentity) ?: it.treeKey }
                 val childIdentities = mutableSetOf<String>()
@@ -7539,6 +7541,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     childNode.onOpen = childAction
                     childNode.canExpand = childItem.treeExpandable
                     childNode.onLongPress = childItem.longAction
+                    childNode.isHidden = childItem.isHidden
                     childNode.needsAccessBadge = childItem.needsAccessBadge
                     childNode.onRequestAccess = if (!childItem.needsAccessBadge) null else {
                         childItem.initialUri?.let { target -> ({ rootPicker(target, childKey) }) } ?: childItem.action
@@ -7563,6 +7566,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     }
                     childNode.canExpand = childItem.treeExpandable
                     childNode.providerAuthority = childItem.providerAuthority
+                    childNode.isHidden = childItem.isHidden
                     childNode.needsAccessBadge = childItem.needsAccessBadge
                     childNode.onRequestAccess = if (childItem.needsAccessBadge) {
                         childItem.initialUri?.let { target -> ({ rootPicker(target, childKey) }) } ?: childItem.action
@@ -7817,6 +7821,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         iconStack.addView(placeholder, FrameLayout.LayoutParams(dp(30), dp(32)))
         bindTreeIcon(node, iconStack, placeholder)
         NetworkConnectionBadge.attach(iconStack, target = node.uri)
+        HiddenFileBadge.attach(iconStack, node.isHidden, directory = true)
         if (isCreateDirNode) {
             iconStack.addView(
                 createDirBadge().apply { setOnClickListener { activateNode() } },
@@ -8028,7 +8033,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 isLast = index == folders.lastIndex,
                                 expanded = previousChild?.expanded ?: false,
                                 children = previousChild?.children ?: mutableListOf(),
-                                onLongPress = { showEntryMenu(child) }
+                                onLongPress = { showEntryMenu(child) },
+                                isHidden = child.metadata.isHidden
                             )
                             node.children += childNode
                         }
