@@ -229,8 +229,10 @@ theme icons and directory covers. Their icon slots use their actual pixel size,
 with asynchronous work independent of the scrolling file list. Theme/registry and
 artwork notifications refresh the pin bar. A link's display-name override is used
 for its pin label; a missing override falls back to its filename without the link
-extension. Pins now come from the public [pin board directory](navigation-menus-disk-usage.md#public-pin-board-directory); old preference pins migrate with their labels and embedded artwork. Taps, menu-open and hover jumps use container navigation
+extension. Pins now come from the public [pin board directory](navigation-menus-disk-usage.md#public-pin-board-directory); old preference pins migrate with their labels and embedded artwork. Container taps and menu-open use container navigation
 with an absolute target route rather than appending unrelated visited folders.
+File links use the normal file opener. Drops anywhere on the compact board create
+links; pinned folder icons no longer navigate on hover or receive file transfers.
 
 In **Link properties → Embedded link icon**, **Choose image…** imports an image
 and **Remove image** restores automatic target artwork. A pinned link's long-press

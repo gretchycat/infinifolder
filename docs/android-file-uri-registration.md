@@ -75,7 +75,14 @@ Separate untyped and generic-binary filters use filename constraints. Android 12
 uses `pathSuffix`, covering dotted filenames/directories. Lowercase and uppercase
 suffixes are included. Older Android retains the basic escaped `pathPattern`
 fallback; filenames with multiple dots can require a supplied MIME on those
-versions. No unrestricted file `*/*` handler is added. The existing conditional
+versions. No unrestricted file `*/*` handler is added. **`.iflink` files** additionally
+have a filename-constrained any-MIME filter, so a file manager's differing MIME
+label does not prevent Android from offering InfiniFolder. The canonical
+`application/vnd.infinifolder.shortcut+json` registration handles opaque
+`content://` IDs without a filename. Untyped `.iflink` paths use the existing
+untyped suffix filter. All three routes invoke the existing link resolver;
+this does not register a new `iflink://` protocol or bypass provider grants.
+The existing conditional
 **Open with Termux** alias remains separate, and the old any-MIME `.incomplete`
 resume contract remains constrained to that suffix. Typed and untyped native URI
 filters are separate from file MIME/path filters to avoid accidental combinations.
@@ -117,6 +124,14 @@ passed the app debug build. Exact commands, provider counts and test scope belon
 to that gate. Earlier font-registration/manifest inspections remain historical.
 Selected-viewer Android chooser/permission/default behavior still needs device checks.
 No new tests were run for this documentation/FLC follow-up.
+
+The 2026-11-04 `.iflink` filename fallback and pin-board drop follow-up built both
+APKs successfully with the command above: `BUILD SUCCESSFUL in 34s`, 523 tasks.
+Evidence: `build/docs-audit/pin-board-iflink-build.log`. The merged and packaged
+app manifests contain the canonical link MIME, untyped/binary filename filters
+and the filename-constrained any-MIME fallback. Documentation link checks found
+no missing files or anchors. No automated tests were run for this follow-up;
+Android chooser/grant behavior and pin-board drag UI remain unverified on-device.
 
 Check Open-with on a real image, Office/ebook file, ZIP/disk image, torrent/link,
 opaque provider URI with MIME, generic-binary URI with a real filename, network

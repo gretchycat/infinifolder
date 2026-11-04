@@ -263,9 +263,11 @@ class MainActivity : Activity(), DebugDumpObserver {
     private data class DragNavigationTarget(val destination: Uri, val name: String, val sourceUri: Uri,
         val kind: String, val open: () -> Unit)
     private val dragNavigationTargets = java.util.WeakHashMap<View, DragNavigationTarget>()
+    private val pinBoardDropTargets = java.util.WeakHashMap<View, Boolean>()
     private val pinnedContainers = mutableListOf<PinnedContainer>()
     private lateinit var pinnedContainerBar: HorizontalScrollView
     private lateinit var pinnedContainerContent: LinearLayout
+    private var pinBoardDropHint: TextView? = null
     private var renderedPinnedIconSize = 0
     @Volatile private var pinnedRenderGeneration = 0
     private val pinBoard by lazy { PinBoardDirectory(applicationContext, shared, localProvider, provider,
@@ -959,6 +961,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             visibility = View.GONE
         }
         root.addView(pinnedContainerBar, LinearLayout.LayoutParams(-1, -2))
+        installPinBoardDropTarget(pinnedContainerBar)
         renderPinnedContainers()
         breadcrumb = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         root.addView(HorizontalScrollView(this).apply {
@@ -1090,7 +1093,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             when (event.action) {
                 android.view.DragEvent.ACTION_DRAG_STARTED -> payload != null
                 android.view.DragEvent.ACTION_DRAG_LOCATION -> true
-                android.view.DragEvent.ACTION_DROP -> if (payload?.createLinks == true) dispatchBreadcrumbLinkDrop(view, event)
+                android.view.DragEvent.ACTION_DROP -> if (dispatchPinBoardDropAtScreen(view, event)) true
+                    else if (payload?.createLinks == true) dispatchBreadcrumbLinkDrop(view, event)
                     else dispatchNavigationDropAtScreen(view, event) || dispatchEntryDropAtScreen(view, event) || dispatchFilePaneDropAtScreen(view, event)
                 else -> true
             }
@@ -1345,7 +1349,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
                 android.view.DragEvent.ACTION_DROP -> {
                     cancelDragContainerHover()
-                    if ((event.localState as? BrowserDragPayload)?.createLinks == true) dispatchBreadcrumbLinkDrop(host, event)
+                    if (dispatchPinBoardDropAtScreen(host, event)) true
+                    else if ((event.localState as? BrowserDragPayload)?.createLinks == true) dispatchBreadcrumbLinkDrop(host, event)
                     else dispatchTreeDropAtScreen(host, event) || dispatchNavigationDropAtScreen(host, event) ||
                         dispatchEntryDropAtScreen(host, event) || dispatchFilePaneDropAtScreen(host, event)
                 }
@@ -6418,6 +6423,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         })
         box.addView(labels)
         box.setOnClickListener { activateHomeItem(item) }
+        if (item.treeKey == "pin_board") installPinBoardDropTarget(box)
         item.longAction?.let { action -> box.setOnLongClickListener { action(); true } }
         return box
     }
@@ -6571,6 +6577,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             "browser.drag.request", "items=${draggedEntries.size} handle=${handle.javaClass.simpleName} icon=${icon.width}x${icon.height}"
         )
         activeBrowserDragPayload = payload
+        updatePinBoardDropArea()
         val started = handle.startDragAndDrop(clip, SnapshotDragShadowBuilder(snapshot), payload, 0)
         com.infinifolder.storage.DiagnosticLog.record(
             "browser.drag.started", "accepted=$started items=${draggedEntries.size} overlay=${activeDragOverlay != null}"
@@ -6851,6 +6858,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         activeDragOverlayHost = null
         activeDragOverlay = null
         activeBrowserDragPayload = null
+        updatePinBoardDropArea()
     }
 
     private fun treeContainsUri(root: TreeNode, uri: Uri): Boolean =
@@ -6918,6 +6926,11 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun dispatchTreeDrop(node: TreeNode, payload: BrowserDragPayload): Boolean {
         if (activeDragDropHandled) return true
+        if (pinBoard.isRoot(node.uri)) {
+            activeDragDropHandled = true
+            addPinBoardLinks(payload.entries)
+            return true
+        }
         if (!canDropOnTreeNode(node, payload)) {
             com.infinifolder.storage.DiagnosticLog.record(
                 "browser.drag.tree-drop-rejected", "reason=unsupported-node key=${node.key} name=${node.name}"
@@ -6942,7 +6955,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun canDropOnTreeNode(node: TreeNode, payload: BrowserDragPayload?): Boolean =
-        payload != null && !payload.createLinks && node.uri != null && !node.needsAccessBadge &&
+        payload != null && (!payload.createLinks || pinBoard.isRoot(node.uri)) && node.uri != null && !node.needsAccessBadge &&
             !isCreateDirectoryNode(node) && !AppsUri.isAppsUri(node.uri) && !AppsUri.isCategoryUri(node.uri)
 
     private fun findTreeNodeByKey(key: String): TreeNode? {
@@ -7112,6 +7125,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun dispatchBreadcrumbLinkDrop(view: View, event: android.view.DragEvent): Boolean {
+        if (dispatchPinBoardDropAtScreen(view, event)) return true
         val payload = event.localState as? BrowserDragPayload ?: return false
         if (!payload.createLinks) return false
         if (activeDragDropHandled) return true
@@ -7189,6 +7203,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun performBrowserDrop(payload: BrowserDragPayload, destination: Uri, targetName: String) {
+        if (pinBoard.isRoot(destination)) { addPinBoardLinks(payload.entries); return }
         if (wouldDropIntoDraggedFolder(payload.entries, destination)) {
             Toast.makeText(this, "A folder cannot be dropped into itself or one of its subfolders", Toast.LENGTH_LONG).show()
             return
@@ -7282,6 +7297,130 @@ class MainActivity : Activity(), DebugDumpObserver {
         val label = shortcutCache.get(entry.uri.toString())?.displayNameOverride
             ?: PinnedContainer(entry, destination).name
         changePinBoard { pinBoard.add(entry, destination, label) }
+    }
+
+    private fun updatePinBoardDropArea() {
+        if (!::pinnedContainerBar.isInitialized) return
+        val dragging = activeBrowserDragPayload != null
+        pinnedContainerBar.visibility = if (dragging || pinnedContainers.isNotEmpty()) View.VISIBLE else View.GONE
+        pinnedContainerBar.minimumHeight = if (dragging) dp(48) else 0
+        if (dragging && pinnedContainers.isEmpty()) {
+            val hint = pinBoardDropHint ?: TextView(this).apply {
+                text = "Drop here to pin a link"
+                setTextColor(com.infinifolder.theme.ThemeManager.activeTheme.textSecondary)
+                gravity = Gravity.CENTER_VERTICAL
+                minimumHeight = dp(48)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+            }.also { pinBoardDropHint = it }
+            if (hint.parent == null) pinnedContainerContent.addView(hint)
+        } else pinBoardDropHint?.let { (it.parent as? ViewGroup)?.removeView(it) }
+    }
+
+    private fun isPinBoardDropAtScreen(x: Float, y: Float): Boolean {
+        fun contains(view: View): Boolean {
+            val bounds = android.graphics.Rect()
+            return view.isAttachedToWindow && view.isShown && view.getGlobalVisibleRect(bounds) && bounds.contains(x.toInt(), y.toInt())
+        }
+        if (pinBoardDropTargets.keys.any(::contains)) return true
+        if (!homeMode && pinBoard.isRoot(current) && !(isCompactPortrait() && treeVisible) && contains(fileScroll)) return true
+        if (treeVisible && isInsideTreeViewport(x, y) && pinBoard.isRoot(treeTargetAtScreen(x, y)?.second?.uri)) return true
+        if (pinBoard.isRoot(dragNavigationAtScreen(x, y)?.second?.destination)) return true
+        return dragCardAtScreen(x, y)?.second?.let { pinBoard.isRoot(entryDropDestination(it)) } == true
+    }
+
+    private fun dispatchPinBoardDropAtScreen(view: View, event: android.view.DragEvent): Boolean {
+        val payload = event.localState as? BrowserDragPayload ?: return false
+        if (activeDragDropHandled) return true
+        val (x, y) = dragEventScreenPosition(view, event)
+        if (!isPinBoardDropAtScreen(x, y)) return false
+        cancelDragContainerHover()
+        activeDragDropHandled = true
+        addPinBoardLinks(payload.entries)
+        return true
+    }
+
+    private fun installPinBoardDropTarget(view: View) {
+        pinBoardDropTargets[view] = true
+        var previousBackground: android.graphics.drawable.Drawable? = null
+        var highlighted = false
+        fun restoreBackground(target: View) {
+            if (highlighted) target.background = previousBackground
+            highlighted = false
+            previousBackground = null
+        }
+        view.setOnDragListener { target, event ->
+            val payload = event.localState as? BrowserDragPayload
+            val enabled = payload != null
+            moveActiveDragOverlayFromEvent(target, event)
+            when (event.action) {
+                android.view.DragEvent.ACTION_DRAG_STARTED -> enabled
+                android.view.DragEvent.ACTION_DRAG_ENTERED -> {
+                    if (enabled) {
+                        if (!highlighted) previousBackground = target.background
+                        highlighted = true
+                        target.background = GradientDrawable().apply {
+                            cornerRadius = dp(6).toFloat()
+                            val theme = com.infinifolder.theme.ThemeManager.activeTheme
+                            setColor(theme.alternateBackground); setStroke(dp(2), theme.accent)
+                        }
+                    }
+                    enabled
+                }
+                android.view.DragEvent.ACTION_DROP -> {
+                    restoreBackground(target)
+                    if (payload != null && !activeDragDropHandled) {
+                        cancelDragContainerHover()
+                        activeDragDropHandled = true
+                        addPinBoardLinks(payload.entries)
+                    }
+                    enabled
+                }
+                android.view.DragEvent.ACTION_DRAG_EXITED, android.view.DragEvent.ACTION_DRAG_ENDED -> {
+                    restoreBackground(target)
+                    enabled
+                }
+                else -> enabled
+            }
+        }
+    }
+
+    private fun addPinBoardLinks(items: List<ResourceEntry>) {
+        val legacy = if (pinBoard.migrated()) emptyList() else pinnedContainers.toList()
+        io.execute {
+            try {
+                pinBoard.load(legacy)
+                var created = 0
+                var existing = 0
+                val errors = mutableListOf<String>()
+                items.distinctBy { it.uri }.forEach { entry ->
+                    try {
+                        if (pinBoard.addDropped(entry)) created++ else existing++
+                    } catch (error: Exception) {
+                        errors += "${entry.metadata.name}: ${error.message ?: "Cannot create link"}"
+                        com.infinifolder.storage.DiagnosticLog.record("browser.pin-board.drop-failed", entry.metadata.name, error)
+                    }
+                }
+                com.infinifolder.storage.DiagnosticLog.record("browser.pin-board.drop",
+                    "created=$created existing=$existing failed=${errors.size}")
+                runOnUiThread {
+                    if (isDestroyed || isFinishing) return@runOnUiThread
+                    refreshPinBoard()
+                    if (!homeMode && pinBoard.isRoot(current)) current?.let { load(it) }
+                    val summary = when {
+                        created > 0 -> if (created == 1) "Link added to pin board" else "$created links added to pin board"
+                        existing > 0 && errors.isEmpty() -> "Already on the pin board"
+                        else -> "Could not add links to pin board"
+                    }
+                    if (errors.isEmpty()) Toast.makeText(this, summary, Toast.LENGTH_SHORT).show()
+                    else dialogBuilder().setTitle(summary).setMessage(errors.take(8).joinToString("\n") +
+                        if (errors.size > 8) "\n… and ${errors.size - 8} more" else "")
+                        .setPositiveButton("OK", null).show()
+                }
+            } catch (error: Exception) {
+                runOnUiThread { if (!isDestroyed && !isFinishing) Toast.makeText(this,
+                    "Could not update pin board: ${error.message}", Toast.LENGTH_LONG).show() }
+            }
+        }
     }
 
     private fun unpinContainer(destination: Uri) = changePinBoard { pinBoard.remove(destination) }
@@ -7391,7 +7530,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             dragNavigationTargets.remove(pinnedContainerContent.getChildAt(index))
         pinnedContainerContent.removeAllViews()
         renderedPinnedIconSize = iconSizeDp
-        pinnedContainerBar.visibility = if (pinnedContainers.isEmpty()) View.GONE else View.VISIBLE
+        updatePinBoardDropArea()
         val sideDp = (iconSizeDp / 2).coerceAtLeast(24)
         val side = dp(sideDp)
         for (storedPin in pinnedContainers.toList()) {
@@ -7406,9 +7545,6 @@ class MainActivity : Activity(), DebugDumpObserver {
                 label.setFileName(pin.name, pin.container)
                 card.contentDescription = "Pinned link: ${pin.name}"
                 card.tooltipText = pin.name
-                // Hover navigation must take the same route as a tap.
-                if (pin.container) installBreadcrumbDropTarget(card, pin.destination, pin.name,
-                    sourceUri = pin.entry.uri, kind = "pin", onNavigate = { openPinnedContainer(pin) })
             }
             fun applyIcon(artwork: ResourceIconResolver.Icon) {
                 if (iconHolder.childCount > 0) iconHolder.removeViewAt(0)
@@ -7427,6 +7563,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             bindTarget()
             resourceIconResolver.peekCached(pin.entry, side)?.let { applyIcon(it) }
             card.setOnClickListener { openPinnedContainer(pin) }
+            installPinBoardDropTarget(card)
             card.setOnLongClickListener {
                 showContainerPinMenu(pin.entry, pin.destination)
                 true
@@ -7502,6 +7639,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun dragHoverTargetAtScreen(x: Float, y: Float): Pair<View, DragNavigationTarget>? {
+        if (isPinBoardDropAtScreen(x, y)) return null
         dragNavigationAtScreen(x, y)?.let { return it }
         val (view, entry) = dragCardAtScreen(x, y) ?: return null
         val destination = entryBrowseDestination(entry) ?: return null
@@ -7548,6 +7686,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun dispatchFilePaneDropAtScreen(view: View, event: android.view.DragEvent): Boolean {
+        if (dispatchPinBoardDropAtScreen(view, event)) return true
         val payload = event.localState as? BrowserDragPayload ?: return false
         if (payload.createLinks) return dispatchBreadcrumbLinkDrop(view, event)
         if (activeDragDropHandled) return true
@@ -7578,6 +7717,11 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun dispatchEntryDrop(entry: ResourceEntry, payload: BrowserDragPayload): Boolean {
         cancelDragContainerHover()
         if (activeDragDropHandled) return true
+        if (pinBoard.isRoot(current) || pinBoard.isRoot(entryDropDestination(entry))) {
+            activeDragDropHandled = true
+            addPinBoardLinks(payload.entries)
+            return true
+        }
         payload.entries.firstOrNull { sameResourceUri(it.uri, entry.uri) }?.let { return queueDragSelfDropMenu(payload, it) }
         val destination = entryDropDestination(entry)
         activeDragDropHandled = true
@@ -7665,6 +7809,11 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun dispatchNavigationDrop(target: DragNavigationTarget, payload: BrowserDragPayload): Boolean {
         cancelDragContainerHover()
         if (activeDragDropHandled) return true
+        if (target.kind == "pin" || pinBoard.isRoot(target.destination)) {
+            activeDragDropHandled = true
+            addPinBoardLinks(payload.entries)
+            return true
+        }
         payload.entries.firstOrNull { sameResourceUri(it.uri, target.sourceUri) }?.let { return queueDragSelfDropMenu(payload, it) }
         activeDragDropHandled = true
         performBrowserDrop(payload, target.destination, target.name)

@@ -191,8 +191,11 @@ def main():
     if args.host == 'app':
         add_filter(activity, schemes=schemes)
         add_filter(activity, schemes=schemes, mimes={'*/*'})
-        # Preserve the previous any-MIME .incomplete resume registration.
-        add_filter(activity, schemes={'content', 'file'}, mimes={'*/*'}, extensions={'incomplete'})
+        # Link files are JSON, but other file managers may attach an unrelated
+        # MIME type. Keep this fallback constrained to the filename; opaque
+        # provider IDs still use the canonical shortcut MIME registration above.
+        # Also preserve the previous any-MIME .incomplete resume registration.
+        add_filter(activity, schemes={'content', 'file'}, mimes={'*/*'}, extensions={'iflink', 'incomplete'})
     elif editable_mimes:
         add_filter(activity, mimes=editable_mimes, action='EDIT')
         add_filter(activity, schemes={'content', 'file'}, extensions=editable_extensions,

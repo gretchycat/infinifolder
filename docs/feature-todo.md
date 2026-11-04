@@ -126,7 +126,11 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
   restart, external file changes, Rename/Properties/Unpin and preserved targets;
   test storage denial, filename conflicts, embedded artwork and link navigation.
   See [public pin board](navigation-menus-disk-usage.md#public-pin-board-directory).
-- [ ] Validate pin/unpin, half-size themed icons, horizontal clipping, multi-file drops and hover navigation on the handset in both orientations, including SAF/network/archive targets and read-only failures.
+- [ ] Validate pin/unpin, half-size themed icons, horizontal clipping and link-only
+  drops onto pins, empty space/empty board, Virtual root, tree, breadcrumbs and
+  the board directory in both orientations. Include selected sets, existing links,
+  duplicate targets, SAF/network/archive targets and write failures. Pin-board
+  icons must not navigate on hover or move/copy originals.
 
 ## Transfer cancellation
 

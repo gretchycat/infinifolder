@@ -24,6 +24,9 @@ internal class PinBoardDirectory(
 ) {
     val file = File(local.store.root, "InfiniFolder/Pin board")
     val uri: Uri = local.uriFor(file)
+    fun isRoot(candidate: Uri?): Boolean = candidate != null && local.owns(candidate) && runCatching {
+        local.fileFor(candidate).toPath().normalize() == file.toPath().normalize()
+    }.getOrDefault(false)
     fun contains(uri: Uri): Boolean = local.owns(uri) && runCatching {
         local.fileFor(uri).toPath().normalize().parent == file.toPath().normalize()
     }.getOrDefault(false)
@@ -79,10 +82,21 @@ internal class PinBoardDirectory(
             .thenBy { it.metadata.name }).map(::pin)
     }
 
-    @Synchronized fun add(entry: ResourceEntry, destination: Uri, label: String) {
+    @Synchronized fun add(entry: ResourceEntry, destination: Uri, label: String): Boolean {
         ensureDirectory()
-        if (entries().any { pin(it).destination == destination }) return
+        if (entries().any { pin(it).destination == destination }) return false
         addLink(entry, destination, label)
+        return true
+    }
+
+    @Synchronized fun addDropped(entry: ResourceEntry): Boolean {
+        val link = shortcut(entry)
+        if (!entry.metadata.isDirectory && ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType) && link == null)
+            throw IOException("Cannot read this link's target")
+        val target = link?.targetUri?.let(Uri::parse) ?: entry.uri
+        require(!target.scheme.isNullOrBlank()) { "The link target needs a URI" }
+        val label = link?.displayNameOverride?.takeIf { it.isNotBlank() } ?: PinnedContainer(entry, target).name
+        return add(entry, target, label)
     }
 
     private fun addLink(entry: ResourceEntry, destination: Uri, label: String) {
@@ -91,7 +105,8 @@ internal class PinBoardDirectory(
         }
         val original = shortcut(entry)
         val info = (original ?: ShortcutInfo(targetUri = destination.toString(),
-            targetMimeType = entry.metadata.mimeType, targetIsDirectory = true)).copy(
+            targetMimeType = entry.metadata.mimeType,
+            targetIsDirectory = entry.metadata.isDirectory || com.infinifolder.archive.ArchiveUri.isArchiveUri(destination))).copy(
             targetUri = destination.toString(), displayNameOverride = label)
         val stem = WebMetadataResolver.sanitizeFileName(label, "Link").trimStart('.').ifBlank { "Link" }
         val existing = entries().map { it.metadata.name.lowercase(java.util.Locale.ROOT) }.toSet()

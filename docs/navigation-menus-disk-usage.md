@@ -8,7 +8,7 @@ Updated 2026-10-24. See [current status](project-status.md) for acceptance disti
 
 Hamburger and overflow open the same nested File/Edit/View/Select/Settings menu, with right-aligned submenu triangles. The Tree/Files toolbar label switches panes. File → New contains folder, link, external storage connection links and supported document/archive templates. Link creation offers a protocol dropdown for custom URI, SFTP/SSH, SMB/Samba, WebDAV and FTP/FTPS, with saved-connection selection or the matching setup form. The same choices are available when adding container links at Virtual root. Unsupported archive writers are disabled explicitly. View exposes hidden files, sorting and themes; Settings manages default viewers/apps; Select offers mode and wildcard/regex matching in the current folder. Most-used sorting remains future work.
 
-Persistent half-size container pins sit between toolbar and breadcrumbs; the row disappears when empty. Pin to top/Unpin are long-press actions. Pins, breadcrumbs, containers and visible tree nodes accept transfers and linger navigation. The navigation tree has no long-press actions and uses the common theme without a separate green tint.
+Persistent half-size pins sit between toolbar and breadcrumbs; the row disappears when empty except during a drag. Pin to top/Unpin are long-press actions. Dropping onto the pin board always creates links. Other breadcrumbs, containers and visible tree nodes accept transfers and linger navigation. The navigation tree has no long-press actions and uses the common theme without a separate green tint.
 
 Hold countdown covers the icon; release after the hold opens the menu, movement begins drag. Selected sets drag together. Same-device drops move, cross/unknown-device drops copy. Source-self drops open the menu. Tree/file edges autoscroll and tree linger expands paths. Latest drops, autoscroll and pane switching are user-confirmed; broader backend/orientation checks remain.
 
@@ -25,6 +25,20 @@ ordinary directory view instead of the shortcut-only Unpin action.
 
 Pin to top creates a real `.iflink` containing the target and existing embedded
 artwork when available. Names are made unique without overwriting other links.
+Dragging files, folders, archives, remote items or an existing link onto the compact
+board creates `.iflink` files too, including selected sets. Drops on a pinned icon
+or the space between icons add links to the board instead of transferring into
+that icon's destination. An empty board shows **Drop here to pin a link** during
+an in-app drag. Dropping onto the public Pin board directory via its Virtual root
+entry, tree, breadcrumb or file pane follows the same link-only rule. Pinned icons
+do not navigate on drag hover. Outside the board, existing transfer rules remain.
+An existing link retains its destination, display name and embedded artwork;
+duplicate targets are skipped, invalid links and write failures are reported.
+Original items are never moved or copied by a pin-board drop. Work runs off the
+UI thread through existing link/storage APIs, then refreshes the compact board
+and the open board directory. This currently handles in-app drags, not arbitrary
+external-app ClipData.
+
 Rename updates its filename and display-name field; `.iflink` is retained when
 omitted. The link label also supplies its tooltip/navigation title. If updating
 the label fails after the filename was renamed, the UI reports that partial result.
@@ -41,7 +55,8 @@ explicit Pin/Open/Unpin failures show an error. The public folder requires norma
 shared-storage access. After migration, deleting the directory recreates an empty
 board rather than resurrecting old preference entries.
 
-Build evidence: `build/docs-audit/ebook-styles-pin-board-build.log`. Migration,
+Build evidence: `build/docs-audit/ebook-styles-pin-board-build.log` and
+`build/docs-audit/pin-board-iflink-build.log`. Migration,
 external edits, Rename/Properties/Unpin, restart, permissions, drag/drop and title
 behavior still need device acceptance. No automated tests were run for this change.
 
@@ -63,7 +78,7 @@ Image-viewer Back is user-confirmed working.
 
 ## Remaining acceptance
 
-Parent beyond initial scan root, latest remote breadcrumb fix, menu/templates/pattern options, pins/selected-set transfers and broader permission/theme/queue regressions. Current-folder explorer behavior is broadly accepted. Compilation evidence lives in the individual implementation records; this docs update ran no tests/build.
+Parent beyond initial scan root, latest remote breadcrumb fix, menu/templates/pattern options, pin-board selected-set link drops and broader permission/theme/queue regressions. Current-folder explorer behavior is broadly accepted. Compilation evidence lives in the individual implementation records.
 
 ## Copy into the source directory
 
