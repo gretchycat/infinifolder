@@ -30,9 +30,9 @@ class FileEntryCard(
             clipChildren = false
             clipToPadding = false
             val hPad = if (asGrid) dp(2) else dp(10)
-            val vPad = if (asGrid) dp(4) else dp(8)
+            val vPad = dp(4)
             setPadding(hPad, vPad, hPad, vPad)
-            minimumHeight = dp(64)
+            minimumHeight = dp(if (asGrid) 64 else 48)
             if (!asGrid) {
                 if (selectedItem) {
                     background = GradientDrawable().apply {

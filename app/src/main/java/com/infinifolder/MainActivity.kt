@@ -328,6 +328,10 @@ class MainActivity : Activity(), DebugDumpObserver {
     private var homeSourcesGeneration = 0
     private val entryIconViews = mutableMapOf<Uri, View>()
     private var renderedFileLocation: Uri? = null
+    private var restoringFileScrollLocation: Uri? = null
+    private var restoringFileScrollGeneration = -1
+    private var pendingDirectoryScrollSave: Pair<Uri, Int>? = null
+    private val directoryScrollSaveRunnable = Runnable { flushDirectoryScrollPersistence() }
     private var listingIsLoading = false
     private var openingTorrentDirectory = false
     private var openingVirtualDirectoryLabel: String? = null
@@ -511,6 +515,17 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
     private var forwardingHomeShortcut = false
+    override fun onContentChanged() {
+        super.onContentChanged()
+        if (backNavigation != null) {
+            com.infinifolder.storage.DiagnosticLog.record(
+                "navigation.back.rebind", "activity=MainActivity reason=content-changed"
+            )
+            backNavigation?.close()
+            backNavigation = ActivityBackNavigation.register(this) { onBackPressed() }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val restoringLaunch = savedInstanceState != null ||
             intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
@@ -740,7 +755,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
                 val entry = original.copy(metadata = original.metadata.copy(mimeType = mime))
                 val type = com.infinifolder.viewer.MediaTypeDetector.detect(name, mime)
-                val rawMedia=if(!entry.metadata.isDirectory)com.infinifolder.viewer.RawMediaConfigStore.load(applicationContext,entry)else null
+                val hasRawMetadata=!entry.metadata.isDirectory&&com.infinifolder.viewer.RawMediaConfigStore.hasSidecar(applicationContext,entry)
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
                     when {
@@ -750,10 +765,11 @@ class MainActivity : Activity(), DebugDumpObserver {
                         name.endsWith(".wsz", true) || mime == "application/x-winamp-skin" -> importWinampSkin(uri, applyToAudio = true)
                         com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null || AppsUri.isAppUri(uri) -> open(entry, confirmCommands = true)
                         com.infinifolder.viewer.ExternalAppDefaults(this).hasOpenPreference(entry.ref, mime) -> open(entry)
-                        rawMedia!=null -> openConfiguredRawMedia(entry)
+                        hasRawMetadata -> openHexEditor(entry,loadMetadata=true)
                         com.infinifolder.viewer.ViewerCatalog.activity(type) != null -> launchBuiltInViewer(entry, type)
-                        (ArchiveFormats.isArchive(name, mime) && !name.endsWith(".bin", true)) || magic?.isArchiveOrDiscImage == true ->
+                        ArchiveFormats.isArchive(name, mime) || magic?.isArchiveOrDiscImage == true ->
                             navigate(ArchiveUri.toArchiveUri(uri), displayName = name)
+                        com.infinifolder.viewer.MediaTypeDetector.isGenericBinary(name,mime) -> openHexEditor(entry)
                         else -> Toast.makeText(this, "No built-in viewer or container browser supports this item", Toast.LENGTH_LONG).show()
                     }
                 }
@@ -839,6 +855,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun buildUi() {
+        preserveDirectoryScrollForUiRebuild()
         val theme = com.infinifolder.theme.ThemeManager.activeTheme
         val bg = theme.background
         val fg = theme.textPrimary
@@ -986,7 +1003,10 @@ class MainActivity : Activity(), DebugDumpObserver {
             setOnLongClickListener { onEmptyAreaLongPress() }
             updateHeaderTheme(dark)
             addView(content, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-            viewTreeObserver.addOnScrollChangedListener { scheduleVisibleProbe() }
+            viewTreeObserver.addOnScrollChangedListener {
+                scheduleVisibleProbe()
+                scheduleDirectoryScrollPersistence()
+            }
             viewTreeObserver.addOnGlobalLayoutListener { scheduleVisibleProbe() }
             onRefreshListener = {
                 if (homeMode) showHomeRoot() else current?.let { load(it) }
@@ -2503,11 +2523,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             if (knownDirectory && ContainerUris.networkType(canonical) != null && !ArchiveUri.isArchiveUri(target)) {
                 // The saved link already identifies a directory. Navigate immediately
                 // and let the listing show connection progress or an actionable error.
-                logicalLocationPrefix = null
-                currentProgramName = null
-                history.clear(); historyNames.clear(); current = null
                 setTreeVisible(false)
-                navigate(target, push = false, displayName = title)
+                navigateToAbsoluteLocation(target, networkAbsoluteBreadcrumbRoute(target) ?: listOf(target to title), title)
                 return@bindContainerUri
             }
             val generation = ++browserNavigationGeneration
@@ -2529,15 +2546,27 @@ class MainActivity : Activity(), DebugDumpObserver {
                         else throw java.io.IOException("This link points to a regular file, not a browsable container")
                     }
                     val resolvedDestination = destination
+                    val absoluteRoute = resolvedDestination?.takeUnless(ArchiveUri::isArchiveUri)?.let { resolved ->
+                        absoluteBreadcrumbRoute(resolved, title, entry.takeIf { sameResourceUri(it.uri, resolved) })
+                    }
                     runOnUiThread {
                         if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
                         if (resolvedDestination != null) {
-                            // A container link is a navigation root, not a child of its previous location.
-                            logicalLocationPrefix = null
-                            currentProgramName = null
-                            history.clear(); historyNames.clear(); current = null
                             setTreeVisible(false)
-                            navigate(resolvedDestination, push = false, displayName = title)
+                            if (ArchiveUri.isArchiveUri(resolvedDestination)) {
+                                // A mounted archive or disk image stays nested at the point where
+                                // the user opened it, just like ordinary archive navigation.
+                                if (origin != LinkNavigationOrigin.DIRECTORY_LINK) {
+                                    logicalLocationPrefix = null
+                                    currentProgramName = null
+                                    history.clear(); historyNames.clear()
+                                }
+                                current = null
+                                navigate(resolvedDestination, push = true, displayName = title)
+                            } else {
+                                navigateToAbsoluteLocation(resolvedDestination,
+                                    absoluteRoute ?: listOf(resolvedDestination to title), title)
+                            }
                         }
                         else open(entry)
                     }
@@ -3839,6 +3868,130 @@ class MainActivity : Activity(), DebugDumpObserver {
         load(targetUri)
     }
 
+    /** Build a breadcrumb route from a local path's volume root through the selected folder. */
+    private fun localAbsoluteBreadcrumbRoute(uri: Uri): List<Pair<Uri, String>>? {
+        if (!localProvider.owns(uri)) return null
+        return runCatching<List<Pair<Uri, String>>?> {
+            val targetFile = localProvider.fileFor(uri).canonicalFile
+            val sharedRoot = localProvider.store.root.canonicalFile
+            fun isInside(file: java.io.File, rootFile: java.io.File): Boolean {
+                val path = file.path
+                val rootPath = rootFile.path.trimEnd(java.io.File.separatorChar)
+                return path == rootPath || path.startsWith(rootPath + java.io.File.separator)
+            }
+            if (isInside(targetFile, sharedRoot)) {
+                var folder = sharedRoot
+                buildList<Pair<Uri, String>> {
+                    add(localProvider.rootUri to "Internal shared storage")
+                    sharedRoot.toPath().relativize(targetFile.toPath()).map { it.toString() }.filter { it.isNotEmpty() }
+                        .forEach { component ->
+                            folder = java.io.File(folder, component)
+                            add(localProvider.uriFor(folder) to component)
+                        }
+                }
+            } else {
+                val matchingVolume = getSystemService(StorageManager::class.java)?.storageVolumes?.firstOrNull { volume ->
+                    if (android.os.Build.VERSION.SDK_INT >= 30) {
+                        volume.directory?.canonicalFile?.let { isInside(targetFile, it) } == true
+                    } else false
+                }
+                if (matchingVolume == null || android.os.Build.VERSION.SDK_INT < 30) null
+                else {
+                    val volumeRoot = matchingVolume.directory!!.canonicalFile
+                    var folder = volumeRoot
+                    buildList<Pair<Uri, String>> {
+                        add(localProvider.uriFor(volumeRoot) to matchingVolume.getDescription(this@MainActivity))
+                        volumeRoot.toPath().relativize(targetFile.toPath()).map { it.toString() }.filter { it.isNotEmpty() }
+                            .forEach { component ->
+                                folder = java.io.File(folder, component)
+                                add(localProvider.uriFor(folder) to component)
+                            }
+                    }
+                }
+            }
+        }.getOrNull()
+    }
+
+    /** Network URI paths are absolute; render every component from the connection root. */
+    private fun networkAbsoluteBreadcrumbRoute(uri: Uri): List<Pair<Uri, String>>? {
+        val path = when {
+            SftpUri.isSftpUri(uri) -> SftpUri.getRemotePath(uri)
+            FtpUri.isFtpUri(uri) -> FtpUri.getRemotePath(uri)
+            SmbUri.isSmbUri(uri) -> SmbUri.getRemotePath(uri)
+            WebDavUri.owns(uri) -> WebDavUri.path(uri)
+            else -> return null
+        }
+        val root = uri.buildUpon().clearQuery().encodedPath("/").build()
+        val connectionName = displayNameFor(root) ?: when {
+            SftpUri.isSftpUri(uri) -> "SFTP Server"
+            FtpUri.isFtpUri(uri) -> "FTP Server"
+            SmbUri.isSmbUri(uri) -> "SMB Server"
+            else -> "WebDAV"
+        }
+        val result = mutableListOf<Pair<Uri, String>>(root to connectionName)
+        val components = path.trim('/').split('/').filter(String::isNotEmpty)
+        var partial = ""
+        components.forEachIndexed { index, component ->
+            partial += "/${Uri.encode(component)}"
+            val crumbUri = if (index == components.lastIndex) uri else root.buildUpon().encodedPath(partial).build()
+            result += crumbUri to component
+        }
+        return result
+    }
+
+    /** Walk provider parents to make an absolute route for a link target on other storage. */
+    private fun absoluteBreadcrumbRoute(
+        uri: Uri,
+        fallbackName: String,
+        knownEntry: ResourceEntry? = null
+    ): List<Pair<Uri, String>> {
+        networkAbsoluteBreadcrumbRoute(uri)?.let { return it }
+        localAbsoluteBreadcrumbRoute(uri)?.let { return it }
+        val initialRef = provider.refForUri(uri) ?: return listOf(uri to fallbackName)
+        val reversed = mutableListOf<Pair<Uri, String>>()
+        val seen = mutableSetOf<String>()
+        var ref = initialRef
+        var cursorUri = uri
+        var firstEntry = knownEntry
+        var depth = 0
+        while (depth++ < 128) {
+            val key = "${ref.providerId}:${ref.documentId}"
+            if (!seen.add(key)) break
+            val entry = firstEntry?.takeIf { sameResourceUri(it.uri, cursorUri) }
+                ?: (provider.stat(ref) as? ProviderResult.Success)?.value
+            val name = entry?.metadata?.name?.takeIf(String::isNotBlank)
+                ?: displayNameFor(cursorUri)?.takeIf(String::isNotBlank)
+                ?: if (cursorUri == uri) fallbackName else cursorUri.lastPathSegment ?: "Storage"
+            reversed += cursorUri to name
+            firstEntry = null
+            when (val parent = provider.parent(ref)) {
+                is ProviderResult.Success -> {
+                    val parentRef = parent.value ?: break
+                    ref = parentRef
+                    val parentEntry = (provider.stat(parentRef) as? ProviderResult.Success)?.value
+                    cursorUri = parentEntry?.uri ?: runCatching { Uri.parse(parentRef.documentId) }.getOrDefault(cursorUri)
+                    firstEntry = parentEntry
+                }
+                else -> break
+            }
+        }
+        return reversed.asReversed().ifEmpty { listOf(uri to fallbackName) }
+    }
+
+    /** Replace the previous device trail with the target's absolute storage route. */
+    private fun navigateToAbsoluteLocation(uri: Uri, route: List<Pair<Uri, String>>, fallbackName: String) {
+        logicalLocationPrefix = null
+        currentProgramName = null
+        history.clear()
+        historyNames.clear()
+        val crumbs = route.ifEmpty { listOf(uri to fallbackName) }.toMutableList()
+        if (!sameResourceUri(crumbs.last().first, uri)) crumbs += uri to fallbackName
+        history.addAll(crumbs.map { it.first })
+        historyNames.addAll(crumbs.map { it.second })
+        current = null
+        navigate(uri, push = false, displayName = fallbackName)
+    }
+
     private fun openRoot(uri: Uri, logicalPrefix: String? = null, rememberAuthorizedRoot: Boolean = true) {
         if (uri == ContainerLinksProvider.ROOT) { showHomeRoot(); return }
         if (uri == com.infinifolder.storage.PartialDownloadsProvider.ROOT) {
@@ -3881,48 +4034,18 @@ class MainActivity : Activity(), DebugDumpObserver {
                 displayNameFor(uri) ?: "Storage"
             }
             val path = displayPathFor(uri) ?: name
-            val localRoute: List<Pair<Uri, String>>? = if (localProvider.owns(uri)) runCatching {
-                val targetFile = localProvider.fileFor(uri)
-                val sharedRoot = localProvider.store.root.canonicalFile
-                if (targetFile.canonicalPath.startsWith(sharedRoot.canonicalPath)) {
-                    var folder = sharedRoot
-                    buildList<Pair<Uri, String>> {
-                        add(localProvider.rootUri to "Internal shared storage")
-                        sharedRoot.toPath().relativize(targetFile.toPath()).map { it.toString() }.filter { it.isNotEmpty() }
-                            .forEach { component ->
-                                folder = java.io.File(folder, component)
-                                add(localProvider.uriFor(folder) to component)
-                            }
-                    }
-                } else {
-                    val matchingVol = getSystemService(StorageManager::class.java)?.storageVolumes?.firstOrNull { vol ->
-                        if (android.os.Build.VERSION.SDK_INT >= 30) {
-                            vol.directory?.let { targetFile.canonicalPath.startsWith(it.canonicalPath) } == true
-                        } else false
-                    }
-                    if (matchingVol != null && android.os.Build.VERSION.SDK_INT >= 30) {
-                        val volDir = matchingVol.directory!!.canonicalFile
-                        var folder = volDir
-                        buildList<Pair<Uri, String>> {
-                            add(localProvider.uriFor(volDir) to matchingVol.getDescription(this@MainActivity))
-                            volDir.toPath().relativize(targetFile.toPath()).map { it.toString() }.filter { it.isNotEmpty() }
-                                .forEach { component ->
-                                    folder = java.io.File(folder, component)
-                                    add(localProvider.uriFor(folder) to component)
-                                }
-                        }
-                    } else null
-                }
-            }.getOrNull()?.let { it } else null
+            val localRoute = localAbsoluteBreadcrumbRoute(uri)
+            val networkRoute = networkAbsoluteBreadcrumbRoute(uri)
             shared.edit().putString("source_name_${uri}", name).apply()
             shared.edit().putString("source_path_v2_${uri}", path).apply()
             runOnUiThread {
                 if (requestGeneration != loadGeneration || isFinishing) return@runOnUiThread
                 if (rememberAuthorizedRoot && !localProvider.owns(uri)) rememberAuthorizedTreeRoot(uri, name, path)
-                if (localRoute != null) {
+                val absoluteRootRoute = localRoute ?: networkRoute
+                if (absoluteRootRoute != null) {
                     logicalLocationPrefix = null
-                    history.addAll(localRoute.map { it.first })
-                    historyNames.addAll(localRoute.map { it.second })
+                    history.addAll(absoluteRootRoute.map { it.first })
+                    historyNames.addAll(absoluteRootRoute.map { it.second })
                 }
                 rebuildTreeRoots()
                 navigate(uri, false, name)
@@ -4116,10 +4239,12 @@ class MainActivity : Activity(), DebugDumpObserver {
             updateEntryLoadingFeedback()
             // Keep the current rows and scroll extent while refreshing the same folder.
             if (renderedFileLocation != uri) {
+                saveVisibleDirectoryScroll()
                 cancelDragContainerHover()
                 dragContainerCards.clear()
                 entries = emptyList()
                 content.removeAllViews()
+                renderedFileLocation = null
             }
         }
         val ref = try {
@@ -4413,13 +4538,18 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (renderedPinnedIconSize != iconSizeDp) renderPinnedContainers()
         val location = current
         val generation = loadGeneration
+        if (renderedFileLocation != null && renderedFileLocation != location) {
+            saveVisibleDirectoryScroll()
+        }
         val forcedScrollRestore = pendingLocationScrollRestore
             ?.takeIf { it.first == location }
             ?.also { pendingLocationScrollRestore = null }
             ?.second
         val savedScrollY = forcedScrollRestore
-            ?: if (renderedFileLocation == location) fileScroll.scrollY else 0
+            ?: if (renderedFileLocation == location) fileScroll.scrollY else location?.let(::directoryScrollPosition) ?: 0
         renderedFileLocation = location
+        restoringFileScrollLocation = location
+        restoringFileScrollGeneration = generation
         try {
             cancelDragContainerHover()
             dragContainerCards.clear()
@@ -4476,7 +4606,15 @@ class MainActivity : Activity(), DebugDumpObserver {
                         fileScroll.viewTreeObserver.removeOnGlobalLayoutListener(this)
                     if (!isDestroyed && !homeMode && current == location && loadGeneration == generation) {
                         fileScroll.scrollTo(0, savedScrollY)
+                        if (restoringFileScrollLocation == location && restoringFileScrollGeneration == generation) {
+                            restoringFileScrollLocation = null
+                            restoringFileScrollGeneration = -1
+                        }
+                        location?.let { persistDirectoryScrollPosition(it, fileScroll.scrollY) }
                         scheduleVisibleProbe()
+                    } else if (restoringFileScrollLocation == location && restoringFileScrollGeneration == generation) {
+                        restoringFileScrollLocation = null
+                        restoringFileScrollGeneration = -1
                     }
                 }
             }
@@ -4484,6 +4622,60 @@ class MainActivity : Activity(), DebugDumpObserver {
             fileScroll.requestLayout()
         }
     }
+    private fun directoryScrollPreferenceKey(location: Uri): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(location.toString().toByteArray(Charsets.UTF_8))
+        val suffix = digest.joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        return "directory_scroll_y_v1_$suffix"
+    }
+
+    private fun directoryScrollPosition(location: Uri): Int =
+        if (::shared.isInitialized) shared.getInt(directoryScrollPreferenceKey(location), 0).coerceAtLeast(0) else 0
+
+    private fun persistDirectoryScrollPosition(location: Uri, scrollY: Int) {
+        if (!::shared.isInitialized) return
+        shared.edit().putInt(directoryScrollPreferenceKey(location), scrollY.coerceAtLeast(0)).apply()
+    }
+
+    private fun scheduleDirectoryScrollPersistence() {
+        if (!::fileScroll.isInitialized || !::shared.isInitialized || homeMode) return
+        val location = renderedFileLocation ?: return
+        if (current != location || restoringFileScrollLocation == location) return
+        pendingDirectoryScrollSave = location to fileScroll.scrollY
+        operationUiHandler.removeCallbacks(directoryScrollSaveRunnable)
+        operationUiHandler.postDelayed(directoryScrollSaveRunnable, 200L)
+    }
+
+    private fun flushDirectoryScrollPersistence() {
+        operationUiHandler.removeCallbacks(directoryScrollSaveRunnable)
+        val pending = pendingDirectoryScrollSave ?: return
+        pendingDirectoryScrollSave = null
+        persistDirectoryScrollPosition(pending.first, pending.second)
+    }
+
+    private fun saveVisibleDirectoryScroll() {
+        if (!::fileScroll.isInitialized || !::shared.isInitialized) return
+        val location = renderedFileLocation ?: return
+        if (restoringFileScrollLocation == location) return
+        flushDirectoryScrollPersistence()
+        persistDirectoryScrollPosition(location, fileScroll.scrollY)
+    }
+
+    /** setContentView replaces the scroll view during a theme/interface rebuild. */
+    private fun preserveDirectoryScrollForUiRebuild() {
+        if (homeMode) return
+        val location = current ?: return
+        val pending = pendingLocationScrollRestore?.takeIf { it.first == location }?.second
+        val visible = if (::fileScroll.isInitialized && renderedFileLocation == location &&
+            restoringFileScrollLocation != location) fileScroll.scrollY else null
+        val scrollY = pending ?: visible ?: directoryScrollPosition(location)
+        saveVisibleDirectoryScroll()
+        pendingLocationScrollRestore = location to scrollY
+        com.infinifolder.storage.DiagnosticLog.record(
+            "browser.scroll.ui-rebuild", "location=$location scrollY=$scrollY"
+        )
+    }
+
     private fun renderCurrentContents() { if (homeMode) renderHomeItems() else renderEntries() }
     private fun iconTextSizeDp(asGrid: Boolean): Float = if (asGrid) (iconSizeDp * 0.72f) else 28f
     private fun gridColumns(availableWidthDp: Int): Int = FileViewGrid.columns(availableWidthDp, iconSizeDp)
@@ -4667,77 +4859,6 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             if (entry.metadata.isDirectory) {
                 navigate(entry.uri, displayName = entry.metadata.name)
-                return@OnClickListener
-            }
-
-            if (entry.metadata.name.endsWith(".incomplete", true)) {
-                open(entry)
-                return@OnClickListener
-            }
-            val cachedMagic = ambiguousMagicCache.get(entry.uri.toString())
-            val effectiveMime = com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType, cachedMagic?.mimeType)
-            val isPkg = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isPackagedFormat(entry.metadata.name, effectiveMime)
-            val isPlaylist = !AppsUri.isAppUri(entry.uri) && (
-                ArchiveFormats.isPlaylist(entry.metadata.name, effectiveMime) ||
-                com.infinifolder.viewer.PlaylistExpander.isPlaylist(entry.uri, entry.metadata.name)
-            )
-            val isArc = !AppsUri.isAppUri(entry.uri) && !isPlaylist && (
-                ArchiveFormats.isArchive(entry.metadata.name, effectiveMime) ||
-                (cachedMagic != null && (cachedMagic.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(entry.metadata.name, cachedMagic.mimeType)))
-            )
-            if (isArc && !isPkg) {
-                if (ArchiveUri.isArchiveUri(entry.uri)) {
-                    browseNestedArchive(entry)
-                } else {
-                    val archiveUri = ArchiveUri.toArchiveUri(entry.uri)
-                    navigate(archiveUri, displayName = entry.metadata.name)
-                }
-                return@OnClickListener
-            }
-
-            if (cachedMagic == null && !isPkg && !isPlaylist && FileMagicDetector.isAmbiguousOrUnknown(entry.metadata.name, entry.metadata.mimeType)) {
-                val loadingToken = beginEntryActionLoading("Checking file type…") ?: return@OnClickListener
-                io.execute {
-                    val magic = try {
-                        if (localProvider.owns(entry.uri)) {
-                            FileMagicDetector.detect(localProvider.fileFor(entry.uri), peekCompressedPayload = true)
-                        } else {
-                            FileMagicDetector.detectFromStream {
-                                (provider.openRead(entry.ref) as? ProviderResult.Success)?.value
-                                    ?: throw java.io.IOException("Cannot open stream")
-                            }
-                        }
-                    } catch (_: Throwable) { null }
-                    if (magic != null) {
-                        ambiguousMagicCache.put(entry.uri.toString(), magic)
-                    }
-                    val probeMime = magic?.mimeType ?: entry.metadata.mimeType
-                    val probeIsPkg = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isPackagedFormat(entry.metadata.name, probeMime)
-                    val probeIsPlaylist = !AppsUri.isAppUri(entry.uri) && (
-                        ArchiveFormats.isPlaylist(entry.metadata.name, probeMime) ||
-                        com.infinifolder.viewer.PlaylistExpander.isPlaylist(entry.uri, entry.metadata.name)
-                    )
-                    val probeIsArc = !AppsUri.isAppUri(entry.uri) && !probeIsPlaylist && (
-                        ArchiveFormats.isArchive(entry.metadata.name, probeMime) ||
-                        (magic != null && (magic.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(entry.metadata.name, magic.mimeType)))
-                    )
-                    runOnUiThread {
-                        finishEntryActionLoading(loadingToken)
-                        if (isFinishing || isDestroyed) return@runOnUiThread
-                        if (probeIsArc && !probeIsPkg) {
-                            if (ArchiveUri.isArchiveUri(entry.uri)) {
-                                browseNestedArchive(entry)
-                            } else {
-                                navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
-                            }
-                        } else {
-                            val effectiveEntry = if (magic != null && magic.mimeType != entry.metadata.mimeType) {
-                                entry.copy(metadata = entry.metadata.copy(mimeType = magic.mimeType))
-                            } else entry
-                            open(effectiveEntry)
-                        }
-                    }
-                }
                 return@OnClickListener
             }
 
@@ -5402,7 +5523,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun open(entry: ResourceEntry, externalOnly: Boolean = false, confirmCommands: Boolean = false,
-        forceExternalChooser: Boolean = false, skipRawMetadata: Boolean = false) {
+        forceExternalChooser: Boolean = false, skipRawMetadata: Boolean = false, skipMagic:Boolean=false) {
         if (!entry.metadata.isDirectory && entry.metadata.name.endsWith(".incomplete", true) && !externalOnly) {
             resumeIncompleteDownload(entry.ref)
             return
@@ -5432,6 +5553,11 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
                 val resolved = try { com.infinifolder.storage.LinkResolver.resolve(provider, entry) }
                     catch (error: Throwable) { ProviderResult.Failure(error.message ?: "Could not resolve link", error) }
+                val absoluteRoute = (resolved as? ProviderResult.Success)?.value?.let { target ->
+                    target.entry?.takeIf { it.metadata.isDirectory && !externalOnly }?.let {
+                        if (ArchiveUri.isArchiveUri(it.uri)) null else absoluteBreadcrumbRoute(it.uri, it.metadata.name, it)
+                    }
+                }
                 runOnUiThread {
                     if (linkNavigationToken != null && browserNavigationGeneration != linkNavigationToken) return@runOnUiThread
                     when (resolved) {
@@ -5445,7 +5571,11 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 return@runOnUiThread
                             }
                             if (targetEntry == null) launchExternalViewIntent(target.uri, target.mime, target.name, forceExternalChooser)
-                            else if (targetEntry.metadata.isDirectory && !externalOnly) navigate(targetEntry.uri, displayName = targetEntry.metadata.name)
+                            else if (targetEntry.metadata.isDirectory && !externalOnly) {
+                                if (ArchiveUri.isArchiveUri(targetEntry.uri)) navigate(targetEntry.uri, displayName = targetEntry.metadata.name)
+                                else navigateToAbsoluteLocation(targetEntry.uri,
+                                    absoluteRoute ?: listOf(targetEntry.uri to targetEntry.metadata.name), targetEntry.metadata.name)
+                            }
                             else open(targetEntry, externalOnly, confirmCommands, forceExternalChooser)
                         }
                         is ProviderResult.Failure -> Toast.makeText(this, resolved.message, Toast.LENGTH_LONG).show()
@@ -5485,11 +5615,11 @@ class MainActivity : Activity(), DebugDumpObserver {
             com.infinifolder.viewer.RawMediaConfigStore.mightHave(entry)){
             val generation=++browserNavigationGeneration
             io.execute {
-                val raw=runCatching {com.infinifolder.viewer.RawMediaConfigStore.load(applicationContext,entry)}.getOrNull()
+                val hasMetadata=runCatching {com.infinifolder.viewer.RawMediaConfigStore.hasSidecar(applicationContext,entry)}.getOrDefault(false)
                 runOnUiThread {
                     if(isFinishing||isDestroyed||generation!=browserNavigationGeneration)return@runOnUiThread
-                    if(raw!=null)openConfiguredRawMedia(entry)
-                    else open(entry,externalOnly,confirmCommands,forceExternalChooser,skipRawMetadata=true)
+                    if(hasMetadata)openHexEditor(entry,loadMetadata=true)
+                    else open(entry,externalOnly,confirmCommands,forceExternalChooser,skipRawMetadata=true,skipMagic=skipMagic)
                 }
             }
             return
@@ -5504,12 +5634,34 @@ class MainActivity : Activity(), DebugDumpObserver {
             ArchiveFormats.isPlaylist(entry.metadata.name, effectiveMime) ||
             com.infinifolder.viewer.PlaylistExpander.isPlaylist(entry.uri, entry.metadata.name)
         )
+        if(!externalOnly&&!hasExternalDefault&&!skipMagic&&!entry.metadata.isDirectory&&!isPkg&&!isPlaylist&&
+            cachedMagic==null&&FileMagicDetector.isAmbiguousOrUnknown(entry.metadata.name,entry.metadata.mimeType)){
+            val loadingToken=beginEntryActionLoading("Checking file type…")?:return
+            val generation=++browserNavigationGeneration
+            io.execute {
+                val magic=runCatching {
+                    if(localProvider.owns(entry.uri))FileMagicDetector.detect(localProvider.fileFor(entry.uri),peekCompressedPayload=true)
+                    else FileMagicDetector.detectFromStream {
+                        (provider.openRead(entry.ref) as? ProviderResult.Success)?.value?:throw java.io.IOException("Cannot open stream")
+                    }
+                }.getOrNull()
+                if(magic!=null)ambiguousMagicCache.put(entry.uri.toString(),magic)
+                val resolved=if(magic!=null)entry.copy(metadata=entry.metadata.copy(mimeType=magic.mimeType))else entry
+                runOnUiThread {
+                    finishEntryActionLoading(loadingToken)
+                    if(isFinishing||isDestroyed||generation!=browserNavigationGeneration)return@runOnUiThread
+                    open(resolved,externalOnly,confirmCommands,forceExternalChooser,skipRawMetadata=true,skipMagic=true)
+                }
+            }
+            return
+        }
         val isArchiveOrDisc = !AppsUri.isAppUri(entry.uri) && !isPlaylist && (
             ArchiveFormats.isArchive(entry.metadata.name, effectiveMime) ||
             (cachedMagic != null && (cachedMagic.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(entry.metadata.name, cachedMagic.mimeType)))
         )
         if (isArchiveOrDisc && !isPkg && !externalOnly && !hasExternalDefault) {
-            navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
+            if(ArchiveUri.isArchiveUri(entry.uri))browseNestedArchive(entry)
+            else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
             return
         }
         if (useBuiltInViewersAndPlayers && !externalOnly && !hasExternalDefault) {
@@ -5519,6 +5671,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                     return
                 }
             }
+        }
+        if(!externalOnly&&!hasExternalDefault&&com.infinifolder.viewer.MediaTypeDetector.isGenericBinary(entry.metadata.name,effectiveMime)){
+            openHexEditor(entry)
+            return
         }
         val pkgMime = ArchiveFormats.packageMimeType(entry.metadata.name)
         val externalMime = pkgMime
@@ -5530,9 +5686,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         } else launchExternalViewIntent(entry.uri, externalMime, entry.metadata.name, forceExternalChooser)
     }
 
-    private fun openConfiguredRawMedia(entry:ResourceEntry){
+    private fun openHexEditor(entry:ResourceEntry,loadMetadata:Boolean=false){
         startActivity(Intent(this,com.infinifolder.viewer.HexViewerActivity::class.java).setData(entry.uri)
-            .putExtra("displayName",entry.metadata.name).putExtra("raw_metadata",true)
+            .putExtra("displayName",entry.metadata.name).putExtra("raw_metadata",loadMetadata)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
     }
 
@@ -5647,6 +5803,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
     private fun showHomeRoot() {
         if (selectionMode) exitSelectionMode()
+        saveVisibleDirectoryScroll()
         ++browserNavigationGeneration
         ++loadGeneration
         val generation = ++homeSourcesGeneration
@@ -6034,6 +6191,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         pendingCardProbes.clear()
         visibleProbeScheduled = false
         entryIconViews.clear()
+        saveVisibleDirectoryScroll()
         renderedFileLocation = null
         val generation = loadGeneration
         val page = homePage
@@ -11041,9 +11199,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 "Open with external app", "Open with…" -> open(entry, externalOnly = true, forceExternalChooser = true)
                 "Edit externally" -> startActivity(Intent(this, com.infinifolder.viewer.ExternalEditActivity::class.java)
                     .setAction(Intent.ACTION_EDIT).setData(entry.uri))
-                "Open in hex editor" -> startActivity(Intent(this, com.infinifolder.viewer.HexViewerActivity::class.java)
-                    .setData(entry.uri).putExtra("displayName", entry.metadata.name)
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                "Open in hex editor" -> openHexEditor(entry)
                 "Open" -> if (entry.metadata.isDirectory) navigate(entry.uri, displayName = entry.metadata.name) else open(entry)
                 "Use as debug dump folder" -> {
                     com.infinifolder.storage.DebugDumpDestination.set(this, entry.ref)
@@ -12552,7 +12708,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         restoreScrollYAfterTransfer: Int? = null,
         refreshLocationDisplayName: String? = null,
         recoveryConfirmed: Boolean = false,
-        partialRecovery: Boolean = false
+        partialRecovery: Boolean = false,
+        transferConfirmed: Boolean = false
     ) {
         val recovering = try { entries.any { it.metadata.recoveryNote != null || provider.recoverySource(it.ref) != null } }
             catch (e: Exception) {
@@ -12611,6 +12768,34 @@ class MainActivity : Activity(), DebugDumpObserver {
                 return
             }
         }
+        if (!createLinks && !recovering && !transferConfirmed) {
+            val action = if (move) "Move" else "Copy"
+            val count = entries.size
+            val itemDescription = if (count == 1) "'${entries[0].metadata.name}'" else "$count items"
+            val destinationName = displayPathFor(destination) ?: getPathDisplay(destination)
+            val appMoveNote = if (move && entries.any { AppsUri.isAppUri(it.uri) }) {
+                "\n\nMoving an installed app exports it and then asks Android to uninstall it."
+            } else ""
+            dialogBuilder().setTitle("$action $itemDescription?")
+                .setMessage("$action $itemDescription to:\n$destinationName$appMoveNote")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton(action) { _, _ ->
+                    startBatchTransfer(
+                        entries = entries,
+                        move = move,
+                        destination = destination,
+                        createLinks = createLinks,
+                        refreshLocationAfterTransfer = refreshLocationAfterTransfer,
+                        restoreScrollYAfterTransfer = restoreScrollYAfterTransfer,
+                        refreshLocationDisplayName = refreshLocationDisplayName,
+                        recoveryConfirmed = recoveryConfirmed,
+                        partialRecovery = partialRecovery,
+                        transferConfirmed = true
+                    )
+                }
+                .show()
+            return
+        }
         if (destination == ContainerLinksProvider.ROOT && !createLinks) {
             val linkFiles = entries.filter { ShortcutInfo.isShortcut(it.metadata.name, it.metadata.mimeType) && !it.metadata.isDirectory }
             val containers = entries.filterNot { it in linkFiles }
@@ -12619,8 +12804,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 return
             }
             if (containers.isNotEmpty()) {
-                if (linkFiles.isNotEmpty()) startBatchTransfer(linkFiles, move, destination)
-                startBatchTransfer(containers, false, destination, createLinks = true)
+                if (linkFiles.isNotEmpty()) startBatchTransfer(linkFiles, move, destination, transferConfirmed = transferConfirmed)
+                startBatchTransfer(containers, false, destination, createLinks = true, transferConfirmed = transferConfirmed)
                 Toast.makeText(this, "Adding container links; target contents stay in place", Toast.LENGTH_LONG).show()
                 return
             }
@@ -13165,7 +13350,21 @@ class MainActivity : Activity(), DebugDumpObserver {
             com.infinifolder.storage.DiagnosticLog.record("browser.back.busy", "location=$location")
             return
         }
-        if (selectionMode) exitSelectionMode()
+        if (selectionMode) {
+            exitSelectionMode()
+            return
+        }
+        val breadcrumbIndex = history.indexOfLast { sameResourceUri(it, location) }
+        if (breadcrumbIndex > 0) {
+            val parentIndex = breadcrumbIndex - 1
+            val parentUri = history[parentIndex]
+            val parentName = historyNames.getOrNull(parentIndex) ?: displayNameFor(parentUri) ?: "Folder"
+            while (history.size > parentIndex + 1) history.removeAt(history.lastIndex)
+            while (historyNames.size > parentIndex + 1) historyNames.removeAt(historyNames.lastIndex)
+            com.infinifolder.storage.DiagnosticLog.record("browser.back.parent", "source=breadcrumb from=$location to=$parentUri")
+            navigate(parentUri, push = false, displayName = parentName)
+            return
+        }
         // Mounted paths have an explicit parent. Navigating there must not wait
         // for another remote directory listing or compete with copy IO.
         if (ArchiveUri.isArchiveUri(location) && ArchiveUri.getEntryPath(location).isNotEmpty()) {
@@ -13354,6 +13553,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         lastIconRegistryRevision=iconRevision
         renderPinnedContainers()
+        if (backNavigation == null) {
+            backNavigation = ActivityBackNavigation.register(this) { onBackPressed() }
+        }
         val currentTheme = com.infinifolder.theme.ThemeManager.activeTheme
         if (lastAppliedThemeId != currentTheme.id || lastAppliedTextPrimary != currentTheme.textPrimary) {
             lastAppliedThemeId = currentTheme.id
@@ -13391,6 +13593,9 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     override fun onPause() {
         browserResumed = false
+        backNavigation?.close()
+        backNavigation = null
+        saveVisibleDirectoryScroll()
         if (!forwardingHomeShortcut) {
             currentProgressDialog?.dismiss()
             operationOverview?.dismiss()
@@ -13400,6 +13605,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     override fun onStop() {
         super.onStop()
+        flushDirectoryScrollPersistence()
         if (forwardingHomeShortcut) return
         val hasActive = operations.snapshots().any {
             (it.state == OperationState.RUNNING || it.state == OperationState.QUEUED) &&
@@ -13421,11 +13627,13 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     override fun onDestroy() {
         if (forwardingHomeShortcut) { super.onDestroy(); return }
+        flushDirectoryScrollPersistence()
         diskUsageExplorer?.close()
         diskUsageExplorer = null
         operationOverview?.dismiss()
         operationUiHandler.removeCallbacks(operationStatusTick)
         operationUiHandler.removeCallbacks(operationUiUpdate)
+        operationUiHandler.removeCallbacks(directoryScrollSaveRunnable)
         pendingOperationSnapshots.set(null)
         cancelDragEdgeAutoScroll()
         backNavigation?.close()

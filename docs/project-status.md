@@ -2,7 +2,23 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
-Updated 2026-11-02. This is the current status reference. Checked implementation work is not automatically device acceptance. Dated audits, build counts and dump reports describe the revisions they examined.
+Updated 2026-11-04. This is the current status reference. Checked implementation work is not automatically device acceptance. Dated audits, build counts and dump reports describe the revisions they examined.
+
+## Latest library and viewer synchronization
+
+The [2026-11-04 component record](component-status-2026-11-04.md) inventories all
+seven libraries and every viewer, the outstanding source changes being published,
+and the remaining device checks. IFF color cycling and the earlier animation
+playback/progress follow-up are owner-confirmed. Subsequent FLC header recovery,
+interactive MNG states, slideshow/lifecycle fixes and icon-cache invalidation
+have build evidence; their new UI paths remain unverified. See
+[image animation](image-animation.md).
+
+Generic binary/sidecar routing, content-selected archive readers, continuous Cast
+audio, shared Back/scroll controls and browser navigation follow-ups are included
+in the source synchronization. These changes do not reopen the completed library
+extraction or establish new handset acceptance. Historical sections below retain
+the dates and evidence of their original increments.
 
 ## Current priority
 
@@ -290,8 +306,8 @@ and lazy package serving remain future work; PostScript/LaTeX rendering is plann
 
 | Area | Remaining acceptance |
 | --- | --- |
-| Shared disk cache | 200 MiB total, separate file limit, LRU before prompting, active leases, copy/raise choices, six-hour expiry, restart cleanup and themed dialogs |
-| External editing | Real editor handoff/return; explicit Finish editing and save; unchanged files; source conflicts; save-as/copy/overwrite; interrupted sessions across providers |
+| Shared disk cache | Core device acceptance confirmed 2026-11-01: LRU eviction, active-file protection, capacity choices and saved settings across restart. Six-hour expiry, incomplete-staging cleanup, unknown-size streams, expanded EPUB accounting, simultaneous active mounts/viewers and themed dialogs remain |
+| External editing | Core real-editor acceptance confirmed 2026-11-01: handoff/return, source conflict, preserved edits/save-as and unfinished-session recovery after restart. Unchanged files, timestamp-only changes, staging-time source changes, provider coverage and theme presentation remain |
 | Navigation | Latest unrelated Internal storage breadcrumb removal before remote connections; disk usage Parent above its initial scan root |
 | Menus and targets | New templates, wildcard/regex, sort directions, pins/hover and selected-set drops across backends/orientations |
 | Transfer UI | Stable sizing, per-file/overall and verification progress, remembered verification switch, queues/cancellation and denied notification permissions |

@@ -44,9 +44,10 @@ class HtmlViewerActivity : ViewerActivity() {
     private var isDirty = false
 
     private lateinit var rootLayout: FrameLayout
-    private lateinit var webView: WebView
+    private lateinit var webView: ScrollableWebView
     private lateinit var sourceContainer: LinearLayout
-    private lateinit var sourceEditText: EditText
+    private lateinit var sourceEditText: ScrollableEditText
+    private lateinit var sourceScroll: ScrollView
     private var syntax: SyntaxTextController? = null
     private lateinit var progressBar: ProgressBar
     private lateinit var titleTextView: TextView
@@ -188,9 +189,10 @@ class HtmlViewerActivity : ViewerActivity() {
         }
 
         // 1. Sandboxed WebView
-        webView = WebView(this).apply {
+        webView = ScrollableWebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(-1, -1)
             setBackgroundColor(0xFFFFFFFF.toInt())
+            isVerticalScrollBarEnabled = false
             settings.apply {
                 // Strict sandbox settings to prevent local file leaks or remote escalation
                 allowFileAccess = false
@@ -234,21 +236,24 @@ class HtmlViewerActivity : ViewerActivity() {
             layoutParams = FrameLayout.LayoutParams(-1, -1)
         }
 
-        val scroll = ScrollView(this).apply {
+        sourceScroll = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(-1, -1)
             isFillViewport = true
+            isVerticalScrollBarEnabled = false
         }
 
         val hScroll = HorizontalScrollView(this).apply {
             layoutParams = FrameLayout.LayoutParams(-1, -1)
             isFillViewport = true
+            isHorizontalScrollBarEnabled = false
         }
 
-        sourceEditText = EditText(this).apply {
+        sourceEditText = ScrollableEditText(this).apply {
             textSize = 13f
             typeface = Typeface.MONOSPACE
             setTextColor(0xFFD4D4D4.toInt())
             setBackgroundColor(Color.TRANSPARENT)
+            isVerticalScrollBarEnabled = false
             setPadding(dp(16), dp(16), dp(16), dp(16))
             gravity = Gravity.TOP or Gravity.START
             isFocusableInTouchMode = false
@@ -265,8 +270,8 @@ class HtmlViewerActivity : ViewerActivity() {
             })
         }
         hScroll.addView(sourceEditText, FrameLayout.LayoutParams(-2, -1))
-        scroll.addView(hScroll, FrameLayout.LayoutParams(-1, -1))
-        sourceContainer.addView(scroll)
+        sourceScroll.addView(hScroll, FrameLayout.LayoutParams(-1, -1))
+        sourceContainer.addView(sourceScroll)
         contentFrame.addView(sourceContainer)
 
         // Progress bar
@@ -277,6 +282,13 @@ class HtmlViewerActivity : ViewerActivity() {
             layoutParams = lp
         }
         contentFrame.addView(progressBar)
+
+        contentFrame.addView(ScrollHandleView(this,
+            scrollRange = { if (isSourceMode) sourceEditText.verticalScrollRange() else webView.verticalScrollRange() },
+            scrollOffset = { if (isSourceMode) sourceEditText.scrollY else webView.scrollY },
+            viewportSize = { if (isSourceMode) sourceEditText.height else webView.height },
+            scrollToOffset = { offset -> if (isSourceMode) sourceEditText.scrollTo(0, offset) else webView.scrollTo(0, offset) }
+        ), FrameLayout.LayoutParams(dp(24), -1, Gravity.END))
 
         mainColumn.addView(contentFrame)
         rootLayout.addView(mainColumn)
@@ -452,7 +464,7 @@ class HtmlViewerActivity : ViewerActivity() {
             AlertDialog.Builder(this)
                 .setTitle("Discard edits?")
                 .setMessage("You have unsaved changes. Discard them?")
-                .setPositiveButton("Discard") { _, _ -> finish() }
+                .setPositiveButton("Discard") { _, _ -> returnToFileManager() }
                 .setNegativeButton("Keep editing", null)
                 .show()
             return

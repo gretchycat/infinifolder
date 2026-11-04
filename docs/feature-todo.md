@@ -2,7 +2,15 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
-Updated: 2026-11-02. [Current confirmations and priorities](project-status.md) distinguish implementation from handset acceptance. Unchecked items below are remaining work, unless explicitly described as historical evidence.
+Updated: 2026-11-04. [Current confirmations and priorities](project-status.md) distinguish implementation from handset acceptance. Unchecked items below are remaining work, unless explicitly described as historical evidence.
+
+## Current library/viewer follow-up
+
+- [x] Publish animation/cycling support, decoder-revision icon invalidation, samples and format-limit documentation.
+- [x] Synchronize outstanding library/viewer code and documentation; see the [component inventory](component-status-2026-11-04.md).
+- [ ] Device-check the newer FLC recovery, interactive MNG and lifecycle changes; earlier animation playback and IFF cycling confirmations are retained separately.
+- [ ] Device-check generic binary/sidecar opening and real signature-selected archive listing.
+- [ ] Accept continuous Cast transitions/seek/failure fallback on a receiver, plus shared Back/scroll and browser breadcrumb/position changes.
 
 ## Bundled default icon theme
 
@@ -358,14 +366,15 @@ Startup crash (2026-10-25): automatic crash dumps identify `ForegroundServiceDid
 
 The user confirms the two-finger selection gesture working. It is now available directly in normal file browsing as well as selection mode, in grid/list views and for selectable Virtual root link entries. Drawing a rectangle enters selection mode automatically and preserves existing selected items. One-finger scrolling remains unchanged. The duplicate Virtual root breadcrumb and missing links on the Internal storage startup tree are both user-confirmed resolved.
 
-## Shared disk cache (implemented; device acceptance pending)
+## Shared disk cache (implemented; core device acceptance confirmed 2026-11-01)
 
 - [x] Shared 200 MB default disk-data budget, separate configurable individual-file limit, persistent LRU eviction and active leases.
 - [x] Evict unused entries before offering Copy to folder / Raise cache limits; apply active theme and light/dark mode to capacity/settings dialogs.
 - [x] Integrate viewer/media/archive/compressed-image/icon cache allocations; preserve transactional work and recovery data outside eviction.
-- [ ] Device acceptance of eviction, active-file protection, copy/raise choices, restart behavior and themed dialogs. See [policy and scope](disk-cache-policy.md).
+- [x] User confirms on-device LRU eviction, active-file protection, capacity choices and saved settings after app restart (2026-11-01).
+- [ ] Check six-hour idle expiry, incomplete-staging cleanup after restart, unknown-size streams, expanded EPUB accounting, simultaneous active mounts/viewers and themed dialogs. See [policy and scope](disk-cache-policy.md).
 
-## External write-back and cache expiry (implemented; device acceptance pending)
+## External write-back and cache expiry (implemented; core device acceptance confirmed 2026-11-01)
 
 - [x] Gate external-edit return actions on the working copy's checksum; unchanged
   copies return automatically without a source read. Source conflict warnings use
@@ -379,7 +388,8 @@ The user confirms the two-finger selection gesture working. It is now available 
 - [x] Confirm editor return without a crash and a successful SFTP save; user
   confirmation and the 2026-10-26 22:07 UTC dump agree.
 - [x] Six-hour idle cache expiry with a separate setting; active files and unfinished edits are exempt.
-- [ ] Accept real-editor handoff/return, conflict choices and recovery on device. See [write-back behavior and limits](external-edit-writeback.md).
+- [x] User confirms real-editor handoff/return, source conflict detection, preserved edits with a save-as path, and unfinished-session recovery after app restart (2026-11-01).
+- [ ] Check unchanged opens, timestamp-only changes, source changes during staging, provider-specific save paths and light/dark presentation. See [write-back behavior and limits](external-edit-writeback.md).
 
 ## Latest status and next acceptance pass
 
@@ -388,7 +398,7 @@ The user confirms the two-finger selection gesture working. It is now available 
 - [ ] Confirm latest unrelated Internal storage breadcrumb removal before a remote connection.
 - [x] Image-viewer Back confirmed working.
 - [ ] Confirm disk usage Parent above the initial scan root.
-- [ ] Complete shared-cache and external-editor acceptance described above; these remain the next safety-focused checks.
+- [x] Core shared-cache and external-editor acceptance confirmed above; remaining cache expiry, cleanup and presentation checks stay open.
 
 Historical build/test totals describe their original revisions. No tests or build were run for this documentation synchronization. Architecture work and deferred requests are summarized in [project status](project-status.md).
 

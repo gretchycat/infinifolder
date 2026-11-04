@@ -33,6 +33,16 @@ class CacheCopyActivity : Activity() {
         if (requestCode != 1 || resultCode != RESULT_OK || data?.data == null) { finish(); return }
         val target = data.data!!
         val source = intent.data ?: run { finish(); return }
+        val dialog = CacheDialogs.builder(this).setTitle("Copy file?")
+            .setMessage("Copy the selected file to the folder you chose?")
+            .setNegativeButton("Cancel") { _, _ -> finish() }
+            .setPositiveButton("Copy") { _, _ -> startCopy(source, target) }
+            .setOnCancelListener { finish() }
+            .create()
+        dialog.show(); CacheDialogs.style(dialog)
+    }
+
+    private fun startCopy(source: android.net.Uri, target: android.net.Uri) {
         val theme = com.infinifolder.theme.ThemeManager.activeTheme
         val text = TextView(this).apply { text = "Preparing copy…"; setTextColor(theme.textPrimary); setPadding(24, 24, 24, 24) }
         val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { isIndeterminate = true }

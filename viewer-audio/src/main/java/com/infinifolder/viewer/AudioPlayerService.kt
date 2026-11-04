@@ -50,6 +50,8 @@ data class AudioTrack(
     val isUnreadable: Boolean = false
 )
 
+internal data class CastPlaylistSelection(val playlistIndex: Int, val track: AudioTrack)
+
 interface AudioPlayerListener {
     fun onTrackChanged(track: AudioTrack?, index: Int, total: Int)
     fun onPlaybackStateChanged(isPlaying: Boolean, isLoading: Boolean)
@@ -186,6 +188,13 @@ class AudioPlayerService : Service() {
     @Volatile var analysisSource: AnalysisSource? = null
         private set
 
+    /** Use the active composite PCM Cast source for the same analysis pipeline as local playback. */
+    internal fun setCastAnalysisSource(resource: io.github.gretchycat.infinistream.SourceResource?) {
+        analysisSource = resource?.let {
+            AnalysisSource(analysisSourceCounter.incrementAndGet(), "", it)
+        }
+    }
+
     val audioSessionId: Int
         get() = synchronized(playerLock) { runCatching { mediaPlayer?.audioSessionId ?: 0 }.getOrDefault(0) }
     val currentTrack: AudioTrack?
@@ -205,6 +214,7 @@ class AudioPlayerService : Service() {
     private var stagedTempFile: File? = null
     private var stagedSource: AudioPlaybackInput? = null
     private val loadCounter = AtomicLong(0L)
+    private val analysisSourceCounter = AtomicLong(0L)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var isForegroundActive = false
 
@@ -289,6 +299,7 @@ class AudioPlayerService : Service() {
 
     fun setPlaylist(tracks: List<AudioTrack>, startIndex: Int = 0, startAtAlphabeticalBeginning: Boolean = false) {
         invalidateGapless()
+        resetCastFailures()
         val targetTrack = tracks.getOrNull(startIndex)
         val selectedPlaylistFile = targetTrack?.let { PlaylistExpander.isPlaylist(it.uri, it.title) } == true
         val expanded = mutableListOf<AudioTrack>()
@@ -443,6 +454,7 @@ class AudioPlayerService : Service() {
     fun jumpTo(index: Int) {
         synchronized(playlist) {
             if (index in playlist.indices) {
+                castFailures.remove(castTrackKey(playlist[index]))
                 currentIndex = index
                 loadAndPlayCurrent()
             }
@@ -524,7 +536,10 @@ class AudioPlayerService : Service() {
         runCatching {
             synchronized(playlist) {
                 if (playlist.isEmpty()) return@runCatching
-                val next = nextReadableTrack(playlist, currentIndex, repeatMode == RepeatMode.ALL || playlist.size > 1)
+                val wrap = repeatMode == RepeatMode.ALL || playlist.size > 1
+                val next = if (com.infinifolder.audio.cast.CastManager.isCasting)
+                    nextCastTrackIndex(playlist, currentIndex, if (wrap) RepeatMode.ALL else RepeatMode.NONE, castFailures)
+                else nextReadableTrack(playlist, currentIndex, wrap)
                 if (next == null) { stopPlayback(); return@runCatching }
                 currentIndex = next
                 loadAndPlayCurrent()
@@ -609,7 +624,83 @@ class AudioPlayerService : Service() {
         loadAndPlayCurrent()
     }
     fun onCastProgress(position: Long, duration: Long) {
+        if (duration > 0) synchronized(playlist) {
+            val track = playlist.getOrNull(currentIndex)
+            if (track != null && track.durationMs <= 0 && !track.isUnreadable) {
+                restoreReadableState(playlist, track, duration)
+                restoreReadableState(originalPlaylist, track, duration)
+                notifyPlaylistUpdated()
+            }
+        }
         notifyProgress(position.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), duration.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+    }
+
+    /** Snapshot playlist positions and playback order for the continuous Cast PCM timeline. */
+    internal fun continuousCastSelections(): List<CastPlaylistSelection> = synchronized(playlist) {
+        if (currentIndex !in playlist.indices) return@synchronized emptyList()
+        val indices = when (repeatMode) {
+            RepeatMode.ONE -> listOf(currentIndex)
+            RepeatMode.ALL -> (currentIndex until playlist.size).toList() + (0 until currentIndex).toList()
+            RepeatMode.NONE -> (currentIndex until playlist.size).toList()
+        }
+        indices.map { CastPlaylistSelection(it, playlist[it]) }
+            .filter { !it.track.isUnreadable && castTrackKey(it.track) !in castFailures }
+    }
+
+    /** Keep Cast-only decode failures in this session and align the UI to the first decodable item. */
+    internal fun onCastContinuousPrepared(timeline: List<com.infinifolder.audio.cast.AudioTranscoder.TimelineEntry>,
+        skipped: List<AudioTrack>): Boolean {
+        val selected = synchronized(playlist) {
+            skipped.forEach { castFailures.add(castTrackKey(it)) }
+            val first = timeline.firstOrNull() ?: return false
+            val index = first.playlistIndex.takeIf { it in playlist.indices && sameTrack(playlist[it], first.track) }
+                ?: playlist.indexOfFirst { sameTrack(it, first.track) }
+            if (index < 0) return false
+            val changed = currentIndex != index
+            currentIndex = index
+            val current = playlist[index]
+            val exactDuration = timeline.first().durationMs
+            if (current.durationMs <= 0 && exactDuration > 0) {
+                val updated = current.copy(durationMs = exactDuration)
+                playlist[index] = updated
+                val original = originalPlaylist.indexOfFirst { sameTrack(it, current) }
+                if (original >= 0) originalPlaylist[original] = updated
+            }
+            currentIndex to changed
+        }
+        val current = currentTrack ?: return false
+        if (selected.second) notifyTrackChanged(current)
+        notifyPlaylistUpdated()
+        updateNotification()
+        return true
+    }
+
+    /** Translate the single receiver stream position into the selected source track's timeline. */
+    fun onCastTimelinePosition(playlistIndex: Int, track: AudioTrack, positionMs: Long, durationMs: Long) {
+        var changed = false
+        synchronized(playlist) {
+            val index = playlistIndex.takeIf { it in playlist.indices && sameTrack(playlist[it], track) }
+                ?: playlist.indexOfFirst { sameTrack(it, track) }
+            if (index >= 0) {
+                changed = currentIndex != index
+                currentIndex = index
+                val current = playlist[index]
+                if (current.durationMs <= 0 && durationMs > 0 && !current.isUnreadable) {
+                    val updated = current.copy(durationMs = durationMs)
+                    playlist[index] = updated
+                    val original = originalPlaylist.indexOfFirst { sameTrack(it, current) }
+                    if (original >= 0) originalPlaylist[original] = updated
+                }
+            }
+        }
+        val current = currentTrack ?: return
+        if (changed) {
+            notifyTrackChanged(current)
+            notifyPlaylistUpdated()
+            updateNotification()
+        }
+        notifyProgress(positionMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            durationMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
     }
     fun onCastStateUpdate(playing: Boolean) {
         notifyPlaybackState(playing, false)
@@ -617,6 +708,47 @@ class AudioPlayerService : Service() {
     }
     fun onCastTrackComplete() = onTrackCompleted()
     fun onCastError(message: String) = notifyError(message)
+
+    private val castFailures = mutableSetOf<CastTrackKey>()
+    fun resetCastFailures() = synchronized(playlist) { castFailures.clear() }
+    fun startCastMetadataScan() { startBackgroundMetadataScanner() }
+
+    private fun automaticCastNextIndex(): Int? = nextCastTrackIndex(playlist, currentIndex, repeatMode, castFailures)
+
+    /** Receiver failures are session-specific; keep the source available for local playback. */
+    fun onCastTrackFailed(track: AudioTrack) {
+        synchronized(playlist) {
+            if (currentTrack?.let { sameTrack(it, track) } != true) return
+            castFailures.add(castTrackKey(track))
+            val next = nextCastTrackIndex(playlist, currentIndex,
+                if (repeatMode == RepeatMode.ALL) RepeatMode.ALL else RepeatMode.NONE, castFailures)
+            if (next == null) {
+                stopPlayback()
+                notifyPlaybackComplete()
+            } else {
+                currentIndex = next
+                loadAndPlayCurrent()
+            }
+        }
+    }
+
+    fun nextCastTrack(): AudioTrack? = synchronized(playlist) {
+        automaticCastNextIndex()?.let { playlist[it] }
+    }
+
+    /** The receiver has advanced to its queued item; don't send another load. */
+    fun onCastAdvanced(track: AudioTrack): Boolean {
+        val next = synchronized(playlist) {
+            val index = automaticCastNextIndex() ?: return false
+            if (!sameTrack(playlist[index], track)) return false
+            currentIndex = index
+            playlist[index]
+        }
+        notifyTrackChanged(next)
+        notifyPlaylistUpdated()
+        updateNotification()
+        return true
+    }
 
     @Volatile private var loadingThread: Thread? = null
 
@@ -631,6 +763,7 @@ class AudioPlayerService : Service() {
             isLoading = false
             notifyTrackChanged(track)
             com.infinifolder.audio.cast.CastManager.onTrackChanged(track)
+            startBackgroundMetadataScanner()
             notifyProgress(0, track.durationMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
             return
         }
@@ -783,7 +916,7 @@ class AudioPlayerService : Service() {
                 synchronized(playerLock) {
                     if (loadCounter.get() == thisLoadId) {
                         mediaPlayer = p
-                        analysisSource = AnalysisSource(thisLoadId, playbackFile.absolutePath, waveSource.borrowedResource())
+                        analysisSource = AnalysisSource(analysisSourceCounter.incrementAndGet(), playbackFile.absolutePath, waveSource.borrowedResource())
                         currentPcmSource = waveSource
                         currentDecodedFile = playbackFile.takeIf { it != stagedFile }
                         currentStream = fis
@@ -946,8 +1079,12 @@ class AudioPlayerService : Service() {
         else nextReadableTrack(playlist, currentIndex, repeatMode == RepeatMode.ALL)
 
     private fun scheduleGapless() {
+        if (com.infinifolder.audio.cast.CastManager.isCasting) {
+            com.infinifolder.audio.cast.CastManager.onQueueChanged()
+            return
+        }
         synchronized(playlist) {
-            if (com.infinifolder.audio.cast.CastManager.isCasting || playbackSpeed != 1f) return
+            if (playbackSpeed != 1f) return
             val nextIndex = readableGaplessNextIndex() ?: return
             val track = playlist[nextIndex]
             synchronized(playerLock) {
@@ -1074,7 +1211,7 @@ class AudioPlayerService : Service() {
                 track = playlist[currentIndex]
                 restoreReadableState(playlist, track, track.durationMs)
                 restoreReadableState(originalPlaylist, track, track.durationMs)
-                analysisSource = AnalysisSource(loadCounter.incrementAndGet(), next.playbackFile.absolutePath, next.pcmSource.borrowedResource())
+                analysisSource = AnalysisSource(analysisSourceCounter.incrementAndGet(), next.playbackFile.absolutePath, next.pcmSource.borrowedResource())
             }
         }
         com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.startTrack(

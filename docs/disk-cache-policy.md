@@ -33,7 +33,7 @@ Transfer/container transaction working files, native integrity-verification scra
 
 APK compilation completed successfully and build.sh opened it with xdg-open. No automated tests were added or run for this change.
 
-Device acceptance remains for eviction order, simultaneous active viewers/mounts, restart cleanup, both capacity choices, unknown-size streams, expanded EPUB accounting and custom/light/dark dialog appearance. The old unit expectation of a fixed 512 MB remote-image rejection is historical and needs updating when tests are next requested.
+On 2026-11-01 the user confirmed LRU eviction under cache pressure, active-file protection, the capacity choices, and persistence of saved settings after restart. Device checks remain for six-hour idle expiry, incomplete-staging cleanup after restart, simultaneous active viewers/mounts, unknown-size streams, expanded EPUB accounting and custom/light/dark dialog appearance. The old unit expectation of a fixed 512 MB remote-image rejection is historical and needs updating when tests are next requested.
 
 ## Six-hour idle expiry
 

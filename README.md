@@ -7,17 +7,21 @@ An Android file browser with interchangeable storage providers, browsable archiv
 ## Current functionality
 
 - Local shared/removable storage, user-granted SAF sources, SFTP, FTP/FTPS, SMB and WebDAV. Virtual root supports editable container links, with credentials stored separately.
-- Grid/list browsing, navigation tree, breadcrumbs, temporary pinned targets, hold-to-drag files/selected sets and hover navigation. Same-device drops move; different/unknown devices copy. Two-finger rectangle selection leaves one finger available for scrolling.
+- Grid/list browsing, navigation tree, breadcrumbs, persistent pinned targets, hold-to-drag files/selected sets and hover navigation. Same-device drops move; different/unknown devices copy. Two-finger rectangle selection leaves one finger available for scrolling.
 - Shared nested File/Edit/View/Select/Settings menus; wildcard/regex selection; name/MIME/size/date sorting in either direction; supported new-document/archive templates.
 - MIME-driven icons, application-package opening and explicit Browse for packaged containers such as APK/LOVE. Native links and .iflink shortcuts share resolution protections.
-- Independent image, text, Markdown, HTML, PDF, CSV, EPUB, audio and video viewers, with editing where supported. External editing uses durable working copies, source fingerprints and explicit conflict choices.
+- Independent image, text, Markdown, HTML, PDF, CSV, EPUB/document, font, hex/raw-media, audio and video viewers, with editing where supported. External editing uses durable working copies, source fingerprints and explicit conflict choices.
+- Image animation includes IFF color cycling, indexed FLI/FLC, PNG-based MNG/APNG and platform GIF/WebP playback, with shared thumbnail decoding. Format subsets and device checks are documented in [image animation](docs/image-animation.md).
+- Unidentified binary data opens in the hex explorer; valid raw-media sidecars restore PIC/WAVE configuration. Known formats retain their viewer/container routes. See [hex and raw-media behavior](docs/hex-editor.md).
 - Capability-aware transfers, cancellation, per-file/overall progress, remembered optional copy verification, foreground execution and background completion notifications. Successful progress dialogs dismiss automatically; warnings/errors remain reviewable.
 - ZIP/TAR and supported compressed-container writes use staged rebuild/publication. FAT image batches avoid committing each small file separately. Ext2/3/4 images have a guarded native writer with internal moves and ext3/4 journal support; see [scope and validation](docs/ext-image-writes.md). Other formats have explicit read-only/subset limits.
 - FAT deleted-file copy-out and partial recovery with uncertainty reports; current-folder disk usage graph with animated folder navigation and live scan totals.
 - Shared 200 MiB disk cache, LRU eviction before capacity prompts, separate individual-file limit and six-hour idle expiry. Unfinished editor work is protected outside disposable cache.
 - Light/dark/system themes, configurable icons, previews and hidden-file display. Toolbar activity light: green reads, dim green load waits, red file work, amber verification. Tap for operation details.
 
-See [current confirmations and remaining work](docs/project-status.md). Implemented features and handset acceptance are tracked separately.
+See [current confirmations and remaining work](docs/project-status.md) and the
+[library/viewer synchronization record](docs/component-status-2026-11-04.md).
+Implemented features and handset acceptance are tracked separately.
 
 ## Build
 
@@ -27,7 +31,7 @@ Kotlin Android application `com.infinifolder`: minSdk 26, compileSdk 36, targetS
 bash build.sh
 ```
 
-The script configures native AAPT2 on Termux, assembles the debug APK and invokes `xdg-open` after success. Output: `app/build/outputs/apk/debug/app-debug.apk`. Elsewhere use `gradle :app:assembleDebug`; on ARM Termux the native AAPT2 override may be required. Independent applications are documented in [viewer modules](docs/viewer-modules.md).
+The script configures native AAPT2 on Termux, assembles the debug APK and invokes `xdg-open` after success. A failed Gradle invocation gets one retry after stopping daemons, using `--no-daemon`; a second failure stops the script. Output: `app/build/outputs/apk/debug/app-debug.apk`. Elsewhere use `gradle :app:assembleDebug`; on ARM Termux the native AAPT2 override may be required. Independent applications are documented in [viewer modules](docs/viewer-modules.md).
 
 ### Audio library checkout
 

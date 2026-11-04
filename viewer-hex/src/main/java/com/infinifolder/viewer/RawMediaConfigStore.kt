@@ -41,8 +41,11 @@ object RawMediaConfigStore {
         if(it.sidecar==null) "none" else "${stamp(it.sidecar)}:${it.serial}"
     } ?: "unknown"
     @Synchronized fun mightHave(entry: ResourceEntry) = index.get(entry.uri.toString())?.let { it.sidecar != null } ?: true
+    /** Presence selects the byte explorer even if metadata cannot be parsed; only valid records enable PIC/WAVE. */
+    fun hasSidecar(context:Context,entry:ResourceEntry):Boolean =
+        state(StorageRuntime.get(context).provider,entry,discover=true)?.sidecar!=null
     fun load(context: Context, entry: ResourceEntry, discover:Boolean=true): Record? = load(StorageRuntime.get(context).provider,entry,discover)
-    fun load(provider:StorageProvider, entry:ResourceEntry, discover:Boolean=true):Record? {
+    private fun state(provider:StorageProvider,entry:ResourceEntry,discover:Boolean):State? {
         if (entry.metadata.isDirectory) return null
         var state = synchronized(this) { index.get(entry.uri.toString()) }
         if (state == null) {
@@ -52,10 +55,14 @@ object RawMediaConfigStore {
             if (result is ProviderResult.Success) observe(result.value, !result.isLoading)
             state = synchronized(this) { index.get(entry.uri.toString()) } ?: return null
         }
-        if (state.sidecar == null) return null
+        return state
+    }
+    fun load(provider:StorageProvider, entry:ResourceEntry, discover:Boolean=true):Record? {
+        val state=state(provider,entry,discover)?:return null
+        val sidecar=state.sidecar?:return null
         synchronized(state) {
             if (state.parsed) return state.record
-            state.record = runCatching { parse(read(provider, state.sidecar), entry.metadata.name) }.getOrNull()
+            state.record = runCatching { parse(read(provider,sidecar), entry.metadata.name) }.getOrNull()
             state.parsed = true
             return state.record
         }

@@ -1,5 +1,10 @@
 # Library migration completion — checkpoint 31
 
+Publication follow-up, 2026-11-04: the [component synchronization record](component-status-2026-11-04.md)
+tracks current library/viewer source publication and build evidence. The original
+checkpoint evidence and local-only publication statement below describe that
+earlier increment; later source pushes do not establish new device acceptance.
+
 Scope: finish the existing Android application's library migration before new
 product features. Authority: [implementation assignment](infinistream_architecture_codex.md).
 Existing behavior, source/publication safety and supported formats are preserved.

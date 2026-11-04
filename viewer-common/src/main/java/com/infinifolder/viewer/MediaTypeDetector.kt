@@ -25,6 +25,10 @@ enum class MediaType {
 
 object MediaTypeDetector {
 
+    fun isGenericBinary(name:String,mimeType:String?):Boolean =
+        com.infinifolder.mime.MimeRegistry.effective(name,mimeType).lowercase(Locale.ROOT) in
+            setOf("application/octet-stream","application/binary","application/x-binary","binary/octet-stream")
+
     private val MARKDOWN_EXTENSIONS = setOf(
         "md", "markdown", "mdown", "mkd", "mkdn"
     )

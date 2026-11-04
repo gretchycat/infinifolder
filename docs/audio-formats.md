@@ -102,11 +102,16 @@ durations, including decoded timing when MediaPlayer supplies zero.
 
 All local parsing/decoding is selected inside libinfinisound. Its Android MediaExtractor/MediaCodec backend and portable MP3/AAC/FLAC/WAVE plus existing composite codecs share library contracts. InfiniStream compatibility wraps encoded positional sources and actual typed PCM outputs. AudioPlayerService opens a canonical PCM WAVE source through the library for MediaPlayer to pull, including preload; it does not pass original compressed sources directly to MediaPlayer. Output surfaces, routing, Cast and queue lifetimes remain Android host responsibilities. Existing composite render limits remain; only actual decoder implementations may produce PCM.
 
-Cast's non-native formats also use Sound's common WAVE output with explicit
-16-bit packing/mono duplication, retaining source rate and surround channels.
-Receiver-native encoded formats keep their previous forwarding policy. HTTP
-range requests borrow shared positional sources; the host no longer caches whole
-encoded/decoded track arrays. Real receiver acceptance remains pending.
+Cast playlists are exposed as one virtual PCM WAVE stream. Each playlist entry is
+decoded by libinfinisound and normalized to 48 kHz, stereo, signed 16-bit PCM;
+the server joins the frame ranges and decodes source blocks on demand. Receiver
+positions and seeks map back to individual playlist tracks. A Cast-only decode
+failure skips that entry for the current session while leaving its playlist row
+intact. If the receiver rejects the continuous WAVE or the combined data exceeds
+the RIFF 4 GiB limit, playback falls back to the separate-track Cast queue.
+Formats whose Sound renderer requires a complete preparation can still delay
+startup. Real receiver testing is needed to confirm gapless transitions, seeking
+and pause/resume on supported Cast devices.
 
 Seek-capable decoders fill independent PCM disk-cache blocks on demand. Unknown-length and legacy buffered renderers retain full preparation, which can add startup/preload latency. The RIFF output limit is 4 GiB. Audio output still consumes only library-decoded PCM.
 

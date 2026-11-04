@@ -26,7 +26,11 @@ if [ -x "/data/data/com.termux/files/usr/bin/aapt2" ]; then
 fi
 
 echo "Building InfiniFolder APK..."
-gradle :app:assembleDebug
+if ! gradle :app:assembleDebug; then
+    echo "Gradle build failed. Stopping Gradle daemons and retrying once without a persistent daemon..." >&2
+    gradle --stop || true
+    gradle --no-daemon :app:assembleDebug
+fi
 
 APK="app/build/outputs/apk/debug/app-debug.apk"
 if [ -f "$APK" ]; then

@@ -16,6 +16,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
+import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
@@ -112,6 +113,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     private lateinit var dockedPlaylistHeader: TextView
     private lateinit var dockedPlaylistFooter: TextView
     private lateinit var dockedPlaylistItems: LinearLayout
+    private var lastAutoScrolledDockedTrack: String? = null
     private lateinit var progressContainer: LinearLayout
     private lateinit var controlsRow: LinearLayout
     private lateinit var secondaryRow: LinearLayout
@@ -119,6 +121,14 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     private var visualizerBridge: RealAudioVisualizerBridge? = null
     private var isPlayerResumed = false
     private val visualizerBands = FloatArray(16)
+    private var progressFramePosted = false
+    private val progressFrameCallback = Choreographer.FrameCallback {
+        progressFramePosted = false
+        if (!isPlayerResumed) return@FrameCallback
+        val service = AudioPlayerService.currentService ?: return@FrameCallback
+        updateDisplayedProgress(service)
+        if (service.isPlaying) scheduleProgressFrame()
+    }
 
     private var isUserSeeking = false
     private var showRemainingTime = false
@@ -183,6 +193,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     override fun onPause() {
         isPlayerResumed = false
+        stopProgressFrames()
         visualizerBridge?.detach()
         if (::visualizerView.isInitialized) visualizerView.updateData(FloatArray(16))
         super.onPause()
@@ -191,14 +202,14 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     private fun updateVisualizerCapture(sessionId: Int, explicitRequest: Boolean = false) {
         val service = AudioPlayerService.currentService
         val source = service?.analysisSource
-        if (!isPlayerResumed || CastManager.isCasting || sessionId <= 0 || source == null) {
+        if (!isPlayerResumed || (!CastManager.isCasting && sessionId <= 0) || source == null) {
             visualizerBridge?.detach()
             if (::visualizerView.isInitialized) visualizerView.updateData(FloatArray(16))
             return
         }
         visualizerBridge?.attach(source) {
-            val playing = service.isPlaying && !CastManager.isCasting
-            playing to service.currentPosition.toLong()
+            if (CastManager.isCasting) CastManager.isRemotePlaying to CastManager.analysisPositionMs
+            else service.isPlaying to service.currentPosition.toLong()
         }
     }
 
@@ -862,7 +873,9 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     private fun setupWinampMainWindow() {
         visualizerBridge = RealAudioVisualizerBridge {
-            visualizerBridge?.getSpectrum(visualizerBands, isPlaying = AudioPlayerService.currentService?.isPlaying == true && !CastManager.isCasting)
+            val playing = if (CastManager.isCasting) CastManager.isRemotePlaying
+                else AudioPlayerService.currentService?.isPlaying == true
+            visualizerBridge?.getSpectrum(visualizerBands, isPlaying = playing)
             if (::visualizerView.isInitialized) visualizerView.updateData(visualizerBands)
             winampMainWindowView.invalidate()
         }
@@ -1217,6 +1230,11 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         val theme = ThemeManager.getAudioPlayerTheme(this)
         val list = synchronized(service.playlist) { ArrayList(service.playlist) }
         val curIdx = service.currentIndex
+        val currentTrack = list.getOrNull(curIdx)
+        val currentTrackKey = currentTrack?.let {
+            "$curIdx:${it.uri}:${it.startByte}:${it.lengthBytes}"
+        }
+        if (currentTrackKey == null) lastAutoScrolledDockedTrack = null
 
         var totalMs = 0L
         for (track in list) {
@@ -1307,6 +1325,27 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             val curTrackMs = if (curIdx in list.indices && list[curIdx].durationMs > 0L) list[curIdx].durationMs else 0L
             dockedBottomBarView.currentTrackDurationMs = curTrackMs
             dockedBottomBarView.invalidate()
+        }
+
+        if (currentTrackKey != null && currentTrackKey != lastAutoScrolledDockedTrack) {
+            lastAutoScrolledDockedTrack = currentTrackKey
+            dockedPlaylistScroll.post {
+                val currentService = AudioPlayerService.currentService ?: return@post
+                if (currentService.currentIndex != curIdx || curIdx >= dockedPlaylistItems.childCount) return@post
+                val activeTrack = synchronized(currentService.playlist) {
+                    currentService.playlist.getOrNull(curIdx)
+                } ?: return@post
+                if ("$curIdx:${activeTrack.uri}:${activeTrack.startByte}:${activeTrack.lengthBytes}" != currentTrackKey) return@post
+                val row = dockedPlaylistItems.getChildAt(curIdx) ?: return@post
+                val visibleTop = dockedPlaylistScroll.scrollY + dockedPlaylistScroll.paddingTop
+                val visibleBottom = dockedPlaylistScroll.scrollY + dockedPlaylistScroll.height - dockedPlaylistScroll.paddingBottom
+                val targetY = when {
+                    row.top < visibleTop -> row.top - dockedPlaylistScroll.paddingTop
+                    row.bottom > visibleBottom -> row.bottom - dockedPlaylistScroll.height + dockedPlaylistScroll.paddingBottom
+                    else -> return@post
+                }.coerceAtLeast(0)
+                dockedPlaylistScroll.smoothScrollTo(0, targetY)
+            }
         }
     }
 
@@ -1730,6 +1769,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         val track = service.currentTrack
         updateTrackView(track)
         val isPlaying = if (CastManager.isCasting) CastManager.isRemotePlaying else service.isPlaying
+        updateProgressAnimation(isPlaying)
         updatePlayPauseButton(isPlaying)
         loadingIndicator.visibility = if (service.isLoading) View.VISIBLE else View.GONE
         visualizerView.isPlaying = isPlaying
@@ -1769,18 +1809,58 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     private fun updateTimeDisplay() {
         val s = AudioPlayerService.currentService
-        val pos = s?.currentPosition ?: 0
-        val dur = s?.currentDuration ?: 0
+        if (s == null) {
+            renderProgress(0, 0)
+            return
+        }
+        updateDisplayedProgress(s)
+    }
+
+    private fun updateDisplayedProgress(service: AudioPlayerService) {
+        val position = if (CastManager.isCasting) CastManager.displayPositionMs
+            else service.currentPosition.toLong()
+        val duration = if (CastManager.isCasting) CastManager.displayDurationMs
+            else service.currentDuration.toLong()
+        renderProgress(position.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            duration.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+    }
+
+    private fun renderProgress(positionMs: Int, durationMs: Int) {
+        val pos = positionMs.coerceAtLeast(0)
+        val dur = durationMs.coerceAtLeast(0)
         val text = if (showRemainingTime && dur > 0) {
             val rem = (dur - pos).coerceAtLeast(0)
             "-${formatTime(rem)}"
         } else {
             formatTime(pos)
         }
-        currentTimeText.text = text
-        if (::timerLedView.isInitialized) {
+        if (::currentTimeText.isInitialized && currentTimeText.text.toString() != text) currentTimeText.text = text
+        if (::timerLedView.isInitialized && timerLedView.text.toString() != text) {
             timerLedView.text = text
         }
+        if (::progressBar.isInitialized && !isUserSeeking) {
+            val target = if (dur > 0) ((pos.toLong() * progressBar.max) / dur).toInt().coerceIn(0, progressBar.max) else 0
+            if (progressBar.progress != target) progressBar.progress = target
+        }
+        if (::winampMainWindowView.isInitialized) {
+            if (winampMainWindowView.currentPositionMs != pos) winampMainWindowView.currentPositionMs = pos
+            if (winampMainWindowView.durationMs != dur) winampMainWindowView.durationMs = dur
+        }
+    }
+
+    private fun updateProgressAnimation(playing: Boolean) {
+        if (playing && isPlayerResumed) scheduleProgressFrame() else stopProgressFrames()
+    }
+
+    private fun scheduleProgressFrame() {
+        if (progressFramePosted || !isPlayerResumed) return
+        progressFramePosted = true
+        Choreographer.getInstance().postFrameCallback(progressFrameCallback)
+    }
+
+    private fun stopProgressFrames() {
+        if (progressFramePosted) Choreographer.getInstance().removeFrameCallback(progressFrameCallback)
+        progressFramePosted = false
     }
 
     private fun updateTrackView(track: AudioTrack?) {
@@ -2071,6 +2151,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     override fun onPlaybackStateChanged(isPlaying: Boolean, isLoading: Boolean) {
         runOnUiThread {
             val effectivePlaying = if (CastManager.isCasting) CastManager.isRemotePlaying else isPlaying
+            updateProgressAnimation(effectivePlaying)
             if (effectivePlaying && !CastManager.isCasting) updateVisualizerCapture(AudioPlayerService.currentService?.audioSessionId ?: 0)
             updatePlayPauseButton(effectivePlaying)
             loadingIndicator.visibility = if (isLoading) View.VISIBLE else View.GONE
@@ -2085,17 +2166,9 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     override fun onProgressUpdated(currentPositionMs: Int, durationMs: Int) {
         if (isUserSeeking) return
         runOnUiThread {
-            updateTimeDisplay()
-            totalTimeText.text = formatTime(durationMs)
-            if (durationMs > 0) {
-                progressBar.progress = ((currentPositionMs.toLong() * 1000) / durationMs).toInt()
-            } else {
-                progressBar.progress = 0
-            }
-            if (::winampMainWindowView.isInitialized) {
-                winampMainWindowView.currentPositionMs = currentPositionMs
-                winampMainWindowView.durationMs = durationMs
-            }
+            renderProgress(currentPositionMs, durationMs)
+            val durationText = formatTime(durationMs)
+            if (totalTimeText.text.toString() != durationText) totalTimeText.text = durationText
         }
     }
 
@@ -2207,6 +2280,8 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             updateCastButtonState()
             updateVisualizerCapture(AudioPlayerService.currentService?.audioSessionId ?: 0)
             val playing = if (isCasting) CastManager.isRemotePlaying else (AudioPlayerService.currentService?.isPlaying == true)
+            updateProgressAnimation(playing)
+            AudioPlayerService.currentService?.let(::updateDisplayedProgress)
             updatePlayPauseButton(playing)
             if (::winampMainWindowView.isInitialized) winampMainWindowView.isPlaying = playing
         }
@@ -2214,6 +2289,8 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     override fun onCastPlaybackStateChanged(isPlaying: Boolean) {
         runOnUiThread {
+            updateProgressAnimation(isPlaying)
+            AudioPlayerService.currentService?.let(::updateDisplayedProgress)
             if (CastManager.isCasting) {
                 updatePlayPauseButton(isPlaying)
                 if (::winampMainWindowView.isInitialized) {
@@ -2231,6 +2308,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     override fun onDestroy() {
         super.onDestroy()
+        stopProgressFrames()
         visualizerBridge?.detach()
         CastManager.removeListener(this)
         AudioPlayerService.removeListener(this)

@@ -4,6 +4,7 @@ import android.content.Context
 import com.infinifolder.viewer.AudioTrack
 import io.github.gretchycat.infinistream.PositionalReadable
 import io.github.gretchycat.infinistream.SourceResource
+import io.github.gretchycat.infinistream.ByteSource
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
@@ -25,6 +26,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.FutureTask
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.CancellationException
+import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Serves the selected tracks to the Cast receiver over the local network. */
@@ -34,7 +36,7 @@ class CastMediaServer(private val context: Context) {
     private val running = AtomicBoolean(false)
     private val trackLock = Any()
     private val tracks = ConcurrentHashMap<String, AudioTrack>()
-    private val sources = LinkedHashMap<String, TrackSource>(4,0.75f,true)
+    private val sources = LinkedHashMap<String, SourceOwner>(4,0.75f,true)
     private val clients = ConcurrentHashMap.newKeySet<Socket>()
 
     @Synchronized fun start(): Boolean {
@@ -86,6 +88,91 @@ class CastMediaServer(private val context: Context) {
             tracks[token] = track
         }
         return "http://${ip.hostAddress}:$port/$token"
+    }
+
+    internal fun prepareContinuous(tracks: List<AudioTrack>, cancelled: () -> Boolean,
+        complete: (Result<AudioTranscoder.PreparedContinuousAudio>) -> Unit): Future<*>? {
+        val workers = executor ?: return null
+        val task = FutureTask {
+            try {
+                val prepared = AudioTranscoder.openContinuous(context, tracks) {
+                    !running.get() || cancelled() || Thread.currentThread().isInterrupted
+                }
+                if (!running.get() || cancelled()) { prepared.close(); throw InterruptedIOException("Continuous Cast request was superseded") }
+                complete(Result.success(prepared))
+            } catch (error: Throwable) {
+                complete(Result.failure(error))
+            }
+        }
+        return try { workers.execute(task); task }
+        catch (_: java.util.concurrent.RejectedExecutionException) { null }
+    }
+
+    internal fun registerContinuous(prepared: AudioTranscoder.PreparedContinuousAudio): String? {
+        val first = prepared.timeline.firstOrNull()?.track ?: run { prepared.close(); return null }
+        val ip = localAddress() ?: run { prepared.close(); return null }
+        val port = socket?.localPort?.takeIf { running.get() } ?: run { prepared.close(); return null }
+        val token = UUID.randomUUID().toString()
+        val retired = synchronized(trackLock) {
+            if (!running.get()) { prepared.close(); return null }
+            tracks[token] = first
+            sources[token] = ContinuousSourceOwner(prepared)
+            if (sources.size > 4) sources.remove(sources.keys.first()) else null
+        }
+        retired?.retire()
+        return "http://${ip.hostAddress}:$port/$token"
+    }
+
+    fun retire(url: String?) {
+        if (url.isNullOrBlank()) return
+        val token = url.substringAfterLast('/')
+        val owner = synchronized(trackLock) { sources.remove(token).also { tracks.remove(token) } }
+        owner?.retire()
+    }
+
+    /** Return a leased view of the continuous PCM stream for on-device visualization. */
+    fun analysisResource(url: String?): SourceResource? {
+        if (url.isNullOrBlank()) return null
+        val token = url.substringAfterLast('/')
+        val owner = synchronized(trackLock) { sources[token] as? ContinuousSourceOwner } ?: return null
+        return owner.analysisResource()
+    }
+
+    /** Prepare the next SFTP source and its first block while the current track plays. */
+    fun prepareNext(url: String, track: AudioTrack) {
+        if (!track.uri.scheme.equals("sftp", true) ||
+            !AudioTranscoder.isDirectlyPlayableByCast(track.uri, track.fileName)) return
+        val token = url.substringAfterLast('/')
+        val workers = executor ?: return
+        try {
+            workers.execute {
+                var selected: SourceOwner? = null
+                try {
+                    val (acquire, retired) = synchronized(trackLock) {
+                        if (!running.get() || tracks[token] !== track) return@execute
+                        val source = sources[token] ?: TrackSource(context, track) { !running.get() }
+                            .also { sources[token] = it }
+                        selected = source
+                        source.reserve() to if (sources.size > 4) sources.remove(sources.keys.first()) else null
+                    }
+                    retired?.retire()
+                    acquire().use { lease -> lease.resource.open().use { source ->
+                        val positional = source as? PositionalReadable ?: throw IOException("Cast source is not positional")
+                        if ((source.metadata.length ?: 0L) > 0L && positional.readAt(0, ByteArray(1), 0, 1) != 1)
+                            throw IOException("Cast source ended during preparation")
+                    } }
+                    com.infinifolder.storage.DiagnosticLog.record("cast.queue.prepared", "file=${track.fileName}")
+                } catch (error: Exception) {
+                    selected?.let { source ->
+                        synchronized(trackLock) { if (sources[token] === source) sources.remove(token) }
+                        source.retire()
+                    }
+                    com.infinifolder.storage.DiagnosticLog.record("cast.queue.prepare.failed", "file=${track.fileName}", error)
+                }
+            }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            // Playback can prepare the source on demand if all workers are busy.
+        }
     }
     private fun localAddress(): InetAddress? = try {
         val addresses = NetworkInterface.getNetworkInterfaces().toList().filter { it.isUp && !it.isLoopback }
@@ -215,8 +302,18 @@ class CastMediaServer(private val context: Context) {
     }
 }
 
+private class SourceLease(val resource: SourceResource, private val release: () -> Unit) : Closeable {
+    private val closed = AtomicBoolean(false)
+    override fun close() { if (closed.compareAndSet(false, true)) release() }
+}
+
+private interface SourceOwner {
+    fun reserve(): () -> SourceLease
+    fun retire()
+}
+
 /** One preparation per cached URL. Active requests retain evicted owners until they finish. */
-private class TrackSource(context: Context, track: AudioTrack, private val serverStopped: () -> Boolean) {
+private class TrackSource(context: Context, track: AudioTrack, private val serverStopped: () -> Boolean) : SourceOwner {
     private val lock = Any()
     private val retired = AtomicBoolean(false)
     private var active = 0
@@ -232,12 +329,7 @@ private class TrackSource(context: Context, track: AudioTrack, private val serve
         result
     }
 
-    class Lease(val resource: SourceResource, private val release: () -> Unit) : Closeable {
-        private val closed = AtomicBoolean(false)
-        override fun close() { if (closed.compareAndSet(false,true)) release() }
-    }
-
-    fun reserve(): () -> Lease {
+    override fun reserve(): () -> SourceLease {
         synchronized(lock) {
             if (retired.get() || serverStopped()) throw InterruptedIOException("Cast source retired")
             active++
@@ -245,12 +337,12 @@ private class TrackSource(context: Context, track: AudioTrack, private val serve
         return ::acquireReserved
     }
 
-    private fun acquireReserved(): Lease {
+    private fun acquireReserved(): SourceLease {
         try {
             work.run()
             val result = work.get()
             if (serverStopped()) throw InterruptedIOException("Cast stopped")
-            return Lease(result.resource,::release)
+            return SourceLease(result.resource,::release)
         } catch (error: Exception) {
             release()
             if (error is InterruptedException) Thread.currentThread().interrupt()
@@ -262,7 +354,7 @@ private class TrackSource(context: Context, track: AudioTrack, private val serve
         }
     }
 
-    fun retire() {
+    override fun retire() {
         retired.set(true)
         if (serverStopped() || synchronized(lock) { active == 0 }) work.cancel(true)
         closeIfIdle()
@@ -273,6 +365,76 @@ private class TrackSource(context: Context, track: AudioTrack, private val serve
             if (retired.get() && active == 0) prepared.also { prepared=null } else null
         }
         runCatching { closing?.close() }.onFailure { android.util.Log.w("CastMediaServer","Source close failed",it) }
+    }
+}
+
+/** Holds a prepared virtual playlist source while HTTP range requests are active. */
+private class ContinuousSourceOwner(private val prepared: AudioTranscoder.PreparedContinuousAudio) : SourceOwner {
+    private val lock = Any()
+    private val retired = AtomicBoolean(false)
+    private var active = 0
+    private var closed = false
+
+    fun analysisResource(): SourceResource = object : SourceResource {
+        override val metadata get() = prepared.resource.metadata
+
+        override fun open(): ByteSource {
+            val lease = reserve().invoke()
+            var source: ByteSource? = null
+            try {
+                val opened = lease.resource.open()
+                source = opened
+                val positional = opened as? PositionalReadable
+                    ?: throw IOException("Continuous Cast analysis source is not positional")
+                val closeOnce = AtomicBoolean(false)
+                return object : ByteSource, PositionalReadable {
+                    override val metadata = opened.metadata
+                    override fun read(buffer: ByteArray, offset: Int, length: Int) =
+                        opened.read(buffer, offset, length)
+                    override fun readAt(position: Long, buffer: ByteArray, offset: Int, length: Int) =
+                        positional.readAt(position, buffer, offset, length)
+                    override fun close() {
+                        if (closeOnce.compareAndSet(false, true)) {
+                            try { opened.close() } finally { lease.close() }
+                        }
+                    }
+                }
+            } catch (error: Throwable) {
+                runCatching { source?.close() }
+                lease.close()
+                throw error
+            }
+        }
+    }
+
+    override fun reserve(): () -> SourceLease {
+        synchronized(lock) {
+            if (retired.get() || closed) throw InterruptedIOException("Continuous Cast source retired")
+            active++
+        }
+        return {
+            synchronized(lock) {
+                if (closed) { active--; throw InterruptedIOException("Continuous Cast source retired") }
+                SourceLease(prepared.resource) { release() }
+            }
+        }
+    }
+
+    override fun retire() {
+        retired.set(true)
+        closeIfIdle()
+    }
+
+    private fun release() {
+        synchronized(lock) { active-- }
+        closeIfIdle()
+    }
+
+    private fun closeIfIdle() {
+        val shouldClose = synchronized(lock) {
+            if (retired.get() && active == 0 && !closed) { closed = true; true } else false
+        }
+        if (shouldClose) runCatching { prepared.close() }
     }
 }
 

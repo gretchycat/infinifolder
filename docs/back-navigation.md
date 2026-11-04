@@ -35,3 +35,36 @@ The user reports failed Back presses in `build/infinifolder-debug-20261024-04131
 - Added browser.back request/resolve/busy/parent/discarded/failed events with state, timing and rejection reasons. The Android system Back bridge logs the activity receiving its callback. These events also enter the retained gesture ring.
 
 These changes address code paths that can cause delayed or silently discarded Back navigation; they are not yet confirmed as the exact cause of the user's presses. Device acceptance remains pending, including Back during refresh/transfer, mounted paths/root exit, viewers, dialogs and ordinary storage roots.
+
+## Intermittent Back follow-up
+
+On 2026-11-01 the owner reported intermittent Back failures in the EPUB, image,
+audio, text and Markdown viewers, and in the file manager. The available device
+log contains successful system Back dispatches, but did not record the complete
+viewer return route or callback registration lifecycle, so it cannot identify
+why an individual attempt appeared to do nothing.
+
+The shared bridge now records callback registration/closure, system and legacy
+key dispatch start/completion, callback exceptions, and viewer return-to-browser
+outcomes. The file manager refreshes its system callback while resumed and
+unregisters it while paused, matching the viewer lifecycle. Both the file
+manager and shared viewer host now also rebind after `onContentChanged`, which
+covers theme/interface rebuilds while an Activity stays resumed. These changes
+target the reported correlation and add diagnostic evidence; they do not yet
+establish the root cause or claim the intermittent failure is fixed. Repeat
+across all listed viewers and the file manager, especially immediately after a
+theme change, then capture a diagnostic snapshot if an attempt still fails.
+Check whether the toolbar Back behaves differently from system gesture or
+hardware Back.
+
+## Browser and viewer synchronization — 2026-11-04
+
+Directory scroll positions are saved per location and restored after measurement,
+including interface rebuilds and revisits. Link navigation builds an absolute
+storage breadcrumb route for local/network targets; mounted archive navigation
+retains its container context. Back first clears selection, then uses the active
+breadcrumb parent where available. CSV/HTML/Markdown discard and external-edit
+Back use the shared browser-return route. These changes remain device acceptance
+work, especially around asynchronous listings, theme rebuilds, nested archives
+and standalone viewers. They do not establish a cause for every intermittent
+Back failure described above.

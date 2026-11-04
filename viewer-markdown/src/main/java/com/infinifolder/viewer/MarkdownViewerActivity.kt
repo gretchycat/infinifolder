@@ -9,7 +9,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
-import android.webkit.WebView
 import android.widget.*
 import com.infinifolder.viewer.common.R
 import com.infinifolder.model.ProviderResult
@@ -20,8 +19,8 @@ class MarkdownViewerActivity : ViewerActivity() {
     private var documentFullyLoaded = false
 
 
-    private lateinit var webView: WebView
-    private lateinit var sourceEditText: EditText
+    private lateinit var webView: ScrollableWebView
+    private lateinit var sourceEditText: ScrollableEditText
     private var syntax: SyntaxTextController? = null
     private lateinit var topBar: LinearLayout
     private lateinit var editActionBar: LinearLayout
@@ -216,12 +215,13 @@ class MarkdownViewerActivity : ViewerActivity() {
         }
 
         // Rendered WebView
-        webView = WebView(this).apply {
+        webView = ScrollableWebView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
             setBackgroundColor(0xFF141714.toInt())
+            isVerticalScrollBarEnabled = false
             // Security sandboxing: no arbitrary file access, no unrestricted bridges
             settings.javaScriptEnabled = false
             settings.allowFileAccess = false
@@ -232,7 +232,7 @@ class MarkdownViewerActivity : ViewerActivity() {
         contentFrame.addView(webView)
 
         // Raw source EditText
-        sourceEditText = EditText(this).apply {
+        sourceEditText = ScrollableEditText(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -241,6 +241,7 @@ class MarkdownViewerActivity : ViewerActivity() {
             typeface = Typeface.MONOSPACE
             setTextColor(0xFFE0E5DC.toInt())
             setBackgroundColor(0xFF141714.toInt())
+            isVerticalScrollBarEnabled = false
             setPadding(dp(12), dp(12), dp(12), dp(12))
             gravity = Gravity.TOP or Gravity.START
             visibility = View.GONE
@@ -253,6 +254,13 @@ class MarkdownViewerActivity : ViewerActivity() {
             })
         }
         contentFrame.addView(sourceEditText)
+
+        contentFrame.addView(ScrollHandleView(this,
+            scrollRange = { if (isRenderedView) webView.verticalScrollRange() else sourceEditText.verticalScrollRange() },
+            scrollOffset = { if (isRenderedView) webView.scrollY else sourceEditText.scrollY },
+            viewportSize = { if (isRenderedView) webView.height else sourceEditText.height },
+            scrollToOffset = { offset -> if (isRenderedView) webView.scrollTo(0, offset) else sourceEditText.scrollTo(0, offset) }
+        ), FrameLayout.LayoutParams(dp(24), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.END))
 
         root.addView(contentFrame)
         setContentView(root)
@@ -455,7 +463,7 @@ class MarkdownViewerActivity : ViewerActivity() {
             AlertDialog.Builder(this)
                 .setTitle("Discard edits?")
                 .setMessage("You have unsaved changes. Discard them?")
-                .setPositiveButton("Discard") { _, _ -> finish() }
+                .setPositiveButton("Discard") { _, _ -> returnToFileManager() }
                 .setNegativeButton("Keep editing", null)
                 .show()
             return

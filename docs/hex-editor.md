@@ -3,7 +3,8 @@
 Status: implementation, automated checks and debug build passed. Device
 acceptance remains pending; the owner requested commit and push with those checks
 documented as unverified. Saved raw-media metadata enables automatic
-PIC/WAVE opening and image thumbnails; ordinary files retain their existing routing.
+PIC/WAVE opening and image thumbnails. Unidentified generic binary data opens in
+HEX; recognized formats retain their appropriate viewers/container routing.
 
 ## Launch and presentation
 
@@ -12,6 +13,23 @@ to ordinary files, link-file bytes, archives, disk images and files inside
 containers. Directories and virtual installed-app/category entries do not have
 this byte action. The source URI goes directly to the viewer; the archive parser
 does not turn a file into its directory listing for this action.
+
+Normal file taps use the shared open path. A source with its hidden
+`.filename.ext.meta` sidecar opens in this explorer before format/archive routing:
+valid metadata restores PIC/WAVE, while unreadable/invalid metadata leaves it in
+HEX without applying a configuration. Explicit external defaults and Open
+externally retain priority. Generic binary MIME types with no detected format
+also open in HEX, including `.bin`, `.dat` and unknown extensions. A `.bin`
+extension alone no longer identifies a disc image; actual archive/filesystem
+signatures can still route it to the supported container browser. Nested archive
+entries use the existing nested browser when detected as containers.
+
+Store’s MPEG sniffing now validates tag/header fields instead of accepting a
+two-byte sync alone (field constraints reference
+[FFmpeg’s header validation](https://github.com/FFmpeg/FFmpeg/blob/master/libavcodec/mpegaudiodecheader.h)).
+Text sniffing checks UTF-8 validity and requires text/legacy-art evidence for
+malformed high-byte samples, preventing erased binary data from being labeled
+MP3 or UTF-8 text solely because of permissive signature/character checks.
 
 `viewer-hex` supplies Android presentation and a retained document worker. Scribe's
 `HexDocument` supplies positional reads, sparse buffered edits, undo/redo, search,
@@ -403,6 +421,14 @@ The raw-icon crop-before-sampling update rebuilt successfully with the same
 assemble command (25 seconds), logged in `build/hex-fill-icons/build.log`.
 Tests were not rerun. Device checks remain pending for tall/wide raw-image
 icons in listing/tree/floating views and saved Pixel/Smooth filtering.
+
+The shared tap/open routing, sidecar-presence routing and generic-binary HEX
+fallback rebuilt successfully with `gradle :app:assembleDebug --offline
+--console=plain` (29 seconds), logged in `build/hex-default-routing/build.log`.
+Tests were not rerun. Device checks remain pending for binary `.bin`/`.dat`,
+detected audio/disc images under generic extensions, nested archives, malformed
+sidecars and explicit external defaults. These changes also tighten Store’s
+MPEG/text detection; the originally reported files have not been reproduced here.
 
 Device checks pending:
 

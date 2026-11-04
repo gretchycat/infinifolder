@@ -2,7 +2,17 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
-Updated 2026-11-03. See [current status](project-status.md) for confirmed behavior and [detailed tasks](feature-todo.md) for acceptance work.
+Updated 2026-11-04. See [current status](project-status.md) for confirmed behavior and [detailed tasks](feature-todo.md) for acceptance work.
+
+## Current source synchronization
+
+All library/viewer ownership and remaining device checks are consolidated in the
+[2026-11-04 component record](component-status-2026-11-04.md). IFF cycling and the
+earlier animation playback follow-up are confirmed. Accept the newer recovered
+FLC, interactive MNG, lifecycle and thumbnail-cache repairs next; then check
+binary/sidecar routing, signature-selected archive listing and the outstanding
+Cast/navigation/scroll changes. Detailed [animation limits](image-animation.md)
+remain explicit. No fresh automated-suite totals are claimed by this update.
 
 ## Completed: recorded storage failure investigation
 
@@ -66,10 +76,10 @@ without the old decoder-generated test chords. Real chiptune emulation and
 additional portable WMA/telephony/advanced-audio codecs remain future work;
 registered Android codecs are retained. Missing soundbank samples fail explicitly.
 
-## Next: accept the new safety paths
+## Next: finish safety-path acceptance
 
-- Exercise external-edit source checks, durable unfinished sessions and conflict choices with real editors.
-- Exercise cache eviction, active leases, capacity choices, six-hour expiry and restart behavior.
+- Real-editor handoff/return, source conflict handling, preserved edits/save-as and unfinished-session recovery after restart are user-confirmed (2026-11-01). Unchanged opens, timestamp-only updates, staging-time source changes, provider coverage and theme presentation remain.
+- Core cache acceptance is user-confirmed (2026-11-01): LRU eviction, active-file protection, capacity choices and saved settings across restart. Still check six-hour expiry, incomplete-staging cleanup, unknown-size streams, expanded EPUB accounting, simultaneous active mounts/viewers and themed dialogs.
 - Confirm the latest remote breadcrumb repair; retain selected-set/backend gesture regressions. Image-viewer Back is user-confirmed working.
 - Validate transfer/verification feedback and compressed-container low-space/interruption behavior.
 
@@ -83,7 +93,29 @@ Broaden format-specific byte/metadata/edge checks, multipart ZIP/7z, advanced LV
 
 ## Requested future features
 
+The [Android content integration and translation proposal](infinifolder_android_content_integration.md)
+is a future design reference. It does not imply general virtual-document export
+or universal format conversion is implemented.
+
 Most-used sorting; torrent device acceptance and seekable piece reads; Downloads organization rules; handset acceptance for floating browser and home-screen shortcuts; later widget. NFS/cloud providers, broader search/recents/trash and portable metadata remain future scope. WebDAV is user-confirmed working.
+
+### Continuous Cast audio
+
+Cast playlists are now exposed as a virtual PCM WAVE stream built from
+libinfinisound-decoded tracks, normalized to 48 kHz stereo signed 16-bit PCM.
+HTTP range reads pull decoded blocks from each track source, so known-length
+sources need not be fully rendered before playback. The host maps receiver
+positions and seeks back to playlist rows. Manual next/previous and playlist
+edits rebuild the stream. Cast-only decode failures skip the affected track for
+the current session while retaining its row.
+
+The initial transport is RIFF WAVE, limited to 4 GiB of PCM. Larger playlists
+and receivers that reject the continuous WAVE fall back to the separate-track
+queue, which can still have transition gaps. Unknown-length and file-oriented
+renderers can require full preparation and delay startup. Handset acceptance is
+still needed for gapless transitions, seeks, pause/resume, repeat behavior,
+remote/archive inputs and receiver-specific WAVE support. RF64 or another
+long-stream transport remains future work.
 
 ### Paged documents and Office formats
 
@@ -147,6 +179,16 @@ CSV/TSV) using the existing random-access, chunked viewing foundation.
 
 This is planned work. Large files remain read-only under the current guards
 until the chunked editing and safe publication paths are implemented and accepted.
+
+### Structured text formatting
+
+The text viewer now has an optional Reparse control backed by separate JSON,
+YAML, XML and TOML modules. It reconstructs cached source text on a worker before
+Android word wrapping; entering the editor restores the original source. Long
+paragraphs retain bounded rendering. Remaining work includes caching a full
+visual-row index for global scrolling through windowed documents and extending
+preloading beyond the existing 4 MiB limit. See
+[text/document formats](text-and-document-formats.md) for parser limits.
 
 ### Cloud storage through rclone
 

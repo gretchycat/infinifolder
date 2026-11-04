@@ -382,7 +382,7 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
             val target = data.data!!
             val name = pendingCopyName ?: session?.name ?: "edited-file"
             pendingCopyName = null
-            copy(target, name)
+            confirmCopy(target, name)
         }
     }
     private fun complete(overwrite: Boolean) {
@@ -453,12 +453,14 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
                 try { StorageSafety.validateName(name) } catch (error: Exception) { input.error = error.message; return@setOnClickListener }
                 if (name == item.name) { input.error = "Choose a different filename"; return@setOnClickListener }
                 dialog.dismiss()
-                work("Finding source folder…") {
-                    val parent = store.parent(item) ?: throw IOException("The source folder is unavailable; copy to another folder instead")
-                    store.copy(item, parent, name, ::report)
-                    store.discard(item)
-                    runOnUiThread { Toast.makeText(this, "Edited copy saved", Toast.LENGTH_LONG).show(); finish() }
-                }
+                Thread({
+                    try {
+                        val parent = store.parent(item) ?: throw IOException("The source folder is unavailable; copy to another folder instead")
+                        runOnUiThread { confirmCopy(parent, name, "the original folder") }
+                    } catch (error: Exception) {
+                        runOnUiThread { if (!isFinishing && !isDestroyed) showFailure(error) }
+                    }
+                }, "ExternalEditCopyDestination").start()
             }
         }
         dialog.show(); CacheDialogs.style(dialog)
@@ -467,6 +469,15 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
         pendingCopyName = session?.name
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION), 702)
+    }
+    private fun confirmCopy(target: Uri, name: String, destinationDescription: String = "the selected folder") {
+        val dialog = CacheDialogs.builder(this).setTitle("Save edited copy?")
+            .setMessage("Save '$name' to $destinationDescription? Your original file and working edits will be kept until the copy succeeds.")
+            .setNegativeButton("Cancel") { _, _ -> showActions("Copy cancelled. Your edits are kept.") }
+            .setPositiveButton("Save copy") { _, _ -> copy(target, name) }
+            .setOnCancelListener { showActions("Copy cancelled. Your edits are kept.") }
+            .create()
+        dialog.show(); CacheDialogs.style(dialog)
     }
     private fun copy(target: Uri, name: String) {
         val item = session ?: return
@@ -487,7 +498,7 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
     override fun onBackPressed() {
         if (busy) { Toast.makeText(this, "Please wait; the working copy is being checked or saved", Toast.LENGTH_SHORT).show(); return }
         // Returning to the browser never silently discards unsaved edits.
-        finish()
+        returnToFileManager()
     }
     override fun onSaveInstanceState(outState: Bundle) {
         session?.let { outState.putString("session", it.id) }

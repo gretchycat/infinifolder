@@ -4,7 +4,7 @@
 
 Current implementation ownership: image decoders and ThumbnailDecoder now live in the pinned libinfinicanvas/canvas-android module. ImageFormats and icon-selection policy stay in the host. BitmapFrame exposes actual decoded dimensions/pixel format/color space; source-backed decoding uses Stream adapters and retains existing memory/format limits. Desktop/iOS codec portability remains incremental.
 
-Updated 2026-10-27. This document tracks image format support across thumbnail generation (`ThumbnailDecoder`), container/directory icon discovery (`DirectoryIconResolver`), MIME/magic classification (`ImageFormats`, `MimeRegistry`, `FileMagicDetector`), and the standalone/integrated image viewer (`:viewer-image` / `ImageViewerActivity`), along with difficulty ratings and prerequisites for implementing viewers/decoders and creators/encoders for currently unsupported formats.
+Updated 2026-11-04. This document tracks image format support across thumbnail generation (`ThumbnailDecoder`), container/directory icon discovery (`DirectoryIconResolver`), MIME/magic classification (`ImageFormats`, `MimeRegistry`, `FileMagicDetector`), and the standalone/integrated image viewer (`:viewer-image` / `ImageViewerActivity`), along with difficulty ratings and prerequisites for implementing viewers/decoders and creators/encoders for currently unsupported formats.
 
 > Text-based visual media—such as ANSI art (`.ans`, `.idf`, `.xb`, `.pcb`, `.tnd`), ASCII/NFO art (`.asc`, `.nfo`, `.diz`), and PETSCII/ATASCII screens—are categorized under the text renderers in [Text, markup, document, and text-based media formats](text-and-document-formats.md).
 
@@ -134,7 +134,7 @@ Decoded via Android's platform RAW extractor (`ImageDecoder` / `BitmapFactory` /
 
 | Feature / Format | Extensions | Viewer Difficulty | Creation Difficulty | Prerequisites |
 | --- | --- | --- | --- | --- |
-| **Animated GIF / WebP / APNG / HEICS / AVIFS Playback** | `.gif`, `.webp`, `.apng`, `.heics`, `.avifs` | **Tier 2 (Low)** | **Tier 3 (Medium)** (multi-frame muxer) | **Prerequisites**: In `ImageViewerActivity`, allow `ZoomImageView` to host an `AnimatedImageDrawable` (API 28+) when not in edit mode, while retaining a decoded `Bitmap` frame for crop/adjust edits. Creation requires a multi-frame GIF LZW or WebP/APNG chunk assembler. |
+| **Animated image encoding / broader sequence playback** | `.gif`, `.webp`, `.apng`, `.heics`, `.avifs` | GIF/WebP/APNG implemented; HEIF/AVIF sequences depend on native support | **Tier 3 (Medium)** (multi-frame muxer) | Current [playback and limits](image-animation.md) are separate from creation. Animated encoding still requires a frame/timing-aware muxer; the editor exports still images. |
 | **JPEG & WebP Export in Editor** | `.jpg`, `.webp` | *Already implemented* | **Tier 1 (Trivial)** | **Prerequisites**: Format picker in `ImageViewerActivity` calling `Bitmap.compress(CompressFormat.JPEG / WEBP_LOSSY / WEBP_LOSSLESS, quality, out)`. |
 | **TGA / BMP / ICO Creation** | `.tga`, `.bmp`, `.ico` | *Already implemented* | **Tier 1–2 (Trivial–Low)** | **Prerequisites**: Format picker in `ImageViewerActivity` + 18-byte TGA header + BGRA pixel writer, 54-byte BMP DIB writer, or 22-byte ICO directory + PNG/DIB payload wrapper. |
 | **HEIC / AVIF / CUR / DNG Magic Detection** | `.heic`, `.avif`, `.cur`, `.dng` | **Tier 1 (Trivial)** | N/A | **Prerequisites**: Check `ftyp` major/compatible brands (`heic`, `heix`, `mif1`, `avif`, `avis`) and TIFF/DNG/CUR headers in `FileMagicDetector.detectFromBytes`. |

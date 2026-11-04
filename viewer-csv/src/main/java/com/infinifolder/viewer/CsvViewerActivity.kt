@@ -58,7 +58,7 @@ class CsvViewerActivity : ViewerActivity() {
     private var adjustingWindow = false
     private var blockedEdge: Pair<Int, Long>? = null
     private data class RowAnchor(val id: Long, val top: Int)
-    private lateinit var rowList: ListView
+    private lateinit var rowList: ScrollableListView
     private lateinit var headerContainer: LinearLayout
     private val rowAdapter = RowAdapter()
     private var columnEnd = 0
@@ -247,10 +247,11 @@ class CsvViewerActivity : ViewerActivity() {
 
         val tableColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         headerContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        rowList = ListView(this).apply {
+        rowList = ScrollableListView(this).apply {
             divider = null
             adapter = rowAdapter
-            isFastScrollEnabled = false
+            isFastScrollEnabled = true
+            isFastScrollAlwaysVisible = true
         }
         // Registration invokes onScroll synchronously: publish the ListView field first.
         rowList.setOnScrollListener(object : AbsListView.OnScrollListener {
@@ -762,7 +763,7 @@ class CsvViewerActivity : ViewerActivity() {
             AlertDialog.Builder(this)
                 .setTitle("Discard changes?")
                 .setMessage("You have unsaved spreadsheet changes. Discard them?")
-                .setPositiveButton("Discard") { _, _ -> finish() }
+                .setPositiveButton("Discard") { _, _ -> returnToFileManager() }
                 .setNegativeButton("Keep editing", null)
                 .show()
             return

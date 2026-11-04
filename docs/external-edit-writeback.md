@@ -2,10 +2,19 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
-Status reviewed 2026-10-26. Content-based return handling and compact themed UI
-are implemented; device acceptance is pending.
+Status reviewed 2026-11-01. The user confirms real-editor handoff/return, source
+conflict detection with the edited copy preserved and available to save elsewhere,
+and unfinished-session recovery after app restart. Unchanged opens, timestamp-only
+changes, source changes during staging, provider coverage and themed presentation
+remain to be checked.
 
 ## Workflow
+
+Saving a new copy now confirms the chosen filename/destination before publication,
+including a renamed copy in the original folder. Cancelling keeps the working edits
+available. The cache-capacity Copy-to-folder flow likewise confirms after folder
+selection. These confirmation paths and shared Back return routing need their own
+device checks; they do not extend the earlier acceptance to every provider.
 
 ### One-shot file opens and startup
 
@@ -255,8 +264,9 @@ the remaining light/dark presentation still need their own device checks.
 
 The final debug APK build succeeded in 8 seconds and build.sh opened it with
 xdg-open (`build/external-edit-content-review-final-build.log`). Whitespace review
-passed. No automated tests were added or run. Device acceptance is needed with
-real external editors, read-only viewers, unchanged edits, timestamp-only changes,
-actual source-content conflicts, source changes during staging, rename/copy/
-overwrite choices, interrupted sessions and provider-specific save paths. Check
-the compact dialog and nested actions in both light and dark modes.
+passed. No automated tests were added or run. On 2026-11-01, the user confirmed
+real-editor return, source-content conflict handling with edits retained, a separate
+save path, and reopening unfinished work after restarting the app. Remaining device
+checks include unchanged edits, timestamp-only changes, source changes during
+staging, overwrite choices, other providers, and the compact dialog in light and
+dark themes.

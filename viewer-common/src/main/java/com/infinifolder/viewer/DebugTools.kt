@@ -227,6 +227,19 @@ open class ViewerActivity : Activity() {
         com.infinifolder.theme.ThemeManager.init(applicationContext)
     }
 
+    override fun onContentChanged() {
+        super.onContentChanged()
+        // Some hosts replace their entire view tree when applying a theme. Rebind
+        // after that replacement so this activity remains the active Back target.
+        if (backNavigation != null) {
+            com.infinifolder.storage.DiagnosticLog.record(
+                "navigation.back.rebind", "activity=${javaClass.simpleName} reason=content-changed"
+            )
+            backNavigation?.close()
+            backNavigation = ActivityBackNavigation.register(this) { onBackPressed() }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         backNavigation?.close()
@@ -241,30 +254,69 @@ open class ViewerActivity : Activity() {
 
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
-            if (event.action == android.view.KeyEvent.ACTION_UP && !event.isCanceled) onBackPressed()
+            if (event.action == android.view.KeyEvent.ACTION_UP) {
+                if (event.isCanceled) {
+                    com.infinifolder.storage.DiagnosticLog.record(
+                        "navigation.back.dispatch", "activity=${javaClass.simpleName} source=key state=canceled"
+                    )
+                } else {
+                    com.infinifolder.storage.DiagnosticLog.record(
+                        "navigation.back.dispatch", "activity=${javaClass.simpleName} source=key state=begin"
+                    )
+                    val startedAt = android.os.SystemClock.uptimeMillis()
+                    try {
+                        onBackPressed()
+                    } finally {
+                        com.infinifolder.storage.DiagnosticLog.record(
+                            "navigation.back.dispatch",
+                            "activity=${javaClass.simpleName} source=key state=returned elapsedMs=${android.os.SystemClock.uptimeMillis() - startedAt} finishing=$isFinishing"
+                        )
+                    }
+                }
+            }
             return true
         }
         return super.dispatchKeyEvent(event)
     }
 
     open fun returnToFileManager() {
+        com.infinifolder.storage.DiagnosticLog.record(
+            "navigation.viewer.return", "activity=${javaClass.simpleName} state=begin finishing=$isFinishing"
+        )
         val intent = android.content.Intent().apply {
             setClassName(this@ViewerActivity, "com.infinifolder.MainActivity")
-            flags = android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
+            action = android.content.Intent.ACTION_MAIN
+            flags = android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
         val launched = runCatching {
             startActivity(intent)
+            // Remove this viewer from the task. If the browser already existed,
+            // CLEAR_TOP has brought it forward; otherwise it is now the task root.
+            finish()
+            com.infinifolder.storage.DiagnosticLog.record(
+                "navigation.viewer.return", "activity=${javaClass.simpleName} state=started finishing=$isFinishing"
+            )
             true
+        }.onFailure { error ->
+            com.infinifolder.storage.DiagnosticLog.record(
+                "navigation.viewer.return", "activity=${javaClass.simpleName} state=failed", error
+            )
         }.getOrDefault(false)
 
         if (!launched) {
             finish()
+            com.infinifolder.storage.DiagnosticLog.record(
+                "navigation.viewer.return", "activity=${javaClass.simpleName} state=finished-fallback finishing=$isFinishing"
+            )
         }
     }
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        // Return back to the file manager and background the running viewer
+        // Every built-in viewer returns to the file manager through the same task route.
+        com.infinifolder.storage.DiagnosticLog.record(
+            "navigation.viewer.back", "activity=${javaClass.simpleName} dirtyHandler=base"
+        )
         returnToFileManager()
     }
 

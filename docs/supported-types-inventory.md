@@ -20,8 +20,8 @@ recognition requires actual parser validation before browsing. Filesystem writes
 are listed separately from reads. URI icon/external-handler support is distinguished
 from real storage providers; NFS has no native storage implementation.
 
-The exported snapshot contains **1,213 rows**: 600 file extension/pattern rows,
-242 MIME identifiers, 326 archive/package/image rows, 14 filesystem rows,
+The 2026-11-04 exported snapshot contains **1,432 rows**: 701 file extension/pattern rows,
+354 MIME identifiers, 332 archive/package/image rows, 14 filesystem rows,
 4 partition/volume rows and 27 URI rows. Overlap between categories is intentional.
 File rows without a static MIME association leave that cell empty: Android's MIME
 map, provider metadata and content detection may supply it at runtime. Device MIME

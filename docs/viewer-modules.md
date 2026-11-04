@@ -2,7 +2,7 @@
 
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
-Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+Status reviewed 2026-11-04. See the [complete library/viewer synchronization](component-status-2026-11-04.md) and [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
 
 Each viewer is an Android library that depends on `:viewer-common` and `:storage-engine`, without depending on the browser or its Activity. Its manifest registers its viewer Activity/service. A separate application can include the library and launch it through `ViewerLaunch` with a resource entry.
 
@@ -15,6 +15,18 @@ gradle :viewer-host:assembleDebug -Pviewer=pdf --offline
 ```
 
 Replace `pdf` with `image`, `text`, `markdown`, `html`, `csv`, `epub`, `font`, `audio`, `video`, or `all` (default). The selected application's ID is `com.infinifolder.standalone.<kind>` and its APK is under `viewer-host/build/outputs/apk/debug/`. On ARM Termux use the configured native AAPT2 override if required, as for the main app.
+
+`viewer-hex` is currently composed by the main app; `hex` is not a supported
+standalone selector. The all-viewer host includes the ten selectors above.
+
+The image module now hosts Canvas image animations and interactive MNG controls;
+the EPUB and CSV modules also host supported ebook/Office content. HTML/Markdown
+share native scroll surfaces with drag handles, CSV enables native fast scrolling,
+and shared Back handling records/rebinds callbacks across content replacement.
+Audio keeps continuous Cast timeline/HTTP integration in the host while Sound
+performs PCM conversion. See [animation](image-animation.md),
+[document readers](document-and-ebook-readers.md), [hex/raw media](hex-editor.md),
+[audio](audio-formats.md) and [Back diagnostics](back-navigation.md).
 
 Text, Markdown, HTML, and CSV include editing subject to complete load and source revision checks. Image edits export PNG copies. PDF/EPUB/audio/video currently expose viewing/playback. ACTION_EDIT is rejected for unsupported formats. A missing viewer library produces an explanatory message.
 

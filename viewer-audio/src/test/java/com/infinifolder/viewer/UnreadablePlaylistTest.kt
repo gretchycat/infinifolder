@@ -23,6 +23,23 @@ class UnreadablePlaylistTest {
         val tracks = listOf(track("bad",true), track("good"), track("last",true))
         assertEquals(1, nextReadableTrack(tracks,2,true))
     }
+    @Test fun castQueueRespectsRepeatAndUnreadableEntries() {
+        val tracks = listOf(track("first"), track("bad", true), track("last"))
+        assertEquals(2, nextCastTrackIndex(tracks, 0, RepeatMode.NONE))
+        assertNull(nextCastTrackIndex(tracks, 2, RepeatMode.NONE))
+        assertEquals(0, nextCastTrackIndex(tracks, 2, RepeatMode.ALL))
+        assertEquals(2, nextCastTrackIndex(tracks, 2, RepeatMode.ONE))
+        assertNull(nextCastTrackIndex(tracks, 1, RepeatMode.ONE))
+    }
+    @Test fun castFailuresAreBoundedAndDoNotMarkLocalFilesUnreadable() {
+        val tracks = listOf(track("first"), track("second"), track("third"))
+        val failures = setOf(castTrackKey(tracks[0]), castTrackKey(tracks[1]))
+        assertEquals(2, nextCastTrackIndex(tracks, 0, RepeatMode.ALL, failures))
+        assertNull(nextCastTrackIndex(tracks, 2, RepeatMode.ALL, failures + castTrackKey(tracks[2])))
+        assertFalse(tracks[0].isUnreadable)
+        assertEquals(1000, tracks[0].durationMs)
+        assertEquals(1, nextReadableTrack(tracks, 0, false))
+    }
     @Test fun previousSkipsUnreadableAndRespectsBeginning() {
         val tracks = listOf(track("good"), track("bad",true), track("last"))
         assertEquals(0,nextReadableTrack(tracks,2,false,-1))

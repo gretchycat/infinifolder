@@ -1,8 +1,14 @@
 # Documentation
 
+- [Library and viewer synchronization — 2026-11-04](component-status-2026-11-04.md)
+- [Image animation, limits and acceptance](image-animation.md)
+- [IFF/ILBM/LBM color cycling](iff-color-cycling.md)
+- [Hex editor and raw-media explorer](hex-editor.md)
+- [Android content integration proposal (future work)](infinifolder_android_content_integration.md)
+
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
-Updated 2026-10-27. Start with [project status](project-status.md), [task list](feature-todo.md), [roadmap](roadmap.md) and [architecture](architecture.md).
+Updated 2026-11-04. Start with [project status](project-status.md), [task list](feature-todo.md), [roadmap](roadmap.md) and [architecture](architecture.md).
 
 ## Reference and evidence
 
