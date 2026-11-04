@@ -1,10 +1,11 @@
 # InfiniFolder — Android Content Integration and Universal Format Translation
 
 Status: design proposal retained for future work, reviewed 2026-11-04. This is a
-requested direction, not an implementation or acceptance record. Existing URI
+requested direction, not an implementation or acceptance record. Installed-handler registries and direct library discovery are now implemented;
+see [runtime capabilities](runtime-capabilities.md). Existing URI
 grants/opening remain implemented separately; general translation and virtual
 document export described here are not established by the current library/viewer
-synchronization. See [current component status](component-status-2026-11-04.md).
+synchronization. See [current component status](project-status.md).
 
 ## Objective
 

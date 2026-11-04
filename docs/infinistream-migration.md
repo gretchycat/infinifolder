@@ -1,5 +1,10 @@
 # InfiniStream migration checkpoints
 
+> Historical evidence. Paths, pending statements and totals below describe their
+> recorded revision. Use [project status](project-status.md), [remaining work](feature-todo.md)
+> and the [latest runtime gate](runtime-capabilities.md) for current scope.
+
+
 Design authority: [implementation assignment](infinistream_architecture_codex.md). Baseline: InfiniFolder `9233495`, libinfinisound `c6137cd`, 2026-10-30. The user supplied the assignment as an untracked file; preserve it intact. No AGENTS.md was found in the workspace or its project/home ancestors. The initial documentation checkpoint preceded all source moves; the implementation checkpoints below record the current state.
 
 ## Published repositories and pinned dependency graph

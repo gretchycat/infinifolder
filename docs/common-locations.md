@@ -1,6 +1,6 @@
 # Common locations and destination suggestions
 
-> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
+> [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
 Implemented 2026-10-26; handset acceptance pending. Debug APK builds validate
 compilation only. No automated tests were added or run for this change.

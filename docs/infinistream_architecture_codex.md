@@ -1,5 +1,10 @@
 # Infinifolder Library Extraction and Stream Architecture
-## Implementation instructions for Codex
+> Original implementation assignment retained as design requirements and history.
+> Repository extraction is complete; see [current architecture](architecture.md),
+> [runtime discovery](runtime-capabilities.md) and [remaining work](feature-todo.md).
+> Instructions below describe the original assignment, not a new migration task.
+
+## Original implementation instructions
 
 **Project:** `gretchycat/infinifolder`  
 **Goal:** Separate reusable libraries into their own Git repositories and refactor infinifolder to compose them through a common, metadata-aware stream architecture.  

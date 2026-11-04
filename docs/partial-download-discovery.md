@@ -1,6 +1,6 @@
 # Private Partial downloads collection
 
-> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
+> [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
 Virtual root → Partial downloads is backed by the app-private `files/partial-download-links/` directory. Each discovered unfinished download gets an actual `.iflink` record there. A stable hashed link filename avoids collisions between identically named downloads on different sources; its saved display name remains the original download name.
 

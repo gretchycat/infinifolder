@@ -164,3 +164,14 @@ still need on-device acceptance; the earlier confirmation predates this repair.
 
 The new parsers/compositor are original implementations; no decoder source was
 copied from a third-party project.
+
+## FLC provider MIME aliases — 2026-11-04
+
+Canvas already decodes FLI/FLC. Its handler now advertises the historical FLI/FLC/FLIC
+MIME aliases under video, image and application categories, using the decoder's
+shared metadata. This prevents generic video discovery from taking precedence for
+those aliases and supplies Android Open-with registration from the linked catalog.
+Host animation detection uses the same set; decoder algorithms and user MIME/icon
+settings are unchanged. Main and combined-host debug builds pass. No new automated
+suite or device playback check was performed for this quick fix; prior animation
+acceptance applies to the earlier revision.

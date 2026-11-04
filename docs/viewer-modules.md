@@ -1,8 +1,8 @@
 # Independent viewer applications
 
-> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
+> [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
-Status reviewed 2026-11-04. See the [complete library/viewer synchronization](component-status-2026-11-04.md) and [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+Status reviewed 2026-11-04. See [runtime discovery and build evidence](runtime-capabilities.md) and [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
 
 Each viewer is an Android library that depends on `:viewer-common` and `:storage-engine`, without depending on the browser or its Activity. Its manifest registers its viewer Activity/service. A separate application can include the library and launch it through `ViewerLaunch` with a resource entry.
 

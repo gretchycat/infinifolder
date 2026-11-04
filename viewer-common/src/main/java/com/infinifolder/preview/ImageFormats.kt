@@ -13,7 +13,7 @@ import com.infinifolder.model.ResourceMetadata
  * - Truevision TGA (.tga, .icb, .vda, .vst, via TgaDecoder).
  */
 object ImageFormats {
-    val animationMimeTypes=setOf("video/x-fli","video/x-mng")
+    val animationMimeTypes: Set<String> get() = FlicDecoder.mimeTypes + "video/x-mng"
     /** Extensions for all supported decodable image formats. */
     val decodableExtensions: Set<String> get() = CanvasCapabilities.extensions
 

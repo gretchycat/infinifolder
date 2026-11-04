@@ -11,6 +11,20 @@ object ExternalAppChooser {
     internal const val NAME = "external_name"
     const val FORCE_CHOOSER = "external_force_chooser"
     internal const val SELECT_EDITOR = "select_default_editor"
+    internal const val INTERNAL_TARGET = "internal_viewer_target"
+    internal const val STAGE_EXTERNAL = "stage_external_target"
+    internal const val EXTERNAL_COMPONENT = "selected_external_component"
+    internal const val EXTERNAL_ACTION = "selected_external_action"
+
+    /** Choose before staging: internal viewers open the original resource directly. */
+    fun forResource(context: Context, entry: com.infinifolder.model.ResourceEntry, parent: android.net.Uri? = null): Intent {
+        val target = Intent(Intent.ACTION_VIEW).setDataAndType(entry.uri,
+            com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType))
+        return create(context, target, "Open ${entry.metadata.name}",
+            ExternalAppDefaults.sourceKey(entry.ref), entry.metadata.name, true)
+            .putExtra(INTERNAL_TARGET, ViewerLaunch.intentForResource(context, entry, parent))
+            .putExtra(STAGE_EXTERNAL, true)
+    }
     fun create(context: Context, target: Intent, title: CharSequence): Intent =
         create(context, target, title, target.data?.toString()?.let(ExternalAppDefaults::uriKey), title.toString(), false)
     fun create(context: Context, target: Intent, title: CharSequence, sourceKey: String?, name: String,

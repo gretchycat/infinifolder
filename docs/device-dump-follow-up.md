@@ -1,6 +1,11 @@
 # Device dump follow-up
 
-> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
+> Historical evidence. Paths, pending statements and totals below describe their
+> recorded revision. Use [project status](project-status.md), [remaining work](feature-todo.md)
+> and the [latest runtime gate](runtime-capabilities.md) for current scope.
+
+
+> [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
 Historical evidence: pending statements and test totals are revision-specific. The [current status](project-status.md) and [task list](feature-todo.md) supersede older acceptance labels. Reviewed 2026-10-24.
 
@@ -327,4 +332,4 @@ The log shows several timestamp-triggered cache refreshes and continued copying.
 
 ## Separate progress bars and Back follow-up build
 
-Implemented separate current-file/overall progress and followed up the user-reported Back failures in the 04:13 UTC dump. The progress-only build succeeded in 12 seconds and was opened; the combined progress/Back build succeeded in 28 seconds (`build/overall-progress-back-navigation-build.log`) and `xdg-open` was run with its APK. No automated tests were added or run. The latest dump lacks Back decision logs, so the suspected refresh-generation race remains a code-review finding awaiting device acceptance. See [operation progress](operation-progress.md) and [Back navigation follow-up](back-navigation.md#intermittent-back-follow-up).
+Implemented separate current-file/overall progress and followed up the user-reported Back failures in the 04:13 UTC dump. The progress-only build succeeded in 12 seconds and was opened; the combined progress/Back build succeeded in 28 seconds (`build/overall-progress-back-navigation-build.log`) and `xdg-open` was run with its APK. No automated tests were added or run. The latest dump lacks Back decision logs, so the suspected refresh-generation race remains a code-review finding awaiting device acceptance. See [operation progress](operation-feedback.md) and [Back navigation follow-up](back-navigation.md#intermittent-back-follow-up).

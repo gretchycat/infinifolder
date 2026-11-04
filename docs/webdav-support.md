@@ -1,6 +1,6 @@
 # WebDAV provider
 
-> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
+> [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
 Updated 2026-10-24. WebDAV support is implemented in `storage-engine` and available through the protocol-specific **New → Link** setup. The user confirmed WebDAV working. A saved connection appears on Virtual root as a container link and in the navigation tree. Credentials use a separate encrypted vault; passwords in a URL are rejected.
 

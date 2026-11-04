@@ -17,8 +17,8 @@ import com.infinifolder.theme.ThemeManager
 
 /** Local file associations require an app-owned picker; Android's chooser has no local-default checkbox. */
 class ExternalAppPickerActivity : Activity() {
-    private data class Choice(val info: ResolveInfo, val action: String, val label: String) {
-        val component get() = ComponentName(info.activityInfo.packageName, info.activityInfo.name)
+    private data class Choice(val info: ResolveInfo?, val action: String, val label: String, val internal: Intent? = null) {
+        val component get() = internal?.component ?: ComponentName(info!!.activityInfo.packageName, info.activityInfo.name)
     }
     private lateinit var target: Intent
     private lateinit var defaults: ExternalAppDefaults
@@ -52,14 +52,27 @@ class ExternalAppPickerActivity : Activity() {
     }
     private fun choices(): List<Choice> {
         val actions = if (target.action == Intent.ACTION_EDIT) listOf(Intent.ACTION_EDIT, Intent.ACTION_VIEW) else listOf(Intent.ACTION_VIEW)
-        return actions.flatMap { action ->
+        val external = actions.flatMap { action ->
             val query = Intent(target).setAction(action).setComponent(null).setPackage(null)
+            if (intent.getBooleanExtra(ExternalAppChooser.STAGE_EXTERNAL, false)) {
+                // External receivers will get a grantable working-copy content URI,
+                // including for archive/network sources. This URI is for matching only.
+                query.setDataAndType(android.net.Uri.parse("content://$packageName.external-edit/choice/${android.net.Uri.encode(fileName)}"), target.type)
+            }
             if (selectingEditor && action == Intent.ACTION_VIEW) query.setDataAndType(target.data, "text/plain")
             packageManager.queryIntentActivities(query, PackageManager.MATCH_DEFAULT_ONLY)
                 .filter { it.activityInfo.packageName != packageName && it.activityInfo.exported &&
                     it.activityInfo.enabled && it.activityInfo.applicationInfo.enabled }
                 .map { Choice(it, action, it.loadLabel(packageManager).toString()) }
         }.distinctBy { it.component }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+        @Suppress("DEPRECATION")
+        val internal = intent.getParcelableExtra<Intent>(ExternalAppChooser.INTERNAL_TARGET)
+            ?.takeIf { candidate -> !selectingEditor && target.action == Intent.ACTION_VIEW &&
+                candidate.component?.packageName == packageName && candidate.data == target.data &&
+                ViewerComponents.registry.query(io.github.gretchycat.infinistream.Operations.VIEW).any {
+                    it.handler.service(ViewerComponent::class.java)?.activityClassName == candidate.component?.className
+                } }
+        return listOfNotNull(internal?.let { Choice(null, Intent.ACTION_VIEW, "Open internally", it) }) + external
     }
     private fun loadChoices(useDefault: Boolean) {
         Thread({
@@ -103,12 +116,12 @@ class ExternalAppPickerActivity : Activity() {
                             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
                             setPadding(0, dp(8), 0, dp(8))
                             addView(ImageView(context).apply {
-                                setImageDrawable(choice.info.loadIcon(packageManager)); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                                setImageDrawable(choice.info?.loadIcon(packageManager) ?: applicationInfo.loadIcon(packageManager)); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                             }, LinearLayout.LayoutParams(dp(40), dp(40)))
                             addView(LinearLayout(context).apply {
                                 orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0)
                                 addView(TextView(context).apply { text = choice.label; textSize = 16f; setTextColor(colors.textPrimary) })
-                                addView(TextView(context).apply { text = choice.component.packageName; textSize = 12f; setTextColor(colors.textSecondary) })
+                                addView(TextView(context).apply { text = if (choice.internal != null) "Built-in viewer" else choice.component.packageName; textSize = 12f; setTextColor(colors.textSecondary) })
                             }, LinearLayout.LayoutParams(0, -2, 1f))
                         }
                     }
@@ -136,15 +149,20 @@ class ExternalAppPickerActivity : Activity() {
             .create().also { it.show(); CacheDialogs.style(it) }
     }
     private fun launch(choice: Choice, available: List<Choice>, rememberChoice: Boolean) {
-        if (choice.component.packageName == packageName) return
+        if (choice.component.packageName == packageName && choice.internal == null) return
         if (selectingEditor) {
             defaults.editor = choice.component
             setResult(RESULT_OK); finish(); return
         }
         try {
             // The original data, MIME, flags and ClipData grants survive explicit selection.
-            startActivity(Intent(target).setAction(choice.action).setComponent(choice.component).setPackage(null)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            val launch = choice.internal?.let(::Intent) ?: if (intent.getBooleanExtra(ExternalAppChooser.STAGE_EXTERNAL, false)) {
+                Intent(this, ExternalEditActivity::class.java).setData(target.data)
+                    .putExtra(ExternalAppChooser.EXTERNAL_COMPONENT, choice.component.flattenToString())
+                    .putExtra(ExternalAppChooser.EXTERNAL_ACTION, choice.action)
+            } else Intent(target).setAction(choice.action).setComponent(choice.component).setPackage(null)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(launch)
             if (rememberChoice) defaults.remember(target.action!!,
                 if (scope?.checkedRadioButtonId == 1) ExternalAppDefaults.FILE else ExternalAppDefaults.TYPE,
                 sourceKey, target.type, fileName, choice.component)

@@ -1,6 +1,6 @@
 # Image formats
 
-> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
+> [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
 Current implementation ownership: image decoders and ThumbnailDecoder now live in the pinned libinfinicanvas/canvas-android module. ImageFormats and icon-selection policy stay in the host. BitmapFrame exposes actual decoded dimensions/pixel format/color space; source-backed decoding uses Stream adapters and retains existing memory/format limits. Desktop/iOS codec portability remains incremental.
 

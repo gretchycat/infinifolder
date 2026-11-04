@@ -20,7 +20,9 @@ class ExternalAppSettingsActivity : Activity() {
     }
     override fun onResume() { super.onResume(); render() }
     private fun label(component: ComponentName): String = runCatching {
-        packageManager.getActivityInfo(component, 0).loadLabel(packageManager).toString()
+        if (component.packageName == packageName && ViewerComponents.registry.query(io.github.gretchycat.infinistream.Operations.VIEW)
+                .any { it.handler.service(ViewerComponent::class.java)?.activityClassName == component.className }) "Built-in viewer"
+        else packageManager.getActivityInfo(component, 0).loadLabel(packageManager).toString()
     }.getOrDefault("${component.packageName} (unavailable)")
     private fun render() {
         val theme = ThemeManager.activeTheme
@@ -36,7 +38,7 @@ class ExternalAppSettingsActivity : Activity() {
             setOnClickListener { click() }
         }) }
         text("External apps", 22f)
-        text("These defaults apply only inside InfiniFolder. Open with… always lets you choose another app. File-specific choices take priority over file-type choices.")
+        text("These defaults apply only inside InfiniFolder. Supported files use the built-in viewer unless you save another choice. Open with… lists the built-in viewer first and lets you change the default. File-specific choices take priority over file-type choices.")
         text("Default editor: ${defaults.editor?.let(::label) ?: "Ask each time"}", 16f)
         button("Choose default editor…") {
             val target = Intent(Intent.ACTION_EDIT).setDataAndType(Uri.parse("content://$packageName.external-edit/"), "*/*")

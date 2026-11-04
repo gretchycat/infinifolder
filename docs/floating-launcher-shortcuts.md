@@ -138,6 +138,14 @@ took 18 seconds. Logs: `build/launcher-container-name/app-build.log` and
 `app-build-final.log` in the same directory. Existing unrelated workspace changes
 were included in the build and preserved separately.
 
+## Task switching
+
+The overlay dismisses on Android system-dialog/Recents/Home events and focus
+loss/outside touch while preserving geometry. This newer lifecycle increment still
+needs focused Recents/quick-switch/reopen checks; earlier shortcut acceptance is
+retained. The title-bar maximize action opens the current container in the browser.
+The browser toolbar can reopen its current directory as a floating window.
+
 ## Breadcrumb title bar
 
 The floating window's existing title area now shows clickable breadcrumbs. Each

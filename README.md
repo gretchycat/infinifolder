@@ -2,7 +2,7 @@
 
 Runtime handler discovery: [interfaces, dependency audit, processing chains and verification](docs/runtime-capabilities.md). All seven libraries and viewer modules publish their own capability providers; linked library dependencies remain explicit.
 
-Architecture: [InfiniStream implementation design](docs/infinistream_architecture_codex.md), with [ownership and tested migration checkpoints](docs/infinistream-migration.md). Existing working features and data-safety guarantees remain requirements at every stage.
+Architecture: [current ownership and interfaces](docs/architecture.md), with [ownership and tested migration checkpoints](docs/infinistream-migration.md). Existing working features and data-safety guarantees remain requirements at every stage.
 
 An Android file browser with interchangeable storage providers, browsable archives/disk images, and independent viewer/editor modules. Android SAF identities remain opaque; source permissions and format limits are checked through shared provider contracts.
 
@@ -22,7 +22,7 @@ An Android file browser with interchangeable storage providers, browsable archiv
 - Light/dark/system themes, configurable icons, previews and hidden-file display. Toolbar activity light: green reads, dim green load waits, red file work, amber verification. Tap for operation details.
 
 See [current confirmations and remaining work](docs/project-status.md) and the
-[library/viewer synchronization record](docs/component-status-2026-11-04.md).
+[runtime-discovery verification record](docs/runtime-capabilities.md).
 Implemented features and handset acceptance are tracked separately.
 
 ## Build
@@ -45,7 +45,7 @@ In debug builds, choose a dump folder in Debug dump settings under Settings, or 
 
 ## Limits and documentation
 
-Android storage permissions still apply. Magnet links now have read-only torrent browsing and selected-file copying; live device acceptance, in-progress download feedback and seekable piece reads remain open. NFS/cloud providers are not implemented. Operation queues are process-local. Nested write chains, complete metadata fidelity and several filesystem subsets remain limited. Compressed writes rebuild; they are not in-place compressed random edits. Live VM reads are not snapshots. Cache/external-editor changes still need focused handset acceptance.
+Android storage permissions still apply. Magnet links have read-only torrent browsing and selected-file copying. Downloads and continuation have owner confirmation; broader provider/interruption checks and seekable on-demand piece reads remain open. NFS/cloud providers are not implemented. Operation queues are process-local. Nested write chains, complete metadata fidelity and several filesystem subsets remain limited. Compressed writes rebuild; they are not in-place compressed random edits. Live VM reads are not snapshots. Core cache/external-editor behavior is owner-confirmed; expiry, provider and interruption variants still need focused checks.
 
 Start with the [documentation index](docs/README.md), [architecture](docs/architecture.md), [format coverage](docs/file-formats.md), and [task list](docs/feature-todo.md). Historical audit/test evidence is retained with its revision.
 

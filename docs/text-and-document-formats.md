@@ -1,6 +1,6 @@
 # Text, markup, document, and text-based media formats
 
-> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
+> [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
 Current implementation ownership: libinfiniscribe/scribe-core owns the existing MarkdownRenderer and bounded charset/text decoding. Text, Markdown, HTML and CSV viewers consume it through MediaSourceAdapter while retaining original complete bytes for revision checks. Android WebView, editing UI and guarded save/recovery remain host adapters. Input and actual text-output metadata distinguish encoding, completeness and warnings.
 

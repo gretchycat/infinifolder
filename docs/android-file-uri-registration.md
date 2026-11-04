@@ -5,8 +5,10 @@ intent filters from the live supported-type definitions at build time.
 
 ## Registered handlers
 
-The main APK declares 328 MIME entries (including generic `text/*`), 901 filename
-suffixes including multipart RAR/ARJ volume names, and 19 native URI schemes:
+The main APK generates MIME entries (including generic `text/*`), filename
+suffixes including multipart RAR/ARJ names, and native URI schemes from linked
+handlers plus compatibility definitions. Exact counts belong to the generated
+JSON summaries, not a separate handwritten registry. Native scheme groups include:
 
 | Group | Schemes |
 | --- | --- |
@@ -34,7 +36,7 @@ External `infinifolder-termux` URIs show the command and working directory with
 files resolving to a command receive the same review, including recursive links.
 Existing trusted in-app shortcut behavior is preserved.
 
-The combined standalone host declares 282 MIME entries and 384 filename suffixes.
+The combined standalone host aggregates the linked viewer handlers.
 Selected viewer builds generate filters for their included representation; they
 keep the existing major-type contracts. Text-only builds display structured text
 as source, while audio-only builds can request audio from supported 3GP/MP4
@@ -82,16 +84,17 @@ filters are separate from file MIME/path filters to avoid accidental combination
 
 `scripts/build-android-intent-manifest.py` reuses the source inventory in
 `scripts/export-supported-types.py`; importing the inventory no longer rewrites
-its CSV. The generator reads the Store, Scribe, Canvas/common and Sound format
-lists, writes each module's generated manifest and a JSON registration summary,
+its CSV. Gradle exports the capability catalog from each host's actual dependency classpath.
+The generator reads it alongside Store/Scribe/Canvas/Sound compatibility inventory,
+writes each module's generated manifest and a JSON registration summary,
 and is wired into Gradle before manifest processing. Source templates retain
 permissions and components. There is no fixed count of MIME placeholders to fill.
 
 The source-type follow-up adds 107 explicit extension associations, including
 C/C++ headers, Pascal, Ada, BASIC, batch and other programming languages. Both
 Android registrations and the bundled theme consume the expanded identities; no
-new handwritten manifest list is required. The combined standalone host declares
-149 editable MIME entries. See [source identity and highlighting](syntax-highlighting.md#source-file-identity)
+new handwritten manifest list is required. Editable MIME entries derive from the selected installed viewers and retain
+launch/save capability checks. See [source identity and highlighting](syntax-highlighting.md#source-file-identity)
 for the distinction between file identity, text editing and lexical profiles.
 Read-only [font previews](font-viewer.md) add four filename suffixes and ten
 MIME identifiers/aliases; dedicated `-Pviewer=font` builds register only these
@@ -108,12 +111,12 @@ Command:
 gradle :app:assembleDebug :viewer-host:assembleDebug --offline --console=plain
 ```
 
-Both debug APKs build successfully. Log: `build/font-viewer/build-final.log`.
-Packaged APK manifests were inspected using `aapt2 dump xmltree`, including MIME
-entries, URI schemes and compiled suffix/pattern constraints. The supported-types
-CSV was refreshed from source (1,426 rows). No tests were added or run. Individual
-viewer configurations and Android chooser/permission/default-app behavior still
-need handset acceptance; no connected ADB device is available.
+The main and combined standalone APKs built in the
+[runtime-discovery gate](runtime-capabilities.md); the subsequent FLC alias fix also
+passed the app debug build. Exact commands, provider counts and test scope belong
+to that gate. Earlier font-registration/manifest inspections remain historical.
+Selected-viewer Android chooser/permission/default behavior still needs device checks.
+No new tests were run for this documentation/FLC follow-up.
 
 Check Open-with on a real image, Office/ebook file, ZIP/disk image, torrent/link,
 opaque provider URI with MIME, generic-binary URI with a real filename, network

@@ -1,6 +1,6 @@
 # Navigation, menus, selection and disk usage
 
-> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
+> [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
 Updated 2026-10-24. See [current status](project-status.md) for acceptance distinctions.
 
@@ -31,3 +31,17 @@ Image-viewer Back is user-confirmed working.
 ## Remaining acceptance
 
 Parent beyond initial scan root, latest remote breadcrumb fix, menu/templates/pattern options, pins/selected-set transfers and broader permission/theme/queue regressions. Current-folder explorer behavior is broadly accepted. Compilation evidence lives in the individual implementation records; this docs update ran no tests/build.
+
+## Copy into the source directory
+
+**Copy to…** can select the current/source directory. The confirmation appears
+before a transfer is submitted and explains that existing files are kept and copies
+receive unused names. Clipboard Paste uses the same confirmation/transfer path.
+Store already reserves collision names such as `name (2).ext`, preserves the extension,
+validates destination constraints and uses exclusive creation where supported;
+no second naming implementation was added to the UI. **Move to…** still blocks the
+current folder, and existing same-folder drag no-ops are unchanged.
+
+The 2026-11-04 app/combined-host build passes. Same-folder selection, confirmation
+Cancel, repeated copies, selected sets and backend-specific name/publication cases
+remain device checks; this change did not rerun automated tests.

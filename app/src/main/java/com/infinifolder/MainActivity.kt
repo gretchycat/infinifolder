@@ -5630,8 +5630,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         val cachedMagic = ambiguousMagicCache.get(entry.uri.toString())
         val effectiveMime = com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType, cachedMagic?.mimeType)
-        val hasExternalDefault = !entry.metadata.isDirectory &&
-            com.infinifolder.viewer.ExternalAppDefaults(this).hasOpenPreference(entry.ref, effectiveMime)
+        val appDefaults = com.infinifolder.viewer.ExternalAppDefaults(this)
+        val hasExternalDefault = !entry.metadata.isDirectory && appDefaults.hasOpenPreference(entry.ref, effectiveMime)
+        val preferInternal = !entry.metadata.isDirectory && appDefaults.hasInternalOpenPreference(entry.ref, effectiveMime)
         if(!externalOnly&&!hasExternalDefault&&!skipRawMetadata&&!entry.metadata.isDirectory&&
             com.infinifolder.viewer.RawMediaConfigStore.mightHave(entry)){
             val generation=++browserNavigationGeneration
@@ -5645,7 +5646,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             return
         }
-        val termuxRule = if (!externalOnly && !hasExternalDefault && !entry.metadata.isDirectory) TermuxAssociations(this).find(entry.metadata.name) else null
+        val termuxRule = if (!externalOnly && !hasExternalDefault && !preferInternal && !entry.metadata.isDirectory) TermuxAssociations(this).find(entry.metadata.name) else null
         if (termuxRule != null && TermuxEditorAvailability.state(this, termuxRule.command) == TermuxEditorAvailability.State.AVAILABLE) {
             startActivity(Intent(this, TermuxEditActivity::class.java).setData(entry.uri))
             return
@@ -5680,7 +5681,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             ArchiveFormats.isArchive(entry.metadata.name, effectiveMime) ||
             (cachedMagic != null && (cachedMagic.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(entry.metadata.name, cachedMagic.mimeType)))
         )
-        val specificViewer=if(useBuiltInViewersAndPlayers)com.infinifolder.viewer.ViewerComponents.resolve(
+        val specificViewer=if(useBuiltInViewersAndPlayers || preferInternal)com.infinifolder.viewer.ViewerComponents.resolve(
             entry.copy(metadata=entry.metadata.copy(mimeType=effectiveMime)))?.describe()?.attributes?.get("viewerKind")
             ?.let {it!="hex"}==true else false
         if (isArchiveOrDisc && !specificViewer && !isPkg && !externalOnly && !hasExternalDefault) {
@@ -5688,7 +5689,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
             return
         }
-        if (useBuiltInViewersAndPlayers && !externalOnly && !hasExternalDefault) {
+        if ((useBuiltInViewersAndPlayers || preferInternal) && !externalOnly && !hasExternalDefault) {
             val mediaType = com.infinifolder.viewer.MediaTypeDetector.detect(entry.metadata.name, effectiveMime)
             if (com.infinifolder.viewer.ViewerComponents.canView(entry) || (mediaType != com.infinifolder.viewer.MediaType.UNSUPPORTED && mediaType != com.infinifolder.viewer.MediaType.ARCHIVE_OR_CONTAINER)) {
                 if (launchBuiltInViewer(entry.copy(metadata = entry.metadata.copy(mimeType = effectiveMime)), mediaType)) {
@@ -5705,6 +5706,11 @@ class MainActivity : Activity(), DebugDumpObserver {
             ?: cachedMagic?.mimeType?.takeIf { it.isNotEmpty() }
             ?: entry.metadata.mimeType
         if (provider.refForUri(entry.uri) != null) {
+            if (forceExternalChooser && !entry.metadata.isDirectory) {
+                startActivity(com.infinifolder.viewer.ExternalAppChooser.forResource(this,
+                    entry.copy(metadata = entry.metadata.copy(mimeType = effectiveMime)), current))
+                return
+            }
             startActivity(Intent(this, com.infinifolder.viewer.ExternalEditActivity::class.java).setData(entry.uri)
                 .putExtra(com.infinifolder.viewer.ExternalAppChooser.FORCE_CHOOSER, forceExternalChooser))
         } else launchExternalViewIntent(entry.uri, externalMime, entry.metadata.name, forceExternalChooser)
@@ -12709,8 +12715,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         val defaultStart = initialSelection ?: lastChosenDestination() ?: if (AppsUri.isAppsUri(start)) {
             localProvider.rootUri.takeIf { localProvider.hasAccess() }
         } else null
-        showFolderPicker(title, defaultStart, blockedUri = start, forMove = move, transferSources = entries) { destination, _ ->
-            if (destination != start) {
+        showFolderPicker(title, defaultStart, blockedUri = if (move) start else null, forMove = move, transferSources = entries) { destination, _ ->
+            if (!move || destination != start) {
                 if (entries.size == 1) {
                     startTransfer(entries[0], move, destination, partialRecovery)
                 } else {
@@ -12801,8 +12807,9 @@ class MainActivity : Activity(), DebugDumpObserver {
             val appMoveNote = if (move && entries.any { AppsUri.isAppUri(it.uri) }) {
                 "\n\nMoving an installed app exports it and then asks Android to uninstall it."
             } else ""
+            val copyNameNote = if (!move) "\n\nExisting files are kept. Copies receive unused names, including when copying into the same folder." else ""
             dialogBuilder().setTitle("$action $itemDescription?")
-                .setMessage("$action $itemDescription to:\n$destinationName$appMoveNote")
+                .setMessage("$action $itemDescription to:\n$destinationName$appMoveNote$copyNameNote")
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton(action) { _, _ ->
                     startBatchTransfer(

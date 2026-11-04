@@ -1,6 +1,6 @@
 # External editing and source conflict checks
 
-> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
+> [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
 Status reviewed 2026-11-01. The user confirms real-editor handoff/return, source
 conflict detection with the edited copy preserved and available to save elsewhere,
@@ -49,8 +49,10 @@ workspace changes. ADB listed no connected device, so UI behavior is unverified.
 ### InfiniFolder-only external defaults
 
 File menus now expose **Open externally** (use saved local preferences) and
-**Open with…** (always show the picker). The picker shows other installed apps
-that can handle the file; InfiniFolder and its aliases are excluded by package.
+**Open with…** (always show the picker). For supported files, **Open internally** is the first picker option. It launches
+an explicit registered viewer on the original resource; it does not invoke Android's
+Open-with dispatcher or create an external working copy. External app results still
+exclude InfiniFolder and its aliases by package, preventing recursive dispatch.
 It uses themed Android controls so it can include **Remember in InfiniFolder**
 with **This file only** and **All files of this type** scopes. Leaving the box
 unchecked opens once without changing a saved default. Android's own associations
@@ -65,8 +67,10 @@ type share the type-wide default.
 
 **Open with…** can replace either scope. Saving a new type-wide choice also clears
 the current file's exception, so it applies to the file being opened; exceptions
-for other files remain. Saved open preferences also take priority over built-in
-viewers and Termux fallback on normal file opens. Existing dedicated theme imports,
+for other files remain. Supported files use internal viewing by default when internal viewing is enabled.
+An explicit saved external choice takes priority. Internal viewing can also be saved
+for this file or MIME type, restoring that route even if the global internal-viewer
+switch is off. Saved internal choices take priority over Termux fallback. Existing dedicated theme imports,
 torrent handling and container-shortcut navigation retain their own routes.
 
 **Settings → External apps and default editor…** selects/clears the default editor
@@ -79,8 +83,10 @@ through to compatible alternatives or the picker. Empty/error results are shown
 honestly and do not record a successful selection.
 
 The shared picker preserves the target URI, MIME, read/write flags and ClipData,
-launches the chosen component in its own task, and saves a remembered selection
-only after Android accepts the launch. This does not prove the receiving app
+launches external receivers in their own task, and saves a remembered selection
+after Android accepts the handoff. The file chooser runs before staging; an external
+selection starts the existing guarded working-copy path, then launches the selected
+receiver without displaying a second chooser. This does not prove the receiving app
 successfully renders or edits the file. Existing working-copy and content-check
 behavior still applies. Editor selection in Settings only saves a preference;
 it does not launch a fabricated document.
@@ -270,3 +276,11 @@ save path, and reopening unfinished work after restarting the app. Remaining dev
 checks include unchanged edits, timestamp-only changes, source changes during
 staging, overwrite choices, other providers, and the compact dialog in light and
 dark themes.
+
+### Open-with and same-folder follow-up — 2026-11-04
+
+The internal option/default repair and the same-directory copy picker change built
+in the main and combined standalone hosts. No new automated suites or device UI
+checks were run for this follow-up. Check internal-first ordering, saved internal
+and external file/type rules, Open externally, Cancel without staging, remote/archive
+handoff, rotation and reopening before treating these interactions as accepted.

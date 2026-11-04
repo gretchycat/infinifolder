@@ -1,218 +1,93 @@
 # Roadmap
 
-Runtime handler discovery: [interfaces, dependency audit, processing chains and verification](runtime-capabilities.md). All seven libraries and viewer modules publish their own capability providers; linked library dependencies remain explicit.
+Updated 2026-11-04. [Project status](project-status.md) records what is implemented
+and accepted. [Feature to-do](feature-todo.md) is the actionable backlog; this page
+explains direction and constraints rather than repeating completed checklists.
 
-> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
+## Library and stream composition
 
-Updated 2026-11-04. See [current status](project-status.md) for confirmed behavior and [detailed tasks](feature-todo.md) for acceptance work.
+Repository extraction and runtime discovery are implemented. Each library links
+its dependencies and reports its handlers through Stream; consumers call the
+library APIs directly. The current registry is for installed components, not a
+downloaded code loader. See [runtime discovery](runtime-capabilities.md).
 
-## Runtime discovery implemented — 2026-11-04
+Continue exposing negotiating stream adapters around existing implementations,
+including clearer positional/local-file requirements. Reuse Stream's processor
+planner; do not implement another pipeline engine or duplicate decoders. Multi-port
+ambiguity still needs explicit bindings. Desktop output/native packaging and iOS
+backends remain separate work from JVM portability. Release licensing and native
+source-build review are still required.
 
-Handler registries, runtime dependency reports, direct typed library consumers and
-self-registering viewer components are implemented. All library builds and the
-1,071-case regression gate pass. Continue device acceptance and progressively
-expose negotiating stream adapters for legacy backends; their existing typed
-services and parser limits remain supported. See [audit and remaining limits](runtime-capabilities.md).
+## Reliability before expansion
 
-## Current source synchronization
+Prioritize the outstanding device matrix, SFTP small-file performance and listing
+recovery, metadata/source retention, cache/lifetime consistency, and interrupted
+container publication. Extend ordinary-operation durability and resumable controls
+without weakening collisions, source checks or undo. Live VM copies are best effort,
+not coherent snapshots. Details and evidence belong in the feature guides linked
+from the [backlog](feature-todo.md).
 
-All library/viewer ownership and remaining device checks are consolidated in the
-[2026-11-04 component record](component-status-2026-11-04.md). IFF cycling and the
-earlier animation playback follow-up are confirmed. Accept the newer recovered
-FLC, interactive MNG, lifecycle and thumbnail-cache repairs next; then check
-binary/sidecar routing, signature-selected archive listing and the outstanding
-Cast/navigation/scroll changes. Detailed [animation limits](image-animation.md)
-remain explicit. No fresh automated-suite totals are claimed by this update.
+## Large text and CSV editing
 
-## Completed: recorded storage failure investigation
+Windowed reading exists; complete-file editing remains limited to 4 MiB text and
+8 MiB CSV/TSV. A future bounded edit model belongs in Scribe and must support edits
+across Unicode/record boundaries, sparse indexes and undo/redo without retaining
+the whole file. Publish complete results through revision-checked staged outputs;
+a loaded window must never overwrite the rest of the source.
 
-Reproduced all 30 historical failures and repaired the test backend contracts,
-obsolete expectations, LVM fixture and a real batch-transfer cancellation exception
-mismatch. The complete storage suite now passes 354 cases with no skips; the full APK/library
-gate passes all 942 cases. Historical
-baselines remain intact. See [evidence and remaining device/provider acceptance](storage-failure-investigation.md).
+Accept beginning/middle/end edits, changed encoded lengths, quoted CSV newlines,
+scroll-away/back, undo/redo, save/reopen, unchanged regions, cancellation, low space
+and conflicts on disposable fixture 90/91 copies and supported remote/container
+sources. Positional reads do not imply safe in-place mutation.
 
-Pinned containers now survive app restarts; handset restart acceptance is pending.
-ANSI music playback and its softer square/sine timbre are user-confirmed (2026-11-03).
+## Structured text formatting
 
-## Completed: InfiniStream library migration
+JSON/XML/YAML/TOML reparsers are separate discoverable modules. Reparse is a
+view-only, debug-only control before wrapping; editing restores original source.
+Continue bounded preloading/indexing and global visual-row navigation without
+weakening complete-file save guards. See [text formats](text-and-document-formats.md).
 
-Checkpoint 31 completed extraction into seven source repositories, common
-source/metadata contracts, real host consumers, transfer/save/recovery routing
-and standalone builds. See the [completion audit](library-migration-completion.md)
-for retained compatibility boundaries and the last full migration gate: 917 cases,
-887 passed and the same 30 pre-existing failures. Those counts describe that
-checkpoint, not a newly run suite. Further platform/format work is separate.
+## Paged documents and Office formats
 
-Audio output and analysis now share library-decoded PCM sources, with bounded startup and independent frame blocks for seek-capable decoders. Playback prefers portable MPEG for validated content, retaining Android fallback. Portable FLAC now positions exact frames while retaining 24/32-bit precision. Audio uses demonstrated positional provider handles directly, with explicit staging for unsupported/sequential, CUE, companion-file and extraction-backed archive inputs. Unknown-length preparation and other non-seekable decoder prefixes remain. Local MP3 seeking and gapless are user-confirmed; high-resolution FLAC, live remote/container and visualizer acceptance remain. The full image viewer now composes Canvas common resources and output frame metadata while retaining its native decode/sampling paths.
+The read-only MOBI/KF8, FB2, Word, spreadsheet, presentation, OpenDocument and RTF
+reading pass is implemented and broadly owner-confirmed. Extend real-document
+coverage, layout fidelity and portable backends. Faithful pagination, charts,
+equations, formula calculation, editing, encryption and DRM are not implied.
+EPUB 3 NAV labels and lazy package serving remain follow-up work.
 
-The [image inspector](image-inspector.md) also uses a Canvas common-source EXIF
-processor with the existing Android backend. Host labels/formatting remain;
-source ownership, cancellation and legal short reads are covered at the boundary.
-Canvas also owns [bitmap edits and PNG encoding](image-processing.md) through
-registered processors. Host gestures, preview controls and save policy remain.
-Portable EXIF/image processing and streamed PNG publication remain future work.
+Full PostScript/EPS and LaTeX rendering are future Scribe backends; existing limited
+raster previews remain. Reuse maintained libraries with bounded execution,
+explicit resources/fonts and honest format failures. See [document readers](document-and-ebook-readers.md).
 
-Image-edit viewport follow-up: the host geometry correction for the blank
-surface after edits and initial off-screen crop handles is user-confirmed
-working (2026-10-31). See [image processing](image-processing.md#viewport-correction-after-checkpoint-18).
+## Media and animations
 
-Current progress and known pre-existing failures belong in [migration checkpoints](infinistream-migration.md). The remaining product/safety work below continues alongside this architecture work; no language port is included.
+Complete device acceptance for recovered FLC headers, FLC MIME aliases, interactive
+MNG, native animation timelines and lifecycle changes. Keep unsupported animation
+variants explicit; see [animation limits](image-animation.md).
 
-PDF now uses Scribe's optional Android backend with common document/frame metadata
-and explicit staged-file input. The host retains navigation, zoom and cache leases;
-page work and cleanup are serialized. The owner confirms the earlier PDF report
-was corrupt input, and the updated viewer still needs handset acceptance.
+Continuous Cast audio is implemented as normalized 48 kHz stereo 16-bit PCM WAVE,
+with a 4 GiB RIFF limit and separate-track fallback. Receiver compatibility,
+transitions/seeks/repeat and remote/archive failure behavior need real-receiver
+acceptance. Broader transport/codec work must remain in the linked libraries.
+ANSI music's softer waveform is already confirmed; additional dialects, malformed
+input and synchronized-art presentation remain separate work.
 
-EPUB now composes Vault ZIP resource expansion and Scribe's portable structured
-book processor over related common resources. The host retains full explicit
-staging, cache policy, WebView, themes and font/navigation controls. EPUB 2/3,
-fallback and invalid fixtures cover the migrated boundaries; EPUB viewing is
-user-confirmed after the checkpoint 16 handoff. Broader interruption and live
-remote/provider acceptance remain. EPUB 3 NAV labels and on-demand package resource
-serving remain follow-up. A first reflowed Office/ebook reading pass is implemented;
-see [document readers](document-and-ebook-readers.md). PostScript/LaTeX remain planned.
+## Cloud storage through rclone
 
-Video now uses the requested libVLC Android backend behind libinfinivideo's
-common playback controls and typed input/output metadata. The host retains
-controls, PiP/playlist policy and source leases. Common-source range streaming
-now avoids video-file staging; stored ZIP/filesystem slices preserve native
-random access, while compressed streams can replay prefixes. Accept
-[video playback](video-formats.md#handset-checks), shortcut routing and streaming
-startup/seeking, then extend container access and portable backends incrementally.
+Evaluate an optional rclone-backed storage handler with explicit packaging,
+authentication, credential protection, capabilities, random access, mutation,
+progress/cancellation and lifecycle rules. Existing working SFTP/FTP/SMB/WebDAV
+backends need not be replaced. NFS/cloud storage is not implemented simply because
+an icon or URI rule exists.
 
-RealMedia `.rm`/`.rmvb` now route to Video. Sound rejects unsupported input
-without the old decoder-generated test chords. Real chiptune emulation and
-additional portable WMA/telephony/advanced-audio codecs remain future work;
-registered Android codecs are retained. Missing soundbank samples fail explicitly.
+## Android integration and deferred features
 
-## Next: finish safety-path acceptance
+A shared floating-browser/widget presentation must respect Android widget limits.
+Floating browsing and launcher shortcuts exist; a general interactive widget does
+not. Rule-based Downloads organization needs dry-run/conflicts and explicit trigger
+policies. Most-used sorting needs stable identities and usage/privacy rules.
 
-- Real-editor handoff/return, source conflict handling, preserved edits/save-as and unfinished-session recovery after restart are user-confirmed (2026-11-01). Unchanged opens, timestamp-only updates, staging-time source changes, provider coverage and theme presentation remain.
-- Core cache acceptance is user-confirmed (2026-11-01): LRU eviction, active-file protection, capacity choices and saved settings across restart. Still check six-hour expiry, incomplete-staging cleanup, unknown-size streams, expanded EPUB accounting, simultaneous active mounts/viewers and themed dialogs.
-- Confirm the latest remote breadcrumb repair; retain selected-set/backend gesture regressions. Image-viewer Back is user-confirmed working.
-- Validate transfer/verification feedback and compressed-container low-space/interruption behavior.
-
-## Then: finish architectural consistency
-
-Complete mounted mutation capabilities, cache invalidation, ownership/cancellation and common action dispatch. Improve seekable viewer integration and metadata preservation. Extend durable operation recovery, pause/resume/retry and collision workflows. Keep unsupported operations explicit rather than claiming every backend has identical physical capabilities.
-
-## Format and performance follow-up
-
-Broaden format-specific byte/metadata/edge checks, multipart ZIP/7z, advanced LVM and partition validation. Expand NTFS/HFS/UFS subsets and FAT recovery only with safety evidence. Revisit non-ext enumeration, large view construction and remaining FAT/backend performance discrepancies after measurements.
-
-## Requested future features
-
-The [Android content integration and translation proposal](infinifolder_android_content_integration.md)
-is a future design reference. It does not imply general virtual-document export
-or universal format conversion is implemented.
-
-Most-used sorting; torrent device acceptance and seekable piece reads; Downloads organization rules; handset acceptance for floating browser and home-screen shortcuts; later widget. NFS/cloud providers, broader search/recents/trash and portable metadata remain future scope. WebDAV is user-confirmed working.
-
-### Continuous Cast audio
-
-Cast playlists are now exposed as a virtual PCM WAVE stream built from
-libinfinisound-decoded tracks, normalized to 48 kHz stereo signed 16-bit PCM.
-HTTP range reads pull decoded blocks from each track source, so known-length
-sources need not be fully rendered before playback. The host maps receiver
-positions and seeks back to playlist rows. Manual next/previous and playlist
-edits rebuild the stream. Cast-only decode failures skip the affected track for
-the current session while retaining its row.
-
-The initial transport is RIFF WAVE, limited to 4 GiB of PCM. Larger playlists
-and receivers that reject the continuous WAVE fall back to the separate-track
-queue, which can still have transition gaps. Unknown-length and file-oriented
-renderers can require full preparation and delay startup. Handset acceptance is
-still needed for gapless transitions, seeks, pause/resume, repeat behavior,
-remote/archive inputs and receiver-specific WAVE support. RF64 or another
-long-stream transport remains future work.
-
-### Paged documents and Office formats
-
-A first read-only reading pass is implemented in Scribe for MOBI/KF8/AZW3/PRC,
-FB2, DOC/DOCX, XLS/XLSX, PPT/PPTX, OpenDocument and RTF, including the supported
-macro/template containers. The owner accepted readable content without exact page
-layout. Word/slides reuse the reflow reader; worksheets reuse the CSV grid with
-sheet selection and saved formula values. App and standalone builds pass;
-the user confirms document support working on the handset (2026-11-03).
-Broader format/edge-case checks remain; see [formats, limits, ownership and
-remaining checks](document-and-ebook-readers.md).
-
-Next, validate representative real documents on Android, including Unicode,
-embedded images, sheet coordinates, multiple sheets, formulas, read-only guards,
-invalid/encrypted files and remote/provider input. This first pass does not claim
-faithful pagination/slide positioning, charts, equations, embedded objects, editing,
-formula calculation, DRM/KFX or encrypted Office support. Broader conformance and
-cross-platform backends remain separate work.
-
-Full PostScript/EPS rendering and LaTeX typesetting remain planned behind Scribe
-interfaces. Existing Android PDF rendering and limited raster previews remain.
-Source-buildable backends must preserve bounded execution, explicit resource inputs,
-font handling and file-access rules. PDF/PostScript/EPS/LaTeX fixtures in
-`filesystem-test-images/documents/` retain their existing scope.
-
-### ANSI music playback
-
-Playback from the dedicated CP437 viewer is implemented and user-confirmed
-(2026-11-02). Sound's `AnsiMusic` parses the supported BBS/BASIC PLAY melodies
-and produces mono PCM; the viewer prepares a temporary WAVE and uses Android
-media playback with audio focus and lifecycle cleanup. Static art remains
-available independently. This does not claim general music-player routing or
-universal terminal/dialect support.
-
-The rounded square/sine waveform and short attack/release fades are implemented
-and user-confirmed sounding good (2026-11-03), preserving note timing, rests and
-peak level. Broader dialect, malformed-input and synchronized-artwork work remains
-separate.
-
-### Large text and CSV editing
-
-Add editing beyond the current complete-file limits (4 MiB for text, 8 MiB for
-CSV/TSV) using the existing random-access, chunked viewing foundation.
-
-- Keep the edit model, parsing and serialization in Scribe, with bounded memory
-  and undo/redo history. Handle edits across chunk boundaries, Unicode characters,
-  quoted/multiline CSV records and changes in encoded length. Refresh affected
-  row/byte positions and counts while preserving the visible position.
-- Save through the host and Store/Vault publication contracts: stream the complete
-  edited result to a staged destination, check the original revision and publish
-  only after success. Retain conflict handling, cancellation, low-space checks and
-  recovery; a loaded window must never overwrite the rest of a source.
-- Keep provider capabilities explicit, including remote and container sources.
-  Use staged replacement where supported; do not assume positional reads imply
-  safe in-place writes. Preserve existing encoding, delimiter and literal-cell
-  semantics unless a separate change is deliberately specified.
-- Accept on disposable copies of fixtures 90/91: edit near the beginning, middle
-  and end; insert/delete content across windows; scroll away and back; undo/redo;
-  save/reopen and check untouched content. Include quoted CSV newlines, Unicode,
-  source conflicts and interrupted saves.
-
-This is planned work. Large files remain read-only under the current guards
-until the chunked editing and safe publication paths are implemented and accepted.
-
-### Structured text formatting
-
-The text viewer now has an optional Reparse control backed by separate JSON,
-YAML, XML and TOML modules. It reconstructs cached source text on a worker before
-Android word wrapping; entering the editor restores the original source. Long
-paragraphs retain bounded rendering. Remaining work includes caching a full
-visual-row index for global scrolling through windowed documents and extending
-preloading beyond the existing 4 MiB limit. See
-[text/document formats](text-and-document-formats.md) for parser limits.
-
-### Cloud storage through rclone
-
-Investigate an optional rclone-backed provider to add cloud storage services through
-the existing storage, capabilities, transfer and virtual-root contracts. Evaluate
-Android packaging and lifecycle, authentication and credential storage, seekable
-access, supported mutations, progress/cancellation, and error handling before
-choosing an integration. SSH/SFTP, FTP, WebDAV and Samba have tested well; replacing
-those existing providers is not a priority.
-
-## Foundations already implemented
-
-Local/SAF/network providers, independent viewer libraries/host, MIME/icon/package registry, links, container mounts and supported writes, batching, recovery, transfers/progress/notifications, menus/selection/sorting, pins/drag targets, Virtual root links, disk usage, shared cache and external-edit workflow. These are no longer roadmap proposals; acceptance and limitations remain tracked separately.
-
-## Audio library portability
-
-Target Android, Linux, Windows, macOS and iOS through `libinfinisound`. Its byte-source/PCM contracts and portable JVM core now isolate MP3/AAC/FLAC/WAVE parsing and existing composite rendering from Android. Android decoding is a library backend, and the player consumes decoded PCM. Follow up with desktop output/native adapters, native iOS/macOS contracts and packaging, and incremental MIDI/tracker/VGM rendering. The current JVM core does not provide iOS binaries. See [audio processing integration](audio-processing-library.md).
+[Android content integration](infinifolder_android_content_integration.md) remains
+a design proposal for virtual documents and translation. Runtime handler discovery
+now supplies part of its foundation; universal export/conversion is not implemented.
+Future work must link the real libraries and reuse their streams and typed outputs.

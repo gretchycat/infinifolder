@@ -1,8 +1,8 @@
 # Architecture
 
-> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
+> [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
-## Target library graph
+## Library graph
 
 ```text
 InfiniFolder / viewer host (composition, Android UI)
@@ -28,10 +28,31 @@ Ordinary sources do not pass through Vault. Stream contracts describe optional p
   library's bounded range transport, with native non-extracting Vault views where
   available. The original Android platform adapter remains for compatibility. See [video boundaries/checks](video-formats.md).
 - `libinfinisound` (Git submodule and Gradle composite build): external `audio-api`, `audio-core` and Android `audio-processing` libraries for audio parsing, codec adapters, metadata and analysis, with playback/output owned by the audio viewer. See [audio library boundaries](audio-processing-library.md).
-- `:viewer-image`, `:viewer-text`, `:viewer-markdown`, `:viewer-html`, `:viewer-pdf`, `:viewer-csv`, `:viewer-epub`, `:viewer-audio`, `:viewer-video`: independent Android libraries containing format-specific viewers and applicable editors.
+- `:viewer-image`, `:viewer-text`, `:viewer-markdown`, `:viewer-html`, `:viewer-pdf`, `:viewer-csv`, `:viewer-epub`, `:viewer-font`, `:viewer-hex`, `:viewer-audio`, `:viewer-video`: independent Android libraries containing format-specific viewers and applicable editors.
 - `:viewer-host`: standalone application including all viewers or one selected with `-Pviewer=<kind>`. It does not depend on the browser application.
 
-Dependency direction is `app/host → viewer modules → viewer-common → storage-engine`. Viewer sources do not reference MainActivity. `StorageRuntime` owns the provider graph and pools using application context. Browser destruction leaves active viewer connections available. This runtime is process-local; operation queues are not process-death durable.
+Host storage composition follows `app/host → viewer modules → viewer-common → storage-engine`. Content viewers and extractors also link and invoke their appropriate content libraries directly; they never route decoding through the browser. Viewer sources do not reference MainActivity. `StorageRuntime` owns the provider graph and pools using application context. Browser destruction leaves active viewer connections available. This runtime is process-local; operation queues are not process-death durable.
+
+## Runtime handler discovery
+
+Each library owns a registry of handlers. Handlers describe MIME/extension/scheme
+associations, magic, operations, metadata, availability and limitations. Stream's
+`RuntimeCapabilities` queries preserve overlapping handlers and support bounded
+resource probes. Providers register with ServiceLoader; adding a handler requires
+its implementation and registration rather than a browser format switch.
+
+Viewers publish `ViewerComponent` services and derive format facts from their
+linked content libraries. Icon policy remains in the host; actual image/audio/book
+extraction uses typed library services. Build-time Android registration reads the
+linked catalog, with compatibility inventory supplements. Dependencies are declared
+in Gradle and packaged; class names alone do not establish availability.
+
+Processing uses common sources/sinks, positional access where demonstrated and
+explicit ownership/backpressure. Legacy file/Android adapters remain supported;
+not every decoder is a general multi-input stream processor. See the
+[schemas, dependency audit, registration and limits](runtime-capabilities.md).
+Scribe's optional Office/MOBI/RTF, font/PDF and reparsing modules register their own
+services when linked; absent dependencies do not advertise executable support.
 
 ## Resource and capability contracts
 
@@ -46,7 +67,7 @@ same required handle capabilities. Sources requiring random writes prompt before
 unsupported destinations use full-file staging; background resume never silently
 opts into that fallback. See [contract and remaining tasks](storage-api-consistency.md).
 
-SMB, SFTP, and FTP connections use application-owned pools and existing credential stores. Persisted connection definitions live behind `ConnectionPreferences`; secrets remain separate from non-secret endpoint definitions. NFS and cloud catalog entries are placeholders. WebDAV uses the HTTP provider described in [WebDAV support](webdav-support.md); method support still varies by server.
+SMB, SFTP, and FTP connections use application-owned pools and existing credential stores. Persisted connection definitions live behind `ConnectionPreferences`; secrets remain separate from non-secret endpoint definitions. NFS/cloud recognition and catalog labels are not installed providers; runtime discovery returns only actual provider factories. WebDAV uses the HTTP provider described in [WebDAV support](webdav-support.md); method support still varies by server.
 
 `StorageActionPolicy` centralizes source action availability and contextual transfer
 eligibility for menus, picker, paste, drops and operation preflight. Container moves
@@ -83,13 +104,26 @@ The current sampled image editor exports a new PNG. External browser opens use a
 
 `LinkResolver` gives native links and application shortcuts common cycle/depth protection while retaining link kind and target semantics. `.iflink` is the application JSON format. Legacy JSON `.lnk` is recognized; native Windows LNK decoding is unsupported. Backends resolve native link targets rather than the UI guessing paths.
 
-## Permissions and diagnostics
+## Data protection and diagnostics
+
+Recursive deletion preserves lexical link identity and does not follow local/SFTP
+symbolic links. Source roots and mounted backing images remain protected. Transfers
+reject incomplete listings, validate complete trees, preserve originals after failed
+required checks and report partial moves. Link preservation depends on the backend;
+unsupported safe operations fail rather than flattening identities silently.
+
+Revision verification is not a distributed lock. Backends without conditional writes
+retain a concurrent-writer race; stream rollback cannot guarantee remote durability.
+Recovery also requires the original provider/credentials. Nested writes stay disabled
+without coherent enclosing commits. These are explicit limits, not success guarantees.
+
+Minimum API and permission details follow.
 
 Minimum API is 26. SAF grants are user-selected and persist only returned flags. Optional shared-storage access follows Android's all-files/runtime permission flow; private data remains restricted. Local content URIs use a nonexported FileProvider and explicit URI grants. Standalone hosts receive the same sharing provider through the storage library.
 
 Diagnostics record a bounded private session log with credential redaction. A user-selected dump folder is stored as a ResourceRef. **Offload debug information** captures the current app window on demand and exports timestamped PNG, log, and JSON through ordinary provider operations. PixelCopy falls back to view drawing; metadata records the method. No ADB connection is necessary. Logs may contain resource names and screenshots show current app content.
 
-See [implementation progress and remaining limits](storage-safety-progress.md), [viewer builds](viewer-modules.md), and [original audit](code-consistency-audit.md).
+See [operation feedback and dump instructions](operation-feedback.md), [viewer builds](viewer-modules.md), and the [historical audit](code-consistency-audit.md).
 
 ## Container destinations
 

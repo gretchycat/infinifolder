@@ -1,6 +1,6 @@
 # Storage API consistency
 
-> [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
+> [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
 Current ownership: resource/provider and stream/block compatibility adapters are in libinfinistore; archives/image interpretation and mounts are in libinfinivault. The host composes both without a Store-to-Vault dependency. Legacy archive-package I/O names remain compatibility names and do not imply container parsing is required for ordinary files. All capability, publication, verification and recovery rules below remain enforced.
 

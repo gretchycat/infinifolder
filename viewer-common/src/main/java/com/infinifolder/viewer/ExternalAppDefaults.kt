@@ -11,6 +11,7 @@ import java.security.MessageDigest
 
 /** App-private launch preferences. Android's system associations are never changed. */
 class ExternalAppDefaults(context: Context) {
+    private val ownPackage = context.applicationContext.packageName
     data class Rule(val action: String, val scope: String, val key: String, val mime: String,
         val name: String, val component: ComponentName)
     private val prefs = context.applicationContext.getSharedPreferences("external_app_defaults", Context.MODE_PRIVATE)
@@ -50,8 +51,14 @@ class ExternalAppDefaults(context: Context) {
             saved.firstOrNull { it.scope == TYPE && it.key == normalized }?.component?.let(::listOf).orEmpty() +
             if (action == Intent.ACTION_EDIT) listOfNotNull(editor) else emptyList()).distinct()
     }
+    /** External choices bypass the built-in route; saved internal choices stay on it. */
     fun hasOpenPreference(ref: ResourceRef, mime: String?): Boolean =
-        candidates(Intent.ACTION_VIEW, sourceKey(ref), mime).isNotEmpty()
+        candidates(Intent.ACTION_VIEW, sourceKey(ref), mime).firstOrNull()?.let { it.packageName != ownPackage } == true
+    fun hasInternalOpenPreference(ref: ResourceRef, mime: String?): Boolean =
+        candidates(Intent.ACTION_VIEW, sourceKey(ref), mime).firstOrNull()?.let { component ->
+            component.packageName == ownPackage && ViewerComponents.registry.query(io.github.gretchycat.infinistream.Operations.VIEW)
+                .any { it.handler.service(ViewerComponent::class.java)?.activityClassName == component.className }
+        } == true
     var editor: ComponentName?
         get() = prefs.getString("editor", null)?.let(ComponentName::unflattenFromString)
         set(value) { prefs.edit().apply { if (value == null) remove("editor") else putString("editor", value.flattenToString()) }.apply() }
