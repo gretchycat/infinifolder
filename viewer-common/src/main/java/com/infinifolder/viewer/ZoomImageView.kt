@@ -24,6 +24,10 @@ class ZoomImageView @JvmOverloads constructor(
     private val drawMatrix = Matrix()
 
     private var resetPending = false
+    /** Opt-in for a geometry explorer whose correctly proportioned drawing surface changes size. */
+    var preserveZoomOnResize=false
+    private var lastLayoutWidth=0
+    private var lastLayoutHeight=0
     private var viewportLeft=0
     private var viewportTop=0
     private var viewportRight=0
@@ -32,7 +36,18 @@ class ZoomImageView @JvmOverloads constructor(
     private var cropBottomInset = 0
     private var scaleFactor = 1f
     private val minScale = 1f
-    private val maxScale = 5f
+    /** Maximum zoom relative to Fit. Explorers can opt into inspecting individual source pixels. */
+    var maximumZoom=5f
+        set(value){
+            require(value.isFinite()&&value>=minScale){"Maximum zoom must be finite and at least 1"}
+            field=value
+            if(scaleFactor>value){
+                val ratio=value/scaleFactor;scaleFactor=value
+                val area=viewport()
+                drawMatrix.postScale(ratio,ratio,area.centerX,area.centerY)
+                checkBounds();publishMatrix()
+            }
+        }
 
     private var rotationAngle = 0f
     private var isFitMode = true
@@ -78,7 +93,7 @@ class ZoomImageView @JvmOverloads constructor(
             if (isCropMode) return false
             val prevScale = scaleFactor
             scaleFactor *= detector.scaleFactor
-            scaleFactor = scaleFactor.coerceIn(minScale, maxScale)
+            scaleFactor = scaleFactor.coerceIn(minScale, maximumZoom)
 
             drawMatrix.postScale(
                 scaleFactor / prevScale,
@@ -98,8 +113,8 @@ class ZoomImageView @JvmOverloads constructor(
             if (scaleFactor > 1.2f) {
                 resetZoom()
             } else {
-                scaleFactor = 2.5f
-                drawMatrix.postScale(2.5f, 2.5f, e.x, e.y)
+                scaleFactor = minOf(2.5f,maximumZoom)
+                drawMatrix.postScale(scaleFactor,scaleFactor,e.x,e.y)
                 checkBounds()
                 publishMatrix()
             }
@@ -227,7 +242,10 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     /** Replace a render of the same scene, retaining its normalized location and magnification. */
-    fun setImageBitmapPreservingViewport(bitmap: Bitmap) {
+    fun setImageBitmapPreservingViewport(bitmap: Bitmap) = setImageBitmapPreservingViewport(bitmap,false)
+
+    /** Geometry exploration can change the scene's aspect ratio while retaining zoom and center. */
+    fun setImageBitmapPreservingViewport(bitmap: Bitmap, preserveAspectRatio: Boolean) {
         val oldWidth=drawable?.intrinsicWidth ?: 0
         val oldHeight=drawable?.intrinsicHeight ?: 0
         val previous=Matrix(drawMatrix)
@@ -240,8 +258,25 @@ class ZoomImageView @JvmOverloads constructor(
         }
         // New render pixels -> previous render pixels -> the unchanged screen viewport.
         // Keeping scaleFactor also keeps pinch/double-tap limits relative to the fitted scene.
-        drawMatrix.setScale(oldWidth.toFloat()/next.intrinsicWidth,oldHeight.toFloat()/next.intrinsicHeight)
-        drawMatrix.postConcat(previous)
+        if(preserveAspectRatio){
+            val area=viewport()
+            val inverse=Matrix()
+            if(!area.valid||!previous.invert(inverse)){resetZoom();return}
+            val anchor=floatArrayOf(area.centerX,area.centerY)
+            inverse.mapPoints(anchor)
+            anchor[0]=anchor[0]/oldWidth*next.intrinsicWidth
+            anchor[1]=anchor[1]/oldHeight*next.intrinsicHeight
+            val bounds=RectF(0f,0f,next.intrinsicWidth.toFloat(),next.intrinsicHeight.toFloat())
+            val rotated=Matrix().apply{postRotate(rotationAngle);mapRect(bounds)}
+            val placement=ImageViewportGeometry.placement(bounds.geometry(),area,isFitMode)?:run{resetZoom();return}
+            rotated.postScale(placement.scale*scaleFactor,placement.scale*scaleFactor)
+            rotated.mapPoints(anchor)
+            rotated.postTranslate(area.centerX-anchor[0],area.centerY-anchor[1])
+            drawMatrix.set(rotated)
+        }else {
+            drawMatrix.setScale(oldWidth.toFloat()/next.intrinsicWidth,oldHeight.toFloat()/next.intrinsicHeight)
+            drawMatrix.postConcat(previous)
+        }
         resetPending=false
         checkBounds()
         publishMatrix()
@@ -322,10 +357,27 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        val before=ViewportRect(viewportLeft.toFloat(),viewportTop.toFloat(),
+            (lastLayoutWidth-viewportRight).toFloat(),(lastLayoutHeight-viewportBottom).toFloat())
         super.onLayout(changed, left, top, right, bottom)
         if (changed || resetPending) {
-            resetZoom()
+            if(!preserveZoomOnResize||resetPending||!preserveResizedViewport(before))resetZoom()
         }
+        lastLayoutWidth=width;lastLayoutHeight=height
+    }
+
+    private fun preserveResizedViewport(before:ViewportRect):Boolean {
+        val after=viewport();val d=drawable?:return false
+        if(!before.valid||!after.valid)return false
+        val bounds=RectF(0f,0f,d.intrinsicWidth.toFloat(),d.intrinsicHeight.toFloat())
+        Matrix().apply{postRotate(rotationAngle);mapRect(bounds)}
+        val oldPlacement=ImageViewportGeometry.placement(bounds.geometry(),before,isFitMode)?:return false
+        val newPlacement=ImageViewportGeometry.placement(bounds.geometry(),after,isFitMode)?:return false
+        val ratio=newPlacement.scale/oldPlacement.scale
+        drawMatrix.postScale(ratio,ratio,before.centerX,before.centerY)
+        drawMatrix.postTranslate(after.centerX-before.centerX,after.centerY-before.centerY)
+        checkBounds();publishMatrix();recordViewport("resize")
+        return true
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

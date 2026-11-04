@@ -14,6 +14,7 @@ dependencies {
     implementation(project(":viewer-csv"))
     implementation(project(":viewer-epub"))
     implementation(project(":viewer-font"))
+    implementation(project(":viewer-hex"))
     implementation(project(":viewer-audio"))
     implementation(project(":viewer-video"))
     implementation("io.github.gretchycat.libinfiniscribe:scribe-android:0.1.0")

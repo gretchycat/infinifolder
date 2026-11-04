@@ -71,7 +71,7 @@ class FloatingContainerService : Service() {
     private val refreshArtwork=Runnable { if(windowView!=null) {iconCache.evictAll();render(currentEntries)} }
     private var registrySubscription:AutoCloseable?=null
     private val iconPreferencesListener=android.content.SharedPreferences.OnSharedPreferenceChangeListener {_,key ->
-        if(key in setOf("active_icon_theme","icon_theme_revision"))onMain {refreshArtwork.run()}
+        if(key in setOf("active_icon_theme","icon_theme_revision","raw_media_metadata_revision"))onMain {refreshArtwork.run()}
     }
     private val iconResolver by lazy { ResourceIconResolver(applicationContext).apply {
         onArtworkChanged={onMain {refreshArtwork.run()}}
@@ -486,7 +486,7 @@ class FloatingContainerService : Service() {
                         if (generation == loadGeneration) {
                             listingReady = true
                             currentListingComplete=!result.isLoading
-                            render(result.value)
+                            render(result.value,freshListing=true)
                         }
                     }.also {
                         com.infinifolder.ResourceIconSidecars.observe(result.value, uri,complete=!result.isLoading)
@@ -580,10 +580,10 @@ class FloatingContainerService : Service() {
         containerIcon.addView(view, android.widget.FrameLayout.LayoutParams(-1, -1))
     }
 
-    private fun render(entries: List<ResourceEntry>) {
+    private fun render(entries: List<ResourceEntry>,freshListing:Boolean=false) {
         if (launcherDrag != null) return // Keep the native drag source attached.
         currentEntries = entries
-        com.infinifolder.ResourceIconSidecars.observe(entries, current,complete=currentListingComplete)
+        com.infinifolder.ResourceIconSidecars.observe(entries, current,complete=currentListingComplete,fresh=freshListing)
         val iconGeneration = ++renderGeneration
         pendingIcons.clear()
         dragItems.clear()

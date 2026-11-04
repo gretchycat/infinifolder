@@ -740,6 +740,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
                 val entry = original.copy(metadata = original.metadata.copy(mimeType = mime))
                 val type = com.infinifolder.viewer.MediaTypeDetector.detect(name, mime)
+                val rawMedia=if(!entry.metadata.isDirectory)com.infinifolder.viewer.RawMediaConfigStore.load(applicationContext,entry)else null
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
                     when {
@@ -749,6 +750,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         name.endsWith(".wsz", true) || mime == "application/x-winamp-skin" -> importWinampSkin(uri, applyToAudio = true)
                         com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null || AppsUri.isAppUri(uri) -> open(entry, confirmCommands = true)
                         com.infinifolder.viewer.ExternalAppDefaults(this).hasOpenPreference(entry.ref, mime) -> open(entry)
+                        rawMedia!=null -> openConfiguredRawMedia(entry)
                         com.infinifolder.viewer.ViewerCatalog.activity(type) != null -> launchBuiltInViewer(entry, type)
                         (ArchiveFormats.isArchive(name, mime) && !name.endsWith(".bin", true)) || magic?.isArchiveOrDiscImage == true ->
                             navigate(ArchiveUri.toArchiveUri(uri), displayName = name)
@@ -5048,7 +5050,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         return frame
     }
     private fun cacheDirectoryIconListing(dirUri: Uri, dirRef: ResourceRef?, contents: List<ResourceEntry>,complete:Boolean=true): Uri? {
-        ResourceIconSidecars.observe(contents, dirUri,complete=complete)
+        ResourceIconSidecars.observe(contents, dirUri,complete=complete,fresh=true)
         val bestUri = DirectoryIconResolver.findBestIcon(contents)?.uri
         val value = bestUri?.toString() ?: ""
         dirRef?.let { directoryIconCache.put("${it.providerId}:${it.documentId}", value) }
@@ -5400,7 +5402,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun open(entry: ResourceEntry, externalOnly: Boolean = false, confirmCommands: Boolean = false,
-        forceExternalChooser: Boolean = false) {
+        forceExternalChooser: Boolean = false, skipRawMetadata: Boolean = false) {
         if (!entry.metadata.isDirectory && entry.metadata.name.endsWith(".incomplete", true) && !externalOnly) {
             resumeIncompleteDownload(entry.ref)
             return
@@ -5479,6 +5481,19 @@ class MainActivity : Activity(), DebugDumpObserver {
         val effectiveMime = com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType, cachedMagic?.mimeType)
         val hasExternalDefault = !entry.metadata.isDirectory &&
             com.infinifolder.viewer.ExternalAppDefaults(this).hasOpenPreference(entry.ref, effectiveMime)
+        if(!externalOnly&&!hasExternalDefault&&!skipRawMetadata&&!entry.metadata.isDirectory&&
+            com.infinifolder.viewer.RawMediaConfigStore.mightHave(entry)){
+            val generation=++browserNavigationGeneration
+            io.execute {
+                val raw=runCatching {com.infinifolder.viewer.RawMediaConfigStore.load(applicationContext,entry)}.getOrNull()
+                runOnUiThread {
+                    if(isFinishing||isDestroyed||generation!=browserNavigationGeneration)return@runOnUiThread
+                    if(raw!=null)openConfiguredRawMedia(entry)
+                    else open(entry,externalOnly,confirmCommands,forceExternalChooser,skipRawMetadata=true)
+                }
+            }
+            return
+        }
         val termuxRule = if (!externalOnly && !hasExternalDefault && !entry.metadata.isDirectory) TermuxAssociations(this).find(entry.metadata.name) else null
         if (termuxRule != null && TermuxEditorAvailability.state(this, termuxRule.command) == TermuxEditorAvailability.State.AVAILABLE) {
             startActivity(Intent(this, TermuxEditActivity::class.java).setData(entry.uri))
@@ -5513,6 +5528,12 @@ class MainActivity : Activity(), DebugDumpObserver {
             startActivity(Intent(this, com.infinifolder.viewer.ExternalEditActivity::class.java).setData(entry.uri)
                 .putExtra(com.infinifolder.viewer.ExternalAppChooser.FORCE_CHOOSER, forceExternalChooser))
         } else launchExternalViewIntent(entry.uri, externalMime, entry.metadata.name, forceExternalChooser)
+    }
+
+    private fun openConfiguredRawMedia(entry:ResourceEntry){
+        startActivity(Intent(this,com.infinifolder.viewer.HexViewerActivity::class.java).setData(entry.uri)
+            .putExtra("displayName",entry.metadata.name).putExtra("raw_metadata",true)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
     }
 
     /** Enter a blank torrent directory first, then parse local .torrent metadata off the UI thread. */
@@ -10849,6 +10870,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 else -> listOf(it)
             }
         } + (if (isFile && entry.metadata.canRead && entry.metadata.recoveryNote == null) listOf("Edit externally") else emptyList()) +
+            (if (!entry.metadata.isDirectory && !isApp && !isCategory && entry.metadata.canRead) listOf("Open in hex editor") else emptyList()) +
             (if (canShowDeleted) listOf("Show deleted files") else emptyList())
         val canCopyContents = !entry.metadata.isDirectory && !isApp && !isCategory &&
             (isTextEntry(entry, detectedMagic) || isImageEntry(entry, detectedMagic))
@@ -11019,6 +11041,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                 "Open with external app", "Open with…" -> open(entry, externalOnly = true, forceExternalChooser = true)
                 "Edit externally" -> startActivity(Intent(this, com.infinifolder.viewer.ExternalEditActivity::class.java)
                     .setAction(Intent.ACTION_EDIT).setData(entry.uri))
+                "Open in hex editor" -> startActivity(Intent(this, com.infinifolder.viewer.HexViewerActivity::class.java)
+                    .setData(entry.uri).putExtra("displayName", entry.metadata.name)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
                 "Open" -> if (entry.metadata.isDirectory) navigate(entry.uri, displayName = entry.metadata.name) else open(entry)
                 "Use as debug dump folder" -> {
                     com.infinifolder.storage.DebugDumpDestination.set(this, entry.ref)

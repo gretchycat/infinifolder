@@ -424,7 +424,8 @@ object ResourceIconSidecars {
     @Synchronized fun clearDirectories() {
         directoryArtwork.evictAll()
     }
-    @Synchronized fun observe(entries: List<ResourceEntry>, parent: Uri? = null, complete:Boolean=true) {
+    @Synchronized fun observe(entries: List<ResourceEntry>, parent: Uri? = null, complete:Boolean=true,fresh:Boolean=false) {
+        com.infinifolder.viewer.RawMediaConfigStore.observe(entries,complete,fresh)
         if (parent != null) {
             val artwork = DirectoryArtwork(
                 com.infinifolder.preview.DirectoryIconResolver.findBestIcon(entries),

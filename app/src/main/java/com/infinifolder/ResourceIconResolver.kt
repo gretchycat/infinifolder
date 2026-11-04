@@ -49,7 +49,7 @@ class ResourceIconResolver(context: Context) {
     @Volatile private var lastRevision:RevisionSnapshot?=null
     fun revision(): String {
         val themeRevision=theme.revision()
-        val key="${registry.revision}:$themeRevision:${icons.revision}"
+        val key="${registry.revision}:$themeRevision:${icons.revision}:${com.infinifolder.viewer.RawMediaConfigStore.savedRevision}"
         lastRevision=RevisionSnapshot(key,themeRevision)
         return key
     }
@@ -70,8 +70,8 @@ class ResourceIconResolver(context: Context) {
         } else ""
         val audioCover=if(AudioIconFormats.isAudio(MimeRegistry.effective(entry.metadata.name,entry.metadata.mimeType)))
             AudioArtworkResolver.coverRevision(entry) else ""
-        return "icons-v9:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
-            "${sidecar?.uri}:${sidecar?.metadata?.modifiedAtMillis}:${sidecar?.metadata?.sizeBytes}:$covers:$audioCover"
+        return "icons-v10:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
+            "${sidecar?.uri}:${sidecar?.metadata?.modifiedAtMillis}:${sidecar?.metadata?.sizeBytes}:$covers:$audioCover:${com.infinifolder.viewer.RawMediaConfigStore.revision(entry)}"
     }
     fun cached(entry: ResourceEntry, size: Int): Icon? {
         return rendered.get("${signature(entry)}:$size")?.takeIf { System.currentTimeMillis()<it.expires }?.icon
@@ -153,6 +153,22 @@ class ResourceIconResolver(context: Context) {
         if(AppsUri.isAppUri(entry.uri))return base.copy(bitmap=AppsUri.getPackageName(entry.uri)?.let { runtime.apps.getAppIconBitmap(it,size,useDiskCache=false) } ?: base.bitmap,source="provider-app")
         if(AppsUri.isCategoryUri(entry.uri))return base.copy(bitmap=null,fallback=runtime.apps.getCategoryIcon(AppsUri.getCategoryName(entry.uri).orEmpty()),source="provider-category")
         if(entry.metadata.isDirectory)return directory(entry,size,seen)
+        val rawMetadata=if(com.infinifolder.viewer.RawMediaConfigStore.mightHave(entry))
+            IconWork.bounded(lane="metadata:${entry.ref.providerId}") {
+                com.infinifolder.viewer.RawMediaConfigStore.load(appContext,entry,discover=!ResourceIconSidecars.hasObserved(entry))
+            } else null
+        rawMetadata?.let {raw->
+            if(raw.kind=="image"){
+                val image=IconWork.bounded(3000,lane="thumbnail:${entry.ref.providerId}") {
+                    com.infinifolder.viewer.RawMediaRendering.thumbnail(appContext,entry,raw,size)
+                }
+                return base.copy(bitmap=image ?: theme.resolveLogicalIcon("image-x-generic",size)
+                    ?: FileTypeIcons.bitmap(entry.metadata.copy(mimeType="image/x-infinifolder-raw"),size),
+                    source=if(image!=null)"raw-image-thumbnail" else "raw-image-fallback",mimeType="image/x-infinifolder-raw")
+            }
+            if(raw.kind=="audio")return base.copy(bitmap=theme.resolveLogicalIcon("audio-x-generic",size)
+                ?:FileTypeIcons.bitmap(entry.metadata.copy(mimeType="audio/pcm"),size),source="raw-audio-metadata",mimeType="audio/pcm")
+        }
         val id=identity(entry)
         val meta=entry.metadata.copy(mimeType=id.mimeType)
         val record=registry.mime(id.mimeType)

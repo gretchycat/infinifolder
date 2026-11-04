@@ -195,13 +195,18 @@ object MediaSourceAdapter {
     fun stage(context: Context, uri: Uri, fileName: String? = null): StagedSource =
         stageInternal(context, uri, fileName, null)
 
+    /** Cancellable staging uses the same storage/cache path as other viewers. */
+    fun stageCancellable(context: Context, uri: Uri, fileName: String? = null, cancelled: () -> Boolean): StagedSource =
+        stageInternal(context, uri, fileName, null, cancelled)
+
     /** Native decoders can require a complete local file while imposing their own byte limit. */
     fun stageBounded(context: Context, uri: Uri, maxBytes: Long, fileName: String? = null): StagedSource {
         require(maxBytes > 0)
         return stageInternal(context, uri, fileName, maxBytes)
     }
 
-    private fun stageInternal(context: Context, uri: Uri, fileName: String?, maxBytes: Long?): StagedSource {
+    private fun stageInternal(context: Context, uri: Uri, fileName: String?, maxBytes: Long?, cancelled: (() -> Boolean)? = null): StagedSource {
+        if (cancelled?.invoke() == true) throw java.io.InterruptedIOException("Viewer load cancelled")
         fun checkSize(length: Long?) {
             if (maxBytes != null && length != null && length > maxBytes)
                 throw IOException("This viewer supports files up to ${maxBytes / (1024 * 1024)} MiB")
@@ -219,15 +224,16 @@ object MediaSourceAdapter {
             ?.let { "viewer:$uri:${it.sizeBytes}:${it.modifiedAtMillis}" }
         val lease = cache.stage(fileName ?: metadata?.name ?: "media", metadata?.sizeBytes, key) {
             val input = openStream(context, uri)
-            if (maxBytes == null) input else object : java.io.FilterInputStream(input) {
+            if (maxBytes == null && cancelled == null) input else object : java.io.FilterInputStream(input) {
                 private var total = 0L
                 override fun read(): Int {
                     val one = ByteArray(1)
                     return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 255
                 }
                 override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
-                    if (Thread.currentThread().isInterrupted) throw java.io.InterruptedIOException("Viewer load cancelled")
-                    val count = super.read(bytes, offset, minOf(length.toLong(), maxBytes - total + 1).toInt())
+                    if (Thread.currentThread().isInterrupted || cancelled?.invoke() == true) throw java.io.InterruptedIOException("Viewer load cancelled")
+                    val requested = if (maxBytes == null) length else minOf(length.toLong(), maxBytes - total + 1).toInt()
+                    val count = super.read(bytes, offset, requested)
                     if (count > 0) { total += count; checkSize(total) }
                     return count
                 }
