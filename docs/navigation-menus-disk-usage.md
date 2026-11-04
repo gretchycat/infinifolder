@@ -6,9 +6,9 @@ Updated 2026-10-24. See [current status](project-status.md) for acceptance disti
 
 ## Menus and navigation
 
-Hamburger and overflow open the same nested File/Edit/View/Select/Settings menu, with right-aligned submenu triangles. The Tree/Files toolbar label switches panes. File → New contains folder, link, external storage connection links and supported document/archive templates. Link creation offers a protocol dropdown for custom URI, SFTP/SSH, SMB/Samba, WebDAV and FTP/FTPS, with saved-connection selection or the matching setup form. The same choices are available when adding container links at Virtual root. Unsupported archive writers are disabled explicitly. View exposes hidden files, internal viewing, sorting and themes; Select offers mode and wildcard/regex matching in the current folder. Most-used sorting remains future work.
+Hamburger and overflow open the same nested File/Edit/View/Select/Settings menu, with right-aligned submenu triangles. The Tree/Files toolbar label switches panes. File → New contains folder, link, external storage connection links and supported document/archive templates. Link creation offers a protocol dropdown for custom URI, SFTP/SSH, SMB/Samba, WebDAV and FTP/FTPS, with saved-connection selection or the matching setup form. The same choices are available when adding container links at Virtual root. Unsupported archive writers are disabled explicitly. View exposes hidden files, sorting and themes; Settings manages default viewers/apps; Select offers mode and wildcard/regex matching in the current folder. Most-used sorting remains future work.
 
-Temporary half-size container pins sit between toolbar and breadcrumbs; the row disappears when empty. Pin to top/Unpin are long-press actions. Pins, breadcrumbs, containers and visible tree nodes accept transfers and linger navigation. The navigation tree has no long-press actions and uses the common theme without a separate green tint.
+Persistent half-size container pins sit between toolbar and breadcrumbs; the row disappears when empty. Pin to top/Unpin are long-press actions. Pins, breadcrumbs, containers and visible tree nodes accept transfers and linger navigation. The navigation tree has no long-press actions and uses the common theme without a separate green tint.
 
 Hold countdown covers the icon; release after the hold opens the menu, movement begins drag. Selected sets drag together. Same-device drops move, cross/unknown-device drops copy. Source-self drops open the menu. Tree/file edges autoscroll and tree linger expands paths. Latest drops, autoscroll and pane switching are user-confirmed; broader backend/orientation checks remain.
 
@@ -40,7 +40,9 @@ receive unused names. Clipboard Paste uses the same confirmation/transfer path.
 Store already reserves collision names such as `name (2).ext`, preserves the extension,
 validates destination constraints and uses exclusive creation where supported;
 no second naming implementation was added to the UI. **Move to…** still blocks the
-current folder, and existing same-folder drag no-ops are unchanged.
+current folder. Dropping files into their current directory also requests a
+confirmed copy with unused names; dropping directly on the source icon still opens
+its context menu.
 
 The 2026-11-04 app/combined-host build passes. Same-folder selection, confirmation
 Cancel, repeated copies, selected sets and backend-specific name/publication cases

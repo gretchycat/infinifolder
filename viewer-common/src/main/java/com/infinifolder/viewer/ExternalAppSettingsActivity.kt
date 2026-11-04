@@ -37,7 +37,7 @@ class ExternalAppSettingsActivity : Activity() {
             text = value; setTextColor(theme.buttonText); backgroundTintList = android.content.res.ColorStateList.valueOf(theme.buttonBackground)
             setOnClickListener { click() }
         }) }
-        text("External apps", 22f)
+        text("Default viewers and apps", 22f)
         text("These defaults apply only inside InfiniFolder. Supported files use the built-in viewer unless you save another choice. Open with… lists the built-in viewer first and lets you change the default. File-specific choices take priority over file-type choices.")
         text("Default editor: ${defaults.editor?.let(::label) ?: "Ask each time"}", 16f)
         button("Choose default editor…") {

@@ -67,13 +67,13 @@ type share the type-wide default.
 
 **Open with…** can replace either scope. Saving a new type-wide choice also clears
 the current file's exception, so it applies to the file being opened; exceptions
-for other files remain. Supported files use internal viewing by default when internal viewing is enabled.
+for other files remain. Supported files use internal viewing by default.
 An explicit saved external choice takes priority. Internal viewing can also be saved
-for this file or MIME type, restoring that route even if the global internal-viewer
-switch is off. Saved internal choices take priority over Termux fallback. Existing dedicated theme imports,
+for this file or MIME type, restoring that route after an external association was
+saved. Saved internal choices take priority over Termux fallback. Dedicated theme imports,
 torrent handling and container-shortcut navigation retain their own routes.
 
-**Settings → External apps and default editor…** selects/clears the default editor
+**Settings → Default viewers, apps and editor…** selects/clears the default editor
 and lists saved rules with individual clear controls. **Edit externally** uses
 the file's edit rule, then its MIME edit rule, then the global editor. EDIT handlers
 are preferred; apps declaring VIEW support can also receive the writable working
@@ -284,3 +284,15 @@ in the main and combined standalone hosts. No new automated suites or device UI
 checks were run for this follow-up. Check internal-first ordering, saved internal
 and external file/type rules, Open externally, Cancel without staging, remote/archive
 handoff, rotation and reopening before treating these interactions as accepted.
+
+### Normal-tap and current-directory drag correction
+
+The initial repair changed the Copy to picker and Open-with entry but retained two
+older guards: same-parent drops returned immediately, and normal taps could still
+be disabled by the global Internal viewers switch. Current-directory drops now
+request confirmed copies through the existing collision-safe engine. Normal taps
+select supported internal viewers unless an explicit saved external association or
+Termux rule applies. Missing, disabled or incompatible saved external apps do not
+suppress internal viewing; their saved rules remain available if reinstalled.
+The legacy global switch is replaced by file/type choices in Settings; its saved value no longer disables internal viewing. Explicit Open
+externally/Open with actions remain available. Device acceptance remains pending.

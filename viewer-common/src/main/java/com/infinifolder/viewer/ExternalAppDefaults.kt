@@ -12,6 +12,7 @@ import java.security.MessageDigest
 /** App-private launch preferences. Android's system associations are never changed. */
 class ExternalAppDefaults(context: Context) {
     private val ownPackage = context.applicationContext.packageName
+    private val packages = context.applicationContext.packageManager
     data class Rule(val action: String, val scope: String, val key: String, val mime: String,
         val name: String, val component: ComponentName)
     private val prefs = context.applicationContext.getSharedPreferences("external_app_defaults", Context.MODE_PRIVATE)
@@ -53,12 +54,32 @@ class ExternalAppDefaults(context: Context) {
     }
     /** External choices bypass the built-in route; saved internal choices stay on it. */
     fun hasOpenPreference(ref: ResourceRef, mime: String?): Boolean =
-        candidates(Intent.ACTION_VIEW, sourceKey(ref), mime).firstOrNull()?.let { it.packageName != ownPackage } == true
+        openPreference(ref, mime)?.let { it.packageName != ownPackage } == true
     fun hasInternalOpenPreference(ref: ResourceRef, mime: String?): Boolean =
-        candidates(Intent.ACTION_VIEW, sourceKey(ref), mime).firstOrNull()?.let { component ->
-            component.packageName == ownPackage && ViewerComponents.registry.query(io.github.gretchycat.infinistream.Operations.VIEW)
-                .any { it.handler.service(ViewerComponent::class.java)?.activityClassName == component.className }
-        } == true
+        openPreference(ref, mime)?.packageName == ownPackage
+
+    /** A stale/incompatible saved app must not suppress an available built-in viewer. */
+    fun openPreference(ref: ResourceRef, mime: String?, name: String = "document"): ComponentName? {
+        val saved = candidates(Intent.ACTION_VIEW, sourceKey(ref), mime)
+        if (saved.isEmpty()) return null
+        val internal by lazy {
+            ViewerComponents.registry.query(io.github.gretchycat.infinistream.Operations.VIEW)
+                .mapNotNull { it.handler.service(ViewerComponent::class.java)?.activityClassName }.toSet()
+        }
+        val external by lazy {
+            val query = Intent(Intent.ACTION_VIEW).setDataAndType(
+                android.net.Uri.parse("content://$ownPackage.external-edit/choice/${android.net.Uri.encode(name)}"),
+                MimeRegistry.normalize(mime))
+            runCatching { packages.queryIntentActivities(query, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY) }
+                .getOrDefault(emptyList())
+                .filter { it.activityInfo.packageName != ownPackage && it.activityInfo.exported &&
+                    it.activityInfo.enabled && it.activityInfo.applicationInfo.enabled }
+                .map { ComponentName(it.activityInfo.packageName, it.activityInfo.name) }.toSet()
+        }
+        return saved.firstOrNull { component ->
+            if (component.packageName == ownPackage) component.className in internal else component in external
+        }
+    }
     var editor: ComponentName?
         get() = prefs.getString("editor", null)?.let(ComponentName::unflattenFromString)
         set(value) { prefs.edit().apply { if (value == null) remove("editor") else putString("editor", value.flattenToString()) }.apply() }

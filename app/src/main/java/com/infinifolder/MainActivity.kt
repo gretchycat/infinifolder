@@ -349,7 +349,6 @@ class MainActivity : Activity(), DebugDumpObserver {
     private var sortKey = "name"
     private var sortDescending = false
     private var showHidden = false
-    private var useBuiltInViewersAndPlayers = true
     private var lastAppliedThemeId: com.infinifolder.theme.AppThemeId? = null
     private var lastAppliedTextPrimary: Int = 0
     private val themeListener = object : com.infinifolder.theme.ThemeChangeListener {
@@ -553,7 +552,6 @@ class MainActivity : Activity(), DebugDumpObserver {
         sortKey = shared.getString("sort_key", if (sortByName) "name" else "modified") ?: "name"
         sortDescending = shared.getBoolean("sort_descending", !sortByName)
         showHidden = shared.getBoolean("show_hidden", false)
-        useBuiltInViewersAndPlayers = shared.getBoolean("use_builtin_viewers_and_players", true)
         com.infinifolder.theme.ThemeManager.init(applicationContext)
         val initialTheme = com.infinifolder.theme.ThemeManager.activeTheme
         lastAppliedThemeId = initialTheme.id
@@ -764,7 +762,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                         (name.endsWith(".torrent", true) || mime == "application/x-bittorrent") && ref.providerId != "torrent" -> openTorrentFile(entry)
                         name.endsWith(".wsz", true) || mime == "application/x-winamp-skin" -> importWinampSkin(uri, applyToAudio = true)
                         com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null || AppsUri.isAppUri(uri) -> open(entry, confirmCommands = true)
-                        com.infinifolder.viewer.ExternalAppDefaults(this).hasOpenPreference(entry.ref, mime) -> open(entry)
+                        com.infinifolder.viewer.ExternalAppDefaults(this).openPreference(entry.ref, mime, name)
+                            ?.let { it.packageName != packageName } == true -> open(entry)
                         hasRawMetadata -> openHexEditor(entry,loadMetadata=true)
                         com.infinifolder.viewer.ViewerComponents.canView(entry) || com.infinifolder.viewer.ViewerCatalog.activity(type) != null -> launchBuiltInViewer(entry, type)
                         ArchiveFormats.isArchive(name, mime) || magic?.isArchiveOrDiscImage == true ->
@@ -5496,6 +5495,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         val intent = (if(forceType)null else com.infinifolder.viewer.ViewerLaunch.intentForResource(this,entry,current,edit))
             ?: com.infinifolder.viewer.ViewerLaunch.intent(this, entry, mediaType, current,edit) ?: return false
         return try {
+            com.infinifolder.storage.DiagnosticLog.record("browser.open.internal",
+                "viewer=${intent.component?.className} mime=${intent.type}")
             startActivity(intent)
             true
         } catch (e: Exception) {
@@ -5631,8 +5632,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         val cachedMagic = ambiguousMagicCache.get(entry.uri.toString())
         val effectiveMime = com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType, cachedMagic?.mimeType)
         val appDefaults = com.infinifolder.viewer.ExternalAppDefaults(this)
-        val hasExternalDefault = !entry.metadata.isDirectory && appDefaults.hasOpenPreference(entry.ref, effectiveMime)
-        val preferInternal = !entry.metadata.isDirectory && appDefaults.hasInternalOpenPreference(entry.ref, effectiveMime)
+        val preferredOpen = if (entry.metadata.isDirectory || externalOnly) null else appDefaults.openPreference(entry.ref, effectiveMime, entry.metadata.name)
+        val hasExternalDefault = preferredOpen?.let { it.packageName != packageName } == true
+        val preferInternal = preferredOpen?.packageName == packageName
         if(!externalOnly&&!hasExternalDefault&&!skipRawMetadata&&!entry.metadata.isDirectory&&
             com.infinifolder.viewer.RawMediaConfigStore.mightHave(entry)){
             val generation=++browserNavigationGeneration
@@ -5681,15 +5683,15 @@ class MainActivity : Activity(), DebugDumpObserver {
             ArchiveFormats.isArchive(entry.metadata.name, effectiveMime) ||
             (cachedMagic != null && (cachedMagic.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(entry.metadata.name, cachedMagic.mimeType)))
         )
-        val specificViewer=if(useBuiltInViewersAndPlayers || preferInternal)com.infinifolder.viewer.ViewerComponents.resolve(
+        val specificViewer=com.infinifolder.viewer.ViewerComponents.resolve(
             entry.copy(metadata=entry.metadata.copy(mimeType=effectiveMime)))?.describe()?.attributes?.get("viewerKind")
-            ?.let {it!="hex"}==true else false
+            ?.let {it!="hex"}==true
         if (isArchiveOrDisc && !specificViewer && !isPkg && !externalOnly && !hasExternalDefault) {
             if(ArchiveUri.isArchiveUri(entry.uri))browseNestedArchive(entry)
             else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
             return
         }
-        if ((useBuiltInViewersAndPlayers || preferInternal) && !externalOnly && !hasExternalDefault) {
+        if (!externalOnly && !hasExternalDefault) {
             val mediaType = com.infinifolder.viewer.MediaTypeDetector.detect(entry.metadata.name, effectiveMime)
             if (com.infinifolder.viewer.ViewerComponents.canView(entry) || (mediaType != com.infinifolder.viewer.MediaType.UNSUPPORTED && mediaType != com.infinifolder.viewer.MediaType.ARCHIVE_OR_CONTAINER)) {
                 if (launchBuiltInViewer(entry.copy(metadata = entry.metadata.copy(mimeType = effectiveMime)), mediaType)) {
@@ -5706,6 +5708,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             ?: cachedMagic?.mimeType?.takeIf { it.isNotEmpty() }
             ?: entry.metadata.mimeType
         if (provider.refForUri(entry.uri) != null) {
+            com.infinifolder.storage.DiagnosticLog.record("browser.open.external",
+                "mime=$effectiveMime explicit=$externalOnly savedDefault=$hasExternalDefault chooser=$forceExternalChooser")
             if (forceExternalChooser && !entry.metadata.isDirectory) {
                 startActivity(com.infinifolder.viewer.ExternalAppChooser.forResource(this,
                     entry.copy(metadata = entry.metadata.copy(mimeType = effectiveMime)), current))
@@ -7186,13 +7190,11 @@ class MainActivity : Activity(), DebugDumpObserver {
                     (provider.parent(it.ref) as? ProviderResult.Success)?.value == destinationRef
                 }
                 if (alreadyHere) {
-                    com.infinifolder.storage.DiagnosticLog.record("browser.drag.no-op", "reason=already-in-destination items=${payload.entries.size}")
-                    runOnUiThread {
-                        if (!isFinishing && !isDestroyed) Toast.makeText(this, "Already in this folder", Toast.LENGTH_SHORT).show()
-                    }
-                    return@execute
+                    com.infinifolder.storage.DiagnosticLog.record("browser.drag.duplicate", "reason=already-in-destination items=${payload.entries.size}")
                 }
-                val move = payload.canMove && StorageActionPolicy.preferMoveForDrop(provider, payload.entries, destinationRef)
+                // Dropping into the source parent requests a duplicate, not a move.
+                // The shared confirmation and transfer engine choose unused names.
+                val move = !alreadyHere && payload.canMove && StorageActionPolicy.preferMoveForDrop(provider, payload.entries, destinationRef)
                 val assessment = StorageActionPolicy.destination(provider, destinationRef, payload.entries, move)
                 when (assessment) {
                     is ProviderResult.Success -> assessment.value.decision.requireAllowed()
@@ -8593,10 +8595,6 @@ class MainActivity : Activity(), DebugDumpObserver {
                     if (!homeMode) updateListingStatus()
                     renderCurrentContents(); refreshInternalSharedTree(); rebuildTreeRoots()
                 },
-                action("Internal viewers: ${if (useBuiltInViewersAndPlayers) "on" else "off"}") {
-                    useBuiltInViewersAndPlayers = !useBuiltInViewersAndPlayers
-                    shared.edit().putBoolean("use_builtin_viewers_and_players", useBuiltInViewersAndPlayers).apply()
-                },
                 submenu("Sort order", listOf("name" to "Name", "type" to "File type (MIME)", "size" to "Size", "modified" to "Modified").map { (key, label) ->
                     action((if (sortKey == key) "✓  " else "") + label) { setSortOrder(key, sortDescending) }
                 } + listOf(
@@ -8637,7 +8635,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 action("Browse icon themes…") { showIconThemeDialog() },
                 action("Import freedesktop.org icon theme…") { showImportThemeOptionsDialog() },
                 action("Termux file associations…") { TermuxAssociationSettings.show(this) },
-                action("External apps and default editor…") { startActivity(Intent(this, com.infinifolder.viewer.ExternalAppSettingsActivity::class.java)) },
+                action("Default viewers, apps and editor…") { startActivity(Intent(this, com.infinifolder.viewer.ExternalAppSettingsActivity::class.java)) },
                 action("Common locations…") { showCommonLocationsSettings() },
                 action("Copy verification: ${if (shared.getBoolean("verify_copies", true)) "on" else "off"}…") { showCopyVerificationSettings() },
                 action("Disk cache…") { com.infinifolder.viewer.DiskCacheSettings.show(this) },

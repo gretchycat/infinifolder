@@ -23,6 +23,9 @@ allows remembering it for a file/type and keeps explicit external preferences.
 Choosing an internal viewer avoids external staging. Same-folder Copy to/Paste uses
 the existing unused-name transfer handling with confirmation; Move restrictions stay.
 Both APKs build; these new chooser/copy interactions remain device-unverified.
+A follow-up also removes the same-parent drag no-op and the legacy global viewer
+switch that could still bypass internal defaults. File/type choices control external
+opening; current-directory drops use confirmed copy/unused-name handling.
 
 Documentation cleanup does not constitute a new implementation test run. Older
 checkpoint totals are historical; they are not the current failure count.
