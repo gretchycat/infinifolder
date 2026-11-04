@@ -48,3 +48,18 @@ The 2026-11-04 app/combined-host build passes. The owner confirms copying after
 the same-directory drag correction. Confirmation Cancel, broader Copy to/Paste
 variants, repeated copies, selected sets and backend-specific publication remain
 separate checks. No automated tests were rerun for this acceptance record.
+
+## Tree ordering — 2026-11-04
+
+The sidebar and folder picker share one alphabetical sibling order, ignoring case.
+It applies to Virtual root sources, application categories/public directories,
+local/remote folders, archives and asynchronously loaded children. Exact name and
+node key break ties deterministically; the synthetic **Create directory** action
+stays last. Sorting uses display views of existing nodes, preserving node identities,
+expanded branches and selection. Newly created folders use the same comparator.
+Branch-line flags are computed in display order. The file pane retains its own
+selected sort settings.
+
+The app debug build passes. No automated tests were added or run; root/expanded
+ordering, partial remote listings, duplicate/case-varied names, picker creation and
+selection/expansion retention remain device checks.

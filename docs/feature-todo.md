@@ -108,6 +108,8 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 
 ## Selection and sorting
 
+- [ ] Confirm alphabetical tree siblings in sidebar/picker, including Virtual root, remote/partial listings, archives, new folders, case-varied names and retained expansion/selection. See [tree ordering](navigation-menus-disk-usage.md#tree-ordering--2026-11-04).
+
 - [ ] Complete pattern/error, sort/selection/scroll and menu acceptance checks.
 - [ ] Add most-used sorting after defining usage statistics and stable resource identity.
 

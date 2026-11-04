@@ -28,6 +28,12 @@ internal data class TreeNode(
 internal fun isCreateDirectoryNode(node: TreeNode): Boolean =
     node.key.startsWith(CREATE_DIR_KEY_PREFIX)
 
+/** One deterministic sibling order for the sidebar, source roots and folder pickers. */
+internal val treeNodeOrdering: Comparator<TreeNode> = compareBy<TreeNode> { isCreateDirectoryNode(it) }
+    .thenBy { it.name.lowercase(java.util.Locale.ROOT) }
+    .thenBy { it.name }
+    .thenBy { it.key }
+
 /** A missing destination restriction must allow virtual nodes and folders awaiting a grant. */
 fun <T> activateTreeItem(
     resource: T?, blockedDestination: T?, requiresAccess: Boolean,
@@ -66,7 +72,7 @@ internal fun visibleChildrenForNode(
 ): List<TreeNode> {
     val filtered = node.children.filter { child ->
         excludedUri == null || child.uri != excludedUri
-    }
+    }.sortedWith(treeNodeOrdering)
     val parentUri = node.uri
     if (!includeCreateDirectory || parentUri == null || onCreateDirectory == null) {
         return filtered

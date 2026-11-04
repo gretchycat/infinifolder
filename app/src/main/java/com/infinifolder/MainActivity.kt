@@ -7814,7 +7814,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
     private fun updateTreeBranches(nodes: List<TreeNode>) {
         fun update(nodesAtDepth: List<TreeNode>, ancestorLastFlags: List<Boolean>) {
-            nodesAtDepth.forEachIndexed { index, node ->
+            nodesAtDepth.sortedWith(treeNodeOrdering).forEachIndexed { index, node ->
                 node.isLast = index == nodesAtDepth.lastIndex
                 // Depth zero is the single Virtual root. Carry continuation flags from every
                 // visible ancestor below it, including the direct parent: its sibling line
@@ -7897,6 +7897,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     ) {
         updateTreeBranches(nodes)
         val visibleRoots = nodes.filter { (excludedUri == null || it.uri != excludedUri) && includeNode(it) }
+            .sortedWith(treeNodeOrdering)
         visibleRoots.forEachIndexed { index, node ->
             node.isLast = index == visibleRoots.lastIndex
             node.ancestorContinues = emptyList()
@@ -12554,7 +12555,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 expanded = true
                             )
                             parentNode.children.add(newNode)
-                            parentNode.children.sortBy { it.name.lowercase() }
+                            parentNode.children.sortWith(treeNodeOrdering)
                             newNode
                         }
                         parentNode.expanded = true
