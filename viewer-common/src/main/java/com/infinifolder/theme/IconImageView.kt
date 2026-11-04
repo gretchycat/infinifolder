@@ -41,7 +41,10 @@ class IconImageView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         val source = drawable as? BitmapDrawable
-        if (!ThemeManager.iconShadowsEnabled || source == null || source.bitmap.isRecycled ||
+        // ImageView.setImageBitmap(null) can leave an empty BitmapDrawable while
+        // asynchronous theme artwork is pending. A drawable is not proof of a bitmap.
+        val bitmap = source?.bitmap
+        if (!ThemeManager.iconShadowsEnabled || source == null || bitmap == null || bitmap.isRecycled ||
             width <= 0 || height <= 0 || width > 1024 || height > 1024) {
             super.onDraw(canvas)
             return
@@ -49,7 +52,7 @@ class IconImageView @JvmOverloads constructor(
         imageMatrix.getValues(matrixValues)
         val radius = 2f * resources.displayMetrics.density
         val bounds = source.bounds
-        val key = MaskKey(sourceId(source.bitmap), source.bitmap.generationId,
+        val key = MaskKey(sourceId(bitmap), bitmap.generationId,
             width, height, paddingLeft, paddingTop, bounds.left, bounds.top, bounds.right, bounds.bottom,
             source.alpha, source.colorFilter?.hashCode() ?: 0, radius, matrixValues.toList())
         val mask = masks.get(key) ?: run {
@@ -58,8 +61,8 @@ class IconImageView @JvmOverloads constructor(
             val target = Canvas(raster)
             target.translate(paddingLeft.toFloat(), paddingTop.toFloat())
             target.concat(imageMatrix)
-            if (source.bitmap.config == Bitmap.Config.HARDWARE) {
-                val software = source.bitmap.copy(Bitmap.Config.ARGB_8888, false)
+            if (bitmap.config == Bitmap.Config.HARDWARE) {
+                val software = bitmap.copy(Bitmap.Config.ARGB_8888, false)
                 try { target.drawBitmap(software, null, bounds, source.paint) }
                 finally { software.recycle() }
             } else source.draw(target)

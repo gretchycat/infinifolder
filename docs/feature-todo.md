@@ -27,7 +27,9 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 - [ ] Check Icon shadows in Settings → Appearance and themes: alpha edges on
   opaque/transparent icons, list/grid/tree/pins/floating views, small sizes,
   theme changes, immediate toggling and preference restoration after restart.
-  Main/standalone host build evidence: `build/docs-audit/appearance-shadows-build.log`.
+  Include cold startup while theme artwork is pending after the empty-bitmap crash fix.
+  Main/standalone host build evidence: `build/docs-audit/appearance-shadows-build.log`
+  and `build/docs-audit/icon-shadow-null-build.log` for the startup correction.
   No new automated tests or device UI checks were run for this appearance change.
 
 ## Current library/viewer follow-up
