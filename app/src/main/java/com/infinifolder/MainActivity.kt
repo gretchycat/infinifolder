@@ -200,6 +200,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         if(!isFinishing && !isDestroyed) {renderCurrentContents();renderTree();renderPinnedContainers()}
     }
     private var lastIconRegistryRevision=""
+    @Volatile private var iconRegistryCheckGeneration = 0
     private val resourceIconResolver by lazy { ResourceIconResolver(applicationContext).apply {
         onArtworkChanged={ runOnUiThread {
             operationUiHandler.removeCallbacks(artworkRefreshRunnable)
@@ -280,7 +281,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private var renderedPinnedIconSize = 0
     @Volatile private var pinnedRenderGeneration = 0
     private val pinBoard by lazy { PinBoardDirectory(applicationContext, shared, localProvider, provider,
-        resourceIconResolver::shortcutInfo) { uris ->
+        { entry -> resourceIconResolver.shortcutInfo(entry) }) { uris ->
         resourceIconResolver.invalidateLinks(uris)
         uris.forEach { shortcutCache.remove(it.toString()) }
     } }
@@ -14181,14 +14182,35 @@ class MainActivity : Activity(), DebugDumpObserver {
         refreshCurrentLocation()
     }
 
+    /** Registry migrations and capability hashing may touch disk/load handlers. Never wait in onResume. */
+    private fun checkIconRegistryRevision() {
+        val request = ++iconRegistryCheckGeneration
+        imageIo.execute {
+            if (request != iconRegistryCheckGeneration || isDestroyed) return@execute
+            val started = SystemClock.uptimeMillis()
+            try {
+                val revision = resourceIconResolver.revision()
+                com.infinifolder.storage.DiagnosticLog.record("browser.icon-registry.checked",
+                    "elapsedMs=${SystemClock.uptimeMillis() - started}")
+                runOnUiThread {
+                    if (request != iconRegistryCheckGeneration || isDestroyed || isFinishing) return@runOnUiThread
+                    val changed = lastIconRegistryRevision.isNotEmpty() && lastIconRegistryRevision != revision
+                    lastIconRegistryRevision = revision
+                    if (changed && ::root.isInitialized) {
+                        resourceIconResolver.invalidate(); thumbnailCache.evictAll(); ResourceIconSidecars.clearDirectories()
+                        renderCurrentContents(); renderTree(); renderPinnedContainers()
+                    }
+                }
+            } catch (error: Exception) {
+                com.infinifolder.storage.DiagnosticLog.record("browser.icon-registry.check-failed", error = error)
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
-        val iconRevision=resourceIconResolver.revision()
-        if(lastIconRegistryRevision.isNotEmpty() && lastIconRegistryRevision!=iconRevision && ::root.isInitialized) {
-            resourceIconResolver.invalidate();thumbnailCache.evictAll();ResourceIconSidecars.clearDirectories()
-            renderCurrentContents();renderTree()
-        }
-        lastIconRegistryRevision=iconRevision
+        if (forwardingHomeShortcut) return
+        checkIconRegistryRevision()
         refreshPinBoard()
         if (backNavigation == null) {
             backNavigation = ActivityBackNavigation.register(this) { onBackPressed() }
@@ -14202,7 +14224,6 @@ class MainActivity : Activity(), DebugDumpObserver {
             if (homeMode) showHomeRoot() else current?.let { load(it) }
         }
         Thread({ TermuxEditorAvailability.probe(applicationContext) }, "TermuxEditorProbe").start()
-        if (forwardingHomeShortcut) return
         browserResumed = true
         OperationService.start(this)
         if (lastDumpRefresh != DebugTools.dumpGeneration) onDebugDumpFinished()
@@ -14264,6 +14285,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     override fun onDestroy() {
         if (forwardingHomeShortcut) { super.onDestroy(); return }
+        iconRegistryCheckGeneration++
         pinBoardLoadGeneration++
         pinBoardObserver?.stopWatching(); pinBoardObserver = null
         pinBoardHandler.removeCallbacksAndMessages(null)

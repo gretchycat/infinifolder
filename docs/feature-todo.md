@@ -27,8 +27,13 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
   failures and does not consider the transparent launcher a successful startup.
   Owner reports that `41b04e6` still cannot show recovery. Debug builds now include
   an isolated **InfiniFolder startup report** launcher (Android 11+) with Android
-  exit history and Copy/Save actions. Obtain that report; the underlying failure
-  and reporter UI remain unverified. Retain existing data.
+  exit history and Copy/Save actions. The owner saved a report successfully;
+  Copy/native-trace export remain unverified. Retain existing data.
+  Owner later reports a delayed direct launch that eventually works. The first
+  report has no current startup exception/stall and predates that launch; obtain
+  refreshed evidence. Icon-registry revision/migration/fingerprint work now runs
+  off the UI thread, with elapsed-time logging; verify cold-start responsiveness
+  and registry/theme changes on return to the app.
 
 - [ ] Device-check repeated audio theme switches (including while playing),
   listener attachment/detachment, WMP Aero portrait/landscape and system insets,

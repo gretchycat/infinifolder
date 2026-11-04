@@ -114,6 +114,32 @@ No automated tests were added or run. Opening the isolated reporter and obtainin
 current evidence still require a device check; the reported startup failure is
 **not confirmed fixed**. Existing settings and user files are retained.
 
+The owner subsequently reports that the direct launch froze for a while and then
+started working. Treat that observed launch as a startup delay, not a confirmed
+fatal exception. `infinifolder-startup-report.log` captured at 17:37 CST contains
+no saved startup exception/stall, older low-memory/update exits, and a session-log
+tail last modified at 17:05 CST; it does not measure this later successful launch.
+A refreshed report is requested before attributing the full delay to a component.
+The root report artifact demonstrates that the isolated reporter and text export
+worked on the owner's Android SDK 37 device; Copy and native-trace export remain
+unverified.
+
+One confirmed synchronous path is now removed: `MainActivity.onResume` checked the
+icon registry revision, potentially loading/migrating its JSON and hashing the
+runtime capability catalog, before returning to Android. That check now uses the
+existing artwork executor. Registry changes still invalidate artwork and redraw
+list/grid, tree and pins on the UI thread; stale activity/resume results are ignored.
+Pin-board construction now captures a metadata-reader callback without eagerly
+constructing the icon resolver. Forward-only shortcut activities return from
+`onResume` before accessing browser fields they never initialized. Diagnostic
+`browser.icon-registry.checked` events record worker elapsed time.
+
+Build evidence: `build/docs-audit/startup-icon-registry-build.log`, using the app
+and standalone-host debug build command above. No automated tests were added or
+run. Startup time, responsiveness, resumed registry/theme edits and shortcut
+forwarding still require device verification; this is not a measured complete
+resolution of the startup delay.
+
 ## Public pin board directory
 
 The compact pin board is a view of **Internal storage → InfiniFolder → Pin board**.
