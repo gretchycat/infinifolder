@@ -63,3 +63,30 @@ gradle :app:assembleDebug :viewer-host:assembleDebug --offline --console=plain
 Both debug APKs build successfully. Final log: `build/document-formats/final-build-4.log`. Earlier build logs record the resolved Office dependency/resource collision. No tests were added or run. Packaged native dependencies and license resources were inspected; a Termux-only zlib soname/runpath was corrected to Android’s public `libz.so`. Native MOBI was compiled for Termux ARM64; the alternative SDK/NDK CMake path and other ABIs have not been built here.
 
 The user confirmed document support working on the handset (2026-11-03). This is acceptance of the exercised workflow; the report does not identify every format or edge case. Broader checks remain for MOBI/AZW3, FB2, DOC/DOCX, XLS/XLSX, PPT/PPTX, ODT/ODS/ODP and RTF variants, Unicode/pictures, chapter navigation, multiple sheets, sparse cell coordinates, cached formulas, limited previews and read-only guards. Invalid/encrypted files, cancellation, large files, remote/provider/archive input, external handoff and cover icons remain separate checks. No connected ADB device was available for agent-driven UI verification; compilation and packaged artifacts do not establish those results.
+
+## Unstyled chapters and encrypted EPUBs
+
+EPUB XML/XHTML chapter requests are served to WebView as `text/html` from the
+same confined staged resource URL. This avoids its raw XML document-tree screen
+and keeps relative CSS, images and chapter anchors working. Scribe's
+`ReadingHtml.declaredEncoding` inspects only the prefix for XML encoding/BOM;
+chapter data streams without a whole-chapter copy. Where no publisher stylesheet
+exists, `ReadingHtml.fallbackStyle` supplies basic prose/heading/table/image rules.
+The existing reader color and text-size controls still apply. Publisher styles
+are retained; the fallback adds no external resources.
+
+Scribe reads `META-INF/encryption.xml` through its bounded XML/resource APIs.
+Encrypted spine chapters are skipped with warnings; a book with no readable
+chapters fails explicitly, instead of showing ciphertext or a metadata/TOC-only
+fallback. Encrypted fonts/images alone do not reject otherwise readable chapters.
+No encryption is removed. `Far and Away_ A Prize Every Time.epub` was inspected:
+its chapter references declare `http://itunes.apple.com/dataenc`, so a stylesheet
+cannot make that copy readable. The viewer displays a persistent explanation for
+unsupported/unreadable books rather than leaving only a transient toast.
+
+Main/standalone host build: `build/docs-audit/ebook-styles-pin-board-build.log`.
+Scribe also assembled independently with `gradle :scribe-core:assemble --offline
+--console=plain`; log: `build/docs-audit/scribe-ebook-fallback-assemble.log`.
+No automated tests were run for this follow-up. Real WebView rendering, publisher
+style retention, encoding, anchors, reader themes and the encryption error page
+remain device checks.

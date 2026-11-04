@@ -268,6 +268,12 @@ class MainActivity : Activity(), DebugDumpObserver {
     private lateinit var pinnedContainerContent: LinearLayout
     private var renderedPinnedIconSize = 0
     @Volatile private var pinnedRenderGeneration = 0
+    private val pinBoard by lazy { PinBoardDirectory(applicationContext, shared, localProvider, provider,
+        resourceIconResolver::shortcutInfo) }
+    private var pinBoardLoadGeneration = 0
+    private var pinBoardObserver: android.os.FileObserver? = null
+    private val pinBoardHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val pinBoardRefresh = Runnable { refreshPinBoard() }
     private var dragHoveredTreeRow: View? = null
     private var dragHoveredTreeRowSelected = false
     private var dragHoveredTreeNodeKey: String? = null
@@ -547,7 +553,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         com.infinifolder.storage.StorageActivity.addListener(storageActivityListener)
         operations.addListener(operationsListener)
         shared = getSharedPreferences("browser", MODE_PRIVATE)
-        pinnedContainers.addAll(PinnedContainerPreferences(shared).load())
+        if (!shared.getBoolean("pin_board_directory_migrated", false))
+            pinnedContainers.addAll(PinnedContainerPreferences(shared).load())
         isOperationWindowHidden = savedInstanceState?.getBoolean("operation_window_hidden", false) ?: false
         grid = shared.getBoolean("grid", true); sortByName = shared.getBoolean("sort_name", true)
         sortKey = shared.getString("sort_key", if (sortByName) "name" else "modified") ?: "name"
@@ -5935,6 +5942,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
             }
             tail += rootContainerLinks.map { (entry, shortcut) -> rootLinkHomeItem(entry, shortcut) }
+            tail += HomeItem("📌", "Pin board", "InfiniFolder / Pin board", { openPinBoard() },
+                treeKey = "pin_board", treeUri = pinBoard.uri, treeExpandable = true)
             tail += HomeItem("📱", "Application public", "Storage exposed by applications", {
                 showApplicationPublic()
             }, treeKey = "application_public", treeExpandable = true)
@@ -7270,21 +7279,84 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun pinContainer(entry: ResourceEntry, destination: Uri) {
-        if (!isContainerPinned(destination)) {
-            pinnedContainers += PinnedContainer(entry, destination, shortcutCache.get(entry.uri.toString())?.displayNameOverride)
-            PinnedContainerPreferences(shared).save(pinnedContainers)
-            renderPinnedContainers()
+        val label = shortcutCache.get(entry.uri.toString())?.displayNameOverride
+            ?: PinnedContainer(entry, destination).name
+        changePinBoard { pinBoard.add(entry, destination, label) }
+    }
+
+    private fun unpinContainer(destination: Uri) = changePinBoard { pinBoard.remove(destination) }
+
+    private fun changePinBoard(change: () -> Unit) {
+        val legacy = if (pinBoard.migrated()) emptyList() else pinnedContainers.toList()
+        io.execute {
+            try {
+                pinBoard.load(legacy)
+                change()
+                runOnUiThread { if (!isDestroyed) refreshPinBoard() }
+            } catch (error: Exception) {
+                runOnUiThread { if (!isDestroyed) Toast.makeText(this,
+                    "Could not update pin board: ${error.message}", Toast.LENGTH_LONG).show() }
+            }
         }
     }
 
-    private fun unpinContainer(destination: Uri) {
-        pinnedContainers.removeAll { sameResourceUri(it.destination, destination) }
-        PinnedContainerPreferences(shared).save(pinnedContainers)
-        renderPinnedContainers()
+    private fun openPinBoard() {
+        val legacy = if (pinBoard.migrated()) emptyList() else pinnedContainers.toList()
+        io.execute {
+            try {
+                pinBoard.load(legacy)
+                runOnUiThread {
+                    if (!isDestroyed && !isFinishing) {
+                        refreshPinBoard()
+                        openRoot(pinBoard.uri, rememberAuthorizedRoot = false)
+                    }
+                }
+            } catch (error: Exception) {
+                runOnUiThread { if (!isDestroyed) Toast.makeText(this,
+                    "Could not open pin board: ${error.message}", Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
+
+    private fun refreshPinBoard() {
+        if (isDestroyed || !::pinnedContainerContent.isInitialized) return
+        val request = ++pinBoardLoadGeneration
+        val legacy = if (pinBoard.migrated()) emptyList() else pinnedContainers.toList()
+        io.execute {
+            try {
+                val loaded = pinBoard.load(legacy)
+                runOnUiThread {
+                    if (request != pinBoardLoadGeneration || isDestroyed || isFinishing) return@runOnUiThread
+                    pinnedContainers.clear(); pinnedContainers.addAll(loaded)
+                    renderPinnedContainers()
+                    if (pinBoardObserver == null) {
+                        val events = android.os.FileObserver.CREATE or android.os.FileObserver.DELETE or
+                            android.os.FileObserver.MOVED_FROM or android.os.FileObserver.MOVED_TO or
+                            android.os.FileObserver.CLOSE_WRITE or android.os.FileObserver.ATTRIB or
+                            android.os.FileObserver.DELETE_SELF or android.os.FileObserver.MOVE_SELF
+                        pinBoardObserver = object : android.os.FileObserver(pinBoard.file.path, events) {
+                            override fun onEvent(event: Int, path: String?) {
+                                if (path?.startsWith(".") == true) return
+                                pinBoardHandler.post {
+                                    if (event and (android.os.FileObserver.DELETE_SELF or android.os.FileObserver.MOVE_SELF) != 0) {
+                                        pinBoardObserver?.stopWatching(); pinBoardObserver = null
+                                    }
+                                    pinBoardHandler.removeCallbacks(pinBoardRefresh)
+                                    pinBoardHandler.postDelayed(pinBoardRefresh, 200)
+                                }
+                            }
+                        }.also { it.startWatching() }
+                    }
+                }
+            } catch (error: Exception) {
+                com.infinifolder.storage.DiagnosticLog.record("browser.pin-board.load-failed", error = error)
+            }
+        }
     }
 
     /** Pins jump to a storage route; they are not children of the currently displayed folder. */
     private fun openPinnedContainer(pin: PinnedContainer) {
+        if (!pin.container) { open(pin.entry); return }
         openContainerLinkUri(pin.destination, pin.name, requireContainer = true,
             origin = LinkNavigationOrigin.PINNED, knownDirectory = true)
     }
@@ -7292,11 +7364,18 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun showContainerPinMenu(entry: ResourceEntry, destination: Uri) {
         val saved = pinnedContainers.firstOrNull { sameResourceUri(it.destination, destination) }
         val pin = saved ?: PinnedContainer(entry, destination, shortcutCache.get(entry.uri.toString())?.displayNameOverride)
-        val actions = mutableListOf("Open container", if (saved != null) "Unpin" else "Pin to top")
-        if (!entry.metadata.isDirectory && ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) actions += "Link properties"
+        val actions = mutableListOf(if (pin.container) "Open container" else "Open", if (saved != null) "Unpin" else "Pin to top")
+        if (saved != null) {
+            actions.add(1, "Properties")
+            if (pinBoard.contains(entry.uri)) actions.add(1, "Rename")
+        }
+        if (!pinBoard.contains(entry.uri) && !entry.metadata.isDirectory &&
+            ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) actions += "Link properties"
         showGroupedMenuDialog(pin.name, groups = listOf(actions)) { action ->
             when (action) {
-                "Open container" -> openPinnedContainer(pin)
+                "Open", "Open container" -> openPinnedContainer(pin)
+                "Rename" -> renameEntry(pin.entry) { refreshPinBoard() }
+                "Properties" -> showPropertiesDialog(pin.entry)
                 "Link properties" -> showPropertiesDialog(pin.entry)
                 "Unpin" -> unpinContainer(destination)
                 "Pin to top" -> pinContainer(entry, destination)
@@ -7317,37 +7396,22 @@ class MainActivity : Activity(), DebugDumpObserver {
         val side = dp(sideDp)
         for (storedPin in pinnedContainers.toList()) {
             var pin = storedPin
-            val card = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                setPadding(dp(6), dp(4), dp(6), dp(4))
-                minimumWidth = dp(48)
-                minimumHeight = dp(48)
-            }
-            val iconHolder = FrameLayout(this)
-            // Match the actual slot size; no scaled MATCH_PARENT view inside a smaller parent.
-            iconHolder.addView(FileIconView.create(this, pin.entry, pin.entry.metadata, true, sideDp,
-                customIconStore, iconThemeManager, localProvider, appsProvider), FrameLayout.LayoutParams(side, side))
-            card.addView(iconHolder, LinearLayout.LayoutParams(side, side))
-            val label = TextView(this).apply {
-                textSize = 10f
-                setTextColor(setTextColorForTheme())
-                maxWidth = dp(96)
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                gravity = Gravity.CENTER
-            }
-            card.addView(label, LinearLayout.LayoutParams(-2, -2))
+            val fileCard = FileEntryCard(this, pin.entry, true, sideDp, dark)
+            val card = fileCard.container.apply { minimumWidth = dp(48); minimumHeight = dp(48) }
+            val iconHolder = fileCard.attachIcon(FileIconView.create(this, pin.entry, pin.entry.metadata, true, sideDp,
+                customIconStore, iconThemeManager, localProvider, appsProvider))
+            fileCard.addLabels(pin.name, pin.container, dp(96), "")
+            val label = fileCard.nameView.apply { textSize = 10f; maxLines = 1 }
             fun bindTarget() {
-                label.text = pin.name
-                card.contentDescription = "Pinned container: ${pin.name}"
+                label.setFileName(pin.name, pin.container)
+                card.contentDescription = "Pinned link: ${pin.name}"
                 card.tooltipText = pin.name
                 // Hover navigation must take the same route as a tap.
-                installBreadcrumbDropTarget(card, pin.destination, pin.name,
+                if (pin.container) installBreadcrumbDropTarget(card, pin.destination, pin.name,
                     sourceUri = pin.entry.uri, kind = "pin", onNavigate = { openPinnedContainer(pin) })
             }
             fun applyIcon(artwork: ResourceIconResolver.Icon) {
-                iconHolder.removeAllViews()
+                if (iconHolder.childCount > 0) iconHolder.removeViewAt(0)
                 val image = artwork.bitmap?.let { bitmap -> IconImageView(this).apply {
                     scaleType = ImageView.ScaleType.FIT_CENTER
                     setImageBitmap(bitmap)
@@ -7356,7 +7420,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     textSize = sideDp * .72f
                     gravity = Gravity.CENTER
                 }
-                iconHolder.addView(image, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+                iconHolder.addView(image, 0, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
                 NetworkConnectionBadge.attach(iconHolder, target = pin.destination)
             }
             NetworkConnectionBadge.attach(iconHolder, target = pin.destination)
@@ -7383,7 +7447,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 val target = shortcut?.targetUri?.let { raw ->
                     runCatching { Uri.parse(raw).let { if (shortcut.targetIsDirectory) it else containerUriHint(it) } }.getOrNull()
                 }?.takeIf { provider.refForUri(it) != null } ?: storedPin.destination
-                val updated = PinnedContainer(freshEntry, target, name)
+                val updated = storedPin.copy(entry = freshEntry, destination = target, displayName = name)
                 val artwork = runCatching { resourceIconResolver.resolve(freshEntry, side) }.getOrNull()
                 runOnUiThread {
                     if (generation != pinnedRenderGeneration || isDestroyed || isFinishing) return@runOnUiThread
@@ -7392,7 +7456,6 @@ class MainActivity : Activity(), DebugDumpObserver {
                     pin = updated
                     if (updated != storedPin) {
                         pinnedContainers[index] = updated
-                        PinnedContainerPreferences(shared).save(pinnedContainers)
                     }
                     if (shortcut != null) shortcutCache.put(freshEntry.uri.toString(), shortcut)
                     bindTarget()
@@ -13312,10 +13375,17 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         dialogBuilder().setTitle("Rename").setView(input).setNegativeButton("Cancel", null)
             .setPositiveButton("Rename") { _, _ ->
-                val newName = input.text.toString().trim()
+                val requestedName = input.text.toString().trim()
+                val newName = if (requestedName.isNotEmpty() && pinBoard.contains(entry.uri) &&
+                    ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType) && !ShortcutInfo.isShortcut(requestedName))
+                    requestedName + ShortcutInfo.SHORTCUT_EXTENSION else requestedName
                 if (newName.isEmpty() || newName == currentName) return@setPositiveButton
                 io.execute {
                     val result = provider.rename(entry.ref, newName)
+                    val labelError = if (result is ProviderResult.Success && pinBoard.contains(entry.uri) &&
+                        ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) runCatching {
+                        pinBoard.renamed(result.value)
+                    }.exceptionOrNull() else null
                     runOnUiThread {
                         if (result is ProviderResult.Success) {
                             val renamed = result.value
@@ -13333,6 +13403,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 current?.let { load(it) }
                             }
                             onRenamed?.invoke(renamed)
+                            if (pinBoard.contains(entry.uri)) refreshPinBoard()
+                            if (labelError != null) Toast.makeText(this,
+                                "File renamed, but its link label could not be updated: ${labelError.message}", Toast.LENGTH_LONG).show()
                         } else {
                             Toast.makeText(this, (result as? ProviderResult.Failure)?.message ?: "Rename unsupported", Toast.LENGTH_LONG).show()
                         }
@@ -13628,7 +13701,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             renderCurrentContents();renderTree()
         }
         lastIconRegistryRevision=iconRevision
-        renderPinnedContainers()
+        refreshPinBoard()
         if (backNavigation == null) {
             backNavigation = ActivityBackNavigation.register(this) { onBackPressed() }
         }
@@ -13703,6 +13776,9 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     override fun onDestroy() {
         if (forwardingHomeShortcut) { super.onDestroy(); return }
+        pinBoardLoadGeneration++
+        pinBoardObserver?.stopWatching(); pinBoardObserver = null
+        pinBoardHandler.removeCallbacksAndMessages(null)
         flushDirectoryScrollPersistence()
         diskUsageExplorer?.close()
         diskUsageExplorer = null

@@ -12,6 +12,39 @@ Persistent half-size container pins sit between toolbar and breadcrumbs; the row
 
 Hold countdown covers the icon; release after the hold opens the menu, movement begins drag. Selected sets drag together. Same-device drops move, cross/unknown-device drops copy. Source-self drops open the menu. Tree/file edges autoscroll and tree linger expands paths. Latest drops, autoscroll and pane switching are user-confirmed; broader backend/orientation checks remain.
 
+## Public pin board directory
+
+The compact pin board is a view of **Internal storage → InfiniFolder → Pin board**.
+Virtual root includes a **Pin board** directory entry. It uses the existing local
+storage provider, `.iflink` format, shared file cards, artwork resolver and rename/
+properties APIs. Normal directory browsing exposes the usual file operations;
+the compact board keeps Open, Rename, Properties and Unpin readily available.
+Unpin deletes the board's link, never the linked target. Non-link data placed in
+this public folder can be opened/renamed normally; removing it requires the
+ordinary directory view instead of the shortcut-only Unpin action.
+
+Pin to top creates a real `.iflink` containing the target and existing embedded
+artwork when available. Names are made unique without overwriting other links.
+Rename updates its filename and display-name field; `.iflink` is retained when
+omitted. The link label also supplies its tooltip/navigation title. If updating
+the label fails after the filename was renamed, the UI reports that partial result.
+Properties uses the normal link editor, including embedded icons. Changes made
+in another app update the board through a debounced directory observer; returning
+to the browser refreshes it too. Hidden files/cache sidecars are excluded from
+the compact board. Files remain public and can be copied/backed up normally.
+
+Existing preference pins migrate once, on a worker, without connecting to their
+remote targets. The old payload remains a backup; migration is marked complete
+only after every link is saved. Partial retries detect already migrated targets.
+Storage failures retain the in-memory/legacy pins and record a diagnostic;
+explicit Pin/Open/Unpin failures show an error. The public folder requires normal
+shared-storage access. After migration, deleting the directory recreates an empty
+board rather than resurrecting old preference entries.
+
+Build evidence: `build/docs-audit/ebook-styles-pin-board-build.log`. Migration,
+external edits, Rename/Properties/Unpin, restart, permissions, drag/drop and title
+behavior still need device acceptance. No automated tests were run for this change.
+
 ## Selection
 
 Two-finger dragging draws a selection rectangle in ordinary or selection modes, grid/list and selectable root links. Its anchor is the midpoint when the second finger lands. It preserves initial selection, adding intersecting visible cards and removing newly covered cards when moved away. First update enters select mode. Lifting either finger finishes and consumes the remaining touch. One-finger scrolling remains available. Exit selection mode appears first in applicable long-press menus and the main menu, clearing selection. Both features are user-confirmed.

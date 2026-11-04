@@ -31,6 +31,13 @@ object ThemeManager {
 
     private val listeners = mutableListOf<ThemeChangeListener>()
 
+    private fun notifyThemeChanged(theme: ThemeColors) {
+        // Rebuilding a window can attach/detach listener views during a callback.
+        // Snapshot under the lock, then invoke callbacks outside it.
+        val snapshot = synchronized(listeners) { listeners.toList() }
+        snapshot.forEach { it.onThemeChanged(theme) }
+    }
+
     @Volatile
     var activeTheme: ThemeColors = ThemeColors.modern(true)
         private set
@@ -51,7 +58,7 @@ object ThemeManager {
         smoothSkinScaling = smooth
         context.getSharedPreferences("browser", Context.MODE_PRIVATE).edit()
             .putBoolean("skin_smooth_scaling", smooth).apply()
-        synchronized(listeners) { listeners.toList().forEach { it.onThemeChanged(activeTheme) } }
+        notifyThemeChanged(activeTheme)
     }
 
     private var initialized = false
@@ -279,9 +286,7 @@ object ThemeManager {
             if (activeTheme.id == AppThemeId.MODERN && activeTheme.isDark != isNight) {
                 activeTheme = ThemeColors.modern(isNight)
             }
-            synchronized(listeners) {
-                for (l in listeners) l.onThemeChanged(activeTheme)
-            }
+            notifyThemeChanged(activeTheme)
         }
     }
 
@@ -322,9 +327,7 @@ object ThemeManager {
             }
         }.apply()
 
-        synchronized(listeners) {
-            for (l in listeners) l.onThemeChanged(theme)
-        }
+        notifyThemeChanged(theme)
     }
 
     fun updateDarkMode(context: Context, isDark: Boolean) {

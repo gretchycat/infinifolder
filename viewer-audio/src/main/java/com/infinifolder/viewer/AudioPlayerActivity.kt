@@ -118,6 +118,8 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     private lateinit var controlsRow: LinearLayout
     private lateinit var secondaryRow: LinearLayout
     private lateinit var volumeRow: LinearLayout
+    private lateinit var wmpPlayerLayout: WmpPlayerLayout
+    private lateinit var standardSeekThumb: android.graphics.drawable.Drawable
     private var visualizerBridge: RealAudioVisualizerBridge? = null
     private var isPlayerResumed = false
     private val visualizerBands = FloatArray(16)
@@ -147,16 +149,19 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         if (!::rootLayout.isInitialized) return
         val theme = ThemeManager.getAudioPlayerTheme(this)
         val isWinamp = (theme.id == AppThemeId.WINAMP_CLASSIC || theme.id == AppThemeId.CUSTOM_WSZ)
-        val padH = if (isWinamp) 0 else (dp(12) + systemInsetLeft)
+        val isWmp = theme.id == AppThemeId.WMP_GLASS
+        val sidePadding = if (isWmp) 0 else dp(12)
+        val padH = if (isWinamp) 0 else (sidePadding + systemInsetLeft)
+        val padRight = if (isWinamp) 0 else (sidePadding + systemInsetRight)
         val effectiveTop = if (systemInsetTop > 0) systemInsetTop else getStatusBarHeight()
         val isSystemDark = ThemeManager.resolveIsDark(this)
         if (::topInsetArea.isInitialized) {
             topInsetArea.layoutParams = LinearLayout.LayoutParams(-1, effectiveTop)
             topInsetArea.setBackgroundColor(if (isSystemDark) Color.BLACK else Color.WHITE)
         }
-        val padT = if (isWinamp) 0 else dp(6)
-        val padB = (if (isWinamp) 0 else dp(16)) + systemInsetBottom
-        rootLayout.setPadding(padH, padT, padH, padB)
+        val padT = if (isWinamp || isWmp) 0 else dp(6)
+        val padB = (if (isWinamp || isWmp) 0 else dp(16)) + systemInsetBottom
+        rootLayout.setPadding(padH, padT, padRight, padB)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -313,7 +318,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                 val duration = System.currentTimeMillis() - touchDownTime
                 val isTap = dx < dp(15) && dy < dp(15) && duration < 500
 
-                if (isTap) {
+                if (isTap && ThemeManager.getAudioPlayerTheme(this).id != AppThemeId.WMP_GLASS) {
                     val rawX = ev.rawX.toInt()
                     val rawY = ev.rawY.toInt()
 
@@ -665,6 +670,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                 }
             })
         }
+        standardSeekThumb = progressBar.thumb
         progressContainer.addView(progressBar, LinearLayout.LayoutParams(-1, -2))
 
         val timeRow = LinearLayout(this).apply {
@@ -868,6 +874,11 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
         nonSkinScroll.addView(nonSkinColumn)
         rootLayout.addView(nonSkinScroll)
+        wmpPlayerLayout = WmpPlayerLayout(this, WmpPlayerLayout.Content(
+            consoleCard, artCard, progressContainer, controlsRow, secondaryRow, volumeRow,
+            trackTitleText, trackArtistText, albumArtView, visualizerView, progressBar, volumeBar,
+            shuffleBtn, prevBtn, playPauseBtn, stopBtn, nextBtn, repeatBtn))
+        rootLayout.addView(wmpPlayerLayout)
         setContentView(rootLayout)
     }
 
@@ -1403,6 +1414,8 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         openExtBtn.setTextColor(barSubText)
 
         val isWinamp = (theme.id == AppThemeId.WINAMP_CLASSIC || theme.id == AppThemeId.CUSTOM_WSZ)
+        val isWmp = theme.id == AppThemeId.WMP_GLASS
+        wmpPlayerLayout.setActive(isWmp)
 
         if (isWinamp) {
             skinContainer.visibility = View.VISIBLE
@@ -1447,7 +1460,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             updateDockedPlaylist()
         } else {
             skinContainer.visibility = View.GONE
-            nonSkinScroll.visibility = View.VISIBLE
+            nonSkinScroll.visibility = if (isWmp) View.GONE else View.VISIBLE
             updateRootPadding()
             consoleCard.visibility = View.VISIBLE
             artCard.visibility = View.VISIBLE
@@ -1513,9 +1526,13 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
         // Seekbar thumb
         val seekThumb = if (isWinamp) ThemeManager.createSeekThumbDrawable() else null
-        if (seekThumb != null) {
-            progressBar.thumb = seekThumb
-        }
+        progressBar.thumb = seekThumb ?: standardSeekThumb
+        progressBar.thumbTintList = if (isWinamp) null else android.content.res.ColorStateList.valueOf(theme.accent)
+        progressBar.progressTintList = android.content.res.ColorStateList.valueOf(theme.accent)
+        progressBar.progressBackgroundTintList = android.content.res.ColorStateList.valueOf(theme.cardStroke)
+        volumeBar.thumbTintList = android.content.res.ColorStateList.valueOf(theme.accent)
+        volumeBar.progressTintList = android.content.res.ColorStateList.valueOf(theme.accent)
+        volumeBar.progressBackgroundTintList = android.content.res.ColorStateList.valueOf(theme.cardStroke)
 
         // Buttons styling
         prevBtn.setTextColor(theme.textPrimary)
@@ -1613,11 +1630,30 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         speedBtn.setTextColor(theme.buttonText)
         speedBtn.background = ThemeManager.createButtonDrawable(theme, density)
 
+        if (isWmp) {
+            topBar.visibility = View.VISIBLE
+            topBar.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(theme.toolbarBorder, theme.toolbarBackground)).apply {
+                setStroke(dp(1).coerceAtLeast(1), theme.cardStroke)
+            }
+            listOf(backBtn, headerText, themeBtn, playlistBtn, castBtn, openExtBtn).forEach {
+                it.setTextColor(theme.textPrimary)
+            }
+            headerText.setOnClickListener { showPlaylistDialog() }
+            wmpPlayerLayout.applyTheme(theme)
+        } else {
+            headerText.setOnClickListener { topBar.visibility = View.GONE }
+        }
         updateControlsAppearance()
+        if (isWmp) refreshWmpControls()
     }
 
     private fun updatePlayPauseButton(isPlaying: Boolean) {
         val theme = ThemeManager.getAudioPlayerTheme(this)
+        if (theme.id == AppThemeId.WMP_GLASS) {
+            refreshWmpControls(isPlaying)
+            return
+        }
         val isWinamp = (theme.id == AppThemeId.WINAMP_CLASSIC || theme.id == AppThemeId.CUSTOM_WSZ)
         if (isWinamp) {
             val sprite = ThemeManager.createCButtonDrawable(if (isPlaying) 2 else 1)
@@ -1980,6 +2016,13 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     private fun updateControlsAppearance() {
         val s = AudioPlayerService.currentService ?: return
+        val speedStr = String.format(Locale.US, "%.2fx", s.playbackSpeed)
+        speedBtn.text = speedStr
+        if (::dockedSpeedBtn.isInitialized) dockedSpeedBtn.text = speedStr
+        if (ThemeManager.getAudioPlayerTheme(this).id == AppThemeId.WMP_GLASS) {
+            refreshWmpControls()
+            return
+        }
         val theme = ThemeManager.activeTheme
         shuffleBtn.setTextColor(if (s.isShuffleEnabled) theme.accent else theme.textSecondary)
         setToggleState(shuffleBtn, s.isShuffleEnabled)
@@ -2000,11 +2043,15 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             }
         }
         setToggleState(repeatBtn, s.repeatMode != RepeatMode.NONE)
-        val speedStr = String.format(Locale.US, "%.2fx", s.playbackSpeed)
-        speedBtn.text = speedStr
-        if (::dockedSpeedBtn.isInitialized) {
-            dockedSpeedBtn.text = speedStr
-        }
+    }
+
+    private fun refreshWmpControls(playing: Boolean? = null) {
+        if (!::wmpPlayerLayout.isInitialized) return
+        val service = AudioPlayerService.currentService
+        val effectivePlaying = playing ?: if (CastManager.isCasting) CastManager.isRemotePlaying
+            else service?.isPlaying == true
+        wmpPlayerLayout.updateControls(effectivePlaying, service?.isShuffleEnabled == true,
+            service?.repeatMode ?: RepeatMode.NONE)
     }
 
     private fun showSpeedPicker() {

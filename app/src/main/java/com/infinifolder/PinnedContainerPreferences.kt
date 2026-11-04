@@ -9,7 +9,8 @@ import com.infinifolder.storage.DiagnosticLog
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal data class PinnedContainer(val entry:ResourceEntry,val destination:Uri,val displayName:String?=null) {
+internal data class PinnedContainer(val entry:ResourceEntry,val destination:Uri,val displayName:String?=null,
+    val container:Boolean=true) {
     val name:String get()=displayName?.takeIf {it.isNotBlank()} ?: if(!entry.metadata.isDirectory &&
         com.infinifolder.shortcut.ShortcutInfo.isShortcut(entry.metadata.name,entry.metadata.mimeType)
     ) entry.metadata.name.substringBeforeLast('.').ifBlank { "Link" } else entry.metadata.name

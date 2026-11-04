@@ -1,9 +1,8 @@
 package com.infinifolder.audio.cast
 
 import android.os.Bundle
-import android.view.Gravity
-import android.widget.LinearLayout
-import android.widget.TextView
+import android.view.View
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.DialogFragment
@@ -24,6 +23,9 @@ class CastRouteActivity : AppCompatActivity() {
         override fun onFragmentStarted(fm: FragmentManager, fragment: Fragment) {
             if (fragment is DialogFragment) chooserWasVisible = true
         }
+        override fun onFragmentViewDestroyed(fm: FragmentManager, fragment: Fragment) {
+            if (chooserWasVisible && fragment is DialogFragment && !isFinishing && !isChangingConfigurations) finish()
+        }
         override fun onFragmentDetached(fm: FragmentManager, fragment: Fragment) {
             if (chooserWasVisible && fragment is DialogFragment && !isFinishing && !isChangingConfigurations) finish()
         }
@@ -34,29 +36,33 @@ class CastRouteActivity : AppCompatActivity() {
         override fun onSessionStartFailed(session: CastSession, error: Int) { finish() }
         override fun onSessionResuming(session: CastSession, sessionId: String) {}
         override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {}
-        override fun onSessionResumeFailed(session: CastSession, error: Int) {}
-        override fun onSessionEnding(session: CastSession) {}
-        override fun onSessionEnded(session: CastSession, error: Int) {}
+        override fun onSessionResumeFailed(session: CastSession, error: Int) { finish() }
+        override fun onSessionEnding(session: CastSession) { finish() }
+        override fun onSessionEnded(session: CastSession, error: Int) { finish() }
         override fun onSessionSuspended(session: CastSession, reason: Int) {}
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(32, 32, 32, 32)
+        // The native chooser/controller is the entire UI. Keep its host transparent
+        // so dismissal or Stop cast cannot expose an obsolete device-picker screen.
+        val layout = FrameLayout(this)
+        val button = MediaRouteButton(this).apply {
+            alpha = 0f
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         }
-        layout.addView(TextView(this).apply { text = "Choose a Cast device"; textSize = 18f })
-        val button = MediaRouteButton(this).apply { contentDescription = "Choose a Cast device" }
-        layout.addView(button, LinearLayout.LayoutParams(96, 96))
+        layout.addView(button, FrameLayout.LayoutParams(1, 1))
         setContentView(layout)
         try {
             supportFragmentManager.registerFragmentLifecycleCallbacks(fragmentCallbacks, false)
             castContext = CastContext.getSharedInstance(applicationContext)
             castContext?.sessionManager?.addSessionManagerListener(sessionListener, CastSession::class.java)
             CastButtonFactory.setUpMediaRouteButton(applicationContext, button)
-            button.post { button.performClick() }
+            button.post {
+                if (!isFinishing && supportFragmentManager.fragments.none { it is DialogFragment }) {
+                    if (!button.performClick()) finish()
+                }
+            }
         } catch (error: Exception) {
             Toast.makeText(this, "Google Cast is unavailable on this device", Toast.LENGTH_LONG).show()
             finish()

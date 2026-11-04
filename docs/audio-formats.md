@@ -6,6 +6,22 @@ Updated 2026-11-02. This document tracks audio and sound format support across M
 
 > **ANSI music playback in the dedicated CP437 viewer is user-confirmed (2026-11-02).** Sound’s `AnsiMusic` parses supported BBS/BASIC PLAY melodies and produces mono PCM; the viewer prepares a temporary WAVE for Android media playback. The tone generator now uses a rounded waveform between square and sine, with reduced third/fifth harmonics and short attack/release fades. Timing, rests and peak level are preserved. The user confirms the softened timbre sounds good (2026-11-03); see the [to-do list](feature-todo.md#ansi-music). General music-player routing, broader dialects and synchronized presentation remain separate follow-up work.
 
+## Player presentation and Cast dialogs
+
+The Windows Media Player (Aero) selection now has its own
+[rendered player interface](winamp-skins.md#windows-media-player-audio-interface)
+using the existing playback widgets/service. The shared theme notification path
+also tolerates listeners attaching/detaching during a theme change.
+
+Google Cast's native route chooser/controller uses a transparent host with no
+intermediate device-picker page. Stop cast/session ending, chooser cancellation
+and dialog closure finish that host and reveal the player. Restored chooser
+fragments are not opened a second time. Local playback restoration still belongs
+to the existing `CastManager` session-ended handler; this changes dialog lifecycle,
+not receiver streaming. Receiver/device validation remains pending. The main and
+standalone host build log is `build/docs-audit/wmp-audio-interface-build.log`;
+no automated tests were run for this UI follow-up.
+
 ## Decoder correctness correction
 
 The old RealMedia/advanced-audio, WMA, telephony and chiptune stubs returned a

@@ -34,6 +34,7 @@ import io.github.gretchycat.infinistream.FileSourceResource
 import io.github.gretchycat.infinistream.CancellationToken
 import io.github.gretchycat.infiniscribe.EpubDocuments
 import io.github.gretchycat.infiniscribe.EpubReadLimits
+import io.github.gretchycat.infiniscribe.ReadingHtml
 import io.github.gretchycat.infinistream.ContentType
 import io.github.gretchycat.infinistream.Provenance
 import io.github.gretchycat.infinistream.StreamMetadata
@@ -73,6 +74,7 @@ class EpubViewerActivity : ViewerActivity() {
     private var bookTitle: String = "EPUB Reader"
     private var bookAuthor: String = ""
     private val chapters = mutableListOf<ChapterItem>()
+    @Volatile private var chapterUrls: Set<String> = emptySet()
     private var currentChapterIndex: Int = 0
 
     private var currentTheme = ReaderTheme.DARK
@@ -250,6 +252,42 @@ class EpubViewerActivity : ViewerActivity() {
             }
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(view:WebView?,request:WebResourceRequest?):android.webkit.WebResourceResponse? {
+                    if (request != null && request.url.scheme == "file" && request.isForMainFrame) {
+                        val root = preparedDocument?.renderDirectory ?: resourceLease?.file
+                        val file = File(request.url.path.orEmpty())
+                        val allowed = root != null && runCatching {
+                            file.canonicalFile.toPath().startsWith(root.canonicalFile.toPath())
+                        }.getOrDefault(false)
+                        val pageUrl = request.url.buildUpon().clearQuery().fragment(null).build().toString()
+                        if (allowed && (pageUrl in chapterUrls || file.extension.lowercase(Locale.ROOT) in
+                                setOf("html", "htm", "xhtml", "xht", "xml"))) {
+                            // File URL sniffing can treat .xhtml/.xml as an XML inspector.
+                            // Serve readable book pages as HTML, streaming their original bytes
+                            // and retaining the same URL for CSS, images and chapter anchors.
+                            return try {
+                                val stream = file.inputStream().buffered()
+                                try {
+                                    stream.mark(4096)
+                                    val prefix = ByteArray(4096)
+                                    var count = 0
+                                    while (count < prefix.size) {
+                                        val read = stream.read(prefix, count, prefix.size - count)
+                                        if (read <= 0) break
+                                        count += read
+                                    }
+                                    stream.reset()
+                                    val encoding = ReadingHtml.declaredEncoding(prefix.copyOf(count))
+                                        ?: if (file.extension.lowercase(Locale.ROOT) in setOf("xml", "xhtml", "xht")) "UTF-8" else null
+                                    android.webkit.WebResourceResponse("text/html", encoding, stream)
+                                } catch (error: Exception) { stream.close(); throw error }
+                            } catch (error: Exception) {
+                                DiagnosticLog.record("epub.chapter.read-failed", error = error)
+                                android.webkit.WebResourceResponse("text/html", "UTF-8",
+                                    java.io.ByteArrayInputStream(ReadingHtml.page("Cannot read chapter",
+                                        "<p>${ReadingHtml.escape(error.message ?: "Chapter is unavailable")}</p>").toByteArray(Charsets.UTF_8)))
+                            }
+                        }
+                    }
                     if(readingHandler!=null && request!=null) {
                         val root=preparedDocument?.renderDirectory
                         val allowed=request.url.scheme=="file" && root!=null && runCatching {
@@ -374,6 +412,7 @@ class EpubViewerActivity : ViewerActivity() {
                     if(destroyed)return@post
                     bookTitle=book.title;bookAuthor=book.author
                     chapters.clear();chapters.addAll(loaded)
+                    chapterUrls = loaded.map { Uri.fromFile(it.file).toString() }.toSet()
                     titleTextView.text=if(bookAuthor.isBlank())bookTitle else "$bookTitle • $bookAuthor"
                     progressBar.visibility=View.GONE
                     if(chapters.isEmpty())Toast.makeText(this,"No readable content found",Toast.LENGTH_LONG).show() else loadChapter(0)
@@ -385,7 +424,7 @@ class EpubViewerActivity : ViewerActivity() {
                 mainHandler.post {
                     if(destroyed)return@post
                     progressBar.visibility=View.GONE
-                    if(!CacheFailureUi.offerCopy(this,error,target))Toast.makeText(this,"Cannot read document: ${error.message ?: error.javaClass.simpleName}",Toast.LENGTH_LONG).show()
+                    if(!CacheFailureUi.offerCopy(this,error,target))showDocumentError(error.message ?: error.javaClass.simpleName)
                 }
             }finally{stage?.close()}
         }
@@ -432,6 +471,7 @@ class EpubViewerActivity : ViewerActivity() {
                     bookAuthor = book.author
                     chapters.clear()
                     chapters.addAll(loadedChapters)
+                    chapterUrls = loadedChapters.map { Uri.fromFile(it.file).toString() }.toSet()
                     progressBar.visibility = View.GONE
                     if (chapters.isEmpty()) {
                         Toast.makeText(this, "No readable chapters found in EPUB", Toast.LENGTH_LONG).show()
@@ -445,7 +485,7 @@ class EpubViewerActivity : ViewerActivity() {
                 mainHandler.post {
                     if (destroyed) return@post
                     progressBar.visibility = View.GONE
-                    if (!CacheFailureUi.offerCopy(this, error, targetUri)) Toast.makeText(this, "Failed to load EPUB: ${error.message}", Toast.LENGTH_LONG).show()
+                    if (!CacheFailureUi.offerCopy(this, error, targetUri)) showDocumentError(error.message ?: "Cannot read EPUB")
                 }
             } finally {
                 runCatching { resources?.close() }
@@ -527,19 +567,39 @@ class EpubViewerActivity : ViewerActivity() {
             }
         """.trimIndent().replace("\n", " ").replace("'", "\\'")
 
+        val fallbackCss = org.json.JSONObject.quote(ReadingHtml.fallbackStyle)
         val js = """
             (function() {
+                var head = document.head || document.documentElement.insertBefore(document.createElement('head'), document.documentElement.firstChild);
+                var hasPublisherStyle = Array.prototype.some.call(document.styleSheets, function(sheet) {
+                    var id = sheet.ownerNode && sheet.ownerNode.id;
+                    return id !== 'infinifolder-reader-style' && id !== 'infinifolder-fallback-style';
+                });
+                if (!hasPublisherStyle && !document.getElementById('infinifolder-fallback-style')) {
+                    var fallback = document.createElement('style');
+                    fallback.id = 'infinifolder-fallback-style';
+                    fallback.textContent = $fallbackCss;
+                    head.appendChild(fallback);
+                }
                 var style = document.getElementById('infinifolder-reader-style');
                 if (!style) {
                     style = document.createElement('style');
                     style.id = 'infinifolder-reader-style';
-                    document.head.appendChild(style);
+                    head.appendChild(style);
                 }
                 style.textContent = '$css';
             })();
         """.trimIndent()
 
         webView.evaluateJavascript(js, null)
+    }
+
+    private fun showDocumentError(message: String) {
+        progressBar.visibility = View.GONE
+        prevBtn.isEnabled = false; nextBtn.isEnabled = false
+        chapterIndicatorBtn.text = "Book unavailable"
+        webView.loadDataWithBaseURL("about:blank", ReadingHtml.page("Cannot read book",
+            "<h1>Cannot read book</h1><p>${ReadingHtml.escape(message)}</p>"), "text/html", "UTF-8", null)
     }
 
     private fun makePillDrawable(bgColor: Int, strokeColor: Int): GradientDrawable {

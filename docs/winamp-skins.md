@@ -41,6 +41,36 @@ Fixture archive contents were inspected directly. APK compilation validates inte
 
 Interface Theme → Skin image scaling offers Integer scaling (crisp pixels, default) and Smooth scaling (fractional scaling with bitmap filtering). The setting is remembered across application restarts and applies to the audio player and floating frame.
 
+## Windows Media Player audio interface
+
+Selecting Windows Media Player (Aero) in the player's theme chooser now selects
+`WmpPlayerLayout`, rather than recoloring the generic player. It renders a
+midnight-blue gradient stage, glass transport dock, scalable glossy blue play/pause
+orb, vector transport symbols, album art, metadata and seek/time/volume controls.
+The top toolbar remains available for theme, playlist, Cast, external opening and
+Back actions. Portrait stacks metadata above the art; landscape places them side
+by side. Artwork remains square and fits the available stage, within system-bar
+and cutout insets. This is an Aero-style built-in layout, not a WMP skin-file importer.
+
+The layout reparents the existing audio-player widgets and preserves their
+listeners. Play/pause, previous/next, stop, shuffle, repeat, seeking, speed,
+volume, diagnostics, playlist selection and Cast therefore use the existing
+service/controller paths. Returning to Winamp, Modern or foobar restores the
+original widget parents, layout parameters and normal seek thumb. No codec,
+source handling or playback service is replaced.
+
+Theme notifications now snapshot listeners under the registry lock and invoke
+callbacks outside it. Window rebuilds may add/remove icon-view listeners during
+notification without invalidating the iteration. This fixes the
+`ConcurrentModificationException` recorded during audio theme switches in
+`build/infinifolder-crash-20261104-213324-073.log`.
+
+Main and combined standalone host build command:
+`gradle :app:assembleDebug :viewer-host:assembleDebug --offline --console=plain`.
+Build log: `build/docs-audit/wmp-audio-interface-build.log`. No automated tests
+were run for this UI change. Device appearance, controls, Cast, rotation,
+restart restoration and repeated theme switching remain unverified.
+
 ## Audio player and XMMS
 
 The audio player has its own skin selection and persists its own imported archive, independently of the file manager interface theme. XMMS classic skin archives share the classic bitmap layout; ZIP, WSZ, TAR, gzip-compressed TAR and bzip2-compressed TAR are recognized by content. XMMS-specific extensions and unpacked skin directories are not supported.

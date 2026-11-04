@@ -22,6 +22,13 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 
 ## Appearance follow-up
 
+- [ ] Device-check repeated audio theme switches (including while playing),
+  listener attachment/detachment, WMP Aero portrait/landscape and system insets,
+  all transport/seek/volume/playlist controls, and restoring Winamp/Modern layouts.
+  See [WMP interface](winamp-skins.md#windows-media-player-audio-interface).
+- [ ] Verify Cast Stop cast, Cancel and chooser dismissal return directly to the
+  player, with no gray host screen or automatic second chooser; include system
+  chooser and rotation/restoration paths. Existing receiver streaming checks remain.
 - [ ] Device-check the 10% alternate surface with light/dark and imported Winamp
   themes, especially Open with list scrolling; confirm actual skin rendering stays intact.
 - [ ] Check Icon shadows in Settings → Appearance and themes: alpha edges on
@@ -89,6 +96,10 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 
 ## Paged documents and Office formats
 
+- [ ] Check unstyled EPUB XML/XHTML chapters render as prose with working images,
+  CSS/anchors, encoding and reader controls; confirm encrypted chapter metadata
+  produces a persistent unsupported-encryption message. See
+  [chapter fallback](document-and-ebook-readers.md#unstyled-chapters-and-encrypted-epubs).
 - [ ] Add full PostScript/EPS document rendering and LaTeX typesetting behind Scribe interfaces; retain existing raster-preview support and explicit platform capabilities.
 - [ ] Broaden document checks to format variants, Unicode/images/worksheets/slides, read-only guards and provider/remote/cancellation paths. See [document readers](document-and-ebook-readers.md).
 - [ ] Extend layout fidelity and format conformance beyond the new Word 97+/Excel/PowerPoint reading subset; evaluate encryption, calculations and editing separately. Keep unsupported cases explicit.
@@ -111,6 +122,10 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 
 ## Persistent pinned container targets
 
+- [ ] Accept public InfiniFolder/Pin board creation, one-time/retried migration,
+  restart, external file changes, Rename/Properties/Unpin and preserved targets;
+  test storage denial, filename conflicts, embedded artwork and link navigation.
+  See [public pin board](navigation-menus-disk-usage.md#public-pin-board-directory).
 - [ ] Validate pin/unpin, half-size themed icons, horizontal clipping, multi-file drops and hover navigation on the handset in both orientations, including SAF/network/archive targets and read-only failures.
 
 ## Transfer cancellation

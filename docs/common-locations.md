@@ -25,7 +25,7 @@ The folder picker includes a Common locations button. Choosing one updates the
 selection, checks its capabilities, and reveals/expands its tree node when loaded.
 Read-only entries remain unavailable for write destinations. Editing this list does
 not replace the last chosen transfer destination. The common list is persistent and
-separate from temporary pinned containers.
+separate from the public [pin board directory](navigation-menus-disk-usage.md#public-pin-board-directory).
 
 The application-owned CommonLocationsPreferences stores URI, label, usage, recency,
 manual-retention status and the time of the last observed successful direct random
