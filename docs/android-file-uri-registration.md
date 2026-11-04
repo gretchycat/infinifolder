@@ -17,6 +17,7 @@ JSON summaries, not a separate handwritten registry. Native scheme groups includ
 | Network providers and aliases | `ftp`, `ftps`, `sftp`, `ssh`, `sshfs`, `smb`, `cifs`, `webdav`, `dav`, `davs` |
 | Torrents | `magnet`, `torrent` |
 | Command links | `infinifolder-termux` |
+| Browser-page navigation (main app only) | `infinifolder-location` |
 
 Native TTF/OTF/TTC/OTC fonts, image/audio/video, text/source/ANSI, PDF/ebooks/Office/RTF, archives, supported disk
 images/filesystems, playlists, torrent/resume files, InfiniFolder links and Winamp
@@ -30,6 +31,11 @@ HTTP(S), mail, phone/SMS and IRC schemes retain external-app delegation. NFS has
 icon/recognition rules but no native provider, so it is not advertised as an opener.
 Registering these as native handlers would send delegated opens back to the app.
 Network URI bindings still use the existing account/credential prompts and grants.
+
+The app-only browser-page scheme is read from `BrowserLocations.SCHEME` by the
+manifest generator. It opens built-in UI pages referenced by `.iflink` pins, not a
+filesystem backend. Unknown page names are rejected. Standalone viewers do not
+register it. See [Virtual-root shortcut actions](navigation-menus-disk-usage.md#virtual-root-shortcut-actions).
 
 External `infinifolder-termux` URIs show the command and working directory with
 **Run/Cancel** before invoking the existing Termux permission flow. External link

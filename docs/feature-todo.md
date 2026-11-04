@@ -116,6 +116,14 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 
 ## Current reliability priorities
 
+- [ ] Diagnose the freeze/crash reported after `d5b9d4b` using a current fatal/stall
+  trace. Existing exported crash logs predate that build. Startup monitoring and
+  automatic debug-folder stall-log export have been added; capture/export and
+  crash resolution remain unverified. See [reported startup failure](navigation-menus-disk-usage.md#reported-startup-freezecrash).
+- [ ] Accept Virtual-root pin/delete/restore actions, stored-link deletion without
+  touching targets, shared root/tree/pin icons, browser-page launcher routing and
+  the tripled container/tree hover delays.
+
 - [ ] Confirm the destination tree refreshes after copying while preserving expanded branches and useful scroll position.
 - [ ] Confirm the transfer dialog stays the same size as filenames, phases, rates, and queue counts change; long failure details should remain readable by scrolling.
 - [ ] Complete explicit reopen/retained-file checks and FAT12/FAT32 device coverage for batched deletion.

@@ -154,6 +154,10 @@ def main():
     schemes = {r['identifier'].rstrip(':') for r in rows
         if r['category'] == 'uri_type' and r['support_level'].startswith('implemented')}
     schemes.difference_update({'content', 'file'})
+    if args.host == 'app':
+        # Browser-page links navigate app UI; they do not advertise a storage backend.
+        browser_locations = (ROOT / 'app/src/main/java/com/infinifolder/BrowserLocations.kt').read_text()
+        schemes.add(re.search(r'const val SCHEME = "([a-z0-9+-]+)"', browser_locations).group(1))
 
     if args.capabilities_json:
         catalog = json.loads(args.capabilities_json.read_text())

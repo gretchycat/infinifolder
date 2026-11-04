@@ -152,6 +152,7 @@ class ResourceIconResolver(context: Context) {
     }
     private fun resolve(entry: ResourceEntry,size: Int,seen: MutableSet<ResourceRef>): Icon {
         val base=fallback(entry,size)
+        browserLocation(entry.uri,entry.metadata.name,size)?.let { return it }
         if(!seen.add(entry.ref) || seen.size>16)return base.copy(bitmap=LinkIcons.protocol("BROKEN",size),source="broken-link")
         // A directory's own cover wins over sibling per-file custom artwork.
         if(!entry.metadata.isDirectory &&
@@ -260,6 +261,17 @@ class ResourceIconResolver(context: Context) {
         theme.resolvePlaceIcon("application_public",size) ?: FileTypeIcons.installedApplications(size),
         "▦",name,true,source="application-public")
 
+    private fun browserLocation(uri: Uri, name: String, size: Int): Icon? {
+        val location = BrowserLocations.find(uri) ?: return null
+        return when (location.key) {
+            "installed_apps" -> installedApplications(name, size)
+            "application_public" -> resolveApplicationPublic(name, size)
+            "pin_board" -> resolveTarget(runtime.local.uriFor(File(runtime.local.store.root,PinBoardDirectory.RELATIVE_PATH)),
+                name,true,null,size,mutableSetOf()) ?: Icon(theme.resolveLogicalIcon(location.iconName,size),location.fallback,name,true,source="browser-location")
+            else -> Icon(theme.resolveLogicalIcon(location.iconName, size), location.fallback, name, true, source="browser-location")
+        }
+    }
+
     /** Provider ownership and package artwork do not require a document-tree grant. */
     fun resolveAppStorage(authority:String,name:String,size:Int):Icon {
         val owner=AppDocumentSources.getProgramPackage(appContext,authority)
@@ -319,6 +331,7 @@ class ResourceIconResolver(context: Context) {
     fun resolveLocation(uri:Uri,name:String,size:Int):Icon {
         val rule=runCatching {uriRule(uri.toString(),size)}.getOrNull()
         if(rule!=null)return Icon(rule,"🔗",name,true,source="uri-rule")
+        browserLocation(uri,name,size)?.let { return it }
         if(AppsUri.isRoot(uri))return installedApplications(name,size)
         val scheme=uri.scheme.orEmpty().lowercase()
         resolveTarget(uri,name,true,null,size,mutableSetOf())?.let { return it.copy(label=name) }
@@ -368,6 +381,7 @@ class ResourceIconResolver(context: Context) {
         val base=Icon(null,"🔗",label,info.targetIsDirectory)
         CustomIconStore.decodeBase64Bitmap(info.iconBase64)?.let { return base.copy(bitmap=it,source="link-override") }
         uriRule(info.targetUri,size)?.let { return base.copy(bitmap=it,source="uri-rule") }
+        browserLocation(target,label,size)?.let { return it.copy(label=label) }
         val scheme=target.scheme.orEmpty().lowercase()
         resolveTarget(target,label,info.targetIsDirectory,info.targetMimeType,size,seen)?.let {return it.copy(label=label)}
         if(scheme=="content") {

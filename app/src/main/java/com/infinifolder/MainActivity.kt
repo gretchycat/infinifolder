@@ -547,6 +547,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        com.infinifolder.viewer.DebugTools.activityStarting(this)
         val restoringLaunch = savedInstanceState != null ||
             intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
         if (intent?.action == ACTION_HOME_ITEM && !restoringLaunch) {
@@ -713,6 +714,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun handleExternalLinkIntent(request: Intent?) {
         if (request?.action != Intent.ACTION_VIEW) return
         val uri = request.data ?: return
+        if (BrowserLocations.owns(uri)) { request.action = null; openBrowserLocation(uri); return }
         val scheme = uri.scheme?.lowercase(Locale.ROOT)
         if (scheme == "infinifolder-termux") {
             request.action = null
@@ -2534,6 +2536,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         origin: LinkNavigationOrigin = LinkNavigationOrigin.VIRTUAL_ROOT,
         knownDirectory: Boolean = false
     ) {
+        if (BrowserLocations.owns(uri)) { openBrowserLocation(uri); return }
         val title = name ?: (if (uri.isHierarchical) uri.lastPathSegment else null) ?: "Container"
         if (uri.scheme.equals("magnet", true) || uri.scheme.equals("torrent", true)) {
             // Change the browser location before doing history, tree, metadata, or peer work.
@@ -5597,7 +5600,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 val info = if (!entry.metadata.isSymbolicLink) readShortcutInfo(entry) else null
                 val linkedUri = info?.targetUri?.let(Uri::parse)
                 if (!externalOnly && linkedUri != null &&
-                    (ContainerUris.networkType(linkedUri) != null || linkedUri.scheme.equals("magnet", true) ||
+                    (BrowserLocations.owns(linkedUri) || ContainerUris.networkType(linkedUri) != null || linkedUri.scheme.equals("magnet", true) ||
                         linkedUri.scheme.equals("torrent", true) || entry.ref.providerId == containerLinkProvider.id)) {
                     runOnUiThread {
                         if (!isDestroyed && (linkNavigationToken == null || browserNavigationGeneration == linkNavigationToken))
@@ -5620,6 +5623,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                         is ProviderResult.Success -> {
                             val target = resolved.value
                             val targetEntry = target.entry
+                            if (!externalOnly && BrowserLocations.owns(target.uri)) {
+                                openBrowserLocation(target.uri)
+                                return@runOnUiThread
+                            }
                             if (TermuxCommandLink.owns(target.uri)) {
                                 if (linkNavigationToken != null && sourceLocation != null) navigate(sourceLocation, push = false)
                                 if (confirmCommands) reviewExternalTermuxCommand(target.uri)
@@ -6288,7 +6295,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     }
                 )
             }
-        } else homeItems.filter { it.showInHome && it.treeParentKey == null }
+        } else homeItems.filter { it.showInHome && it.treeParentKey == null && rootShortcutVisible(it) }
         if (homePage == "external_link_history" && visibleItems.isEmpty()) {
             content.addView(TextView(dialogContext()).apply {
                 text = "Links opened from other apps will appear here."
@@ -6382,12 +6389,14 @@ class MainActivity : Activity(), DebugDumpObserver {
                 setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
                 gravity = Gravity.CENTER
                 includeFontPadding = false
+                if (BrowserLocations.forKey(item.treeKey) != null && !iconThemeManager.getActiveThemeId().isNullOrBlank()) visibility = View.GONE
             }
         }
         iconFrame.addView(placeholderView, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
-        val targetTreeUri = item.treeUri
+        val locationUri = BrowserLocations.uri(item.treeKey)
+        val targetTreeUri = locationUri ?: item.treeUri
         val providerAuthority=item.providerAuthority
-        if(providerAuthority!=null || item.treeKey=="application_public" || (targetTreeUri!=null && !item.needsAccessBadge)) {
+        if(providerAuthority!=null || locationUri!=null || (targetTreeUri!=null && !item.needsAccessBadge)) {
             val image=IconImageView(this).apply {scaleType=ImageView.ScaleType.FIT_CENTER}
             iconFrame.addView(image,FrameLayout.LayoutParams(-1,-1,Gravity.CENTER))
             val generation=loadGeneration
@@ -6396,7 +6405,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     if(generation!=loadGeneration || isDestroyed)return@execute
                     val resolved=when {
                         providerAuthority!=null -> resourceIconResolver.resolveAppStorage(providerAuthority,item.title,iconWidth)
-                        item.treeKey=="application_public" -> resourceIconResolver.resolveApplicationPublic(item.title,iconWidth)
+                        locationUri!=null -> resourceIconResolver.resolveLocation(locationUri,item.title,iconWidth)
                         targetTreeUri!=null -> resourceIconResolver.resolveLocation(targetTreeUri,item.title,iconWidth)
                         else -> return@execute
                     }
@@ -6445,9 +6454,60 @@ class MainActivity : Activity(), DebugDumpObserver {
         box.addView(labels)
         box.setOnClickListener { activateHomeItem(item) }
         if (item.treeKey == "pin_board") installPinBoardDropTarget(box)
-        item.longAction?.let { action -> box.setOnLongClickListener { action(); true } }
+        box.setOnLongClickListener { showHomeItemMenu(item); true }
         return box
     }
+
+    private fun openBrowserLocation(uri: Uri) {
+        val location = BrowserLocations.find(uri)
+        if (location == null) {
+            Toast.makeText(this, "Unknown InfiniFolder location", Toast.LENGTH_LONG).show()
+            return
+        }
+        browserNavigationGeneration++
+        when (location.key) {
+            "internal_shared" -> showInternalShared()
+            "application_public" -> showApplicationPublic()
+            "installed_apps" -> openInstalledApps()
+            "partial_downloads" -> openRoot(com.infinifolder.storage.PartialDownloadsProvider.ROOT, rememberAuthorizedRoot=false)
+            "external_link_history" -> showExternalLinkHistory()
+            "pin_board" -> openPinBoard()
+            "virtual-root" -> showHomeRoot()
+            else -> Toast.makeText(this, "This browser location has no navigator", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun showHomeItemMenu(item: HomeItem) {
+        item.linkEntry?.let { showEntryMenu(it); return }
+        val target = BrowserLocations.uri(item.treeKey) ?: item.treeUri ?: item.initialUri
+        val actions = mutableListOf("Open")
+        if (target != null) actions += if (isContainerPinned(target)) "Unpin" else "Pin to top"
+        if (homePage == "root" && item.treeKey != null) actions += "Delete link"
+        if (item.longAction != null) actions += "More options…"
+        showGroupedMenuDialog(item.title, groups=listOf(actions)) { action ->
+            when (action) {
+                "Open" -> activateHomeItem(item)
+                "More options…" -> item.longAction?.invoke()
+                "Delete link" -> dialogBuilder().setTitle("Delete link ${item.title}?")
+                    .setMessage("Remove this shortcut from Virtual root. Files, saved connections and pinned links stay intact. Restore built-in shortcuts from View → Restore Virtual root shortcuts.")
+                    .setNegativeButton("Cancel", null).setPositiveButton("Delete link") { _, _ ->
+                        val hidden = shared.getStringSet("hidden_virtual_root_locations_v1", emptySet()).orEmpty().toMutableSet()
+                        item.treeKey?.let(hidden::add)
+                        shared.edit().putStringSet("hidden_virtual_root_locations_v1", hidden).apply()
+                        renderHomeItems(); rebuildTreeRoots()
+                    }.show()
+                "Unpin" -> target?.let(::unpinContainer)
+                "Pin to top" -> target?.let { uri ->
+                    val entry = ResourceEntry(provider.refForUri(uri) ?: ResourceRef("browser-location", uri.toString()),
+                        ResourceMetadata(item.title, "vnd.android.document/directory", null, null, true), uri)
+                    pinContainer(entry, uri)
+                }
+            }
+        }
+    }
+
+    private fun rootShortcutVisible(item: HomeItem) = item.treeKey == null ||
+        item.treeKey !in shared.getStringSet("hidden_virtual_root_locations_v1", emptySet()).orEmpty()
     private fun activateHomeItem(item: HomeItem) {
         if (item.needsAccessBadge) {
             when {
@@ -7089,7 +7149,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         }
         dragTreeExpandRunnable = expand
-        root.postDelayed(expand, 650)
+        root.postDelayed(expand, 1950L)
     }
 
     private fun cancelTreeNodeExpandHover() {
@@ -7283,6 +7343,10 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun entryBrowseDestination(entry: ResourceEntry): Uri? {
+        shortcutCache.get(entry.uri.toString())?.targetUri?.let { raw ->
+            val target = Uri.parse(raw)
+            if (BrowserLocations.find(target) != null) return target
+        }
         shortcutContainerDestination(entry)?.let { return it }
         if (entry.metadata.isSymbolicLink || AppsUri.isAppsUri(entry.uri) || AppsUri.isCategoryUri(entry.uri)) return null
         return when {
@@ -7662,6 +7726,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (saved != null) {
             actions.add(1, "Properties")
             if (pinBoard.contains(entry.uri)) actions.add(1, "Rename")
+            if (pinBoard.contains(entry.uri) && pinBoard.isLink(entry)) actions += "Delete link"
         }
         if (!pinBoard.contains(entry.uri) && !entry.metadata.isDirectory &&
             ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) actions += "Link properties"
@@ -7672,6 +7737,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 "Properties" -> showPropertiesDialog(pin.entry)
                 "Link properties" -> showPropertiesDialog(pin.entry)
                 "Unpin" -> unpinContainer(destination)
+                "Delete link" -> confirmDelete(pin.entry) { refreshPinBoard() }
                 "Pin to top" -> pinContainer(entry, destination)
             }
         }
@@ -7868,6 +7934,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         dragNavigationAtScreen(x, y)?.let { return it }
         val (view, entry) = dragCardAtScreen(x, y) ?: return null
         val destination = entryBrowseDestination(entry) ?: return null
+        if (BrowserLocations.owns(destination)) return null
         return view to DragNavigationTarget(destination, entry.metadata.name, entry.uri, "card") {
             navigate(destination, displayName = entry.metadata.name)
         }
@@ -7907,7 +7974,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         }
         dragContainerOpenRunnable = openContainer
-        root.postDelayed(openContainer, 700L)
+        root.postDelayed(openContainer, 2100L)
     }
 
     private fun dispatchFilePaneDropAtScreen(view: View, event: android.view.DragEvent): Boolean {
@@ -8135,7 +8202,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         homeItems.filter { it.treeParentKey == "internal_shared" }
             .mapNotNull { it.treeUri ?: it.treeKey?.let(::treeSourceUri) }
             .forEach { seen += sourceIdentity(it) }
-        homeItems.withIndex().filter { it.value.showInHome && it.value.treeParentKey == null }
+        homeItems.withIndex().filter { it.value.showInHome && it.value.treeParentKey == null && rootShortcutVisible(it.value) }
             .sortedBy { if (it.value.showInHome) 0 else 1 }.forEach { indexed ->
             val index = indexed.index
             val item = indexed.value
@@ -8522,7 +8589,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         val metadata = ResourceMetadata(node.name, "vnd.android.document/directory", null, null, true)
         val providerAuthority = node.providerAuthority
         val uri = node.uri
-        val entry = uri?.let { target -> provider.refForUri(target)?.let { ResourceEntry(it, metadata, target) } }
+        val locationUri = BrowserLocations.uri(node.key)
+        val linkEntry = rootContainerLinks.firstOrNull { "root_link_${it.first.uri}" == node.key }?.first
+        val entry = linkEntry ?: uri?.let { target -> provider.refForUri(target)?.let { ResourceEntry(it, metadata, target) } }
         val themeRevision = iconThemeManager.revision()
         val hasTheme = !iconThemeManager.getActiveThemeId().isNullOrBlank()
         val image = IconImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
@@ -8546,7 +8615,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             placeholder.visibility = if (icon.bitmap != null) View.GONE else View.VISIBLE
         }
         // Cached artwork is immediately usable, including while a file-list load is in flight.
-        val cached = if (providerAuthority == null) entry?.let { resourceIconResolver.peekCached(it, size) }
+        val cached = if (providerAuthority == null && locationUri == null) entry?.let { resourceIconResolver.peekCached(it, size) }
             ?.takeUnless { it.source == "fallback" } else null
         if (cached != null) { applyIcon(cached, true); return } else {
             val hot = when {
@@ -8563,6 +8632,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         ResourceArtworkCache.reads.execute {
             if (!currentRequest()) return@execute
             val baseline = runCatching { when {
+                locationUri != null -> resourceIconResolver.resolveLocation(locationUri, node.name, size)
                 node.key == "application_public" || providerAuthority != null ->
                     resourceIconResolver.resolveApplicationPublic(node.name, size)
                 entry != null -> resourceIconResolver.directoryTheme(entry, size)
@@ -8571,7 +8641,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     node.icon, node.name, true, source = "directory-theme")
             } }.getOrElse { ResourceIconResolver.Icon(FileTypeIcons.folder(size), node.icon, node.name, true) }
             runOnUiThread { applyIcon(baseline, false) }
-            if (providerAuthority == null && (entry == null || node.needsAccessBadge || isCreateDirectoryNode(node))) return@execute
+            if (locationUri != null || (providerAuthority == null && (entry == null || node.needsAccessBadge || isCreateDirectoryNode(node)))) return@execute
             val sourceWorker = entry?.let(ResourceArtworkCache::sourceExecutor) ?: imageIo
             sourceWorker.execute sourceRead@ {
                 if (!currentRequest()) return@sourceRead
@@ -9036,6 +9106,11 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
             )),
             submenu("View", listOf(
+                action("Restore Virtual root shortcuts", shared.getStringSet("hidden_virtual_root_locations_v1", emptySet()).orEmpty().isNotEmpty()) {
+                    shared.edit().remove("hidden_virtual_root_locations_v1").apply()
+                    if (homeMode && homePage == "root") renderHomeItems()
+                    rebuildTreeRoots()
+                },
                 action(if (treeVisible) "Show files" else "Show tree") { showSidebar() },
                 action(if (grid) "List / details view" else "Grid view") {
                     grid = !grid; shared.edit().putBoolean("grid", grid).apply(); renderCurrentContents()
@@ -11548,12 +11623,12 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         }
 
-        val allowedFileOps = fileOpsGroup.filter { action ->
+        val allowedFileOps = fileOpsGroup.map { if (isShortcut && it == "Delete") "Delete link" else it }.filter { action ->
             val operation = when (action) {
                 "Copy", "Copy to…", "Create archive" -> StorageAction.COPY
                 "Move to…" -> StorageAction.MOVE
                 "Rename" -> StorageAction.RENAME
-                "Delete" -> StorageAction.DELETE
+                "Delete", "Delete link" -> StorageAction.DELETE
                 "Paste into folder" -> StorageAction.CREATE
                 else -> null
             }
@@ -11703,7 +11778,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 "Copy to…" -> showDestinationPicker(entry, false)
                 "Move to…" -> showDestinationPicker(entry, true)
                 "Rename" -> renameEntry(entry)
-                "Delete" -> confirmDelete(entry)
+                "Delete", "Delete link" -> confirmDelete(entry)
                 "Install as icon theme" -> installIconThemeFromEntry(entry)
                 "Properties" -> showPropertiesDialog(entry)
                 else -> showPropertiesDialog(entry)
@@ -13844,13 +13919,15 @@ class MainActivity : Activity(), DebugDumpObserver {
             return
         }
         val isDirectory = entry.metadata.isDirectory && !entry.metadata.isSymbolicLink
-        val title = if (isDirectory) "Delete folder and its contents?" else "Delete ${entry.metadata.name}?"
+        val isLink = com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null
+        val label = shortcutCache.get(entry.uri.toString())?.displayNameOverride ?: entry.metadata.name
+        val title = if (isLink) "Delete link $label?" else if (isDirectory) "Delete folder and its contents?" else "Delete ${entry.metadata.name}?"
         val message = if (isDirectory) {
             "This will recursively delete '${entry.metadata.name}' and all files and folders inside it. This cannot be undone."
-        } else if (entry.ref.providerId == containerLinkProvider.id) "Only this container link will be deleted. Its target and contents stay untouched."
+        } else if (isLink) "Only this link will be deleted. Its target and contents stay untouched."
             else "This cannot be undone."
         dialogBuilder().setTitle(title).setMessage(message)
-            .setNegativeButton("Cancel", null).setPositiveButton(if (isDirectory) "Delete all" else "Delete") { _, _ ->
+            .setNegativeButton("Cancel", null).setPositiveButton(if (isLink) "Delete link" else if (isDirectory) "Delete all" else "Delete") { _, _ ->
                 startBatchDelete(listOf(entry), onFinished)
             }.show()
     }

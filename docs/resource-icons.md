@@ -237,6 +237,9 @@ Existing board pins can also be dragged to reorder/swap. Numbered filenames stor
 the order; the JSON display name remains the visible label and is edited by Rename
 without changing its filename. The [pin order audit](navigation-menus-disk-usage.md#pin-order-and-filename-audit)
 documents spacing, padding, live previews and recovery.
+Virtual-root built-ins and their pinned `infinifolder-location` page links also
+share logical theme artwork; stored root links supply their link metadata to tree
+resolution, including embedded icons. See [virtual-root actions](navigation-menus-disk-usage.md#virtual-root-shortcut-actions).
 
 In **Link properties → Embedded link icon**, **Choose image…** imports an image
 and **Remove image** restores automatic target artwork. A pinned link's long-press

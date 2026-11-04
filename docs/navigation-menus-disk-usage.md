@@ -20,6 +20,56 @@ of the decorative icon. Screen readers receive the action label once.
 
 Hold countdown covers the icon; release after the hold opens the menu, movement begins drag. Selected sets drag together. Same-device drops move, cross/unknown-device drops copy. Source-self drops open the menu. Tree/file edges autoscroll and tree linger expands paths. Latest drops, autoscroll and pane switching are user-confirmed; broader backend/orientation checks remain.
 
+Drag hover now waits **2.1 seconds** before opening a container (previously 700 ms),
+and **1.95 seconds** before expanding a tree node (previously 650 ms). Moving away
+cancels the pending action. Pin-board drops still do not navigate on hover.
+
+## Virtual-root shortcut actions
+
+Built-in and discovered location tiles have long-press **Open**, **Pin to top**/
+**Unpin**, and **Delete link** actions. Existing connection/source actions remain
+under **More options…**. Pinning browser pages uses a normal public `.iflink` with
+an `infinifolder-location://<key>` target. `BrowserLocations` identifies built-in
+pages; their existing browser controllers perform navigation, without pretending
+these pages are readable storage backends. Storage permissions are checked by the
+normal navigation flow. Unknown page targets show an error.
+
+Built-in shortcut deletion hides the tile and its Virtual-root tree entry without
+removing storage, credentials or pinned copies. **View → Restore Virtual root
+shortcuts** restores these hidden tiles. Stored user `.iflink` items retain the
+existing file menu; **Delete link** deletes that link file after confirmation,
+leaving its target intact. Pin-board `.iflink` menus expose Delete link too.
+
+Root tiles, tree entries, pinned page links and launcher links use the shared
+icon resolver and theme logical keys. Stored root links supply their actual link
+entry to tree icon resolution, preserving embedded/URI overrides. The Pin board
+page retains directory-cover resolution. Page links opened from the launcher use
+the full browser; actual storage containers retain floating-window behavior.
+
+Build evidence for these changes and startup freeze diagnostics:
+`build/docs-audit/virtual-root-pin-repair-build.log`; the app and combined
+standalone-host debug build command passed. Documentation link checks found no
+missing files or anchors. No automated tests were added
+or run. Root long-press actions, hide/restore, pin navigation, theme consistency,
+launcher routing and hover timing remain unverified on-device.
+
+### Reported startup freeze/crash
+
+The owner reports a freeze followed by a crash after build `d5b9d4b`. The latest
+available exported fatal log (`infinifolder-crash-20261104-213324-073.log`) predates
+that build; it does not establish the cause of this failure. No ADB device is
+connected, and app-private current diagnostics cannot be read from this workspace.
+The crash is **not yet diagnosed or confirmed fixed**.
+
+The existing UI monitor missed pre-resume startup work. It now covers application
+and activity startup as well as resumed screens. Debug builds capture bounded,
+sanitized thread stacks after a sustained UI stall and export
+`infinifolder-stall-<timestamp>.log` to the already configured debug folder, without
+waiting for the debug button. This exports logs only. Private pending evidence is
+retained if export cannot complete and retried on the next launch. Release builds
+do not perform this automatic stall export. Actual freeze capture/export and the
+reported crash still require device evidence.
+
 ## Public pin board directory
 
 The compact pin board is a view of **Internal storage → InfiniFolder → Pin board**.

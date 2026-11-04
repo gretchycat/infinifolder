@@ -15,7 +15,7 @@ import com.infinifolder.model.*
 import com.infinifolder.storage.*
 import com.infinifolder.overlay.FloatingContainerService
 
-/** Transparent shortcut dispatcher: container launches never construct the full browser UI. */
+/** Transparent dispatcher: storage containers float; browser-page links open their normal UI. */
 class HomeItemActivity : Activity() {
     private var pendingContainer: Uri? = null
     private var pendingContainerName: String? = null
@@ -74,6 +74,7 @@ class HomeItemActivity : Activity() {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     try {
                     when {
+                        BrowserLocations.owns(target) -> openFull(target)
                         TermuxCommandLink.owns(target) -> TermuxCommandLink.launch(this, target) { finish() }
                         AppsUri.isAppUri(target) -> {
                             val launch = AppsUri.getPackageName(target)?.let(packageManager::getLaunchIntentForPackage)

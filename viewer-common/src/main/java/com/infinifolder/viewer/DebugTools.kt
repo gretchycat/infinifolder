@@ -61,6 +61,10 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
     private val crashExporter = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
         Thread(task, "InfiniFolderCrashExport").apply { isDaemon = true }
     }
+    private val stallExporter = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+        Thread(task, "InfiniFolderStallExport").apply { isDaemon = true }
+    }
+    private val stallExportPending = AtomicBoolean(false)
     var dumpGeneration: Long = 0
         private set
     fun install(application: Application) {
@@ -68,6 +72,37 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
             DiagnosticLog.providerResolver = { com.infinifolder.storage.StorageRuntime.get(it).provider }
             DiagnosticLog.init(application)
             UiResponsivenessMonitor.install()
+            if (application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                UiResponsivenessMonitor.onStall = { activity, evidence ->
+                    if (stallExportPending.compareAndSet(false, true)) {
+                        try {
+                            // Capture thread state before queuing storage work: the UI may
+                            // have recovered or Android may terminate the process later.
+                            val trace = buildString {
+                                append("Activity: $activity\n"); append(android.util.Log.getStackTraceString(evidence))
+                                Thread.getAllStackTraces().entries.sortedBy { it.key.name }.take(64).forEach { (thread, stack) ->
+                                    append("\nThread: ${thread.name} state=${thread.state}\n")
+                                    stack.take(32).forEach { append("    at $it\n") }
+                                }
+                            }
+                            val report = DiagnosticLog.sanitize(trace).take(128 * 1024)
+                            stallExporter.execute {
+                                try {
+                                    val pending = java.io.File(application.filesDir, "diagnostics/ui-stall-pending.log")
+                                    pending.parentFile?.mkdirs()
+                                    pending.writeText(report)
+                                    exportPendingStall(application)
+                                } catch (error: Exception) {
+                                    DiagnosticLog.record("ui.stall.capture-failed", error=error)
+                                } finally { stallExportPending.set(false) }
+                            }
+                        } catch (error: Exception) {
+                            stallExportPending.set(false)
+                            DiagnosticLog.record("ui.stall.capture-failed", error=error)
+                        }
+                    }
+                }
+            }
             val previous = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, error ->
                 DiagnosticLog.record("uncaught", "application failure", error)
@@ -84,9 +119,31 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
             application.registerActivityLifecycleCallbacks(this)
             if (application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
                 crashExporter.execute { exportPendingCrash(application) }
+                stallExporter.execute { exportPendingStall(application) }
             }
         }
     }
+
+    /** Log-only automatic export to the already configured folder; no background screenshots. */
+    private fun exportPendingStall(application: Application) {
+        runCatching {
+            val pending = java.io.File(application.filesDir, "diagnostics/ui-stall-pending.log")
+            if (!pending.isFile) return
+            val destination = DebugDumpDestination.get(application) ?: return
+            val stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS").withZone(java.time.ZoneOffset.UTC).format(Instant.now())
+            val report = pending.readText().take(128 * 1024) + "\n--- Session ---\n" + DiagnosticLog.snapshot(application)
+            when (val result = DebugDumpWriter.write(StorageRuntime.get(application).provider, destination,
+                listOf(DebugArtifact("infinifolder-stall-$stamp.log", "text/plain", report.toByteArray())))) {
+                is ProviderResult.Success -> pending.delete()
+                is ProviderResult.Failure -> DiagnosticLog.record("ui.stall.export-failed", result.message, result.cause)
+                else -> DiagnosticLog.record("ui.stall.export-failed", "Debug destination does not support log export")
+            }
+        }.onFailure { DiagnosticLog.record("ui.stall.export-failed", error=it) }
+    }
+
+    fun activityStarting(activity: Activity) { UiResponsivenessMonitor.starting(activity) }
+
+    override fun onActivityPreCreated(activity: Activity, savedInstanceState: Bundle?) { activityStarting(activity) }
 
     /** Export fatal traces without requiring an Activity to stay open. Retry on the next launch. */
     private fun exportPendingCrash(application: Application) {
@@ -210,11 +267,11 @@ object DebugTools : Application.ActivityLifecycleCallbacks {
             }
         }
     }
-    override fun onActivityDestroyed(activity: Activity) { buttons.remove(activity); UiResponsivenessMonitor.paused(activity) }
+    override fun onActivityDestroyed(activity: Activity) { buttons.remove(activity); UiResponsivenessMonitor.stopped(activity) }
     override fun onActivityCreated(activity: Activity, state: Bundle?) {}
     override fun onActivityStarted(activity: Activity) {}
     override fun onActivityPaused(activity: Activity) { UiResponsivenessMonitor.paused(activity) }
-    override fun onActivityStopped(activity: Activity) {}
+    override fun onActivityStopped(activity: Activity) { UiResponsivenessMonitor.stopped(activity) }
     override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) {}
 }
 
@@ -224,6 +281,7 @@ open class ViewerActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DebugTools.install(application)
+        DebugTools.activityStarting(this)
         com.infinifolder.theme.ThemeManager.init(applicationContext)
     }
 

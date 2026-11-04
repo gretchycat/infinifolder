@@ -7,6 +7,7 @@ import java.util.Locale
 /** Decide whether a resolved pin belongs to a storage surface or an external URI handler. */
 internal object HomeItemRouting {
     fun opensExternally(target: Uri, hasStorageEntry: Boolean): Boolean {
+        if (BrowserLocations.owns(target)) return false
         if (hasStorageEntry) return false
         val scheme = target.scheme?.lowercase(Locale.ROOT)?.takeIf { it.isNotBlank() } ?: return false
         if (ContainerUris.networkType(target) != null) return false

@@ -27,7 +27,7 @@ internal class PinBoardDirectory(
     private val shortcutReader: (ResourceEntry) -> ShortcutInfo?,
     private val onLinksChanged: (Set<Uri>) -> Unit
 ) {
-    val file = File(local.store.root, "InfiniFolder/Pin board")
+    val file = File(local.store.root, RELATIVE_PATH)
     val uri: Uri = local.uriFor(file)
     fun isRoot(candidate: Uri?): Boolean = candidate != null && local.owns(candidate) && runCatching {
         local.fileFor(candidate).toPath().normalize() == file.toPath().normalize()
@@ -378,6 +378,7 @@ internal class PinBoardDirectory(
     }
 
     companion object {
+        const val RELATIVE_PATH = "InfiniFolder/Pin board"
         private val ORDER_PREFIX = Regex("^(\\d+)[ _-]+")
         private const val ORDER_JOURNAL = ".pin-board-order.json"
     }

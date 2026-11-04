@@ -59,6 +59,7 @@ val generateIntentManifest by tasks.registering(Exec::class) {
     inputs.file(layout.projectDirectory.file("src/main/AndroidManifest.xml"))
     inputs.file(rootProject.file("scripts/build-android-intent-manifest.py"))
     inputs.file(rootProject.file("scripts/export-supported-types.py"))
+    inputs.file(layout.projectDirectory.file("src/main/java/com/infinifolder/BrowserLocations.kt"))
     inputs.files(rootProject.files(
         "libraries/libinfinistore/store-android/src/main/java/com/infinifolder/mime/MimeRegistry.kt",
         "libraries/libinfinistore/store-android/src/main/java/com/infinifolder/archive/ArchiveFormats.kt",
