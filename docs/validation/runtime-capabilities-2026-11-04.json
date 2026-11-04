@@ -1,0 +1,397 @@
+{
+  "date": "2026-11-04",
+  "scope": "Runtime capability discovery; no connected device",
+  "libraries": {
+    "libinfinicanvas": "11209c0f0bdc5f877f17c4637ed1ebec692a8132",
+    "libinfiniscribe": "e602c329c85c057ce9a82553d29a093ee2c6c419",
+    "libinfinisound": "1ac5c40bdcf961c32e192d823fa5cbae66386b49",
+    "libinfinistore": "884bc9ea924a80e0a128e7dac013d0a103a647f8",
+    "libinfinistream": "d7f5cfeab1a2658d7dc70aa63dcaa5ae5bce183c",
+    "libinfinivault": "2506e7c3c9bfdbc97bbdf573e9af5ffb5a243448",
+    "libinfinivideo": "6189278f8e098a71425a7dfd15254b9f22afbbb5"
+  },
+  "tests": {
+    "tests": 1071,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "modules": {
+    "app": {
+      "tests": 21,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "libraries/libinfinicanvas/canvas-android": {
+      "tests": 90,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "libraries/libinfiniscribe/scribe-core": {
+      "tests": 140,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "libraries/libinfiniscribe/scribe-reparse-api": {
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "libraries/libinfiniscribe/scribe-reparse-toml": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "libraries/libinfiniscribe/scribe-reparse-xml": {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "libraries/libinfiniscribe/scribe-reparse-yaml": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "libraries/libinfinisound/audio-api": {
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "libraries/libinfinisound/audio-core": {
+      "tests": 102,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "libraries/libinfinistore/store-android": {
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "libraries/libinfinistream/stream-core": {
+      "tests": 40,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "libraries/libinfinivault/vault-android": {
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "libraries/libinfinivideo/video-api": {
+      "tests": 31,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "storage-engine": {
+      "tests": 370,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "viewer-audio": {
+      "tests": 70,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "viewer-common": {
+      "tests": 122,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "viewer-csv": {
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "viewer-epub": {
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "viewer-hex": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "viewer-image": {
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "viewer-markdown": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "newCapabilityCases": {
+    "com.infinifolder.preview.RuntimeCanvasCapabilitiesTest.discoveryInvokesTheActualPortablePixmapParserWithoutAnApp": "passed",
+    "io.github.gretchycat.infiniscribe.RuntimePipelineDiscoveryTest.discoveredStagesDecodeBytesAndParseARealTableWithoutTheApplication": "passed",
+    "io.github.gretchycat.infiniscribe.reparse.RuntimeReparserDiscoveryTest.installedParserIsDiscoveredAndParsesRealXmlWithoutAnApp": "passed",
+    "io.github.gretchycat.infiniscribe.reparse.RuntimeReparserDiscoveryTest.discoveredCoreTextProcessorProducesARealDocument": "passed",
+    "com.infinifolder.audio.RuntimeSoundCapabilitiesTest.registeringANewDecoderChangesActualFileDispatchWithoutEditingItsRegistry": "passed",
+    "com.infinifolder.audio.RuntimeSoundCapabilitiesTest.discoveredWaveDecoderReadsActualPcmWithoutAndroidOrTheApp": "passed",
+    "com.infinifolder.storage.RuntimeStoreCapabilitiesTest.registeredIdentificationServiceReadsActualPngBytesWithoutTheApp": "passed",
+    "io.github.gretchycat.infinistream.RuntimeCapabilitiesTest.serviceLoaderFindsAndExecutesARealTransformationWithoutAHost": "passed",
+    "io.github.gretchycat.infinistream.RuntimeCapabilitiesTest.sharedPrefixIsReadOnceAndReadonlyResourcesNeverOfferMutation": "passed",
+    "io.github.gretchycat.infinistream.RuntimeCapabilitiesTest.missingDependenciesAreReportedAndRefreshChangesAvailability": "passed",
+    "io.github.gretchycat.infinistream.RuntimeCapabilitiesTest.nestedDepthAndCancellationAreEnforcedBeforeReading": "passed",
+    "io.github.gretchycat.infinistream.RuntimeCapabilitiesTest.fingerprintIncludesPriorityAndFieldBoundaries": "passed",
+    "io.github.gretchycat.infinistream.RuntimeCapabilitiesTest.registrationOverlapAndRemovalPreserveBothHandlersAndCallbacks": "passed",
+    "io.github.gretchycat.infinistream.RuntimeCapabilitiesTest.failedSourcesAreNotReopenedForEveryHandler": "passed",
+    "com.infinifolder.archive.RuntimeContainerCapabilitiesTest.newRegisteredContainerUsesRealListingAndEntryDispatch": "passed",
+    "com.infinifolder.archive.RuntimeContainerCapabilitiesTest.discoveredReaderListsAndReadsRealNestedZipWithoutAnApplication": "passed",
+    "com.infinifolder.viewer.RuntimeViewerDiscoveryTest.libraryRegistrationChangesARealViewerProbeAndExecutesItsLibraryProcessor": "passed",
+    "com.infinifolder.viewer.MarkdownCapabilityIntegrationTest.installedComponentUsesLinkedScribeServicesWithoutStartingTheApplication": "passed"
+  },
+  "finalStreamCommand": {
+    "command": "gradle -p libraries/libinfinistream :stream-core:test :stream-core:assemble --offline --console=plain",
+    "result": "BUILD SUCCESSFUL in 10s",
+    "exitCode": 0
+  },
+  "finalHostCommand": {
+    "command": "gradle :app:assembleDebug :viewer-host:assembleDebug testDebugUnitTest -Pviewer=all --offline --console=plain",
+    "result": "BUILD SUCCESSFUL in 20s; 589 tasks (3 executed, 586 up-to-date)",
+    "exitCode": 0
+  },
+  "baseline": "1071 reported cases; 0 known baseline failures; 30 resolved; 0 regressions; 0 missing baseline cases",
+  "catalog": {
+    "handlers": 65,
+    "fingerprint": "485caf53f741cda33993f0a3fac820c1db06678678282e7b99369edc2c9da714",
+    "failures": [],
+    "availability": "NOT_EVALUATED"
+  },
+  "apks": {
+    "app": {
+      "path": "app/build/outputs/apk/debug/app-debug.apk",
+      "sha256": "e5d36240a1104e37e2ac71d3d0d3a65a11775e10c9aac2258f0b36cc6a1bd3f0",
+      "sizeBytes": 410591959,
+      "providers": [
+        "com.infinifolder.archive.VaultCapabilityProvider",
+        "com.infinifolder.audio.AndroidSoundCapabilityProvider",
+        "com.infinifolder.audio.AudioArtworkCapabilityProvider",
+        "com.infinifolder.audio.PortableSoundCapabilityProvider",
+        "com.infinifolder.preview.BuiltinCanvasCapabilityProvider",
+        "com.infinifolder.storage.StoreCapabilityProvider",
+        "com.infinifolder.viewer.AudioViewerCapabilityProvider",
+        "com.infinifolder.viewer.CsvViewerCapabilityProvider",
+        "com.infinifolder.viewer.EpubViewerCapabilityProvider",
+        "com.infinifolder.viewer.FontViewerCapabilityProvider",
+        "com.infinifolder.viewer.HexViewerCapabilityProvider",
+        "com.infinifolder.viewer.HtmlViewerCapabilityProvider",
+        "com.infinifolder.viewer.ImageViewerCapabilityProvider",
+        "com.infinifolder.viewer.MarkdownViewerCapabilityProvider",
+        "com.infinifolder.viewer.PdfViewerCapabilityProvider",
+        "com.infinifolder.viewer.TextViewerCapabilityProvider",
+        "com.infinifolder.viewer.VideoViewerCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.CoreScribeCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.android.AndroidScribeCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.mobi.MobiCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.office.OfficeCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.office.SpreadsheetCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.reparse.JsonReparserCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.reparse.TomlReparserCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.reparse.XmlReparserCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.reparse.YamlReparserCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.rtf.RtfCapabilityProvider",
+        "io.github.gretchycat.infinistream.StreamCapabilityProvider",
+        "io.github.gretchycat.infinivideo.VideoCapabilityProvider"
+      ],
+      "sharedViewerContractInDex": true
+    },
+    "viewer-host": {
+      "path": "viewer-host/build/outputs/apk/debug/viewer-host-debug.apk",
+      "sha256": "205f1ed5953a9da2f5c20d6c9fb3962fc9bc5ba1ad078dd4457206c706da2d0b",
+      "sizeBytes": 397136058,
+      "providers": [
+        "com.infinifolder.archive.VaultCapabilityProvider",
+        "com.infinifolder.audio.AndroidSoundCapabilityProvider",
+        "com.infinifolder.audio.AudioArtworkCapabilityProvider",
+        "com.infinifolder.audio.PortableSoundCapabilityProvider",
+        "com.infinifolder.preview.BuiltinCanvasCapabilityProvider",
+        "com.infinifolder.storage.StoreCapabilityProvider",
+        "com.infinifolder.viewer.AudioViewerCapabilityProvider",
+        "com.infinifolder.viewer.CsvViewerCapabilityProvider",
+        "com.infinifolder.viewer.EpubViewerCapabilityProvider",
+        "com.infinifolder.viewer.FontViewerCapabilityProvider",
+        "com.infinifolder.viewer.HexViewerCapabilityProvider",
+        "com.infinifolder.viewer.HtmlViewerCapabilityProvider",
+        "com.infinifolder.viewer.ImageViewerCapabilityProvider",
+        "com.infinifolder.viewer.MarkdownViewerCapabilityProvider",
+        "com.infinifolder.viewer.PdfViewerCapabilityProvider",
+        "com.infinifolder.viewer.TextViewerCapabilityProvider",
+        "com.infinifolder.viewer.VideoViewerCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.CoreScribeCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.android.AndroidScribeCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.mobi.MobiCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.office.OfficeCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.office.SpreadsheetCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.reparse.JsonReparserCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.reparse.TomlReparserCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.reparse.XmlReparserCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.reparse.YamlReparserCapabilityProvider",
+        "io.github.gretchycat.infiniscribe.rtf.RtfCapabilityProvider",
+        "io.github.gretchycat.infinistream.StreamCapabilityProvider",
+        "io.github.gretchycat.infinivideo.VideoCapabilityProvider"
+      ],
+      "sharedViewerContractInDex": true
+    }
+  },
+  "unverified": [
+    "Android icon/viewer/editor presentation and gestures",
+    "Live SAF and network grants/credentials/reconnect behavior",
+    "Device native/audio/video backends and surface playback",
+    "Release shrinker execution",
+    "Arbitrary third-party handlers and unsupported input variants"
+  ],
+  "status": "passed",
+  "initialGateCommands": [
+    {
+      "name": "stream-gate",
+      "command": [
+        "gradle",
+        "-p",
+        "libraries/libinfinistream",
+        ":stream-core:test",
+        ":stream-core:assemble",
+        "--offline",
+        "--console=plain"
+      ],
+      "exitCode": 0,
+      "seconds": 12.2
+    },
+    {
+      "name": "scribe-gate",
+      "command": [
+        "gradle",
+        "-p",
+        "libraries/libinfiniscribe",
+        ":scribe-core:test",
+        ":scribe-reparse-api:test",
+        ":scribe-reparse-xml:test",
+        ":scribe-reparse-yaml:test",
+        ":scribe-reparse-toml:test",
+        ":scribe-office:test",
+        ":scribe-rtf:test",
+        ":scribe-android:testDebugUnitTest",
+        ":scribe-mobi-android:testDebugUnitTest",
+        ":scribe-reparse-json-android:testDebugUnitTest",
+        ":scribe-android:assembleDebug",
+        ":scribe-mobi-android:assembleDebug",
+        ":scribe-reparse-json-android:assembleDebug",
+        "--offline",
+        "--console=plain"
+      ],
+      "exitCode": 0,
+      "seconds": 36.0
+    },
+    {
+      "name": "sound-gate",
+      "command": [
+        "gradle",
+        "-p",
+        "libraries/libinfinisound",
+        ":audio-api:test",
+        ":audio-core:test",
+        ":audio-guitarpro:test",
+        ":audio-processing:testDebugUnitTest",
+        ":audio-processing:assembleDebug",
+        "--offline",
+        "--console=plain"
+      ],
+      "exitCode": 0,
+      "seconds": 32.4
+    },
+    {
+      "name": "canvas-gate",
+      "command": [
+        "gradle",
+        "-p",
+        "libraries/libinfinicanvas",
+        ":canvas-android:testDebugUnitTest",
+        ":canvas-android:assembleDebug",
+        "--offline",
+        "--console=plain"
+      ],
+      "exitCode": 0,
+      "seconds": 13.2
+    },
+    {
+      "name": "store-gate",
+      "command": [
+        "gradle",
+        "-p",
+        "libraries/libinfinistore",
+        ":store-android:testDebugUnitTest",
+        ":store-android:assembleDebug",
+        "--offline",
+        "--console=plain"
+      ],
+      "exitCode": 0,
+      "seconds": 18.5
+    },
+    {
+      "name": "vault-gate",
+      "command": [
+        "gradle",
+        "-p",
+        "libraries/libinfinivault",
+        ":vault-android:testDebugUnitTest",
+        ":vault-android:assembleDebug",
+        "--offline",
+        "--console=plain"
+      ],
+      "exitCode": 0,
+      "seconds": 12.6
+    },
+    {
+      "name": "video-gate",
+      "command": [
+        "gradle",
+        "-p",
+        "libraries/libinfinivideo",
+        ":video-api:test",
+        ":video-android:testDebugUnitTest",
+        ":video-android:assembleDebug",
+        "--offline",
+        "--console=plain"
+      ],
+      "exitCode": 0,
+      "seconds": 13.5
+    },
+    {
+      "name": "host-gate",
+      "command": [
+        "gradle",
+        ":app:assembleDebug",
+        ":viewer-host:assembleDebug",
+        "testDebugUnitTest",
+        "-Pviewer=all",
+        "--offline",
+        "--console=plain"
+      ],
+      "exitCode": 1,
+      "seconds": 171.1
+    }
+  ]
+}

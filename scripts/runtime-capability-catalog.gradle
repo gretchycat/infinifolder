@@ -1,0 +1,36 @@
+// Shared build adapter: query handlers from the actual dependency classpath.
+// This snapshots identity for Android install-time filters, not device codec availability.
+def runtimeCatalogFile = layout.buildDirectory.file('generated/capabilities/catalog.json')
+def catalogClasses = providers.provider {
+    def configuration = configurations.getByName('debugRuntimeClasspath')
+    configuration.incoming.artifactView {
+        attributes.attribute(org.gradle.api.artifacts.type.ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, 'android-classes-jar')
+    }.files
+}
+def catalogResources = providers.provider {
+    def configuration = configurations.getByName('debugRuntimeClasspath')
+    configuration.incoming.artifactView {
+        attributes.attribute(org.gradle.api.artifacts.type.ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, 'android-java-res')
+    }.files
+}
+def exportRuntimeCapabilities = tasks.register('exportRuntimeCapabilities', JavaExec) {
+    group = 'documentation'
+    description = 'Export registered library and viewer identities without starting InfiniFolder'
+    classpath(catalogClasses)
+    classpath(catalogResources)
+    classpath(providers.provider { android.bootClasspath })
+    mainClass = 'io.github.gretchycat.infinistream.CapabilityCatalogMain'
+    args(runtimeCatalogFile.get().asFile.absolutePath)
+    outputs.file(runtimeCatalogFile)
+    maxHeapSize = '256m'
+}
+plugins.withId('com.android.application') {
+    tasks.named('generateIntentManifest').configure {
+        dependsOn(exportRuntimeCapabilities)
+        inputs.file(runtimeCatalogFile)
+        doFirst {
+            def previous = getCommandLine()
+            setCommandLine(previous + ['--capabilities-json', runtimeCatalogFile.get().asFile.absolutePath])
+        }
+    }
+}

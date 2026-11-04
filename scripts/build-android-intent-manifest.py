@@ -47,13 +47,14 @@ def main():
     parser.add_argument('--template', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--host', choices=['app', 'viewer'], required=True)
-    parser.add_argument('--viewer', default='all', choices=['all', 'image', 'text', 'markdown', 'html', 'pdf', 'csv', 'epub', 'font', 'audio', 'video'])
+    parser.add_argument('--capabilities-json', type=Path)
+    parser.add_argument('--viewer', default='all')
     args = parser.parse_args()
     inventory = runpy.run_path(str(ROOT / 'scripts/export-supported-types.py'))
     rows = inventory['rows']
     file_rows = {r['identifier'].lstrip('.'): r for r in rows if r['category'] == 'file_type'}
     formats = inventory['document_formats']
-    text_mimes = inventory['values'](inventory['MEDIA'], 'TEXT_MIME_TYPES')
+    text_mimes = inventory['text_mimes']
 
     def families(extension, row):
         if extension in formats:
@@ -123,7 +124,7 @@ def main():
     if args.host == 'app' or args.viewer in {'all', 'font'}:
         mimes.update(inventory['font_mimes'])
     if args.host == 'app' or args.viewer in {'all', 'audio'}:
-        mimes.update(inventory['values'](inventory['MEDIA'], 'AUDIO_MIME_TYPES'))
+        mimes.update(inventory['audio_mimes'])
     if args.host == 'viewer':
         if args.viewer in {'all', 'text'}:
             editable_mimes.update({'text/*'} | text_mimes)
@@ -153,6 +154,32 @@ def main():
     schemes = {r['identifier'].rstrip(':') for r in rows
         if r['category'] == 'uri_type' and r['support_level'].startswith('implemented')}
     schemes.difference_update({'content', 'file'})
+
+    if args.capabilities_json:
+        catalog = json.loads(args.capabilities_json.read_text())
+        if catalog.get('schemaVersion') != 1 or catalog.get('failures'):
+            raise ValueError('Invalid or incomplete registered capability catalog')
+        group_for_media = {'IMAGE': 'image', 'TEXT': 'text', 'MARKDOWN': 'markdown',
+            'HTML': 'html', 'PDF': 'pdf', 'FONT': 'font', 'SPREADSHEET': 'csv',
+            'EPUB': 'epub', 'EBOOK': 'epub', 'DOCUMENT': 'epub', 'AUDIO': 'audio', 'VIDEO': 'video'}
+        delegated_schemes = {'http', 'https', 'mailto', 'tel', 'sms', 'irc', 'ircs', 'file', 'content'}
+        for handler in catalog['handlers']:
+            operations = set(handler['operations'])
+            attributes = handler.get('attributes', {})
+            groups = {group_for_media[t] for t in attributes.get('mediaTypes', '').split(',') if t in group_for_media}
+            usable = args.host == 'app' and bool(operations & {'decode', 'view', 'play', 'list'}) or (
+                args.host == 'viewer' and handler['library'] == 'viewers' and (args.viewer == 'all' or args.viewer in groups or attributes.get('viewerKind') == args.viewer))
+            for support in handler['formats']:
+                if usable:
+                    mimes.update(support['mimeTypes'])
+                    extensions.update(support['extensions'])
+                    if handler['library'] == 'viewers' and 'edit' in operations:
+                        editable_mimes.update(support['mimeTypes'])
+                        editable_extensions.update(support['extensions'])
+                if args.host == 'app' and handler['library'] == 'store' and {'list', 'read'} <= operations:
+                    schemes.update(set(support['uriSchemes']) - delegated_schemes)
+        if args.host != 'viewer' or args.viewer != 'hex':
+            mimes.difference_update({'application/octet-stream', 'application/binary'})
 
     tree = ET.parse(args.template)
     name = '.MainActivity' if args.host == 'app' else 'com.infinifolder.standalone.ViewerHostActivity'

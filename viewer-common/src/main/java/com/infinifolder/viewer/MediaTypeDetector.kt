@@ -29,59 +29,28 @@ object MediaTypeDetector {
         com.infinifolder.mime.MimeRegistry.effective(name,mimeType).lowercase(Locale.ROOT) in
             setOf("application/octet-stream","application/binary","application/x-binary","binary/octet-stream")
 
-    private val MARKDOWN_EXTENSIONS = setOf(
-        "md", "markdown", "mdown", "mkd", "mkdn"
-    )
+    private val MARKDOWN_EXTENSIONS get() = io.github.gretchycat.infiniscribe.ScribeTextFormats.MARKDOWN_EXTENSIONS
 
-    private val HTML_EXTENSIONS = setOf(
-        "html", "htm", "xhtml"
-    )
+    private val HTML_EXTENSIONS get() = io.github.gretchycat.infiniscribe.ScribeTextFormats.HTML_EXTENSIONS
 
-    private val AUDIO_EXTENSIONS = setOf(
-        "mmf", "smaf", "gp3", "mp3", "flac", "wav", "ogg", "oga", "opus", "m4a", "aac", "mid", "midi", "kar", "rmi", "wma", "ape", "aiff", "aif", "aifc", "alac",
-        "au", "snd", "voc", "8svx", "svx", "16sv", "maud", "w64", "rf64", "caf",
-        "avr", "ircam", "sph", "pvf", "wve", "htk", "adx", "amr", "awb", "gsm", "g722",
-        "sf2", "sfz", "pat", "mod", "s3m", "xm", "it", "dro", "imf", "vgm", "vgz", "ym",
-        "nsf", "spc", "sid", "dsf", "dff", "wv", "tta", "ra", "ac3", "eac3", "dts", "mlp", "thd",
-        "mp2", "3ga", "m4b", "m4r", "mka", "weba", "cdda", "m3u", "m3u8", "pls", "xspf", "cue"
-    )
+    private val AUDIO_EXTENSIONS get() = io.github.gretchycat.infinistream.RuntimeCapabilities.library("sound").descriptors().flatMap { it.formats }.flatMap { it.extensions }.toSet() + ArchiveFormats.PLAYLIST_EXTENSIONS
 
-    private val VIDEO_EXTENSIONS = setOf(
-        "mp4", "mkv", "webm", "avi", "mov", "3gp", "3gpp", "3g2", "ts", "m2ts", "ogv", "wmv", "flv", "m4v", "rm", "rmvb"
-    )
+    private val VIDEO_EXTENSIONS get() = io.github.gretchycat.infinistream.RuntimeCapabilities.library("video").descriptors().flatMap { it.formats }.flatMap { it.extensions }.toSet()
 
-    private val TEXT_EXTENSIONS = setOf(
-        "diz", "asc", "nfo", "ans", "ansi", "txt", "log", "cfg", "conf", "ini", "properties", "sh", "bash", "zsh", "fish",
-        "py", "kt", "kts", "java", "c", "cpp", "cc", "cxx", "h", "hpp", "cs", "go", "rs",
-        "rb", "php", "js", "mjs", "cjs", "ts", "tsx", "jsx", "json", "xml", "yaml", "yml",
-        "toml", "sql", "env", "diff", "patch", "bat", "cmd", "ps1",
-        "gradle", "lua", "r", "swift", "dart", "asm", "s", "pl", "pm", "tcl", "dockerfile",
-        "makefile", "mk", "cmake", "groovy", "gitignore", "gitattributes", "editorconfig", "bashrc", "zshrc", "profile",
-        "ada", "adb", "ads", "bas", "bi", "cbl", "clj", "cljc", "cljs",
-        "cob", "csh", "css", "cts", "el", "erl", "ex", "exs", "f", "f03",
-        "f08", "f90", "f95", "for", "fs", "fsx", "hh", "hp", "hrl", "hs",
-        "hxx", "inl", "ipp", "jl", "jsonc", "ksh", "less", "lhs", "lisp", "lsp",
-        "mak", "mts", "nim", "nims", "pas", "perl", "php3", "php4", "php5", "phps",
-        "plist", "pp", "py2", "py3", "pyi", "pyw", "sass", "sc", "scala", "scm",
-        "scss", "ss", "tcc", "tcsh", "tk", "vb", "vbs", "xsd", "xsl", "xslt"
-    )
+    private val TEXT_EXTENSIONS get() = io.github.gretchycat.infiniscribe.ScribeTextFormats.TEXT_EXTENSIONS
 
-    private val TEXT_MIME_TYPES = setOf(
-        "application/json", "application/xml", "application/x-yaml", "application/yaml",
-        "application/javascript", "application/x-javascript", "application/x-sh",
-        "application/x-csh", "application/x-python", "application/x-ruby",
-        "application/ld+json", "application/toml", "application/ecmascript",
-        "application/x-shellscript", "application/x-perl", "application/sql",
-        "application/x-bat", "application/x-powershell", "application/x-fishscript",
-        "application/x-php", "application/vnd.dart"
-    )
+    private val TEXT_MIME_TYPES get() = io.github.gretchycat.infiniscribe.ScribeTextFormats.TEXT_MIME_TYPES
 
-    private val AUDIO_MIME_TYPES = setOf(
-        "application/vnd.smaf", "application/x-smaf", "application/x-guitar-pro", "application/x-gtp"
-    )
+    private val AUDIO_MIME_TYPES get() = io.github.gretchycat.infinistream.RuntimeCapabilities.library("sound").descriptors().flatMap { it.formats }.flatMap { it.mimeTypes }.toSet()
 
     fun detect(name: String, mimeType: String? = null): MediaType {
         val safeMime = com.infinifolder.mime.MimeRegistry.effective(name, mimeType)
+        val discovered=ViewerComponents.resolve(io.github.gretchycat.infinistream.CapabilityResource(
+            io.github.gretchycat.infinistream.StreamMetadata(name=name,content=io.github.gretchycat.infinistream.ContentType(mimeType=safeMime))))
+        discovered?.descriptor?.attributes?.get("mediaTypes")?.split(',')?.firstNotNullOfOrNull { value ->
+            runCatching { MediaType.valueOf(value) }.getOrNull()
+        }?.let { return it }
+
         val lowerName = name.lowercase(Locale.ROOT)
         val ext = lowerName.substringAfterLast('.', "")
         val lowerMime = safeMime.lowercase(Locale.ROOT).substringBefore(';').trim()
@@ -210,8 +179,13 @@ object MediaTypeDetector {
         else -> false
     }
 
-    fun isEditable(name:String,mimeType:String?=null):Boolean =
-        io.github.gretchycat.infiniscribe.DocumentFormats.detect(name,mimeType)==null && isEditable(detect(name,mimeType))
+    fun isEditable(name:String,mimeType:String?=null):Boolean {
+        val resource=io.github.gretchycat.infinistream.CapabilityResource(io.github.gretchycat.infinistream.StreamMetadata(
+            name=name,content=io.github.gretchycat.infinistream.ContentType(mimeType=com.infinifolder.mime.MimeRegistry.effective(name,mimeType))))
+        if(ViewerComponents.resolve(resource,edit=true)!=null)return true
+        if(ViewerComponents.resolve(resource)!=null)return false
+        return io.github.gretchycat.infiniscribe.DocumentFormats.detect(name,mimeType)==null && isEditable(detect(name,mimeType))
+    }
 
     fun isEditable(type: MediaType): Boolean = when (type) {
         MediaType.IMAGE,

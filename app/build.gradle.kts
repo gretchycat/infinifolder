@@ -4,19 +4,10 @@ plugins {
 }
 
 dependencies {
+    rootProject.subprojects.filter { it.name.startsWith("viewer-") && it.name !in setOf("viewer-host") }
+        .sortedBy { it.name }.forEach { implementation(project(it.path)) }
+
     implementation(project(":storage-engine"))
-    implementation(project(":viewer-common"))
-    implementation(project(":viewer-image"))
-    implementation(project(":viewer-text"))
-    implementation(project(":viewer-markdown"))
-    implementation(project(":viewer-html"))
-    implementation(project(":viewer-pdf"))
-    implementation(project(":viewer-csv"))
-    implementation(project(":viewer-epub"))
-    implementation(project(":viewer-font"))
-    implementation(project(":viewer-hex"))
-    implementation(project(":viewer-audio"))
-    implementation(project(":viewer-video"))
     implementation("io.github.gretchycat.libinfiniscribe:scribe-android:0.1.0")
     implementation("io.github.gretchycat.libinfiniscribe:scribe-mobi-android:0.1.0")
 
@@ -49,6 +40,7 @@ android {
     // Sound and libVLC both provide the shared C++ runtime. Validate the packaged
     // runtime with both native backends; never ship two copies at the same path.
     packaging.jniLibs.pickFirsts += "**/libc++_shared.so"
+    packaging.resources.merges += "META-INF/services/io.github.gretchycat.infinistream.CapabilityProvider"
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -87,3 +79,5 @@ val generateIntentManifest by tasks.registering(Exec::class) {
 }
 android.sourceSets.getByName("main").manifest.srcFile(generatedIntentManifest)
 tasks.named("preBuild").configure { dependsOn(generateIntentManifest) }
+
+apply(from = rootProject.file("scripts/runtime-capability-catalog.gradle"))

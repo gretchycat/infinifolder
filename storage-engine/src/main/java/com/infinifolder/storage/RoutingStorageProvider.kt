@@ -25,7 +25,8 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
             DiagnosticLog.record("torrent.checkpoint.published-cleanup-failed", "Cache retained after publication", error)
         } finally { runCatching { checkpoint.close() } }
     }
-    private val byId = providers.associateBy { it.id }.also { require(it.size == providers.size) { "Duplicate provider ID" } }
+    private val byId = java.util.concurrent.ConcurrentHashMap(providers.associateBy { it.id }.also { require(it.size == providers.size) { "Duplicate provider ID" } })
+    fun registerAdditional(provider:StorageProvider):Boolean=byId.putIfAbsent(provider.id,provider)==null
 
     fun setTorrentAutoResume(destination: ResourceRef, enabled: Boolean) {
         (byId["torrent"] as? RandomAccessTransferSource)?.setAutoResume(destination, enabled)

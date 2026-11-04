@@ -1,8 +1,18 @@
 # Roadmap
 
+Runtime handler discovery: [interfaces, dependency audit, processing chains and verification](runtime-capabilities.md). All seven libraries and viewer modules publish their own capability providers; linked library dependencies remain explicit.
+
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
 Updated 2026-11-04. See [current status](project-status.md) for confirmed behavior and [detailed tasks](feature-todo.md) for acceptance work.
+
+## Runtime discovery implemented — 2026-11-04
+
+Handler registries, runtime dependency reports, direct typed library consumers and
+self-registering viewer components are implemented. All library builds and the
+1,071-case regression gate pass. Continue device acceptance and progressively
+expose negotiating stream adapters for legacy backends; their existing typed
+services and parser limits remain supported. See [audit and remaining limits](runtime-capabilities.md).
 
 ## Current source synchronization
 

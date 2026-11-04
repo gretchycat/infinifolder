@@ -19,8 +19,11 @@ class LibraryAudioPreparationTest {
             val prepared = AudioProcessing.prepareForOutput(fixture(ext),destination,observer=object : AudioPreparationObserver {
                 override fun warning(decoder: String, error: Throwable) { attempts += decoder }
             })
-            // Android codec stubs are unavailable on this JVM; the library must own the fallback.
-            assertTrue(attempts.contains("Android.MediaCodec"))
+            // Discovery must omit the unavailable Android backend, retaining real portable decoding.
+            val platform=SoundCapabilities.registry.query(io.github.gretchycat.infinistream.Operations.DECODE,includeUnavailable=true)
+                .single {it.descriptor.attributes["decoderTier"]=="platform"}
+            assertEquals(io.github.gretchycat.infinistream.AvailabilityState.UNAVAILABLE,platform.availability.state)
+            assertFalse(attempts.contains("Android.MediaCodec"))
             assertTrue(prepared.decoder.startsWith("Portable."))
             assertEquals(44100,prepared.format.sampleRate)
             assertEquals(2,prepared.format.channels)

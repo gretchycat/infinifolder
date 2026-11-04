@@ -44,7 +44,7 @@ class VideoPlayerActivity : ViewerActivity() {
     private lateinit var rootLayout: FrameLayout
     private lateinit var videoContainer: FrameLayout
     private lateinit var videoView: View
-    private lateinit var videoPlayer: LibVlcVideoBackend
+    private lateinit var videoPlayer: io.github.gretchycat.infinivideo.VideoSurfacePlayback
     private lateinit var controlsOverlay: LinearLayout
     private lateinit var topBar: LinearLayout
     private lateinit var titleText: TextView
@@ -170,7 +170,7 @@ class VideoPlayerActivity : ViewerActivity() {
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
 
-        videoPlayer = LibVlcVideoBackend(this)
+        videoPlayer = io.github.gretchycat.infinivideo.VideoCapabilities.create(this, io.github.gretchycat.infinistream.StreamMetadata(name=displayName,content=io.github.gretchycat.infinistream.ContentType(mimeType=intent.type)))
         videoView = videoPlayer.view.apply {
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
@@ -511,8 +511,8 @@ class VideoPlayerActivity : ViewerActivity() {
                         applySpeed()
                         adjustAspectRatio()
                         val file = loaded.file
-                        if (file != null) videoPlayer.open(file, loaded.metadata, autoPlay = !activityStopped)
-                        else videoPlayer.open(loaded.resource, autoPlay = !activityStopped)
+                        if (file != null) videoPlayer.openFile(file, loaded.metadata, autoPlay = !activityStopped)
+                        else videoPlayer.openResource(loaded.resource, autoPlay = !activityStopped)
                         if (activityStopped) pausedForBackground = true
                         videoInputMetadata = videoPlayer.inputMetadata
                         com.infinifolder.storage.DiagnosticLog.record("viewer.video.open",

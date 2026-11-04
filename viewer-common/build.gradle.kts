@@ -37,6 +37,7 @@ dependencies {
     api("io.github.gretchycat.libinfiniscribe:scribe-core:0.1.0")
     api("androidx.core:core:1.15.0")
     api(project(":storage-engine"))
+    testRuntimeOnly("io.github.gretchycat.libinfinivideo:video-android:0.1.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }

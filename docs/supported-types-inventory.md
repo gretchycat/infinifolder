@@ -20,7 +20,7 @@ recognition requires actual parser validation before browsing. Filesystem writes
 are listed separately from reads. URI icon/external-handler support is distinguished
 from real storage providers; NFS has no native storage implementation.
 
-The 2026-11-04 exported snapshot contains **1,432 rows**: 701 file extension/pattern rows,
+The 2026-11-04 exported snapshot contains **1,440 rows**: 709 file extension/pattern rows,
 354 MIME identifiers, 332 archive/package/image rows, 14 filesystem rows,
 4 partition/volume rows and 27 URI rows. Overlap between categories is intentional.
 File rows without a static MIME association leave that cell empty: Android's MIME
@@ -32,3 +32,18 @@ credentials. Platform codec availability and per-device acceptance remain separa
 Format limits and fixture evidence are documented in [images](image-formats.md),
 [audio](audio-formats.md), [video](video-formats.md),
 [documents](text-and-document-formats.md) and [overall formats](file-formats.md).
+
+## Installed handler catalog
+
+The CSV is the static compatibility inventory. For installed handlers, operations,
+overlapping candidates, dependency limits and viewer components, run:
+
+```sh
+gradle :app:exportRuntimeCapabilities --offline
+```
+
+Output: `app/build/generated/capabilities/catalog.json` (schemaVersion 1). This
+queries the actual dependency classpath without starting InfiniFolder. Its
+availability values are NOT_EVALUATED; use CapabilityJson on the running platform
+for runtime dependency reports. No user MIME/icon/URI overrides or credentials are
+exported. See [runtime discovery](runtime-capabilities.md).

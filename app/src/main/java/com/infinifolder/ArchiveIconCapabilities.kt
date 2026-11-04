@@ -15,7 +15,7 @@ class ArchiveIconCapabilities(context: Context) {
     private val cache = LruCache<String, Cached>(256)
     fun inspect(entry: ResourceEntry): Result {
         if(entry.metadata.isDirectory) return Result(false)
-        val key = "${entry.uri}:${entry.metadata.name}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}"
+        val key = "${entry.uri}:${entry.metadata.name}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:${io.github.gretchycat.infinistream.RuntimeCapabilities.installed().revision}"
         cache.get(key)?.takeIf { System.currentTimeMillis()-it.time < 30000 }?.let { return it.result }
         val result = IconWork.bounded(2500,lane="archive:${entry.ref.providerId}") {
             val magic = FileMagicDetector.detectFromStream {

@@ -10,10 +10,11 @@ STORE = 'libraries/libinfinistore/store-android/src/main/java/com/infinifolder/'
 VAULT = 'libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/'
 MIME = STORE + 'mime/MimeRegistry.kt'
 ARCHIVE = STORE + 'archive/ArchiveFormats.kt'
-IMAGE = 'viewer-common/src/main/java/com/infinifolder/preview/ImageFormats.kt'
+IMAGE = 'libraries/libinfinicanvas/canvas-android/src/main/java/com/infinifolder/preview/CanvasFormats.kt'
 MEDIA = 'viewer-common/src/main/java/com/infinifolder/viewer/MediaTypeDetector.kt'
 AUDIO = 'libraries/libinfinisound/audio-processing/src/main/java/com/infinifolder/audio/AudioProcessing.kt'
 BUILTIN = 'libraries/libinfinisound/audio-core/src/main/java/com/infinifolder/audio/decoder/BuiltInAudioDecoders.kt'
+TEXT_FORMATS = 'libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/ScribeTextFormats.kt'
 FONTS = 'libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/FontDocuments.kt'
 DOCUMENTS = 'libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/DocumentFormats.kt'
 
@@ -40,18 +41,20 @@ aliases = dict(re.findall(r'"([^"]+)"\s+to\s+"([^"]+)"',
     mime_text.split('private val aliases =', 1)[1].split('private val extensions', 1)[0]))
 fonts = values(FONTS, 'extensions')
 font_mimes = values(FONTS, 'mimeTypes')
-images = values(IMAGE, 'decodableExtensions')
-audio = values(MEDIA, 'AUDIO_EXTENSIONS') | values(AUDIO, 'platformExtensions') | values(BUILTIN, 'SUPPORTED_EXTENSIONS')
-video = values(MEDIA, 'VIDEO_EXTENSIONS')
-text = values(MEDIA, 'TEXT_EXTENSIONS')
-markdown = values(MEDIA, 'MARKDOWN_EXTENSIONS')
-html = values(MEDIA, 'HTML_EXTENSIONS')
+images = values(IMAGE, 'builtInExtensions')
+audio = {ext for ext,mime in mapping.items() if mime.startswith('audio/')} | values('libraries/libinfinisound/audio-processing/src/main/java/com/infinifolder/audio/AndroidSoundCapabilityProvider.kt', 'extensions') | values(BUILTIN, 'SUPPORTED_EXTENSIONS')
+video = values('libraries/libinfinivideo/video-android/src/main/java/io/github/gretchycat/infinivideo/VideoCapabilities.kt', 'extensions')
+text = values(TEXT_FORMATS, 'TEXT_EXTENSIONS')
+markdown = values(TEXT_FORMATS, 'MARKDOWN_EXTENSIONS')
+html = values(TEXT_FORMATS, 'HTML_EXTENSIONS')
 discs = values(ARCHIVE, 'DISC_BASE_EXTENSIONS')
 compression = values(ARCHIVE, 'COMPRESSION_SUFFIXES')
 playlists = values(ARCHIVE, 'PLAYLIST_EXTENSIONS')
 archives = values(ARCHIVE, 'SIMPLE_EXTENSIONS') | set(packages)
 compounds = {item.lstrip('.') for item in values(ARCHIVE, 'TAR_COMPOUND_EXTENSIONS')}
 compounds |= {f'{ext}.{suffix}' for ext in discs for suffix in compression}
+text_mimes = values(TEXT_FORMATS, 'TEXT_MIME_TYPES')
+audio_mimes = {'application/vnd.smaf','application/x-smaf','application/x-guitar-pro','application/x-gtp'}
 document_formats = dict(re.findall(r'"([a-z0-9]+)"\s+to\s+Kind\.([A-Z0-9_]+)', read(DOCUMENTS).split('val mimeKinds', 1)[0]))
 rows = []
 
@@ -99,7 +102,7 @@ def capability(ext, mime):
         return 'video playback routing' + ('; audio decoder route' if ext in audio else ''), 'Video/Sound/libVLC', 'Container/codec variants must be supported by the registered backend.'
     if ext in audio or mime.startswith('audio/'):
         return 'audio playback/codec routing', 'Sound', 'Registered route, not a guarantee for every codec variant; unavailable codecs fail. See docs/audio-formats.md.'
-    if mime.startswith('text/') or ext in text or mime in values(MEDIA, 'TEXT_MIME_TYPES'):
+    if mime.startswith('text/') or ext in text or mime in text_mimes:
         return 'text/code viewer/editor', 'Scribe', 'Content detection/encoding and explicit MIME identity apply; .ts also names MPEG transport streams.' if ext == 'ts' else ''
     if ext in video or mime.startswith('video/') or ext in {'rm', 'rmvb'}:
         return 'video playback routing', 'Video/libVLC', 'Container/codec variants must be supported by the registered backend.'
@@ -123,7 +126,7 @@ for ext in sorted(exts):
             (['app/src/main/java/com/infinifolder/MainActivity.kt'] if ext == 'torrent' else []) +
             ([DOCUMENTS] if ext in document_formats else []) + ([FONTS] if ext in fonts else [])))
 
-mime_sources = [MIME, MEDIA, IMAGE, ARCHIVE, DOCUMENTS, FONTS, STORE + 'storage/FileMagicDetector.kt',
+mime_sources = [MIME, MEDIA, IMAGE, ARCHIVE, DOCUMENTS, FONTS, TEXT_FORMATS, STORE + 'storage/FileMagicDetector.kt',
     'viewer-common/src/main/java/com/infinifolder/preview/AudioIconFormats.kt']
 all_mimes = set(by_mime) | set(aliases) | set(aliases.values())
 for path in mime_sources:

@@ -1,5 +1,7 @@
 # Documentation
 
+Runtime handler discovery: [interfaces, dependency audit, processing chains and verification](runtime-capabilities.md). All seven libraries and viewer modules publish their own capability providers; linked library dependencies remain explicit.
+
 - [Library and viewer synchronization — 2026-11-04](component-status-2026-11-04.md)
 - [Image animation, limits and acceptance](image-animation.md)
 - [IFF/ILBM/LBM color cycling](iff-color-cycling.md)

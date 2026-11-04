@@ -9,7 +9,20 @@ import com.infinifolder.mime.MimeRegistry
 /** Common document launch contract; compatibility extras keep existing consumers interoperable. */
 object ViewerLaunch {
     fun intent(context: Context, entry: ResourceEntry, type: MediaType, parent: Uri? = null, edit: Boolean = false): Intent? {
-        val activity = ViewerCatalog.activity(type) ?: return null
+        val activity = ViewerComponents.resolve(entry,edit,type)?.activityClassName ?: ViewerCatalog.activity(type)
+            ?: ViewerComponents.resolve(entry,edit)?.activityClassName ?: return null
+        return create(context,entry,activity,parent,edit)
+    }
+    fun intentForResource(context:Context,entry:ResourceEntry,parent:Uri?=null,edit:Boolean=false):Intent? {
+        val component=ViewerComponents.resolve(entry,edit)?:return null
+        return create(context,entry,component.activityClassName,parent,edit)
+    }
+    fun intentForKind(context:Context,entry:ResourceEntry,kind:String,edit:Boolean=false):Intent? {
+        val component=ViewerComponents.registry.query(if(edit)io.github.gretchycat.infinistream.Operations.EDIT else io.github.gretchycat.infinistream.Operations.VIEW)
+            .firstOrNull {it.descriptor.attributes["viewerKind"]==kind}?.handler?.service(ViewerComponent::class.java)?:return null
+        return create(context,entry,component.activityClassName,null,edit)
+    }
+    private fun create(context:Context,entry:ResourceEntry,activity:String,parent:Uri?,edit:Boolean):Intent {
         return Intent(if (edit) Intent.ACTION_EDIT else Intent.ACTION_VIEW).setClassName(context.packageName, activity).apply {
             setDataAndType(entry.uri, MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType))
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

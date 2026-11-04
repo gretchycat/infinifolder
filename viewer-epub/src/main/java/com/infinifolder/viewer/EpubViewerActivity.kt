@@ -1,5 +1,7 @@
 package com.infinifolder.viewer
 
+import io.github.gretchycat.infinistream.Operations
+
 import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.Intent
@@ -58,7 +60,7 @@ class EpubViewerActivity : ViewerActivity() {
         val file: File
     )
 
-    private var documentKind:DocumentFormats.Kind?=null
+    private var readingHandler:io.github.gretchycat.infiniscribe.ReadingCapabilityHandler?=null
     private var preparedDocument:DocumentResourceStaging?=null
     private var uri: Uri? = null
     private var displayName: String = "Book.epub"
@@ -102,7 +104,10 @@ class EpubViewerActivity : ViewerActivity() {
             ?: uri?.lastPathSegment
             ?: "document.epub"
 
-        documentKind=DocumentFormats.detect(displayName,intent.type ?: intent.getStringExtra("mimeType"))
+        val capabilityMetadata=StreamMetadata(name=displayName,content=ContentType(mimeType=intent.type ?: intent.getStringExtra("mimeType")))
+        readingHandler=io.github.gretchycat.infiniscribe.ScribeCapabilities.registry.probe(
+            io.github.gretchycat.infinistream.CapabilityResource(capabilityMetadata),Operations.DECODE)
+            .firstNotNullOfOrNull { it.handler.service(io.github.gretchycat.infiniscribe.ReadingCapabilityHandler::class.java) }
         setupUI()
         loadEpub()
     }
@@ -235,7 +240,7 @@ class EpubViewerActivity : ViewerActivity() {
                 displayZoomControls = false
                 textZoom = currentTextZoom
                 cacheMode = WebSettings.LOAD_NO_CACHE
-                if(documentKind!=null) {
+                if(readingHandler!=null) {
                     blockNetworkLoads=true
                     @Suppress("DEPRECATION")
                     allowFileAccessFromFileURLs=false
@@ -245,7 +250,7 @@ class EpubViewerActivity : ViewerActivity() {
             }
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(view:WebView?,request:WebResourceRequest?):android.webkit.WebResourceResponse? {
-                    if(documentKind!=null && request!=null) {
+                    if(readingHandler!=null && request!=null) {
                         val root=preparedDocument?.renderDirectory
                         val allowed=request.url.scheme=="file" && root!=null && runCatching {
                             File(request.url.path.orEmpty()).canonicalFile.toPath().startsWith(root.canonicalFile.toPath())
@@ -338,36 +343,28 @@ class EpubViewerActivity : ViewerActivity() {
             loadChapter(matchedIndex, navUri.fragment)
             return true
         }
-        return documentKind!=null
+        return readingHandler!=null
     }
 
     private fun loadPreparedDocument() {
         val target=uri ?: return
-        val kind=documentKind ?: return
+        val reader=readingHandler ?: return
         progressBar.visibility=View.VISIBLE
         val token=CancellationToken {destroyed || Thread.currentThread().isInterrupted}
         loadWork=bookWorker.submit {
             var stage:DocumentResourceStaging?=null
             try {
-                val extension=DocumentFormats.canonicalExtension(displayName,intent.type ?: intent.getStringExtra("mimeType"))
-                val flat=extension in setOf("fodt","fodp")
+                val plan=reader.plan(displayName,intent.type ?: intent.getStringExtra("mimeType"))
                 stage=DocumentResourceStaging.open(this,target,displayName,intent.type,
-                    expand=kind in setOf(DocumentFormats.Kind.ODF_TEXT,DocumentFormats.Kind.ODF_SLIDES) && !flat,
-                    flatXml=flat,cancellation=token)
+                    expand=plan.expandZip,flatXml=plan.flatXml,cancellation=token)
                 val input=StreamMetadata(name=displayName,content=ContentType(mimeType=intent.type),provenance=Provenance(source=target.toString()))
                 val delegate=FileSourceResource(stage.source.file)
                 val source=object:io.github.gretchycat.infinistream.SourceResource {
                     override val metadata=input
                     override fun open()=delegate.open()
                 }
-                val book=when(kind) {
-                    DocumentFormats.Kind.WORD,DocumentFormats.Kind.SLIDES -> OfficeDocuments.read(stage.source.file,displayName,stage.output,token,extension,input)
-                    DocumentFormats.Kind.MOBI -> MobiDocuments.read(stage.source.file,displayName,stage.output,token,input)
-                    DocumentFormats.Kind.FB2 -> FictionBooks.read(source,displayName,stage.output,token)
-                    DocumentFormats.Kind.ODF_TEXT,DocumentFormats.Kind.ODF_SLIDES -> OpenDocuments.read(stage.resources,displayName,stage.output,token)
-                    DocumentFormats.Kind.RTF -> RtfDocuments.read(source,displayName,stage.output,token)
-                    else -> throw java.io.IOException("This document belongs in the spreadsheet viewer")
-                }
+                val book=reader.read(io.github.gretchycat.infiniscribe.ReadingInput(source,stage.source.file,stage.resources,
+                    stage.output,displayName,intent.type,token))
                 token.check()
                 val root=stage.renderDirectory
                 val loaded=book.chapters.mapIndexed {index,chapter ->ChapterItem("part_$index",chapter.path,chapter.title,File(root,chapter.path))}
@@ -395,7 +392,7 @@ class EpubViewerActivity : ViewerActivity() {
     }
 
     private fun loadEpub() {
-        if(documentKind!=null){loadPreparedDocument();return}
+        if(readingHandler!=null){loadPreparedDocument();return}
         val targetUri = uri ?: run {
             Toast.makeText(this, "No file provided", Toast.LENGTH_SHORT).show()
             finish()

@@ -31,7 +31,7 @@ import java.util.concurrent.Future
  * search/filter across columns, and in-place saving back to storage.
  */
 class CsvViewerActivity : ViewerActivity() {
-    private var workbookKind:DocumentFormats.Kind?=null
+    private var workbookReader:io.github.gretchycat.infiniscribe.office.SpreadsheetCapabilityHandler?=null
     private var workbook:SpreadsheetBook?=null
     private var workbookStage:DocumentResourceStaging?=null
     private var workbookRows:List<SpreadsheetRow> = emptyList()
@@ -99,8 +99,11 @@ class CsvViewerActivity : ViewerActivity() {
             ?: uri?.lastPathSegment
             ?: "spreadsheet.csv"
 
-        workbookKind=DocumentFormats.detect(displayName,intent.type ?: intent.getStringExtra("mimeType"))
-            ?.takeIf {it==DocumentFormats.Kind.SHEET || it==DocumentFormats.Kind.ODF_SHEET}
+        val capabilityMetadata=io.github.gretchycat.infinistream.StreamMetadata(name=displayName,
+            content=io.github.gretchycat.infinistream.ContentType(mimeType=intent.type ?: intent.getStringExtra("mimeType")))
+        workbookReader=io.github.gretchycat.infiniscribe.ScribeCapabilities.registry.probe(
+            io.github.gretchycat.infinistream.CapabilityResource(capabilityMetadata),io.github.gretchycat.infinistream.Operations.DECODE)
+            .firstNotNullOfOrNull { it.handler.service(io.github.gretchycat.infiniscribe.office.SpreadsheetCapabilityHandler::class.java) }
         setupUI()
         loadSpreadsheet()
     }
@@ -183,7 +186,7 @@ class CsvViewerActivity : ViewerActivity() {
         DebugTools.attachToolbarButton(this, toolbar)
         mainColumn.addView(toolbar)
 
-        if(workbookKind!=null) {
+        if(workbookReader!=null) {
             sheetSelector=Spinner(this)
             workbookNotice=TextView(this).apply {text="Read-only workbook • saved formula values";setTextColor(if(isDark)Color.LTGRAY else Color.DKGRAY);setPadding(dp(12),dp(4),dp(12),dp(4))}
             mainColumn.addView(sheetSelector,LinearLayout.LayoutParams(-1,-2))
@@ -199,7 +202,7 @@ class CsvViewerActivity : ViewerActivity() {
         }
 
         searchInput = EditText(this).apply {
-            hint = if(workbookKind!=null)"Filter loaded rows…" else "Filter rows…"
+            hint = if(workbookReader!=null)"Filter loaded rows…" else "Filter rows…"
             setHintTextColor(if (isDark) 0xFF888888.toInt() else 0xFF999999.toInt())
             setTextColor(if (isDark) Color.WHITE else Color.BLACK)
             textSize = 13f
@@ -295,11 +298,14 @@ class CsvViewerActivity : ViewerActivity() {
             var opening:SpreadsheetBook?=null
             try {
                 workbook?.close();workbook=null;workbookStage?.close();workbookStage=null
-                val flat=displayName.substringAfterLast('.').lowercase()=="fods"
-                stage=DocumentResourceStaging.open(this,target,displayName,intent.type,
-                    expand=workbookKind==DocumentFormats.Kind.ODF_SHEET && !flat,flatXml=flat,cancellation=token)
-                val book=if(workbookKind==DocumentFormats.Kind.ODF_SHEET)OpenDocuments.workbook(stage.resources,token)
-                    else SpreadsheetDocument.open(stage.source.file,token)
+                val reader=workbookReader?:throw java.io.IOException("No spreadsheet handler available")
+                val mime=intent.type ?: intent.getStringExtra("mimeType")
+                val plan=reader.plan(displayName,mime)
+                stage=DocumentResourceStaging.open(this,target,displayName,mime,
+                    expand=plan.expandZip,flatXml=plan.flatXml,cancellation=token)
+                val book=reader.open(io.github.gretchycat.infiniscribe.ReadingInput(
+                    io.github.gretchycat.infinistream.FileSourceResource(stage.source.file),stage.source.file,stage.resources,
+                    stage.output,displayName,mime,token))
                 opening=book
                 token.check();stage.complete()
                 workbook=book;workbookStage=stage;opening=null;stage=null
@@ -367,7 +373,7 @@ class CsvViewerActivity : ViewerActivity() {
     }
 
     private fun loadSpreadsheet() {
-        if(workbookKind!=null){loadWorkbook();return}
+        if(workbookReader!=null){loadWorkbook();return}
         documentFullyLoaded = false
         val targetUri = uri ?: run { Toast.makeText(this, "No spreadsheet URI provided", Toast.LENGTH_SHORT).show(); finish(); return }
         val request = ++documentGeneration
@@ -421,7 +427,7 @@ class CsvViewerActivity : ViewerActivity() {
     }
 
     private fun ensureRowCount() {
-        if(workbookKind!=null)return
+        if(workbookReader!=null)return
         if (isDestroyed || isFinishing || totalDataRows != null || rowCountStarted) return
         val targetUri = uri ?: return
         rowCountStarted = true; rowCountRunning = true
@@ -448,7 +454,7 @@ class CsvViewerActivity : ViewerActivity() {
 
     private fun updateRowStats() {
         if (adjustingWindow || !::rowList.isInitialized || !::statsTextView.isInitialized || !::searchInput.isInitialized) return
-        if(workbookKind!=null) {
+        if(workbookReader!=null) {
             val first=filteredData.getOrNull(rowList.firstVisiblePosition)?.first
             val last=filteredData.getOrNull(rowList.lastVisiblePosition)?.first
             statsTextView.text=if(first==null)"${filteredData.size} rows" else "Rows $first–$last\n${filteredData.size} shown"
@@ -505,7 +511,7 @@ class CsvViewerActivity : ViewerActivity() {
     }
 
     private fun applyFilter(query: String) {
-        if(workbookKind!=null){filterWorkbook(query);return}
+        if(workbookReader!=null){filterWorkbook(query);return}
         if (!documentFullyLoaded) { loadSpreadsheet(); return }
         val q = query.trim().lowercase()
         filteredData = originalData.mapIndexedNotNull { idx, row ->
@@ -626,7 +632,7 @@ class CsvViewerActivity : ViewerActivity() {
                 setTextColor(if (header) (if (isDark) 0xFF9CDCFE.toInt() else 0xFF0D47A1.toInt())
                     else (if (isDark) 0xFFD4D4D4.toInt() else 0xFF212121.toInt()))
                 setOnClickListener(if (header) null else View.OnClickListener {
-                    if(workbookKind!=null)inspectWorkbookCell(id,column,value)
+                    if(workbookReader!=null)inspectWorkbookCell(id,column,value)
                     else if (documentFullyLoaded) promptEditCell(id.toInt(), column, value) else loadForEditing(id, column)
                 })
             }
@@ -674,7 +680,7 @@ class CsvViewerActivity : ViewerActivity() {
     }
 
     private fun saveSpreadsheet() {
-        if(workbookKind!=null){Toast.makeText(this,"Office workbooks are read-only",Toast.LENGTH_LONG).show();return}
+        if(workbookReader!=null){Toast.makeText(this,"Office workbooks are read-only",Toast.LENGTH_LONG).show();return}
         if (!documentFullyLoaded) {
             Toast.makeText(this, "Only fully loaded documents can be edited or saved", Toast.LENGTH_LONG).show()
             return
@@ -738,12 +744,12 @@ class CsvViewerActivity : ViewerActivity() {
     private fun openExternally() {
         val original = uri ?: return
         try {
-            val file = if (workbookKind != null) workbookStage?.source?.file
+            val file = if (workbookReader != null) workbookStage?.source?.file
                 else if (original.scheme == "file") original.path?.let { java.io.File(it) } else null
             val shared = file?.let {
                 androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", it, displayName)
             } ?: original
-            val mime = if (workbookKind != null) {
+            val mime = if (workbookReader != null) {
                 (intent.type ?: intent.getStringExtra("mimeType"))?.takeIf { DocumentFormats.forMime(it) != null }
                     ?: com.infinifolder.mime.MimeRegistry.guess(displayName)
             } else if (delimiter == '\t') "text/tab-separated-values" else "text/csv"

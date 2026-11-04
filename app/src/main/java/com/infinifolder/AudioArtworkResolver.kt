@@ -4,8 +4,6 @@ import android.graphics.Bitmap
 import android.content.Context
 import android.net.Uri
 import android.util.LruCache
-import com.infinifolder.audio.AudioMetadataSource
-import com.infinifolder.audio.AudioProcessing
 import com.infinifolder.archive.ArchiveUri
 import com.infinifolder.model.*
 import com.infinifolder.preview.CachedImageCodec
@@ -13,9 +11,7 @@ import com.infinifolder.preview.DirectoryIconResolver
 import com.infinifolder.preview.IconBitmapUsability
 import com.infinifolder.preview.ThumbnailDecoder
 import com.infinifolder.storage.*
-import io.github.gretchycat.infinistream.PositionalReadable
 import java.io.InterruptedIOException
-import java.util.concurrent.atomic.AtomicLong
 import java.security.MessageDigest
 
 /** Audio tag parsing belongs to Sound; source access stays behind the storage providers. */
@@ -67,19 +63,14 @@ internal class AudioArtworkResolver(context:Context,private val runtime:StorageR
                 BlockDeviceSource(device)
             } else ProviderStreams.openPositional(runtime.provider,entry.ref,entry.metadata)
             source.use {
-                val length=source.metadata.length ?: return@bounded null
-                val positional=source as? PositionalReadable ?: return@bounded null
-                val caller=Thread.currentThread()
-                val deadline=System.nanoTime()+1_400_000_000L
-                val remaining=AtomicLong(16L*1024*1024)
-                val tags=AudioProcessing.metadata.readTags(AudioMetadataSource.Seekable(length) {position,buffer,offset,count->
-                    if(caller.isInterrupted || System.nanoTime()>deadline || remaining.addAndGet(-count.toLong())<0)
-                        throw InterruptedIOException("Audio icon metadata read limit reached")
-                    positional.readAt(position,buffer,offset,count)
-                },includeArtwork=true)
-                val bytes=tags.artwork?.takeIf {it.size<=8*1024*1024} ?: return@bounded null
-                CachedImageCodec.decode(bytes,size)?.frame?.takeBitmap()?.takeIf(IconBitmapUsability::visible)
-                    ?.also {writeDisk(diskKey,it)}
+                val extractor=com.infinifolder.audio.SoundCapabilities.registry.query("extract-image")
+                    .firstNotNullOfOrNull {it.handler.service(io.github.gretchycat.infinistream.EncodedImageExtractor::class.java)}
+                    ?: return@bounded null
+                extractor.extract(source,size,io.github.gretchycat.infinistream.CancellationToken {Thread.currentThread().isInterrupted})?.use {image ->
+                    val bytes=image.resource.open().use {io.github.gretchycat.infinistream.readBytes(it,8*1024*1024)}
+                    CachedImageCodec.decode(bytes,size)?.frame?.takeBitmap()?.takeIf(IconBitmapUsability::visible)
+                        ?.also {writeDisk(diskKey,it)}
+                }
             }
         }
         embedded.put(key,Cached(bitmap,System.currentTimeMillis()+if(bitmap==null || entry.metadata.modifiedAtMillis==null)30000 else 300000))

@@ -14,10 +14,12 @@ The supplied `:viewer-host` provides a launcher document picker, Android VIEW/ED
 gradle :viewer-host:assembleDebug -Pviewer=pdf --offline
 ```
 
-Replace `pdf` with `image`, `text`, `markdown`, `html`, `csv`, `epub`, `font`, `audio`, `video`, or `all` (default). The selected application's ID is `com.infinifolder.standalone.<kind>` and its APK is under `viewer-host/build/outputs/apk/debug/`. On ARM Termux use the configured native AAPT2 override if required, as for the main app.
+Replace `pdf` with `image`, `text`, `markdown`, `html`, `csv`, `epub`, `font`, `hex`, `audio`, `video`, or `all` (default). The selected application's ID is `com.infinifolder.standalone.<kind>` and its APK is under `viewer-host/build/outputs/apk/debug/`. On ARM Termux use the configured native AAPT2 override if required, as for the main app.
 
-`viewer-hex` is currently composed by the main app; `hex` is not a supported
-standalone selector. The all-viewer host includes the ten selectors above.
+`hex` is now a standalone selector; the all-viewer host includes all eleven
+registered viewer modules. New viewer modules are linked by build discovery and
+publish their own ViewerComponent through ServiceLoader. Format routing is derived
+from the content library; see [runtime discovery](runtime-capabilities.md).
 
 The image module now hosts Canvas image animations and interactive MNG controls;
 the EPUB and CSV modules also host supported ebook/Office content. HTML/Markdown

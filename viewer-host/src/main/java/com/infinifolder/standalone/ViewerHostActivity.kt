@@ -45,13 +45,14 @@ class ViewerHostActivity : ViewerActivity() {
             else -> MediaTypeDetector.detect(name, mime)
         }
         val edit = source.action == Intent.ACTION_EDIT
-        if (edit && !MediaTypeDetector.isEditable(name,mime)) {
+        if (edit && BuildConfig.VIEWER_KIND!="hex" && !MediaTypeDetector.isEditable(name,mime)) {
             Toast.makeText(this, "Editing is not supported for this format", Toast.LENGTH_LONG).show(); return
         }
         val ref = com.infinifolder.storage.StorageRuntime.get(this).provider.refForUri(uri)
             ?: run { Toast.makeText(this, "No storage provider for this document", Toast.LENGTH_LONG).show(); return }
         val entry = com.infinifolder.model.ResourceEntry(ref, com.infinifolder.model.ResourceMetadata(name, mime.orEmpty(), null, null, false), uri)
-        val launch = ViewerLaunch.intent(this, entry, type, edit = edit)
+        val launch = (if(BuildConfig.VIEWER_KIND=="image" && type==MediaType.TEXT)ViewerLaunch.intent(this,entry,type,edit=edit)else if(BuildConfig.VIEWER_KIND!="all")ViewerLaunch.intentForKind(this,entry,BuildConfig.VIEWER_KIND,edit)else ViewerLaunch.intentForResource(this,entry,edit=edit))
+            ?: ViewerLaunch.intent(this, entry, type, edit = edit)
             ?: run { Toast.makeText(this, "No viewer for this document", Toast.LENGTH_LONG).show(); return }
         launch.addFlags(source.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         try { startActivity(launch) } catch (_: android.content.ActivityNotFoundException) {

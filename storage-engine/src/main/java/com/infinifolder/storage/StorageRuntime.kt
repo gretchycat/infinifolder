@@ -38,9 +38,22 @@ class StorageRuntime private constructor(context: Context) {
     val torrents = MagnetStorageProvider(app)
     val registry = StorageProviderRegistry().apply {
         register(SafProviderFactory()); register(sftpFactory); register(ftpFactory); register(smbFactory); register(webDavFactory)
+        installDiscovered(app) { id -> connections.list().firstOrNull { it.id==id } }
     }
-    val provider = RoutingStorageProvider(local, archives, apps, sftp, ftp, smb, webdav, torrents, containerLinks, partialDownloads, SafProvider(app.contentResolver),
+    val provider = RoutingStorageProvider(*(listOf(local, archives, apps, sftp, ftp, smb, webdav, torrents, containerLinks, partialDownloads, SafProvider(app.contentResolver)) +
+        registry.sourceTypes().filter { it.id !in setOf("saf","sftp","ftp","smb","webdav") }.mapNotNull { registry.create(it.id,app.contentResolver) }).toTypedArray(),
         uriResolver = { uri -> if (ContainerUris.networkType(uri) == null) uri else ContainerUris.resolve(uri, connections.list()) })
+    private val knownSourceTypes=java.util.concurrent.ConcurrentHashMap.newKeySet<String>().apply {addAll(registry.sourceTypes().map {it.id})}
+    private val capabilitySubscription=StoreCapabilities.registry.subscribe {
+        registry.installDiscovered(app) { id ->connections.list().firstOrNull {it.id==id} }
+        registry.sourceTypes().filter {it.id !in knownSourceTypes}.forEach {type ->
+            registry.create(type.id,app.contentResolver)?.let {extra ->
+                if(!provider.registerAdditional(extra))extra.close()
+                knownSourceTypes.add(type.id)
+            }
+        }
+    }
+    private val boundCapabilities=StoreCapabilities.bind(provider)
     init {
         DiagnosticLog.providerResolver = { provider }
         DiagnosticLog.init(app)

@@ -1,8 +1,19 @@
 # Project status
 
+Runtime handler discovery: [interfaces, dependency audit, processing chains and verification](runtime-capabilities.md). All seven libraries and viewer modules publish their own capability providers; linked library dependencies remain explicit.
+
 > [InfiniStream architecture](infinistream_architecture_codex.md) is authoritative; [migration checkpoints](infinistream-migration.md) records implemented ownership. Dated evidence and legacy paths below describe their original revisions. Existing safety and format limits remain requirements.
 
 Updated 2026-11-04. This is the current status reference. Checked implementation work is not automatically device acceptance. Dated audits, build counts and dump reports describe the revisions they examined.
+
+## Runtime capability discovery
+
+All seven libraries and all eleven viewer components now self-register through
+Stream's independent capability interfaces. Linked dependencies remain explicit;
+new format/protocol/reader/extractor handlers use the existing library APIs and
+processing contracts. The final gate passes 1,071 cases with no failures or skips,
+standalone library builds and both app/all-viewer APKs. Device checks are unverified.
+See the [audit, commands, compatibility limits and commit pins](runtime-capabilities.md).
 
 ## Latest library and viewer synchronization
 

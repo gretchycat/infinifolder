@@ -16,20 +16,11 @@ rootProject.name = "InfiniFolder"
 include(":app")
 
 include(":storage-engine")
-include(":viewer-common")
-include(":viewer-image")
-include(":viewer-text")
-include(":viewer-markdown")
-include(":viewer-html")
-include(":viewer-pdf")
-include(":viewer-csv")
-include(":viewer-epub")
-include(":viewer-font")
-include(":viewer-hex")
-include(":viewer-audio")
-include(":viewer-video")
+// Viewer components are self-registering; new modules need no application source list.
+rootDir.listFiles().orEmpty().filter { it.isDirectory && it.name.startsWith("viewer-") && it.resolve("build.gradle.kts").isFile }
+    .sortedBy { it.name }.forEach { include(":" + it.name) }
 
-include(":viewer-host")
+
 
 // Pinned external source dependency; clone with --recurse-submodules.
 val soundLibrary = file("libraries/libinfinisound")

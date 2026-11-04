@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 val viewerKind = providers.gradleProperty("viewer").orElse("all").get()
-val viewers = listOf("image", "text", "markdown", "html", "pdf", "csv", "epub", "font", "audio", "video")
+val viewers = rootProject.subprojects.filter { it.name.startsWith("viewer-") && it.name !in setOf("viewer-host","viewer-common") }.map { it.name.removePrefix("viewer-") }.sorted()
 require(viewerKind == "all" || viewerKind in viewers) { "Unknown viewer: $viewerKind" }
 android {
     namespace = "com.infinifolder.standalone"
@@ -22,6 +22,7 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     packaging.jniLibs.pickFirsts += "**/libc++_shared.so"
+    packaging.resources.merges += "META-INF/services/io.github.gretchycat.infinistream.CapabilityProvider"
     packaging.resources.excludes += setOf("META-INF/versions/**", "META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*", "/META-INF/{AL2.0,LGPL2.1}")
 }
 dependencies {
@@ -56,3 +57,5 @@ val generateIntentManifest by tasks.registering(Exec::class) {
 }
 android.sourceSets.getByName("main").manifest.srcFile(generatedIntentManifest)
 tasks.named("preBuild").configure { dependsOn(generateIntentManifest) }
+
+apply(from = rootProject.file("scripts/runtime-capability-catalog.gradle"))

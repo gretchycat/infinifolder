@@ -49,7 +49,7 @@ class ResourceIconResolver(context: Context) {
     @Volatile private var lastRevision:RevisionSnapshot?=null
     fun revision(): String {
         val themeRevision=theme.revision()
-        val key="${registry.revision}:$themeRevision:${icons.revision}:${com.infinifolder.viewer.RawMediaConfigStore.savedRevision}:${ThumbnailDecoder.CONTENT_REVISION}"
+        val key="${registry.revision}:$themeRevision:${icons.revision}:${com.infinifolder.viewer.RawMediaConfigStore.savedRevision}:${ThumbnailDecoder.CONTENT_REVISION}:${io.github.gretchycat.infinistream.RuntimeCapabilities.installed().fingerprint()}:${io.github.gretchycat.infinistream.RuntimeCapabilities.installed().revision}"
         lastRevision=RevisionSnapshot(key,themeRevision)
         return key
     }
@@ -83,7 +83,7 @@ class ResourceIconResolver(context: Context) {
             ?.takeIf {System.currentTimeMillis()<it.expires && !it.icon.pending}?.icon
     }
     fun identity(entry: ResourceEntry): IconIdentity {
-        val key="${linkKey(entry)}:${entry.metadata.name}:${entry.metadata.mimeType}:${registry.revision}"
+        val key="${linkKey(entry)}:${entry.metadata.name}:${entry.metadata.mimeType}:${registry.revision}:${io.github.gretchycat.infinistream.RuntimeCapabilities.installed().revision}"
         identities.get(key)?.takeIf {System.currentTimeMillis()<it.expires}?.let { return it.identity }
         val identity=identityResolver.resolve(entry.metadata.name,entry.metadata.mimeType) {
             IconWork.bounded(lane="metadata:${entry.ref.providerId}") { FileMagicDetector.detectFromStream {
@@ -185,12 +185,14 @@ class ResourceIconResolver(context: Context) {
         for(step in IconPolicy.steps(record,genericArchive)) {
             if(Thread.currentThread().isInterrupted)break
             val bitmap:Bitmap?=when(step) {
-                IconPolicy.Step.THUMBNAIL -> if(id.mimeType in BookArtworkResolver.MIME_TYPES)
+                IconPolicy.Step.THUMBNAIL -> com.infinifolder.preview.LibraryThumbnails.render(appContext.contentResolver,
+                    com.infinifolder.storage.ProviderStreams.resource(runtime.provider,entry.ref,meta),size)
+                    ?: if(id.mimeType in BookArtworkResolver.MIME_TYPES)
                     bookArtwork.resolve(entry.copy(metadata=meta),size)
                 else IconWork.bounded(2000,lane="thumbnail:${entry.ref.providerId}") {
                     if(id.mimeType=="application/vnd.android.package-archive")resolveApkIcon(entry,size)
                     else if(ImageFormats.hasDosTextPreview(meta))decoder.decodeTextPreview(entry.uri,size,true)
-                    else decoder.decode(entry.uri,size,registry.rendererExtension(id.mimeType,entry.metadata.name))
+                    else decoder.decode(entry.uri,size,registry.rendererExtension(id.mimeType,entry.metadata.name),id.mimeType)
                 }
                 IconPolicy.Step.MIME_OVERRIDE -> overrideBitmap(record.overrideIcon,id.mimeType,size)
                 IconPolicy.Step.THEME_MIME -> if(AudioIconFormats.isAudio(id.mimeType))theme.resolveAudioIcon(meta,size,record.iconName)

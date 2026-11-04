@@ -19,10 +19,13 @@ class IconRegistry(private val file: File) {
     private var loadedStamp = ""
     private var root = JSONObject()
     private var associationIndex:Map<String,Set<String>>?=null
+    private var capabilityRevision = -1L
     var readError:String?=null
         private set
     private fun load() {
         val stamp = if(file.isFile) "${java.nio.file.Files.getLastModifiedTime(file.toPath())}:${file.length()}" else "missing"
+        val revision=io.github.gretchycat.infinistream.RuntimeCapabilities.installed().revision
+        if(revision!=capabilityRevision){associationIndex=null;capabilityRevision=revision}
         if (stamp == loadedStamp) return
         associationIndex=null
         readError=null
@@ -88,7 +91,7 @@ class IconRegistry(private val file: File) {
     fun rendererExtension(mime:String):String? = rendererExtension(mime,"")
     fun rendererExtension(mime:String,name:String):String? {
         val supported=builtins[MimeRegistry.normalize(mime)]?.extensions
-            ?.filter {it in ImageFormats.decodableExtensions}.orEmpty()
+            ?.filter {it in CanvasCapabilities.thumbnailExtensions}.orEmpty()
         // Shared MIME types can contain incompatible encodings (PI1 versus compressed PC1).
         val actual=ImageFormats.extension(name)
         return actual.takeIf {it in supported} ?: supported.sorted().firstOrNull()
@@ -192,16 +195,32 @@ class IconRegistry(private val file: File) {
             (opt(key) as? String)?.takeIf {it.isNotBlank() && it!="null"}
         private fun JSONArray.strings() = (0 until length()).map { getString(it) }
         private fun defaultIcon(mime: String) = MimeRegistry.iconCandidates(mime).first()
-        private val builtins: Map<String, MimeRecord> by lazy {
+        @Volatile private var builtinSnapshot:Pair<Long,Map<String,MimeRecord>>?=null
+        private val builtins:Map<String,MimeRecord> get() {
+            val revision=io.github.gretchycat.infinistream.RuntimeCapabilities.installed().revision
+            builtinSnapshot?.takeIf {it.first==revision}?.let {return it.second}
+            return synchronized(this) {buildBuiltins().also {builtinSnapshot=revision to it}}
+        }
+        private fun buildBuiltins():Map<String,MimeRecord> {
             val associations = MimeRegistry.associations().toMutableMap()
             // Display identities for text-image types; the storage/decoder contracts stay intact.
             associations.putAll(mapOf("diz" to "text/x-diz", "asc" to "text/x-ascii-art", "nfo" to "text/x-nfo"))
-            val imageExtensions = ImageFormats.decodableExtensions + setOf("ansi", "asc", "diz", "nfo")
+            val imageExtensions = CanvasCapabilities.thumbnailExtensions + setOf("ansi", "asc", "diz", "nfo")
             for (ext in imageExtensions) if (associations[ext] == null || associations[ext] == "application/octet-stream")
                 associations[ext] = "image/x-$ext"
-            associations.entries.groupBy({ MimeRegistry.normalize(it.value) }, { it.key }).mapValues { (mime, ext) ->
+            val result=associations.entries.groupBy({ MimeRegistry.normalize(it.value) }, { it.key }).mapValues { (mime, ext) ->
                 MimeRecord(mime, ext.toSet(), defaultIcon(mime), isImage = mime in bookCoverMimeTypes || mime=="application/vnd.android.package-archive" || ext.any { it in imageExtensions })
-            }
+            }.toMutableMap()
+            io.github.gretchycat.infinistream.RuntimeCapabilities.installed().descriptors()
+                .filter {io.github.gretchycat.infinistream.Operations.THUMBNAIL in it.operations}
+                .flatMap {it.formats}.forEach {format ->
+                    format.mimeTypes.filterNot {it.contains('*')}.forEach {mime ->
+                        val key=MimeRegistry.normalize(mime)
+                        val previous=result[key]
+                        result[key]=(previous?:MimeRecord(key,format.extensions,defaultIcon(key))).copy(isImage=true)
+                    }
+                }
+            return result
         }
         fun normalizeUri(raw: String): String {
             val uri = URI(raw.trim()); val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: error("URI needs a scheme")

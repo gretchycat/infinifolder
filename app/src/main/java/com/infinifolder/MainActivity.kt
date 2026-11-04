@@ -766,7 +766,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null || AppsUri.isAppUri(uri) -> open(entry, confirmCommands = true)
                         com.infinifolder.viewer.ExternalAppDefaults(this).hasOpenPreference(entry.ref, mime) -> open(entry)
                         hasRawMetadata -> openHexEditor(entry,loadMetadata=true)
-                        com.infinifolder.viewer.ViewerCatalog.activity(type) != null -> launchBuiltInViewer(entry, type)
+                        com.infinifolder.viewer.ViewerComponents.canView(entry) || com.infinifolder.viewer.ViewerCatalog.activity(type) != null -> launchBuiltInViewer(entry, type)
                         ArchiveFormats.isArchive(name, mime) || magic?.isArchiveOrDiscImage == true ->
                             navigate(ArchiveUri.toArchiveUri(uri), displayName = name)
                         com.infinifolder.viewer.MediaTypeDetector.isGenericBinary(name,mime) -> openHexEditor(entry)
@@ -1598,7 +1598,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
             }
         } else {
-            launchBuiltInViewer(entry, com.infinifolder.viewer.MediaType.AUDIO)
+            launchBuiltInViewer(entry, com.infinifolder.viewer.MediaType.AUDIO,forceType=true)
         }
     }
 
@@ -2258,7 +2258,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 dialog.show()
             }
     }
-    private fun showAddConnectionDialog() {
+    private fun showAddConnectionDialog(selectedSourceType:String?=null) {
         val types = providerRegistry.sourceTypes().filter { it.id != "saf" }
         val context = dialogContext()
         val body = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(4)) }
@@ -2268,6 +2268,25 @@ class MainActivity : Activity(), DebugDumpObserver {
         val name = EditText(context).apply { hint = "Connection name" }
         val endpoint = EditText(context).apply { hint = "Server or URL (optional)" }
         body.addView(type); body.addView(name); body.addView(endpoint)
+        val extraFields=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL}
+        val fieldInputs=linkedMapOf<com.infinifolder.storage.ConnectionField,EditText>()
+        body.addView(extraFields)
+        type.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent:android.widget.AdapterView<*>?){}
+            override fun onItemSelected(parent:android.widget.AdapterView<*>?,view:View?,position:Int,id:Long) {
+                extraFields.removeAllViews();fieldInputs.clear()
+                val handler=com.infinifolder.storage.StoreCapabilities.protocols().firstOrNull {it.sourceType.id==types.getOrNull(position)?.id}
+                handler?.connectionFields()?.forEach {field ->
+                    val input=EditText(context).apply {
+                        hint=field.label;setText(field.initial)
+                        if(field.secret)inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                    }
+                    fieldInputs[field]=input;extraFields.addView(input)
+                }
+            }
+        }
+        selectedSourceType?.let {id ->types.indexOfFirst {it.id==id}.takeIf {it>=0}?.let(type::setSelection)}
+
         dialogBuilder().setTitle("Add saved connection").setMessage("Configure network or cloud connection.")
             .setView(body).setNegativeButton("Cancel", null).setPositiveButton("Next", null).create().also { dialog ->
                 dialog.setOnShowListener {
@@ -2291,11 +2310,12 @@ class MainActivity : Activity(), DebugDumpObserver {
                             return@setOnClickListener
                         }
                         if (displayName.isEmpty()) { name.error = "Enter a name"; return@setOnClickListener }
-                        val connection = ProviderConnection(
-                            sourceTypeId = descriptor.id,
-                            displayName = displayName,
-                            endpoint = endpointText.ifEmpty { null }
-                        )
+                        val handler=com.infinifolder.storage.StoreCapabilities.protocols().firstOrNull {it.sourceType.id==descriptor.id}
+                            ?:run {endpoint.error="Provider unavailable";return@setOnClickListener}
+                        if(fieldInputs.any { (field,input) ->if(field.required&&input.text.isBlank()){input.error="Required";true}else false })return@setOnClickListener
+                        val connection=try {handler.createConnection(this,displayName,endpointText,
+                            fieldInputs.map {it.key.key to it.value.text.toString()}.toMap())}
+                        catch(error:Exception){endpoint.error=error.message?:"Invalid connection";return@setOnClickListener}
                         saveConnection(connection)
                         dialog.dismiss()
                         showHomeRoot()
@@ -2820,7 +2840,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         dialogBuilder().setTitle(connection.displayName).setItems(arrayOf("Properties", "Remove saved connection")) { _, which ->
             when (which) {
-                0 -> dialogBuilder().setMessage("Type: ${connection.sourceTypeId}\nServer: ${connection.endpoint ?: "Not set"}\nStatus: saved; provider support is not implemented").setPositiveButton("OK", null).show()
+                0 -> dialogBuilder().setMessage("Type: ${connection.sourceTypeId}\nServer: ${connection.endpoint ?: "Not set"}\nStatus: saved; resource access is checked when opened").setPositiveButton("OK", null).show()
                 1 -> dialogBuilder().setMessage("Remove ${connection.displayName} from the Virtual root?").setNegativeButton("Cancel", null)
                     .setPositiveButton("Remove") { _, _ ->
                         removeConnection(connection.id)
@@ -5472,8 +5492,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
 
-    private fun launchBuiltInViewer(entry: ResourceEntry, mediaType: com.infinifolder.viewer.MediaType): Boolean {
-        val intent = com.infinifolder.viewer.ViewerLaunch.intent(this, entry, mediaType, current) ?: return false
+    private fun launchBuiltInViewer(entry: ResourceEntry, mediaType: com.infinifolder.viewer.MediaType, edit:Boolean=false,forceType:Boolean=false): Boolean {
+        val intent = (if(forceType)null else com.infinifolder.viewer.ViewerLaunch.intentForResource(this,entry,current,edit))
+            ?: com.infinifolder.viewer.ViewerLaunch.intent(this, entry, mediaType, current,edit) ?: return false
         return try {
             startActivity(intent)
             true
@@ -5659,14 +5680,17 @@ class MainActivity : Activity(), DebugDumpObserver {
             ArchiveFormats.isArchive(entry.metadata.name, effectiveMime) ||
             (cachedMagic != null && (cachedMagic.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(entry.metadata.name, cachedMagic.mimeType)))
         )
-        if (isArchiveOrDisc && !isPkg && !externalOnly && !hasExternalDefault) {
+        val specificViewer=if(useBuiltInViewersAndPlayers)com.infinifolder.viewer.ViewerComponents.resolve(
+            entry.copy(metadata=entry.metadata.copy(mimeType=effectiveMime)))?.describe()?.attributes?.get("viewerKind")
+            ?.let {it!="hex"}==true else false
+        if (isArchiveOrDisc && !specificViewer && !isPkg && !externalOnly && !hasExternalDefault) {
             if(ArchiveUri.isArchiveUri(entry.uri))browseNestedArchive(entry)
             else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
             return
         }
         if (useBuiltInViewersAndPlayers && !externalOnly && !hasExternalDefault) {
             val mediaType = com.infinifolder.viewer.MediaTypeDetector.detect(entry.metadata.name, effectiveMime)
-            if (mediaType != com.infinifolder.viewer.MediaType.UNSUPPORTED && mediaType != com.infinifolder.viewer.MediaType.ARCHIVE_OR_CONTAINER) {
+            if (com.infinifolder.viewer.ViewerComponents.canView(entry) || (mediaType != com.infinifolder.viewer.MediaType.UNSUPPORTED && mediaType != com.infinifolder.viewer.MediaType.ARCHIVE_OR_CONTAINER)) {
                 if (launchBuiltInViewer(entry.copy(metadata = entry.metadata.copy(mimeType = effectiveMime)), mediaType)) {
                     return
                 }
@@ -5891,11 +5915,12 @@ class MainActivity : Activity(), DebugDumpObserver {
                         { openRoot(rootUri,rememberAuthorizedRoot=false) }, { showSavedConnectionActions(connection) },
                         treeKey="webdav_${connection.id}",treeUri=rootUri,treeExpandable=true)
                 } else {
-                    tail += HomeItem(icon, connection.displayName, detail, {
-                        dialogBuilder().setTitle(connection.displayName)
-                            .setMessage("This ${source?.label ?: connection.sourceTypeId} connection is saved, but network browsing is not implemented yet.")
-                            .setPositiveButton("OK", null).show()
-                    }, { showSavedConnectionActions(connection) })
+                    val rootUri=providerRegistry.rootUri(connection)
+                    tail += HomeItem(icon,connection.displayName,detail,{
+                        if(rootUri!=null)openRoot(rootUri,rememberAuthorizedRoot=false)
+                        else Toast.makeText(this,"This connection's provider is unavailable",Toast.LENGTH_LONG).show()
+                    },{showSavedConnectionActions(connection)},treeKey="provider_${connection.id}",treeUri=rootUri,treeExpandable=rootUri!=null)
+
                 }
             }
             tail += rootContainerLinks.map { (entry, shortcut) -> rootLinkHomeItem(entry, shortcut) }
@@ -8448,10 +8473,8 @@ class MainActivity : Activity(), DebugDumpObserver {
 
         section("NETWORK & WEB SOURCES")
         providerRegistry.sourceTypes().filter { it.id != "saf" }.forEach { source ->
-            row(source.icon, source.label, if (source.implemented) "Ready to connect" else "Provider hook added · connection support not implemented") {
-                dialogBuilder().setTitle(source.label)
-                    .setMessage("${source.description}\n\nThe provider registration hook is in place; connection setup and file access will be added in a later milestone.")
-                    .setPositiveButton("OK", null).show()
+            row(source.icon,source.label,"Ready to configure") {
+                dialog?.dismiss();showAddConnectionDialog(source.id)
             }
         }
 
@@ -11027,7 +11050,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 "Open target with external app" -> listOf("Open target externally", "Open target with…")
                 else -> listOf(it)
             }
-        } + (if (isFile && entry.metadata.canRead && entry.metadata.recoveryNote == null) listOf("Edit externally") else emptyList()) +
+        } + (if(isFile && entry.metadata.canRead && com.infinifolder.viewer.ViewerComponents.resolve(entry,edit=true)!=null)listOf("Edit with built-in editor")else emptyList()) +
+            (if (isFile && entry.metadata.canRead && entry.metadata.recoveryNote == null) listOf("Edit externally") else emptyList()) +
             (if (!entry.metadata.isDirectory && !isApp && !isCategory && entry.metadata.canRead) listOf("Open in hex editor") else emptyList()) +
             (if (canShowDeleted) listOf("Show deleted files") else emptyList())
         val canCopyContents = !entry.metadata.isDirectory && !isApp && !isCategory &&
@@ -11197,6 +11221,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
                 "Open externally" -> open(entry, externalOnly = true)
                 "Open with external app", "Open with…" -> open(entry, externalOnly = true, forceExternalChooser = true)
+                "Edit with built-in editor" -> launchBuiltInViewer(entry,MediaTypeDetector.detect(entry.metadata.name,entry.metadata.mimeType),edit=true)
                 "Edit externally" -> startActivity(Intent(this, com.infinifolder.viewer.ExternalEditActivity::class.java)
                     .setAction(Intent.ACTION_EDIT).setData(entry.uri))
                 "Open in hex editor" -> openHexEditor(entry)
