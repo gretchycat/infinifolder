@@ -51,6 +51,16 @@ class ZoomImageView @JvmOverloads constructor(
 
     private var rotationAngle = 0f
     private var isFitMode = true
+    /** Optional gallery navigation. Positive means next; zoomed gestures continue to pan. */
+    var onHorizontalSwipe:((Int)->Unit)?=null
+    var onImagePointer:((com.infinifolder.preview.ImagePointerKind,Float,Float)->Unit)?=null
+    private var imagePointerActive=false
+    var isUserInteracting=false
+        private set
+    private var swipeEligible=false
+    private var swipeHandled=false
+    private var touchStartX=0f
+    private var touchStartY=0f
 
     // Editing mode flags
     var isCropMode = false
@@ -108,6 +118,13 @@ class ZoomImageView @JvmOverloads constructor(
     })
 
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDown(e:MotionEvent)=true
+
+        override fun onSingleTapConfirmed(e:MotionEvent):Boolean=if(onImagePointer!=null)true else performClick()
+
+        override fun onFling(e1:MotionEvent?,e2:MotionEvent,velocityX:Float,velocityY:Float):Boolean =
+            dispatchSwipe(e2.x,e2.y)
+
         override fun onDoubleTap(e: MotionEvent): Boolean {
             if (isCropMode) return false
             if (scaleFactor > 1.2f) {
@@ -129,9 +146,44 @@ class ZoomImageView @JvmOverloads constructor(
                 publishMatrix()
                 return true
             }
-            return false
+            return swipeEligible
         }
     })
+
+    private fun dispatchSwipe(x:Float,y:Float):Boolean {
+        if(!swipeEligible || swipeHandled || isCropMode || scaleFactor>1.01f || !isFitMode)return false
+        val dx=x-touchStartX;val dy=y-touchStartY
+        if(kotlin.math.abs(dx)<48*resources.displayMetrics.density || kotlin.math.abs(dx)<kotlin.math.abs(dy)*1.5f)return false
+        swipeHandled=true
+        onHorizontalSwipe?.invoke(if(dx<0)1 else -1)
+        return true
+    }
+
+    private fun dispatchImagePointer(kind:com.infinifolder.preview.ImagePointerKind,x:Float,y:Float){
+        val listener=onImagePointer?:return
+        val image=drawable?:return
+        if(image.intrinsicWidth<=0 || image.intrinsicHeight<=0)return
+        val inverse=Matrix();if(!drawMatrix.invert(inverse))return
+        val point=floatArrayOf(x,y);inverse.mapPoints(point)
+        listener(kind,point[0]/image.intrinsicWidth,point[1]/image.intrinsicHeight)
+    }
+
+    fun cancelUserInteraction(){
+        if(imagePointerActive)dispatchImagePointer(com.infinifolder.preview.ImagePointerKind.EXIT,-1f,-1f)
+        imagePointerActive=false;isUserInteracting=false;swipeEligible=false;activeCropHandle=-1
+    }
+
+    override fun onHoverEvent(event:MotionEvent):Boolean {
+        if(onImagePointer==null)return super.onHoverEvent(event)
+        val kind=when(event.actionMasked){
+            MotionEvent.ACTION_HOVER_ENTER->com.infinifolder.preview.ImagePointerKind.ENTER
+            MotionEvent.ACTION_HOVER_MOVE->com.infinifolder.preview.ImagePointerKind.MOVE
+            MotionEvent.ACTION_HOVER_EXIT->com.infinifolder.preview.ImagePointerKind.EXIT
+            else->return super.onHoverEvent(event)
+        }
+        dispatchImagePointer(kind,event.x,event.y)
+        return true
+    }
 
     init {
         scaleType = ScaleType.MATRIX
@@ -384,6 +436,32 @@ class ZoomImageView @JvmOverloads constructor(
         if(event.actionMasked==MotionEvent.ACTION_DOWN) {
             val area=viewport()
             if(!area.valid || event.x<area.left || event.x>=area.right || event.y<area.top || event.y>=area.bottom)return false
+            isUserInteracting=true
+            touchStartX=event.x;touchStartY=event.y;swipeHandled=false
+            swipeEligible=onHorizontalSwipe!=null && onImagePointer==null && !isCropMode && isFitMode && scaleFactor<=1.01f
+            imagePointerActive=onImagePointer!=null && !isCropMode
+            if(imagePointerActive){
+                dispatchImagePointer(com.infinifolder.preview.ImagePointerKind.ENTER,event.x,event.y)
+                dispatchImagePointer(com.infinifolder.preview.ImagePointerKind.MOVE,event.x,event.y)
+                dispatchImagePointer(com.infinifolder.preview.ImagePointerKind.DOWN,event.x,event.y)
+            }
+        }
+        if(event.actionMasked==MotionEvent.ACTION_UP || event.actionMasked==MotionEvent.ACTION_CANCEL)isUserInteracting=false
+        if(event.pointerCount>1 || event.actionMasked==MotionEvent.ACTION_POINTER_DOWN){
+            swipeEligible=false
+            if(imagePointerActive)dispatchImagePointer(com.infinifolder.preview.ImagePointerKind.EXIT,event.x,event.y)
+            imagePointerActive=false
+        }
+        if(imagePointerActive){
+            when(event.actionMasked){
+                MotionEvent.ACTION_MOVE->dispatchImagePointer(com.infinifolder.preview.ImagePointerKind.MOVE,event.x,event.y)
+                MotionEvent.ACTION_UP->{
+                    dispatchImagePointer(com.infinifolder.preview.ImagePointerKind.UP,event.x,event.y)
+                    dispatchImagePointer(com.infinifolder.preview.ImagePointerKind.EXIT,event.x,event.y)
+                    imagePointerActive=false
+                }
+                MotionEvent.ACTION_CANCEL->{dispatchImagePointer(com.infinifolder.preview.ImagePointerKind.EXIT,event.x,event.y);imagePointerActive=false}
+            }
         }
         if (isCropMode) {
             handleCropTouch(event)
@@ -391,6 +469,12 @@ class ZoomImageView @JvmOverloads constructor(
         }
         val scaleResult = scaleDetector.onTouchEvent(event)
         val gestureResult = gestureDetector.onTouchEvent(event)
+        if(event.actionMasked==MotionEvent.ACTION_UP){
+            val swiped=dispatchSwipe(event.x,event.y)
+            swipeEligible=false
+            if(swiped || swipeHandled)return true
+        }
+        if(event.actionMasked==MotionEvent.ACTION_CANCEL)swipeEligible=false
         return scaleResult || gestureResult || super.onTouchEvent(event)
     }
 

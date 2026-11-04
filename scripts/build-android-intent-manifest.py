@@ -76,7 +76,7 @@ def main():
             result.add('text' if mime == 'image/x-ansi' else 'image')
         if extension in inventory['audio'] or mime.startswith('audio/'):
             result.add('audio')
-        if extension in inventory['video'] or mime.startswith('video/') or extension in {'rm', 'rmvb'}:
+        if extension in inventory['video'] or mime.startswith('video/') and extension not in inventory['images'] or extension in {'rm', 'rmvb'}:
             result.add('video')
         if extension in inventory['text'] or mime.startswith('text/') or mime in text_mimes:
             result.add('text')

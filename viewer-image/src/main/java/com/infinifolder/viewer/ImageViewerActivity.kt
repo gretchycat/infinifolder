@@ -33,6 +33,34 @@ class ImageViewerActivity : ViewerActivity() {
     private lateinit var editQuillBtn: ImageView
     private lateinit var slideshowBtn: TextView
     private lateinit var repeatBtn: TextView
+    private lateinit var imageCounterView:TextView
+    private lateinit var animationButton:Button
+    private lateinit var imageStatesButton:Button
+    private var cyclePlayback:ImageAnimationPlayback?=null
+    private var nativeAnimation:android.graphics.drawable.Drawable?=null
+    private lateinit var animationProgressRow:LinearLayout
+    private lateinit var animationSeek:SeekBar
+    private lateinit var nativeAnimationProgress:ProgressBar
+    private lateinit var animationTime:TextView
+    private var draggingAnimation=false
+    private var nativeDurationNanos=0L
+    private var nativeStartedNanos=0L
+    private var nativePausedNanos=0L
+    private var nativePlaying=false
+    private val animationProgressHandler=android.os.Handler(android.os.Looper.getMainLooper())
+    private val animationProgressTick=object:Runnable {
+        override fun run(){
+            if(!viewerResumed || (cyclePlayback==null && nativeAnimation==null))return
+            updateAnimationProgress()
+            if(cycleEnabled&&!draggingAnimation)animationProgressHandler.postDelayed(this,100)
+        }
+    }
+    private var cycleEnabled=true
+    private var viewerResumed=false
+    private var restoredCycleElapsed=0L
+    private var restoredImageState:String?=null
+    private var imageInteractionEnabled=true
+    private var loadedAnimationUri:String?=null
     private val imageSystemInsets=android.graphics.Rect()
 
     private var currentUri: Uri? = null
@@ -47,6 +75,7 @@ class ImageViewerActivity : ViewerActivity() {
 
     private var imageLoadGeneration = 0
     private var imageLoadThread: Thread? = null
+    private var imageLoading=false
     private var metadataLoadGeneration = 0
     private var metadataLoadThread: Thread? = null
     private var originalBitmap: Bitmap? = null
@@ -63,7 +92,7 @@ class ImageViewerActivity : ViewerActivity() {
     private val slideshowHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val slideshowRunnable = object : Runnable {
         override fun run() {
-            if (!isSlideshowPlaying) return
+            if (!isSlideshowPlaying || !viewerResumed || isEditMode) return
             advanceSlideshow()
             if (isSlideshowPlaying) {
                 slideshowHandler.postDelayed(this, 3000L)
@@ -74,26 +103,41 @@ class ImageViewerActivity : ViewerActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ripMode=runCatching {RipScriptDecoder.Mode.valueOf(savedInstanceState?.getString("ripMode").orEmpty())}.getOrDefault(RipScriptDecoder.Mode.HIGH_RESOLUTION)
+        cycleEnabled=savedInstanceState?.getBoolean("cycleEnabled",true)?:true
 
-        val targetUri = intent.data
+        val launchUri = intent.data
             ?: intent.getStringExtra("uri")?.let { Uri.parse(it) }
             ?: intent.getStringExtra(EXTRA_URI)?.let { Uri.parse(it) }
 
+        val restore=savedInstanceState?.getString("launchUri")==launchUri?.toString()
+        if(!restore)cycleEnabled=true
+        val targetUri=if(restore)savedInstanceState?.getString("imageUri")?.let(Uri::parse)?:launchUri else launchUri
         if (targetUri == null) {
             Toast.makeText(this, "No image URI provided", Toast.LENGTH_SHORT).show()
             finish()
             return
         }
         currentUri = targetUri
+        if(savedInstanceState?.getString("cycleUri")==targetUri.toString())
+            restoredCycleElapsed=savedInstanceState.getLong("cycleElapsed",0)
+        if(restore)restoredImageState=savedInstanceState?.getString("interactiveState")
+        if(restore)imageInteractionEnabled=savedInstanceState?.getBoolean("imageInteractionEnabled",true)?:true
         currentName = intent.getStringExtra("displayName")
             ?: intent.getStringExtra(EXTRA_NAME)
             ?: currentUri?.lastPathSegment?.substringAfterLast('/')
             ?: "Image"
+        if(restore)currentName=savedInstanceState?.getString("imageName")?:currentName
         currentMime = intent.getStringExtra("mimeType")
             ?: intent.getStringExtra(EXTRA_MIME)
             ?: "image/*"
+        if(restore)currentMime=savedInstanceState?.getString("imageMime")?:currentMime
         val parentStr = intent.getStringExtra(EXTRA_PARENT_URI) ?: intent.getStringExtra("parentUri")
         parentFolderUri = if (parentStr != null) Uri.parse(parentStr) else MediaSourceAdapter.getParentDirectory(this, currentUri!!)
+        if(restore){
+            parentFolderUri=savedInstanceState?.getString("imageParent")?.let(Uri::parse)?:parentFolderUri
+            isRepeatEnabled=savedInstanceState?.getBoolean("slideshowRepeat",false)?:false
+            isSlideshowPlaying=savedInstanceState?.getBoolean("slideshowPlaying",false)?:false
+        }
 
         buildLayout()
         loadImage(currentUri!!)
@@ -113,6 +157,15 @@ class ImageViewerActivity : ViewerActivity() {
             setOnClickListener {
                 if (!isEditMode) {
                     toggleBars()
+                }
+            }
+            onHorizontalSwipe={direction->
+                if(!isEditMode){
+                    navigateAdjacent(direction)
+                    if(isSlideshowPlaying){
+                        slideshowHandler.removeCallbacks(slideshowRunnable)
+                        slideshowHandler.postDelayed(slideshowRunnable,3000L)
+                    }
                 }
             }
         }
@@ -243,7 +296,7 @@ class ImageViewerActivity : ViewerActivity() {
 
         // Bottom Navigation Bar
         bottomBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setBackgroundColor(0xCC181C17.toInt())
             setPadding(dp(16), dp(10), dp(16), dp(10))
@@ -253,33 +306,38 @@ class ImageViewerActivity : ViewerActivity() {
                 Gravity.BOTTOM
             )
         }
+        val navigationRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
+        bottomBar.addView(navigationRow,LinearLayout.LayoutParams(-1,-2))
 
         val prevBtn = TextView(this).apply {
             text = "◀"
             textSize = 18f
             setTextColor(0xFFFFFFFF.toInt())
-            setPadding(dp(20), dp(8), dp(20), dp(8))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            minWidth=dp(48);minHeight=dp(48);contentDescription="Previous image"
             setOnClickListener { navigateAdjacent(-1) }
         }
-        bottomBar.addView(prevBtn)
+        navigationRow.addView(prevBtn)
 
         val counterView = TextView(this).apply {
             id = View.generateViewId()
             text = ""
             textSize = 13f
             setTextColor(0xFFCCCCCC.toInt())
-            setPadding(dp(16), dp(8), dp(16), dp(8))
+            setPadding(dp(4), dp(8), dp(4), dp(8))
         }
-        bottomBar.addView(counterView)
+        imageCounterView=counterView
+        navigationRow.addView(counterView)
 
         val nextBtn = TextView(this).apply {
             text = "▶"
             textSize = 18f
             setTextColor(0xFFFFFFFF.toInt())
-            setPadding(dp(20), dp(8), dp(20), dp(8))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            minWidth=dp(48);minHeight=dp(48);contentDescription="Next image"
             setOnClickListener { navigateAdjacent(1) }
         }
-        bottomBar.addView(nextBtn)
+        navigationRow.addView(nextBtn)
 
         slideshowBtn = TextView(this).apply {
             text = "▶ Slideshow"
@@ -288,19 +346,75 @@ class ImageViewerActivity : ViewerActivity() {
             setPadding(dp(12), dp(8), dp(12), dp(8))
             setOnClickListener { toggleSlideshow() }
         }
-        bottomBar.addView(slideshowBtn)
+        navigationRow.addView(slideshowBtn)
 
         repeatBtn = TextView(this).apply {
             text = "🔁"
             textSize = 15f
-            setTextColor(0x88FFFFFF.toInt())
+            setTextColor(if(isRepeatEnabled)0xFF4CAF50.toInt()else 0x88FFFFFF.toInt())
             setPadding(dp(12), dp(8), dp(12), dp(8))
             setOnClickListener {
                 isRepeatEnabled = !isRepeatEnabled
                 repeatBtn.setTextColor(if (isRepeatEnabled) 0xFF4CAF50.toInt() else 0x88FFFFFF.toInt())
             }
         }
-        bottomBar.addView(repeatBtn)
+        navigationRow.addView(repeatBtn)
+        animationButton=Button(this).apply {
+            text="⏸ Pause animation"
+            textSize=14f;isAllCaps=false;visibility=View.GONE
+            contentDescription="Play or pause image animation"
+            setOnClickListener{
+                cycleEnabled=!cycleEnabled
+                updateAnimationPlayback()
+            }
+        }
+        val animationControls=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
+        imageStatesButton=Button(this).apply{
+            text="States…";isAllCaps=false;textSize=14f;visibility=View.GONE
+            contentDescription="Choose interactive image state"
+            setOnClickListener{
+                val player=cyclePlayback?:return@setOnClickListener
+                val names=player.stateNames
+                if(names.isEmpty())return@setOnClickListener
+                val dialog=AlertDialog.Builder(this@ImageViewerActivity).setTitle("Image state")
+                    .setSingleChoiceItems(names.toTypedArray(),names.indexOf(player.currentStateName)){popup,index->
+                        player.selectState(names[index]);popup.dismiss()
+                    }.setNeutralButton(if(imageInteractionEnabled)"Disable touch input"else "Enable touch input"){_,_->
+                        imageInteractionEnabled=!imageInteractionEnabled;updateImageInteraction()
+                    }.setNegativeButton("Close",null).create()
+                dialog.show()
+            }
+        }
+        animationControls.addView(animationButton,LinearLayout.LayoutParams(0,dp(48),1f))
+        animationControls.addView(imageStatesButton,LinearLayout.LayoutParams(0,dp(48),1f))
+        bottomBar.addView(animationControls,LinearLayout.LayoutParams(-1,-2))
+        animationProgressRow=LinearLayout(this).apply {
+            orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;visibility=View.GONE
+        }
+        animationSeek=SeekBar(this).apply {
+            max=1000;contentDescription="Animation position"
+            setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener {
+                override fun onStartTrackingTouch(bar:SeekBar){draggingAnimation=true;cyclePlayback?.pause()}
+                override fun onProgressChanged(bar:SeekBar,progress:Int,fromUser:Boolean){
+                    if(fromUser)cyclePlayback?.let{player->
+                        player.seekTo((player.durationNanos.toDouble()*progress/1000).toLong().coerceAtMost(player.durationNanos-1))
+                        updateAnimationProgress()
+                    }
+                }
+                override fun onStopTrackingTouch(bar:SeekBar){draggingAnimation=false;updateAnimationPlayback()}
+            })
+        }
+        nativeAnimationProgress=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply {
+            max=1000;isIndeterminate=false;contentDescription="Native animation progress"
+        }
+        animationTime=TextView(this).apply {
+            textSize=11f;setTextColor(0xffcccccc.toInt());typeface=android.graphics.Typeface.MONOSPACE
+            setPadding(dp(6),0,0,0)
+        }
+        animationProgressRow.addView(animationSeek,LinearLayout.LayoutParams(0,dp(40),1f))
+        animationProgressRow.addView(nativeAnimationProgress,LinearLayout.LayoutParams(0,dp(40),1f))
+        animationProgressRow.addView(animationTime,LinearLayout.LayoutParams(-2,-2))
+        bottomBar.addView(animationProgressRow,LinearLayout.LayoutParams(-1,-2))
 
         root.addView(bottomBar)
 
@@ -411,6 +525,12 @@ class ImageViewerActivity : ViewerActivity() {
     private fun toggleEditMode() {
         isEditMode = !isEditMode
         if (isEditMode) {
+            stopSlideshow()
+            zoomImageView.onImagePointer=null;imageStatesButton.visibility=View.GONE
+            // Editing freezes the current image and cannot race animation updates.
+            cyclePlayback?.close();cyclePlayback=null;animationButton.visibility=View.GONE
+            animationProgressHandler.removeCallbacks(animationProgressTick);animationProgressRow.visibility=View.GONE
+            freezeNativeAnimation()
             editQuillBtn.setColorFilter(0xFF81C784.toInt())
             bottomBar.visibility = View.GONE
             editPanel.visibility = View.VISIBLE
@@ -673,11 +793,31 @@ class ImageViewerActivity : ViewerActivity() {
     }
 
     override fun onSaveInstanceState(outState:Bundle) {
+        val launchUri=intent.data?:intent.getStringExtra("uri")?.let(Uri::parse)?:intent.getStringExtra(EXTRA_URI)?.let(Uri::parse)
+        outState.putString("launchUri",launchUri?.toString())
+        outState.putString("imageUri",currentUri?.toString());outState.putString("imageName",currentName)
+        outState.putString("imageMime",currentMime);outState.putString("imageParent",parentFolderUri?.toString())
+        outState.putString("interactiveState",cyclePlayback?.currentStateName)
+        outState.putBoolean("imageInteractionEnabled",imageInteractionEnabled)
+        outState.putBoolean("slideshowPlaying",isSlideshowPlaying);outState.putBoolean("slideshowRepeat",isRepeatEnabled)
         outState.putString("ripMode",ripMode.name)
+        outState.putBoolean("cycleEnabled",cycleEnabled)
+        outState.putString("cycleUri",currentUri?.toString())
+        outState.putLong("cycleElapsed",cyclePlayback?.elapsedNanos?:restoredCycleElapsed)
         super.onSaveInstanceState(outState)
     }
 
     private fun loadImage(uri: Uri,preserveViewport:Boolean=false) {
+        imageLoading=true
+        zoomImageView.onImagePointer=null;imageStatesButton.visibility=View.GONE
+        if(loadedAnimationUri!=null && loadedAnimationUri!=uri.toString()){
+            cycleEnabled=true;restoredCycleElapsed=0;restoredImageState=null
+        }
+        loadedAnimationUri=uri.toString()
+        (nativeAnimation as? android.graphics.drawable.Animatable)?.stop();nativeAnimation=null
+        nativePlaying=false;nativeDurationNanos=0;nativePausedNanos=0;draggingAnimation=false
+        animationProgressHandler.removeCallbacks(animationProgressTick);animationProgressRow.visibility=View.GONE
+        cyclePlayback?.close();cyclePlayback=null;animationButton.visibility=View.GONE
         ripModeToggle.visibility=if(isRipImage())View.VISIBLE else View.GONE
         ripModeToggle.isChecked=ripMode==RipScriptDecoder.Mode.HIGH_RESOLUTION
         val renderingMode=ripMode
@@ -687,11 +827,16 @@ class ImageViewerActivity : ViewerActivity() {
         val generation = ++imageLoadGeneration
         imageLoadThread?.interrupt()
         imageLoadThread = Thread {
+            var decodeFailure:String?=null
             val frame = try {
                 // Decode at high screen resolution (up to 2560px max side) without unbounded RAM exhaustion
                 com.infinifolder.preview.CanvasStreams.decodeViewer(contentResolver,
                     MediaSourceAdapter.resource(this, uri), uri, 2560,renderingMode)
             } catch (t: Throwable) {
+                if(t !is java.io.InterruptedIOException){
+                    decodeFailure=t.message
+                    com.infinifolder.storage.DiagnosticLog.record("viewer.image.decode-failed",error=t)
+                }
                 null
             }
             val bmp = frame?.bitmap
@@ -701,6 +846,7 @@ class ImageViewerActivity : ViewerActivity() {
                     bmp?.recycle()
                     return@runOnUiThread
                 }
+                imageLoading=false
                 if (bmp != null) {
                     decodedImageMetadata = frame?.metadata
                     originalBitmap = bmp
@@ -711,7 +857,38 @@ class ImageViewerActivity : ViewerActivity() {
                     ripModeToggle.visibility=if(rip)View.VISIBLE else View.GONE
                     (zoomImageView.drawable as? android.graphics.drawable.BitmapDrawable)?.paint?.isFilterBitmap= !rip || renderingMode!=RipScriptDecoder.Mode.EGA
                     val renderWarnings=frame?.metadata?.warnings.orEmpty()
-                    subtitleView.text = "${bmp.width} × ${bmp.height} px" + if(renderWarnings.isEmpty())"" else " · Partial rendering"
+                    val animation=frame?.animation?:frame?.colorCycling
+                    val animatedDrawable=frame?.animationDrawable
+                    subtitleView.text = "${bmp.width} × ${bmp.height} px" +
+                        (if(animation!=null)" · ${animation.description}"else if(animatedDrawable!=null)" · Animated image"else "") +
+                        (if(renderWarnings.isEmpty())"" else " · Format notice")
+                    if(animation!=null&&!isEditMode){
+                        cyclePlayback=ImageAnimationPlayback(animation,bmp,restoredCycleElapsed,
+                            changed={zoomImageView.invalidate()},failed={error->
+                                cycleEnabled=false;animationButton.text="Animation unavailable";animationButton.isEnabled=false
+                                com.infinifolder.storage.DiagnosticLog.record("viewer.image.animation-failed",error=error)
+                                Toast.makeText(this,"Animation stopped: ${error.message}",Toast.LENGTH_LONG).show()
+                            })
+                        if(animation is com.infinifolder.preview.InteractiveBitmapAnimation){
+                            imageStatesButton.visibility=View.VISIBLE
+                            updateImageInteraction()
+                            zoomImageView.contentDescription="Interactive image. Touch and drag, or choose a state. Use the arrows for other images."
+                            restoredImageState?.let{cyclePlayback?.selectState(it)};restoredImageState=null
+                        }else zoomImageView.contentDescription=currentName
+                        restoredCycleElapsed=0
+                        animationButton.isEnabled=true
+                        animationButton.visibility=if(animation.needsContinuousFrames)View.VISIBLE else View.GONE
+                        configureAnimationProgress(animation.durationNanos,true)
+                        updateAnimationPlayback()
+                    }
+                    if(animatedDrawable!=null && !isEditMode){
+                        nativeAnimation=animatedDrawable
+                        nativeDurationNanos=frame.animationDurationNanos
+                        zoomImageView.setImageDrawable(animatedDrawable);zoomImageView.resetZoom()
+                        animationButton.isEnabled=true;animationButton.visibility=View.VISIBLE
+                        configureAnimationProgress(nativeDurationNanos,false)
+                        updateAnimationPlayback()
+                    }
                     if(renderWarnings.isNotEmpty()) {
                         com.infinifolder.storage.DiagnosticLog.record("viewer.image.render-warning",
                             "name=$currentName warnings=${renderWarnings.joinToString("; ")}")
@@ -724,10 +901,70 @@ class ImageViewerActivity : ViewerActivity() {
                         ripModeToggle.isChecked=it==RipScriptDecoder.Mode.HIGH_RESOLUTION
                     }
                     subtitleView.text = "Failed to decode image"
-                    Toast.makeText(this, "Cannot decode this image format.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, decodeFailure?:"Cannot decode this image format.", Toast.LENGTH_LONG).show()
                 }
             }
         }.apply { start() }
+    }
+
+    private fun updateAnimationPlayback(){
+        val play=cycleEnabled&&viewerResumed&&!isEditMode
+        if(::animationButton.isInitialized){
+            animationButton.text=if(cycleEnabled)"⏸ Pause animation"else "▶ Play animation"
+            animationButton.contentDescription=if(cycleEnabled)"Pause image animation"else "Play image animation"
+        }
+        if(play&&!draggingAnimation)cyclePlayback?.play()else cyclePlayback?.pause(cancelPending=!viewerResumed || isEditMode)
+        (nativeAnimation as? android.graphics.drawable.Animatable)?.let{
+            if(play && !nativePlaying){
+                nativeStartedNanos=android.os.SystemClock.elapsedRealtimeNanos();nativePausedNanos=0;nativePlaying=true;it.start()
+            }else if(!play && nativePlaying){
+                nativePausedNanos=android.os.SystemClock.elapsedRealtimeNanos()-nativeStartedNanos;nativePlaying=false;it.stop()
+            }
+        }
+        animationProgressHandler.removeCallbacks(animationProgressTick)
+        if(viewerResumed && (cyclePlayback!=null || nativeAnimation!=null))animationProgressHandler.post(animationProgressTick)
+    }
+
+    private fun updateImageInteraction(){
+        zoomImageView.onImagePointer=if(imageInteractionEnabled && !isEditMode && cyclePlayback?.stateNames?.isNotEmpty()==true){
+            {kind,x,y->cyclePlayback?.pointerEvent(kind,x,y);Unit}
+        }else null
+    }
+
+    private fun configureAnimationProgress(duration:Long,seekable:Boolean){
+        animationProgressRow.visibility=if(duration>0)View.VISIBLE else View.GONE
+        animationSeek.visibility=if(seekable)View.VISIBLE else View.GONE
+        nativeAnimationProgress.visibility=if(seekable)View.GONE else View.VISIBLE
+        updateAnimationProgress()
+    }
+
+    private fun updateAnimationProgress(){
+        val duration=cyclePlayback?.durationNanos?:nativeDurationNanos
+        if(duration<=0)return
+        val elapsed=cyclePlayback?.elapsedNanos?:if(nativePlaying)
+            android.os.SystemClock.elapsedRealtimeNanos()-nativeStartedNanos else nativePausedNanos
+        val position=elapsed.coerceAtLeast(0)%duration
+        val progress=(position.toDouble()*1000/duration).toInt()
+        if(!draggingAnimation)animationSeek.progress=progress
+        nativeAnimationProgress.progress=progress
+        fun time(nanos:Long):String {
+            val tenths=nanos/100_000_000
+            return "%d:%02d.%d".format(java.util.Locale.ROOT,tenths/600,tenths/10%60,tenths%10)
+        }
+        animationTime.text="${time(position)} / ${time(duration)}"
+    }
+
+    private fun freezeNativeAnimation(){
+        val drawable=nativeAnimation?:return
+        (drawable as? android.graphics.drawable.Animatable)?.stop()
+        originalBitmap?.takeIf{!it.isRecycled && it.isMutable}?.let{bitmap->
+            val oldBounds=android.graphics.Rect(drawable.bounds)
+            drawable.setBounds(0,0,bitmap.width,bitmap.height)
+            bitmap.eraseColor(0);drawable.draw(android.graphics.Canvas(bitmap));drawable.bounds=oldBounds
+            zoomImageView.setImageBitmapPreservingViewport(bitmap)
+        }
+        nativeAnimation=null
+        nativePlaying=false
     }
 
     private fun showMetadataInspector() {
@@ -737,6 +974,10 @@ class ImageViewerActivity : ViewerActivity() {
 
         infoList += "Name: $currentName"
         infoList += "MIME: $currentMime"
+        decodedImageMetadata?.warnings?.takeIf{it.isNotEmpty()}?.let{warnings->
+            infoList += "Format notices:"
+            infoList += warnings
+        }
         if (bmp != null) {
             infoList += "Dimensions: ${bmp.width} × ${bmp.height} px"
             val mp = (bmp.width.toDouble() * bmp.height.toDouble() / 1_000_000.0)
@@ -777,6 +1018,7 @@ class ImageViewerActivity : ViewerActivity() {
             val list = MediaSourceAdapter.listFolder(this, parent)
                 .filter { MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.IMAGE }
             runOnUiThread {
+                if(isFinishing||isDestroyed)return@runOnUiThread
                 folderImages.clear()
                 folderImages.addAll(list)
                 val targetUriStr = currentUri?.toString()
@@ -787,7 +1029,7 @@ class ImageViewerActivity : ViewerActivity() {
     }
 
     private fun updateCounter() {
-        val counterView = findViewById<TextView>(bottomBar.getChildAt(1).id) ?: return
+        val counterView=imageCounterView
         if (folderImages.isNotEmpty()) {
             counterView.text = "${currentImageIndex + 1} / ${folderImages.size}"
         } else {
@@ -808,19 +1050,20 @@ class ImageViewerActivity : ViewerActivity() {
 
     private fun stopSlideshow() {
         isSlideshowPlaying = false
-        slideshowBtn.text = "▶ Slideshow"
-        slideshowBtn.setTextColor(0xFFFFFFFF.toInt())
+        if(::slideshowBtn.isInitialized){
+            slideshowBtn.text = "▶ Slideshow"
+            slideshowBtn.setTextColor(0xFFFFFFFF.toInt())
+        }
         slideshowHandler.removeCallbacks(slideshowRunnable)
     }
 
     private fun advanceSlideshow() {
-        if (folderImages.isEmpty()) return
+        if (folderImages.isEmpty() || imageLoading || isEditMode || zoomImageView.isUserInteracting || draggingAnimation || !hasWindowFocus()) return
         if (currentImageIndex < folderImages.size - 1) {
-            navigateAdjacent(1)
+            navigateAdjacent(1,automatic=true)
         } else {
             if (isRepeatEnabled) {
-                currentImageIndex = -1
-                navigateAdjacent(1)
+                navigateAdjacent(1,automatic=true)
             } else {
                 // Repeat not enabled and finished playing through: auto close!
                 stopSlideshow()
@@ -829,13 +1072,13 @@ class ImageViewerActivity : ViewerActivity() {
         }
     }
 
-    private fun navigateAdjacent(delta: Int) {
+    private fun navigateAdjacent(delta: Int,automatic:Boolean=false) {
         if (folderImages.isEmpty()) return
         if (hasUnsavedEdits) {
             Toast.makeText(this, "Please save or discard edits first", Toast.LENGTH_SHORT).show()
             return
         }
-        val nextIdx = currentImageIndex + delta
+        val nextIdx = if(isRepeatEnabled)Math.floorMod(currentImageIndex+delta,folderImages.size)else currentImageIndex+delta
         if (nextIdx in folderImages.indices) {
             currentImageIndex = nextIdx
             val nextEntry = folderImages[nextIdx]
@@ -845,25 +1088,29 @@ class ImageViewerActivity : ViewerActivity() {
             titleView.text = currentName
             updateCounter()
             loadImage(nextEntry.uri)
-        } else if (delta > 0) {
-            if (isRepeatEnabled) {
-                currentImageIndex = 0
-                val nextEntry = folderImages[0]
-                currentUri = nextEntry.uri
-                currentName = nextEntry.metadata.name
-                currentMime = nextEntry.metadata.mimeType
-                titleView.text = currentName
-                updateCounter()
-                loadImage(nextEntry.uri)
-            } else {
-                // If repeat is not on and it finishes playing through: auto close!
-                stopSlideshow()
-                finish()
-            }
+        } else if (delta > 0 && automatic && isSlideshowPlaying) {
+            stopSlideshow()
+            finish()
         }
     }
 
+    override fun onResume(){
+        super.onResume();viewerResumed=true
+        updateAnimationPlayback()
+        if(isSlideshowPlaying && ::slideshowBtn.isInitialized){
+            slideshowBtn.text="⏸ Pause";slideshowBtn.setTextColor(0xFF4CAF50.toInt())
+            slideshowHandler.removeCallbacks(slideshowRunnable);slideshowHandler.postDelayed(slideshowRunnable,3000L)
+        }
+    }
+    override fun onPause(){
+        if(::zoomImageView.isInitialized)zoomImageView.cancelUserInteraction()
+        slideshowHandler.removeCallbacks(slideshowRunnable)
+        viewerResumed=false;updateAnimationPlayback();super.onPause()
+    }
     override fun onDestroy() {
+        animationProgressHandler.removeCallbacksAndMessages(null)
+        cyclePlayback?.close();cyclePlayback=null
+        (nativeAnimation as? android.graphics.drawable.Animatable)?.stop();nativeAnimation=null
         imageLoadGeneration++
         imageLoadThread?.interrupt()
         imageLoadThread = null

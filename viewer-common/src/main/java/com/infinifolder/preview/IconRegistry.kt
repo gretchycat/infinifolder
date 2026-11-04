@@ -59,6 +59,16 @@ class IconRegistry(private val file: File) {
             root.put("bookCoverIconsEnabled", true)
             persist()
         }
+        // Explicit user request: newly supported FLIC/MNG types use content icons.
+        // Preserve associations, custom artwork and unknown fields; later edits win.
+        if(readError==null && !root.optBoolean("animationContentIconsEnabled",false)){
+            val records=recordsJson()
+            for(mime in ImageFormats.animationMimeTypes){
+                val entry=records.optJSONObject(mime)?:JSONObject()
+                entry.put("isImage",true);entry.put("overrideImageIcon",false);records.put(mime,entry)
+            }
+            root.put("animationContentIconsEnabled",true);persist()
+        }
     }
     val revision: Long get() = synchronized(lock) { load(); root.optLong("revision", 0) }
     private fun recordsJson() = root.optJSONObject("mime") ?: JSONObject().also { root.put("mime", it) }

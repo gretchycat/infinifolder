@@ -92,6 +92,7 @@ object MediaTypeDetector {
             lowerMime == "text/markdown" -> return MediaType.MARKDOWN
             lowerMime in setOf("text/html", "application/xhtml+xml") -> return MediaType.HTML
             lowerMime == "image/x-ansi" -> return MediaType.TEXT
+            lowerMime in ImageFormats.animationMimeTypes -> return MediaType.IMAGE
             lowerMime.startsWith("image/") -> return MediaType.IMAGE
             // Some providers use the RealAudio MIME even for RealMedia videos.
             lowerMime in AUDIO_MIME_TYPES -> return MediaType.AUDIO

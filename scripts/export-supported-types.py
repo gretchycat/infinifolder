@@ -62,6 +62,12 @@ def add(category, identifier, extensions='', mime_type='', capabilities='', supp
         write_support=write_support, module=module, notes=notes, source_paths=source_paths))
 
 def capability(ext, mime):
+    if ext in {'fli', 'flc', 'flic'}:
+        return 'indexed FLI/FLC animation viewer; content thumbnail; bounded header recovery', 'Canvas', '8-bit palette, COPY/BLACK/BRUN/LC/SS2; recover geometry/count only from complete consistent rows/frames, report missing timing. 32 MiB encoded, 4 MP, 10000 frames. No DTA/EGI extended codecs.'
+    if ext == 'mng':
+        return 'PNG-based MNG animation/interactive viewer; content thumbnail', 'Canvas', 'Stored PNG objects, SHOW/MOVE, FRAM modes 1-4, global palettes, TERM, evNT pointer events and named states. No Delta-PNG/JNG or nested loops.'
+    if ext in {'gif', 'webp', 'apng'}:
+        return 'image animation viewer; still thumbnail', 'Canvas/Android', 'GIF/WebP use Android native animation on API 28+; APNG uses PNG frame composition; device acceptance pending.'
     if ext in fonts or mime in font_mimes:
         return 'read-only font preview; native glyph rendering; collection face selection', 'Scribe/Android', 'TTF/OTF/TTC/OTC; 64 MiB limit. Device font support applies; not WOFF/WOFF2, Type 1 or legacy bitmap fonts.'
     if ext == 'gen':

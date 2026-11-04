@@ -15,14 +15,20 @@ Updated 2026-10-27. This document tracks image format support across thumbnail g
 Decoded via `ImageDecoder` (API 28+) with `BitmapFactory` fallback and EXIF orientation handling (`ExifInterface`):
 
 - **JPEG / Ultra HDR**: `.jpg`, `.jpeg`, `.jpe`, `.jfif`, `.pjpeg`, `.pjp` (`image/jpeg`)
-- **PNG / APNG**: `.png`, `.apng` (`image/png`, `image/apng`) — decodes static images and the first frame of APNG
-- **GIF**: `.gif` (`image/gif`) — decodes static GIF and the first frame of animated GIF
-- **WebP**: `.webp` (`image/webp`) — lossy, lossless, alpha, and first frame of animated WebP
+- **PNG / APNG**: `.png`, `.apng` (`image/png`, `image/apng`) — static thumbnails and APNG viewer playback, including blend/disposal operations
+- **GIF**: `.gif` (`image/gif`) — static thumbnails and animated viewer playback
+- **WebP**: `.webp` (`image/webp`) — lossy, lossless, alpha, and animated viewer playback on API 28+
 - **BMP / DIB**: `.bmp`, `.dib` (`image/bmp`)
 - **Wireless Bitmap (WBMP)**: `.wbmp` (`image/vnd.wap.wbmp`)
 - **Windows Icon & Cursor**: `.ico`, `.cur` (`image/x-icon`)
 
 ### Modern high-efficiency & archival raster formats
+
+Animation details, supported FLI/FLC/MNG subsets, limits and generated acceptance
+samples are documented in [Image animation](image-animation.md). New-format
+device acceptance remains pending. HEIF/AVIF sequence playback depends on the
+native decoder exposing an animated drawable; a still preview remains available
+when it does not.
 
 - **HEIF / HEIC**: `.heic`, `.heif`, `.heics`, `.heifs`, `.hif` (`image/heic`, `image/heif`) via Android platform codecs
 - **AVIF**: `.avif`, `.avifs` (`image/avif`) via Android 12+ (API 31+) platform codecs

@@ -49,7 +49,7 @@ class ResourceIconResolver(context: Context) {
     @Volatile private var lastRevision:RevisionSnapshot?=null
     fun revision(): String {
         val themeRevision=theme.revision()
-        val key="${registry.revision}:$themeRevision:${icons.revision}:${com.infinifolder.viewer.RawMediaConfigStore.savedRevision}"
+        val key="${registry.revision}:$themeRevision:${icons.revision}:${com.infinifolder.viewer.RawMediaConfigStore.savedRevision}:${ThumbnailDecoder.CONTENT_REVISION}"
         lastRevision=RevisionSnapshot(key,themeRevision)
         return key
     }

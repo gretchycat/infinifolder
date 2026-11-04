@@ -13,12 +13,15 @@ import com.infinifolder.model.ResourceMetadata
  * - Truevision TGA (.tga, .icb, .vda, .vst, via TgaDecoder).
  */
 object ImageFormats {
+    val animationMimeTypes=setOf("video/x-fli","video/x-mng")
     /** Extensions for all supported decodable image formats. */
     val decodableExtensions: Set<String> = setOf(
-        // JPEG (including Ultra HDR / JPEG_R) and PNG (including animated PNG still frames)
+        // JPEG (including Ultra HDR / JPEG_R) and PNG/APNG animation
         "jpg", "jpeg", "jpe", "jfif", "pjpeg", "pjp", "png", "apng",
         // GIF, WebP, BMP, WBMP, ICO/CUR
         "gif", "webp", "bmp", "dib", "wbmp", "ico", "cur",
+        // Indexed Autodesk Animator and PNG-based MNG animation
+        "fli", "flc", "flic", "mng",
         // HEIF/HEIC and AVIF, including image sequences
         "heic", "heif", "heics", "heifs", "hif", "avif", "avifs",
         // DNG and camera RAW formats
@@ -59,5 +62,7 @@ object ImageFormats {
 
     fun isImage(metadata: ResourceMetadata): Boolean =
         !metadata.isDirectory &&
-            (metadata.mimeType.lowercase().startsWith("image/") || extension(metadata.name) in decodableExtensions)
+            (metadata.mimeType.lowercase().startsWith("image/") ||
+                com.infinifolder.mime.MimeRegistry.normalize(metadata.mimeType) in animationMimeTypes ||
+                extension(metadata.name) in decodableExtensions)
 }
