@@ -24,7 +24,7 @@ object CacheDialogs {
         fun apply(theme: ThemeColors) {
             val window = dialog.window ?: return
             window.setBackgroundDrawable(GradientDrawable().apply {
-                setColor(theme.surface)
+                setColor(theme.alternateBackground)
                 cornerRadius = dialog.context.resources.displayMetrics.density * theme.cornerRadiusDp
             })
             fun visit(view: View) {
@@ -33,9 +33,14 @@ object CacheDialogs {
                     view.setHintTextColor(theme.textSecondary)
                 }
                 if (view is EditText) view.backgroundTintList = ColorStateList.valueOf(theme.accent)
+                if (view is android.widget.AbsListView) {
+                    view.cacheColorHint = android.graphics.Color.TRANSPARENT
+                    view.setBackgroundColor(theme.alternateBackground)
+                }
+                if (view is android.widget.ScrollView) view.setBackgroundColor(theme.alternateBackground)
                 val name = runCatching { view.resources.getResourceEntryName(view.id) }.getOrNull()
                 if (name in setOf("parentPanel", "topPanel", "contentPanel", "customPanel", "buttonPanel"))
-                    view.setBackgroundColor(theme.surface)
+                    view.setBackgroundColor(theme.alternateBackground)
                 if (view is ViewGroup) for (index in 0 until view.childCount) visit(view.getChildAt(index))
             }
             visit(window.decorView)

@@ -47,7 +47,7 @@ object HomeShortcuts {
             val height = artwork.height * scale
             canvas.drawBitmap(artwork, null, RectF((192-width)/2f, (192-height)/2f, (192+width)/2f, (192+height)/2f), Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
         } else {
-            canvas.drawCircle(96f, 96f, 94f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = ThemeManager.activeTheme.cardBackground })
+            canvas.drawCircle(96f, 96f, 94f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = ThemeManager.activeTheme.alternateBackground })
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 112f; textAlign = Paint.Align.CENTER }
             canvas.drawText(resolved.fallback, 96f, 96f-(paint.ascent()+paint.descent())/2f, paint)
         }

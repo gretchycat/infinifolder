@@ -27,6 +27,7 @@ object ThemeManager {
     private const val PREF_CUSTOM_SKIN_FILE = "active_custom_skin_file"
     private const val PREF_SKIN_ASSET_PATH = "active_skin_asset_path"
     const val PREF_THEME_MODE = "theme_mode"
+    const val PREF_ICON_SHADOWS = "icon_shadows"
 
     private val listeners = mutableListOf<ThemeChangeListener>()
 
@@ -36,6 +37,15 @@ object ThemeManager {
 
     var smoothSkinScaling: Boolean = false
         private set
+
+    var iconShadowsEnabled: Boolean = true
+        private set
+
+    fun setIconShadowsEnabled(context: Context, enabled: Boolean) {
+        iconShadowsEnabled = enabled
+        context.getSharedPreferences("browser", Context.MODE_PRIVATE).edit()
+            .putBoolean(PREF_ICON_SHADOWS, enabled).apply()
+    }
 
     fun setSmoothSkinScaling(context: Context, smooth: Boolean) {
         smoothSkinScaling = smooth
@@ -114,6 +124,7 @@ object ThemeManager {
         initialized = true
         val shared = context.getSharedPreferences("browser", Context.MODE_PRIVATE)
         smoothSkinScaling = shared.getBoolean("skin_smooth_scaling", false)
+        iconShadowsEnabled = shared.getBoolean(PREF_ICON_SHADOWS, true)
         ensureBundledSkinLoaded(context)
         val savedThemeId = shared.getString(PREF_ACTIVE_THEME, AppThemeId.MODERN.name)
         val isDark = explicitDark ?: resolveIsDark(context)
@@ -469,7 +480,7 @@ object ThemeManager {
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dpCorner
-            setColor(theme.cardBackground)
+            setColor(theme.alternateBackground)
             setStroke(dpStroke, theme.cardStroke)
         }
     }

@@ -105,7 +105,7 @@ class ExternalEditActivity : ViewerActivity(), ThemeChangeListener {
     override fun onThemeChanged(theme: ThemeColors) { runOnUiThread { if (!isDestroyed) applyTheme(theme) } }
     private fun applyTheme(theme: ThemeColors) {
         window.setBackgroundDrawable(android.graphics.drawable.GradientDrawable().apply {
-            setColor(theme.surface); cornerRadius = dp(theme.cornerRadiusDp.toInt()).toFloat()
+            setColor(theme.alternateBackground); cornerRadius = dp(theme.cornerRadiusDp.toInt()).toFloat()
         })
         column.background = null
         fun style(view: View) {

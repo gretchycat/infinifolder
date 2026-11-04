@@ -1879,7 +1879,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             albumArtView.setBackgroundColor(Color.TRANSPARENT)
         } else {
             albumArtView.setImageResource(android.R.drawable.ic_media_play)
-            albumArtView.setBackgroundColor(ThemeManager.getAudioPlayerTheme(this).surface)
+            albumArtView.setBackgroundColor(ThemeManager.getAudioPlayerTheme(this).alternateBackground)
         }
 
         val rep = com.infinifolder.audio.diagnostics.AudioPlaybackDiagnostics.currentReport

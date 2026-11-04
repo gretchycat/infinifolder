@@ -6,6 +6,7 @@ import io.github.gretchycat.infinistream.CancellationToken as StreamCancellation
 import io.github.gretchycat.infinistream.ProgressObserver as StreamProgressObserver
 import io.github.gretchycat.infinistream.StreamLimitExceededException
 
+import com.infinifolder.theme.IconImageView
 import android.app.Activity
 import android.app.ProgressDialog
 import android.app.NotificationChannel
@@ -1696,7 +1697,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             gravity = Gravity.CENTER
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
-        val iconImage = ImageView(context).apply {
+        val iconImage = IconImageView(context).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
@@ -4752,7 +4753,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             fun applyArtwork(artwork: ResourceIconResolver.Icon) {
                 val bitmap=artwork.bitmap ?: return
                 if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return
-                val image = ImageView(this).apply {
+                val image = IconImageView(this).apply {
                     scaleType = ImageView.ScaleType.FIT_CENTER
                     setImageBitmap(bitmap)
                     contentDescription="${artwork.mimeType} ${artwork.source}"
@@ -5054,7 +5055,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             gravity = Gravity.CENTER
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
-        val image = ImageView(this).apply {
+        val image = IconImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             background = null
             imageTintList = null
@@ -5088,7 +5089,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             gravity = Gravity.CENTER
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
-        val image = ImageView(this).apply {
+        val image = IconImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             background = null
             imageTintList = null
@@ -5153,7 +5154,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             includeFontPadding = false
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
-        val image = ImageView(this).apply {
+        val image = IconImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             background = null
             imageTintList = null
@@ -5286,7 +5287,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 iconThemeManager.resolveFolderIcon(entry.metadata.name, sidePx)
             } else null
             if (themeFolderBmp != null) {
-                ImageView(this).apply {
+                IconImageView(this).apply {
                     scaleType = ImageView.ScaleType.FIT_CENTER
                     setImageBitmap(themeFolderBmp)
                     layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
@@ -5301,7 +5302,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
             }
         }
-        val image = ImageView(this).apply {
+        val image = IconImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             background = null
             imageTintList = null
@@ -5383,7 +5384,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             gravity = Gravity.CENTER
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
-        val image = ImageView(this).apply {
+        val image = IconImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             background = null
             imageTintList = null
@@ -6336,7 +6337,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
 
         val placeholderView: View = if (themePlaceBmp != null) {
-            ImageView(this).apply {
+            IconImageView(this).apply {
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 setImageBitmap(themePlaceBmp)
             }
@@ -6352,7 +6353,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val targetTreeUri = item.treeUri
         val providerAuthority=item.providerAuthority
         if(providerAuthority!=null || item.treeKey=="application_public" || (targetTreeUri!=null && !item.needsAccessBadge)) {
-            val image=ImageView(this).apply {scaleType=ImageView.ScaleType.FIT_CENTER}
+            val image=IconImageView(this).apply {scaleType=ImageView.ScaleType.FIT_CENTER}
             iconFrame.addView(image,FrameLayout.LayoutParams(-1,-1,Gravity.CENTER))
             val generation=loadGeneration
             registerVisibleCardProbe(box,generation) {
@@ -7347,7 +7348,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             fun applyIcon(artwork: ResourceIconResolver.Icon) {
                 iconHolder.removeAllViews()
-                val image = artwork.bitmap?.let { bitmap -> ImageView(this).apply {
+                val image = artwork.bitmap?.let { bitmap -> IconImageView(this).apply {
                     scaleType = ImageView.ScaleType.FIT_CENTER
                     setImageBitmap(bitmap)
                 } } ?: TextView(this).apply {
@@ -8087,7 +8088,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val entry = uri?.let { target -> provider.refForUri(target)?.let { ResourceEntry(it, metadata, target) } }
         val themeRevision = iconThemeManager.revision()
         val hasTheme = !iconThemeManager.getActiveThemeId().isNullOrBlank()
-        val image = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+        val image = IconImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
         val request = Any()
         val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
         image.tag = request
@@ -8538,6 +8539,17 @@ class MainActivity : Activity(), DebugDumpObserver {
         val hasSelection = selectable && selected.isNotEmpty()
         val single = selected.singleOrNull()
         fun allowed(action: StorageAction) = hasSelection && StorageActionPolicy.selection(action, selected, capabilities).mayAttempt
+        fun appearanceMenu(label: String) = submenu(label, listOf(
+            action("Icon size…") { showIconSizeDialog() },
+            action("Icon theme…") { showIconThemeDialog() },
+            action((if (com.infinifolder.theme.ThemeManager.iconShadowsEnabled) "✓  " else "") + "Icon shadows") {
+                com.infinifolder.theme.ThemeManager.setIconShadowsEnabled(this,
+                    !com.infinifolder.theme.ThemeManager.iconShadowsEnabled)
+            },
+            action("MIME and URI icon registry…") {startActivity(Intent(this,com.infinifolder.preview.IconRegistryEditorActivity::class.java))},
+            action("Interface theme…") { showAppThemeDialog() },
+            action("Light / dark / system…") { showThemeModeDialog() }
+        ))
         return listOf(
             submenu("File", listOf(
                 submenu("New", listOf(
@@ -8602,13 +8614,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     action((if (!sortDescending) "✓  " else "") + "Ascending / A–Z") { setSortOrder(sortKey, false) },
                     action((if (sortDescending) "✓  " else "") + "Descending / Z–A") { setSortOrder(sortKey, true) }
                 )),
-                submenu("Appearance", listOf(
-                    action("Icon size…") { showIconSizeDialog() },
-                    action("Icon theme…") { showIconThemeDialog() },
-                    action("MIME and URI icon registry…") {startActivity(Intent(this,com.infinifolder.preview.IconRegistryEditorActivity::class.java))},
-                    action("Interface theme…") { showAppThemeDialog() },
-                    action("Light / dark / system…") { showThemeModeDialog() }
-                )),
+                appearanceMenu("Appearance"),
                 action("Refresh") { refreshCurrentLocation() },
                 action("Activity…") { showOperations() }
             )),
@@ -8632,6 +8638,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 action("Clear selection", selectable) { selectedUris.clear(); renderCurrentContents(); updateListingStatus() }
             )),
             submenu("Settings", listOf(
+                appearanceMenu("Appearance and themes"),
                 action("MIME and URI icon registry…") { startActivity(Intent(this, com.infinifolder.preview.IconRegistryEditorActivity::class.java)) },
                 action("Browse icon themes…") { showIconThemeDialog() },
                 action("Import freedesktop.org icon theme…") { showImportThemeOptionsDialog() },
@@ -9014,7 +9021,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 row.addView(previews)
                 val keys = listOf("folder", "text-x-generic", "image-x-generic", "application-pdf", "folder-archive")
                 if (theme != null) keys.forEach { key ->
-                    val icon = ImageView(this).apply { contentDescription = key }
+                    val icon = IconImageView(this).apply { contentDescription = key }
                     previews.addView(icon, LinearLayout.LayoutParams(dp(44), dp(44)))
                     imageIo.execute {
                         if (currentGeneration != generation || !dialog.isShowing) return@execute
@@ -10257,7 +10264,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }
 
-        val iconImage = ImageView(context).apply {
+        val iconImage = IconImageView(context).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             layoutParams = FrameLayout.LayoutParams(-1, -1, Gravity.CENTER)
         }

@@ -92,7 +92,7 @@ internal class OperationFailureWarnings {
         dialog = warning
         try {
             warning.show()
-            warning.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(theme.surface))
+            warning.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(theme.alternateBackground))
             warning.findViewById<TextView>(android.R.id.message)?.apply {
                 setTextColor(theme.textPrimary)
                 setTextIsSelectable(true)

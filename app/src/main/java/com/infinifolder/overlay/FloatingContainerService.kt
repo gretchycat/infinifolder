@@ -564,7 +564,7 @@ class FloatingContainerService : Service() {
     private fun showContainerIcon(artwork: ResourceIconResolver.Icon?) {
         containerIcon.removeAllViews()
         val view = artwork?.bitmap?.let { bitmap ->
-            android.widget.ImageView(this).apply {
+            com.infinifolder.theme.IconImageView(this).apply {
                 setImageBitmap(bitmap)
                 scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                 val padding = (2 * resources.displayMetrics.density).roundToInt()
@@ -610,7 +610,7 @@ class FloatingContainerService : Service() {
                 icon.removeViewAt(0)
                 icon.tag=resolved
                 val artwork: View = resolved.bitmap?.let { bitmap ->
-                    android.widget.ImageView(this).apply {
+                    com.infinifolder.theme.IconImageView(this).apply {
                         scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                         setImageBitmap(bitmap)
                     }

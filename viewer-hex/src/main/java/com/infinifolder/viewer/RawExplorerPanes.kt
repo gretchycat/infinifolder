@@ -44,7 +44,7 @@ internal abstract class RawExplorerPane(protected val activity: Activity, protec
     }
     protected fun toggle(text:String)=Switch(activity).apply {this.text=text;inputs.add(this)}
     protected fun adapter(labels:List<String>)=object:ArrayAdapter<String>(activity,android.R.layout.simple_spinner_dropdown_item,labels){
-        private fun themed(view:View)=view.apply {(this as? TextView)?.setTextColor(theme.textPrimary);setBackgroundColor(theme.surface)}
+        private fun themed(view:View)=view.apply {(this as? TextView)?.setTextColor(theme.textPrimary);setBackgroundColor(theme.alternateBackground)}
         override fun getView(position:Int,convertView:View?,parent:ViewGroup)=themed(super.getView(position,convertView,parent))
         override fun getDropDownView(position:Int,convertView:View?,parent:ViewGroup)=themed(super.getDropDownView(position,convertView,parent))
     }

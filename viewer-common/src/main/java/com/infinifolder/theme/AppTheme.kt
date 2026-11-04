@@ -41,6 +41,13 @@ data class ThemeColors(
         0xFFFF0000.toInt(), 0xFFFF7700.toInt(), 0xFFFFFF00.toInt(), 0xFF00FF00.toInt(), 0xFF00FFFF.toInt(), 0xFF0000FF.toInt()
     )
 ) {
+    /** Alternate regular-UI surface; imported bitmap palettes remain available to skin renderers. */
+    val alternateBackground: Int by lazy {
+        androidx.core.graphics.ColorUtils.blendARGB(background,
+            if (androidx.core.graphics.ColorUtils.calculateLuminance(background) < 0.5) Color.WHITE else Color.BLACK,
+            0.10f)
+    }
+
     companion object {
         // 1. Modern Material Theme
         fun modern(isDark: Boolean = true): ThemeColors = if (isDark) {

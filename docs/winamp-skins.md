@@ -14,6 +14,17 @@ Classic Winamp and XMMS skins in `.wsz`, ZIP, TAR, TAR.GZ/TGZ or TAR.BZ2 archive
 
 File labels and selection backgrounds now consume the selected theme instead of fixed modern colors. Foreground colors for selected text and toolbar/button text receive contrast correction. The file manager toolbar uses theme colors without skin images; floating windows use the bitmap frame. Icons still follow the separate icon-theme system.
 
+## Regular UI surfaces
+
+Ordinary alternate backgrounds (including Open with, common dialogs, cards,
+hex rows/controls and external-edit handoff windows) use the main background
+shifted 10% toward white for dark backgrounds or black for light backgrounds.
+The choice uses the background's measured luminance, including imported skins.
+Dialog lists disable the platform's opaque scrolling-cache color. Imported
+`surface`/`cardBackground` palette values remain available to the actual Winamp
+player, playlist and bitmap chrome; this rule does not recolor skin artwork.
+[Icon shadows](resource-icons.md#icon-shadows) use the same derived color.
+
 ## Findings from project fixtures
 
 All four files in `Winamp/` contain classic bitmap skins, despite the Winamp3, Winamp5 and Bento names. They contain both palette text files, main/title-bar bitmap sheets, and generic-window bitmap sheets. Base has green-on-black text and blue selection; Classified v3 has pale green text; Classified v5 has white text on a blue background; Bento has blue-gray text on near-black.

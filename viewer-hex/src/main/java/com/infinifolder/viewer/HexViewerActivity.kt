@@ -98,8 +98,7 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
             view.typeface = if (encoding == HexEncoding.Text.CP437) CanvasFonts.cp437(this@HexViewerActivity) else Typeface.MONOSPACE
             view.setTextColor(theme.textPrimary)
             view.setBackgroundColor(if (position % 2 == 0) theme.background else
-                androidx.core.graphics.ColorUtils.blendARGB(theme.background,
-                    if (theme.isDark) android.graphics.Color.WHITE else android.graphics.Color.BLACK, 0.10f))
+                theme.alternateBackground)
             val content = SpannableStringBuilder(String.format(Locale.ROOT, if (length > 0xffffffffL) "%016X  " else "%08X  ", row.offset))
             val hits = ArrayList<Pair<IntRange, Long>>()
             row.bytes.forEachIndexed { i, byte ->
@@ -325,7 +324,7 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
         adapter = object : ArrayAdapter<String>(this@HexViewerActivity, android.R.layout.simple_spinner_dropdown_item, labels) {
             private fun themed(view: View) = view.apply {
                 (this as? TextView)?.setTextColor(theme.textPrimary)
-                setBackgroundColor(theme.surface)
+                setBackgroundColor(theme.alternateBackground)
             }
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View = themed(super.getView(position, convertView, parent))
             override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View = themed(super.getDropDownView(position, convertView, parent))
@@ -427,7 +426,7 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
         color(root); status.setTextColor(theme.textSecondary); legend.setTextColor(theme.textSecondary)
         controlsHint.setTextColor(theme.textSecondary)
         toolsScroll.background=android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius=dp(4).toFloat();setColor(theme.surface);setStroke(dp(1),theme.cardStroke)
+            cornerRadius=dp(4).toFloat();setColor(theme.alternateBackground);setStroke(dp(1),theme.cardStroke)
         }
         progress.progressTintList = ColorStateList.valueOf(theme.accent)
         adapter.notifyDataSetChanged()
@@ -586,7 +585,7 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
     }
     private fun form(vararg views: View) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(8))
-        setBackgroundColor(theme.surface)
+        setBackgroundColor(theme.alternateBackground)
         views.forEach { addView(it, LinearLayout.LayoutParams(-1, -2)) }
     }
     private fun label(text: String) = TextView(this).apply { this.text = text; setTextColor(theme.textPrimary); setPadding(0, dp(6), 0, dp(6)) }

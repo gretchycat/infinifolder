@@ -43,7 +43,7 @@ private class TermuxProgress(activity: Activity, message: String) {
         val density = activity.resources.displayMetrics.density
         fun dp(n: Int) = (n * density).toInt()
         activity.window.setBackgroundDrawable(GradientDrawable().apply {
-            setColor(theme.surface); cornerRadius = dp(theme.cornerRadiusDp.toInt()).toFloat()
+            setColor(theme.alternateBackground); cornerRadius = dp(theme.cornerRadiusDp.toInt()).toFloat()
         })
         activity.setContentView(LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER

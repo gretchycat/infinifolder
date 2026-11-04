@@ -1,5 +1,6 @@
 package com.infinifolder.preview
 
+import com.infinifolder.theme.IconImageView
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
@@ -61,7 +62,7 @@ class IconRegistryEditorActivity : Activity() {
     }
     private fun previewCell(parent:LinearLayout,label:String):Pair<ImageView,TextView> {
         val cell=column()
-        val icon=ImageView(this).apply {contentDescription=label;scaleType=ImageView.ScaleType.FIT_CENTER}
+        val icon=IconImageView(this).apply {contentDescription=label;scaleType=ImageView.ScaleType.FIT_CENTER}
         cell.addView(icon,LinearLayout.LayoutParams(-1,dp(64)))
         cell.addView(TextView(this).apply {text=label;gravity=android.view.Gravity.CENTER;setTextColor(ThemeManager.activeTheme.textPrimary)})
         val status=TextView(this).apply {gravity=android.view.Gravity.CENTER;setTextColor(ThemeManager.activeTheme.textPrimary)}
@@ -123,7 +124,7 @@ class IconRegistryEditorActivity : Activity() {
             override fun getView(position:Int,convertView:View?,parent:ViewGroup):View {
                 val row=convertView as? LinearLayout ?: LinearLayout(this@IconRegistryEditorActivity).apply {
                     gravity=android.view.Gravity.CENTER_VERTICAL;setPadding(dp(8),dp(6),dp(8),dp(6))
-                    addView(ImageView(this@IconRegistryEditorActivity).apply {scaleType=ImageView.ScaleType.FIT_CENTER},LinearLayout.LayoutParams(dp(48),dp(48)))
+                    addView(IconImageView(this@IconRegistryEditorActivity).apply {scaleType=ImageView.ScaleType.FIT_CENTER},LinearLayout.LayoutParams(dp(48),dp(48)))
                     addView(TextView(this@IconRegistryEditorActivity).apply {setPadding(dp(12),0,0,0);setTextColor(ThemeManager.activeTheme.textPrimary)},LinearLayout.LayoutParams(0,-2,1f))
                 }
                 val value=getItem(position)

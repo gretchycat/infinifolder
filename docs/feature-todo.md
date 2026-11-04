@@ -20,6 +20,16 @@ core cache/external-edit behavior, document viewing and earlier animations have
 owner confirmation. Opaque font content URIs and newer discovery/FLC/lifecycle
 changes still need device checks. Ordinary copy/move undo excludes torrents.
 
+## Appearance follow-up
+
+- [ ] Device-check the 10% alternate surface with light/dark and imported Winamp
+  themes, especially Open with list scrolling; confirm actual skin rendering stays intact.
+- [ ] Check Icon shadows in Settings → Appearance and themes: alpha edges on
+  opaque/transparent icons, list/grid/tree/pins/floating views, small sizes,
+  theme changes, immediate toggling and preference restoration after restart.
+  Main/standalone host build evidence: `build/docs-audit/appearance-shadows-build.log`.
+  No new automated tests or device UI checks were run for this appearance change.
+
 ## Current library/viewer follow-up
 
 - [ ] Device-check FLC MIME aliases, newer FLC recovery, interactive MNG and lifecycle changes; earlier animation playback and IFF cycling confirmations are retained separately.

@@ -482,7 +482,7 @@ class DiskUsageExplorer(
         override fun onTouchEvent(event: MotionEvent): Boolean = isEnabled && (gestures.onTouchEvent(event) || super.onTouchEvent(event))
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            canvas.drawColor(theme.surface)
+            canvas.drawColor(theme.alternateBackground)
             if (focus?.bytes == 0L) {
                 paint.color = theme.textPrimary; paint.textSize = 15f * density
                 canvas.drawText("No measurable file data", dp(12).toFloat(), dp(30).toFloat(), paint)

@@ -1,5 +1,6 @@
 package com.infinifolder
 
+import com.infinifolder.theme.IconImageView
 import android.content.Context
 import android.view.Gravity
 import android.view.View
@@ -35,7 +36,7 @@ object FileIconView {
         // A visible card's worker supplies the authoritative result from ResourceIconResolver.
         // Use only cached selected-theme artwork on the first frame. A cold theme load
         // reserves the slot until its worker finishes instead of flashing built-in artwork.
-        return ImageView(context).apply {
+        return IconImageView(context).apply {
             scaleType=ImageView.ScaleType.FIT_CENTER
             val size=((if(asGrid)iconSizeDp else 44)*context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
             setImageBitmap(if(AppsUri.isRoot(entry.uri)) {

@@ -230,7 +230,7 @@ decoded-image cache.
 
 Copying edited data uses shared transfer validation and mandatory read-back verification. A warning or incomplete copy retains the working session for review. Full-app cache-capacity copies continue using the browser's transfer queue; the external-edit screen also supports an independent Android folder-picker route.
 
-Conflict/recovery dialogs use the common themed dialog helper. They follow application light/dark mode and the current theme palette.
+Conflict/recovery dialogs use the common themed dialog helper. They follow application light/dark mode and the current theme palette. Open with and common dialog alternate surfaces use the normal background shifted 10% toward white/black according to its luminance; list scrolling uses a transparent cache color. Actual Winamp skin rendering retains its imported palette.
 
 The edit activity itself now uses a content-sized dialog window and the active
 light/dark palette. Text, backgrounds, buttons, input dialogs and progress indicators
