@@ -76,8 +76,8 @@ preserved.
   the source successfully. The action uses the real existing navigator, not a
   success stub. Unsupported/corrupt candidates fall back without a browse action.
 - URI precedence is embedded shortcut icon, exact override, specific rule,
-  discovered/provider artwork, theme scheme icon, built-in link. Local targets
-  use the same file service. Other schemes have native semantic fallbacks
+  discovered/provider artwork, theme scheme icon, built-in link. Storage targets,
+  including folders in active remote sessions, use the same file service. Other schemes have native semantic fallbacks
   (including magnet), with no speculative protocol network requests.
 - URI matching preserves port, raw path/escaping, query and meaningful case;
   scheme and host are normalized. Path rules match segment boundaries.

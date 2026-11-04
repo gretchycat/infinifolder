@@ -35,7 +35,8 @@ object HomeShortcuts {
 
     /** Called on a worker: folder artwork, remote links and package icons may require I/O. */
     fun create(context: Context, entry: ResourceEntry, id: String = "home_${entry.uri.toString().hashCode().toUInt().toString(16)}", label: String? = null): ShortcutInfo {
-        val resolved = ResourceIconResolver(context).resolve(entry, 192)
+        val resolver = ResourceIconResolver(context)
+        val resolved = try { resolver.resolve(entry, 192) } finally { resolver.close() }
         val title = (label ?: resolved.label).ifBlank { "InfiniFolder item" }
         val bitmap = Bitmap.createBitmap(192, 192, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)

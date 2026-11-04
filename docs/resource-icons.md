@@ -283,3 +283,25 @@ viewer. The supported-type CSV, reviewed base assignment and default theme are
 regenerated from this identity.
 
 The owner confirmed GEN files display the binary icon on-device on 2026-11-03.
+
+## Storage-link target artwork — 2026-11-04
+
+Automatic `.iflink` artwork now resolves the target through its owning storage
+provider rather than limiting target lookup to local URI schemes. A folder inside
+an active SFTP/FTP/SMB/WebDAV connection therefore uses the same folder theme,
+`cover.*`/`.icon.*` artwork and target cache as the real folder. Remote file targets
+use the same MIME/thumbnail policy as the file itself. Location icons use the same
+resolution. Link labels and shortcut/connection badges remain separate.
+
+Explicit per-link embedded/sibling artwork and URI overrides retain their existing
+precedence. Web links retain cached favicon discovery; magnet/torrent icons do not
+start torrent metadata acquisition. Unknown, disconnected or reconnecting saved
+connections use the recorded target type and theme without starting a login just
+to draw a link. Existing pooled connections supply bounded metadata/content work.
+Connection-state changes refresh artwork; inherited directory icons use the normal
+short directory cache lifetime. Cycle/depth guards still apply to nested links.
+Temporary launcher icon resolvers release their connection listeners on completion.
+
+The app debug build passed after this repair. No automated tests were added or run;
+live remote folder-cover/file icons, aliases, nested links, offline/reconnect,
+theme changes and list/tree/pin/overlay display remain device checks.

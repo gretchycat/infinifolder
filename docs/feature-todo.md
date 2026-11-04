@@ -31,6 +31,10 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 - [ ] Check Open internally is first for supported files and absent for unsupported formats, normal built-in defaults, remembered internal/external file/type choices, Open externally, Cancel before staging and remote/archive handoff. See [opening rules](external-edit-writeback.md).
 - [ ] Check Copy to/Paste into the source directory, confirmation Cancel, repeated unique names, same-directory drag duplication, selected sets and source retention; Move remains blocked there. See [copy behavior](navigation-menus-disk-usage.md#copy-into-the-source-directory).
 
+## Link target icon checks
+
+- [ ] Check remote folder/file links inherit target theme/cover/MIME artwork in an active connection, with host aliases, nested links, offline/reconnect and list/tree/pin/overlay variants. See [target artwork](resource-icons.md#storage-link-target-artwork--2026-11-04).
+
 ## Bundled default icon theme
 
 - [ ] Accept cold/warm startup, representative file/folder/URI icons, theme switching and restart persistence on the handset. See [default theme](icon-themes.md#infinifolder-default).

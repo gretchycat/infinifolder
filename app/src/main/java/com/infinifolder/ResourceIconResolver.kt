@@ -45,6 +45,10 @@ class ResourceIconResolver(context: Context) {
     private val failedApkIcons = android.util.LruCache<String, Boolean>(128)
     private val retryCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private val retries = Executors.newSingleThreadScheduledExecutor()
+    private val connectionListener: (NetworkConnectionStatus.Key) -> Unit = { key ->
+        notifyChanged(Uri.Builder().scheme(key.providerId).authority(key.connectionId).path("/").build())
+    }
+    init { NetworkConnectionStatus.addListener(connectionListener) }
     private data class RevisionSnapshot(val key:String,val theme:String)
     @Volatile private var lastRevision:RevisionSnapshot?=null
     fun revision(): String {
@@ -53,7 +57,7 @@ class ResourceIconResolver(context: Context) {
         lastRevision=RevisionSnapshot(key,themeRevision)
         return key
     }
-    fun close() { onArtworkChanged=null; retries.shutdownNow() }
+    fun close() { onArtworkChanged=null; NetworkConnectionStatus.removeListener(connectionListener); retries.shutdownNow() }
     fun invalidate() { rendered.evictAll(); identities.evictAll(); linkInfo.evictAll(); NetworkIconTargets.clear(); archives.clear(); audioArtwork.clear(); bookArtwork.clear(); ResourceArtworkCache.clearMemory() }
     private fun linkKey(entry: ResourceEntry) = "${entry.uri}:${entry.metadata.modifiedAtMillis}:${entry.metadata.sizeBytes}"
     fun peekShortcut(entry: ResourceEntry): ShortcutInfo? = linkInfo.get(linkKey(entry))
@@ -70,7 +74,7 @@ class ResourceIconResolver(context: Context) {
         } else ""
         val audioCover=if(AudioIconFormats.isAudio(MimeRegistry.effective(entry.metadata.name,entry.metadata.mimeType)))
             AudioArtworkResolver.coverRevision(entry) else ""
-        return "icons-v10:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
+        return "icons-v11:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
             "${sidecar?.uri}:${sidecar?.metadata?.modifiedAtMillis}:${sidecar?.metadata?.sizeBytes}:$covers:$audioCover:${com.infinifolder.viewer.RawMediaConfigStore.revision(entry)}"
     }
     fun cached(entry: ResourceEntry, size: Int): Icon? {
@@ -104,18 +108,22 @@ class ResourceIconResolver(context: Context) {
         // A cancelled first-install wait or a theme switch must not cache old
         // artwork/fallback as a completed result for the current theme.
         if (Thread.currentThread().isInterrupted || revision() != requestRevision) return result
+        cacheResolved(entry,size,result,requestRevision)
+        val elapsed=(System.nanoTime()-started)/1_000_000
+        if(elapsed>=100)DiagnosticLog.record("artwork.resolve.slow",
+            "name=${entry.metadata.name} provider=${entry.ref.providerId} source=${result.source} elapsedMs=$elapsed")
+        return result
+    }
+    private fun cacheResolved(entry:ResourceEntry,size:Int,result:Icon,requestRevision:String) {
+        if(Thread.currentThread().isInterrupted || revision()!=requestRevision)return
         val lifetime=when {
             result.pending -> 500L
-            entry.metadata.isDirectory -> 5000L
+            result.directory -> 5000L
             entry.metadata.isSymbolicLink || ShortcutInfo.isShortcut(entry.metadata.name,entry.metadata.mimeType) ||
                 entry.metadata.modifiedAtMillis==null -> 30000L
             else -> 300000L
         }
         rendered.put("${signature(entry,requestRevision)}:$size",Cached(result,System.currentTimeMillis()+lifetime))
-        val elapsed=(System.nanoTime()-started)/1_000_000
-        if(elapsed>=100)DiagnosticLog.record("artwork.resolve.slow",
-            "name=${entry.metadata.name} provider=${entry.ref.providerId} source=${result.source} elapsedMs=$elapsed")
-        return result
     }
     /** Keeps the old caller contract; normal icon cache writes stay in memory/app cache. */
     fun cacheDisplayed(entry: ResourceEntry, size: Int, icon: Icon) {
@@ -303,13 +311,44 @@ class ResourceIconResolver(context: Context) {
         if(rule!=null)return Icon(rule,"🔗",name,true,source="uri-rule")
         if(AppsUri.isRoot(uri))return installedApplications(name,size)
         val scheme=uri.scheme.orEmpty().lowercase()
-        if(ContainerUris.networkType(uri)!=null || scheme in setOf("magnet","torrent")) {
+        resolveTarget(uri,name,true,null,size,mutableSetOf())?.let { return it.copy(label=name) }
+        if(scheme in setOf("magnet","torrent")) {
             return Icon(theme.resolveSchemeIcon(scheme,size) ?: LinkIcons.protocol(LinkIcons.networkProtocol(uri,runtime.connections.list()),size),
                 "🔗",name,true,source="scheme")
         }
         val ref=runtime.provider.refForUri(uri)
         return if(ref!=null)resolve(ResourceEntry(ref,ResourceMetadata(name,"vnd.android.document/directory",null,null,true),uri),size)
             else Icon(theme.resolveSchemeIcon(scheme,size) ?: LinkIcons.protocol(scheme,size),"🔗",name,true,source="scheme")
+    }
+    /** Use the owning provider for every storage target, including bound remote URIs.
+     * An idle/offline connection needs no new login or network request just to draw a link. */
+    private fun resolveTarget(target:Uri,name:String,directory:Boolean,mime:String?,size:Int,seen:MutableSet<ResourceRef>):Icon? {
+        if(target.scheme?.lowercase() in setOf("magnet","torrent"))return null
+        val ref=runtime.provider.refForUri(target) ?: return null
+        val connection=NetworkIconTargets.connection(appContext,target)
+        if(connection==null || NetworkConnectionStatus.state(connection)==NetworkConnectionStatus.State.CONNECTED) {
+            val entry=(IconWork.bounded(lane="metadata:${ref.providerId}") {runtime.provider.stat(ref)} as? ProviderResult.Success)?.value
+            if(entry!=null) {
+                // Reuse the actual target's icon cache; nested links still need cycle checks.
+                val cacheable=entry.ref !in seen && LinkResolver.kind(entry.metadata)==null
+                if(cacheable)cached(entry,size)?.let {return it}
+                val requestRevision=revision()
+                return resolve(entry,size,seen).also { if(cacheable)cacheResolved(entry,size,it,requestRevision) }
+            }
+        }
+        if(connection==null)return null
+        // Recorded link metadata is only a fallback until the connection is usable.
+        val targetName=target.lastPathSegment?.takeIf {it.isNotBlank()} ?: name
+        val metadata=ResourceMetadata(targetName,if(directory)"vnd.android.document/directory" else
+            MimeRegistry.effective(targetName,mime),null,null,directory)
+        val entry=ResourceEntry(ref,metadata,target)
+        if(directory)return directoryTheme(entry,size)
+        val identity=identityResolver.resolve(metadata.name,metadata.mimeType) {null}
+        val record=registry.mime(identity.mimeType)
+        return fallback(entry,size).copy(bitmap=overrideBitmap(record.overrideIcon,identity.mimeType,size)
+            ?: theme.resolveMimeSpecific(identity.mimeType,size,record.iconName,metadata.name)
+            ?: theme.resolveMimeCategory(identity.mimeType,size)
+            ?: FileTypeIcons.bitmap(metadata,size,identity.mimeType),source="target-metadata",mimeType=identity.mimeType)
     }
     private fun link(entry: ResourceEntry,size: Int,seen: MutableSet<ResourceRef>): Icon {
         val info=shortcutInfo(entry) ?: return fallback(entry,size).copy(bitmap=LinkIcons.protocol("BROKEN",size),source="broken-link")
@@ -320,6 +359,7 @@ class ResourceIconResolver(context: Context) {
         CustomIconStore.decodeBase64Bitmap(info.iconBase64)?.let { return base.copy(bitmap=it,source="link-override") }
         uriRule(info.targetUri,size)?.let { return base.copy(bitmap=it,source="uri-rule") }
         val scheme=target.scheme.orEmpty().lowercase()
+        resolveTarget(target,label,info.targetIsDirectory,info.targetMimeType,size,seen)?.let {return it.copy(label=label)}
         if(scheme=="content") {
             val thumbnail=IconWork.bounded(lane="thumbnail:content") {
                 val flags=appContext.contentResolver.query(target,arrayOf(android.provider.DocumentsContract.Document.COLUMN_FLAGS),null,null,null)?.use {cursor ->
@@ -330,13 +370,6 @@ class ResourceIconResolver(context: Context) {
                 else null
             }
             if(thumbnail!=null)return base.copy(bitmap=thumbnail,source="content-provider-thumbnail")
-        }
-        val local=scheme in setOf("file","content","apps","archive")
-        if(local) {
-            val ref=runtime.provider.refForUri(target)
-            val stat=ref?.let { IconWork.bounded(lane="metadata:${it.providerId}") { runtime.provider.stat(it) } as? ProviderResult.Success }
-            val resolved=stat?.value?.let { resolve(it,size,seen) }
-            if(resolved!=null)return resolved.copy(label=label)
         }
         if(scheme in setOf("http","https")) {
             val favicon=WebLinkIcons.request(appContext,info.targetUri) { notifyChanged(entry.uri) }
