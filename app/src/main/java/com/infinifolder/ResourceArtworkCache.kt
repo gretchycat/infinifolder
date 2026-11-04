@@ -351,6 +351,10 @@ class ResourceArtworkCache(context: Context) {
         fun peekSaved(entry: ResourceEntry, size: Int): Saved? = memory.get(key(entry, size))
         fun peek(entry: ResourceEntry, size: Int): Bitmap? = peekSaved(entry, size)?.bitmap
         fun clearMemory() { memory.evictAll() }
+        fun invalidateResources(uris: Set<Uri>) {
+            val prefixes = uris.map { "$it:" }
+            memory.snapshot().keys.filter { key -> prefixes.any(key::startsWith) }.forEach { memory.remove(it) }
+        }
         fun fresh(saved: Saved?, signature: String, minimumPixels: Int = 0): Boolean = saved != null &&
             saved.sourcePixels >= minimumPixels && saved.signature == signature &&
             System.currentTimeMillis() - saved.fetched in 0 until 60 * 60 * 1000L

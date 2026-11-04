@@ -325,7 +325,7 @@ class DiskUsageExplorer(
             if (!entry.metadata.isSymbolicLink) choices.add("Move…")
             choices.add("Delete…")
         }
-        AlertDialog.Builder(context).setTitle(node.label).setItems(choices.toTypedArray()) { _, index ->
+        AlertDialog.Builder(context).setTitle(node.label).setItems(choices.map(MenuActionIcons::decorated).toTypedArray()) { _, index ->
             when (choices[index]) {
                 "Browse" -> { dialog.dismiss(); browse(entry) }
                 "Move…" -> { dialog.dismiss(); move(entry) }

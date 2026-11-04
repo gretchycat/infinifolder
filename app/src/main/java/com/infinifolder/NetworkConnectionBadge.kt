@@ -32,6 +32,11 @@ internal object NetworkIconTargets {
     fun target(entry: ResourceEntry): Uri? = if (!entry.metadata.isDirectory &&
         ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) targets.get(key(entry)) else entry.uri
     fun clear() { targets.evictAll(); listeners.forEach { it(null) } }
+    fun forget(uris: Set<Uri>) {
+        val prefixes = uris.map { "$it:" }
+        targets.snapshot().keys.filter { key -> prefixes.any(key::startsWith) }.forEach { targets.remove(it) }
+        uris.forEach { uri -> listeners.forEach { it(uri) } }
+    }
     fun addListener(listener: (Uri?) -> Unit) { listeners.add(listener) }
     fun removeListener(listener: (Uri?) -> Unit) { listeners.remove(listener) }
 

@@ -59,6 +59,16 @@ class ResourceIconResolver(context: Context) {
     }
     fun close() { onArtworkChanged=null; NetworkConnectionStatus.removeListener(connectionListener); retries.shutdownNow() }
     fun invalidate() { rendered.evictAll(); identities.evictAll(); linkInfo.evictAll(); NetworkIconTargets.clear(); archives.clear(); audioArtwork.clear(); bookArtwork.clear(); ResourceArtworkCache.clearMemory() }
+    /** Renumbered links can exchange paths even when size and timestamp match. */
+    fun invalidateLinks(uris: Set<Uri>) {
+        val prefixes = uris.map { "$it:" }
+        fun matches(key: String) = prefixes.any { key.startsWith(it) || key.contains(":$it") }
+        rendered.snapshot().keys.filter(::matches).forEach { rendered.remove(it) }
+        identities.snapshot().keys.filter(::matches).forEach { identities.remove(it) }
+        linkInfo.snapshot().keys.filter(::matches).forEach { linkInfo.remove(it) }
+        ResourceArtworkCache.invalidateResources(uris)
+        NetworkIconTargets.forget(uris)
+    }
     private fun linkKey(entry: ResourceEntry) = "${entry.uri}:${entry.metadata.modifiedAtMillis}:${entry.metadata.sizeBytes}"
     fun peekShortcut(entry: ResourceEntry): ShortcutInfo? = linkInfo.get(linkKey(entry))
     /** Worker-only metadata access shared by listing and pinned-link presentation. */

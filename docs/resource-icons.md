@@ -233,6 +233,10 @@ extension. Pins now come from the public [pin board directory](navigation-menus-
 with an absolute target route rather than appending unrelated visited folders.
 File links use the normal file opener. Drops anywhere on the compact board create
 links; pinned folder icons no longer navigate on hover or receive file transfers.
+Existing board pins can also be dragged to reorder/swap. Numbered filenames store
+the order; the JSON display name remains the visible label and is edited by Rename
+without changing its filename. The [pin order audit](navigation-menus-disk-usage.md#pin-order-and-filename-audit)
+documents spacing, padding, live previews and recovery.
 
 In **Link properties → Embedded link icon**, **Choose image…** imports an image
 and **Remove image** restores automatic target artwork. A pinned link's long-press

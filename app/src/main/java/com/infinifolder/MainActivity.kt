@@ -264,14 +264,26 @@ class MainActivity : Activity(), DebugDumpObserver {
         val kind: String, val open: () -> Unit)
     private val dragNavigationTargets = java.util.WeakHashMap<View, DragNavigationTarget>()
     private val pinBoardDropTargets = java.util.WeakHashMap<View, Boolean>()
+    private val pinBoardCards = java.util.WeakHashMap<View, Uri>()
+    private var pinBoardScrollRunnable: Runnable? = null
+    private var pinBoardInsertionMarker: android.graphics.drawable.Drawable? = null
+    private val pinBoardPreviewOffsets = java.util.WeakHashMap<View, Float>()
+    private val pinBoardPreviewAlphas = java.util.WeakHashMap<View, Float>()
+    private var pinBoardPreviewKey: Triple<Uri?, Uri?, Uri?>? = null
+    private var pinBoardPreviewEdge: Int? = null
     private val pinnedContainers = mutableListOf<PinnedContainer>()
     private lateinit var pinnedContainerBar: HorizontalScrollView
     private lateinit var pinnedContainerContent: LinearLayout
     private var pinBoardDropHint: TextView? = null
+    private var pinBoardFirstDropSpace: TextView? = null
+    private var pinBoardLastDropSpace: TextView? = null
     private var renderedPinnedIconSize = 0
     @Volatile private var pinnedRenderGeneration = 0
     private val pinBoard by lazy { PinBoardDirectory(applicationContext, shared, localProvider, provider,
-        resourceIconResolver::shortcutInfo) }
+        resourceIconResolver::shortcutInfo) { uris ->
+        resourceIconResolver.invalidateLinks(uris)
+        uris.forEach { shortcutCache.remove(it.toString()) }
+    } }
     private var pinBoardLoadGeneration = 0
     private var pinBoardObserver: android.os.FileObserver? = null
     private val pinBoardHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -956,7 +968,9 @@ class MainActivity : Activity(), DebugDumpObserver {
             gravity = Gravity.CENTER_VERTICAL
         }
         pinnedContainerBar = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
+            isHorizontalScrollBarEnabled = true
+            isScrollbarFadingEnabled = false
+            setBackgroundColor(theme.alternateBackground)
             addView(pinnedContainerContent, ViewGroup.LayoutParams(-2, -2))
             visibility = View.GONE
         }
@@ -966,6 +980,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         breadcrumb = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         root.addView(HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
+            setBackgroundColor(theme.alternateBackground)
             setPadding(dp(12), dp(4), dp(12), dp(4))
             addView(breadcrumb, android.view.ViewGroup.LayoutParams(-2, -2))
         })
@@ -2670,7 +2685,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun showSavedConnectionActions(connection: ProviderConnection) {
         if (connection.sourceTypeId == "sftp") {
-            dialogBuilder().setTitle(connection.displayName).setItems(arrayOf("Open", "Test connection", "Edit connection", "Remove saved connection")) { _, which ->
+            dialogBuilder().setTitle(connection.displayName).setItems(MenuActionIcons.labels("Open", "Test connection", "Edit connection", "Remove saved connection")) { _, which ->
                 when (which) {
                     0 -> {
                         val rootUri = SftpUri.build(connection.id, connection.options["initialPath"] ?: "/")
@@ -2722,7 +2737,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             return
         }
         if (connection.sourceTypeId == "ftp") {
-            dialogBuilder().setTitle(connection.displayName).setItems(arrayOf("Open", "Test connection", "Edit connection", "Remove saved connection")) { _, which ->
+            dialogBuilder().setTitle(connection.displayName).setItems(MenuActionIcons.labels("Open", "Test connection", "Edit connection", "Remove saved connection")) { _, which ->
                 when (which) {
                     0 -> {
                         val rootUri = FtpUri.build(connection.id, connection.options["initialPath"] ?: "/")
@@ -2775,7 +2790,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             return
         }
         if (connection.sourceTypeId == "webdav") {
-            dialogBuilder().setTitle(connection.displayName).setItems(arrayOf("Open", "Test connection", "Edit connection", "Remove saved connection")) { _, which ->
+            dialogBuilder().setTitle(connection.displayName).setItems(MenuActionIcons.labels("Open", "Test connection", "Edit connection", "Remove saved connection")) { _, which ->
                 when(which) {
                     0 -> openRoot(WebDavUri.build(connection.id, connection.options["initialPath"] ?: "/"), rememberAuthorizedRoot=false)
                     1 -> {
@@ -2790,7 +2805,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             return
         }
         if (connection.sourceTypeId == "smb") {
-            dialogBuilder().setTitle(connection.displayName).setItems(arrayOf("Open", "Test connection", "Edit connection", "Remove saved connection")) { _, which ->
+            dialogBuilder().setTitle(connection.displayName).setItems(MenuActionIcons.labels("Open", "Test connection", "Edit connection", "Remove saved connection")) { _, which ->
                 when (which) {
                     0 -> {
                         val initialPath = if (!connection.options["initialShare"].isNullOrBlank()) {
@@ -2850,7 +2865,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             }.show()
             return
         }
-        dialogBuilder().setTitle(connection.displayName).setItems(arrayOf("Properties", "Remove saved connection")) { _, which ->
+        dialogBuilder().setTitle(connection.displayName).setItems(MenuActionIcons.labels("Properties", "Remove saved connection")) { _, which ->
             when (which) {
                 0 -> dialogBuilder().setMessage("Type: ${connection.sourceTypeId}\nServer: ${connection.endpoint ?: "Not set"}\nStatus: saved; resource access is checked when opened").setPositiveButton("OK", null).show()
                 1 -> dialogBuilder().setMessage("Remove ${connection.displayName} from the Virtual root?").setNegativeButton("Cancel", null)
@@ -4261,6 +4276,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun setTextSecondaryColorForTheme(): Int = com.infinifolder.theme.ThemeManager.activeTheme.textSecondary
     private fun load(uri: Uri, loadingAttempt: Int = 0) {
         if (uri == ContainerLinksProvider.ROOT) { showHomeRoot(); return }
+        val boardLegacy = if (pinBoard.isRoot(uri) && !pinBoard.migrated()) pinnedContainers.toList() else emptyList()
         if (loadingAttempt == 0) cancelEntryActionLoading()
         val requestGeneration = ++loadGeneration
         homeMode = false
@@ -4290,7 +4306,10 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         io.execute {
             try {
-                val result = provider.list(ref)
+                val result = if (pinBoard.isRoot(uri)) synchronized(pinBoard) {
+                    pinBoard.load(boardLegacy)
+                    provider.list(ref)
+                } else provider.list(ref)
                 runOnUiThread {
                     try {
                         if (requestGeneration != loadGeneration || homeMode || current != uri) return@runOnUiThread
@@ -4589,7 +4608,9 @@ class MainActivity : Activity(), DebugDumpObserver {
             visibleProbeScheduled = false
             entryIconViews.clear()
             content.removeAllViews()
-            val rows = FileViewGrid.sortedEntries(entries, showHidden, sortKey, sortDescending)
+            val rows = if (pinBoard.isRoot(current)) entries.filter { showHidden || !it.metadata.isHidden }
+                .sortedWith(compareBy<ResourceEntry> { it.metadata.name.lowercase(Locale.ROOT) }.thenBy { it.metadata.name })
+                else FileViewGrid.sortedEntries(entries, showHidden, sortKey, sortDescending)
             if (rows.isEmpty()) {
                 content.addView(TextView(this).apply {
                     text = openingVirtualDirectoryLabel?.let { "Opening $it…" }
@@ -6704,6 +6725,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             updateDragTreeRevealHover(view, event)
             updateDragTreeNodeHover(view, event)
             updateDragContainerHover()
+            updatePinBoardDragFeedback()
         }
     }
 
@@ -6838,6 +6860,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun clearActiveDragOverlay() {
+        clearPinBoardDragFeedback()
         cancelDragEdgeAutoScroll()
         cancelDragContainerHover()
         cancelDragTreeReveal()
@@ -7312,8 +7335,26 @@ class MainActivity : Activity(), DebugDumpObserver {
                 minimumHeight = dp(48)
                 setPadding(dp(12), dp(8), dp(12), dp(8))
             }.also { pinBoardDropHint = it }
+            hint.setTextColor(com.infinifolder.theme.ThemeManager.activeTheme.textSecondary)
             if (hint.parent == null) pinnedContainerContent.addView(hint)
         } else pinBoardDropHint?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        fun dropSpace(label: String) = TextView(this).apply {
+            text = label; textSize = 11f; gravity = Gravity.CENTER
+            setTextColor(com.infinifolder.theme.ThemeManager.activeTheme.textSecondary)
+            minimumWidth = dp(48); minimumHeight = dp(48)
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            contentDescription = "Drop to place $label on the pin board"
+        }
+        pinBoardFirstDropSpace?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        pinBoardLastDropSpace?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        if (dragging && pinnedContainers.isNotEmpty()) {
+            val first = pinBoardFirstDropSpace ?: dropSpace("First").also { pinBoardFirstDropSpace = it }
+            val last = pinBoardLastDropSpace ?: dropSpace("Last").also { pinBoardLastDropSpace = it }
+            first.setTextColor(com.infinifolder.theme.ThemeManager.activeTheme.textSecondary)
+            last.setTextColor(com.infinifolder.theme.ThemeManager.activeTheme.textSecondary)
+            pinnedContainerContent.addView(first, 0)
+            pinnedContainerContent.addView(last)
+        }
     }
 
     private fun isPinBoardDropAtScreen(x: Float, y: Float): Boolean {
@@ -7335,8 +7376,134 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (!isPinBoardDropAtScreen(x, y)) return false
         cancelDragContainerHover()
         activeDragDropHandled = true
-        addPinBoardLinks(payload.entries)
+        addPinBoardLinks(payload.entries, pinBoardBeforeAtScreen(x, y), pinBoardSwapAtScreen(payload, x, y))
         return true
+    }
+
+    private fun pinBoardSwapAtScreen(payload: BrowserDragPayload, x: Float, y: Float): Uri? {
+        val source = payload.entries.singleOrNull() ?: return null
+        if (!pinBoard.contains(source.uri) || !pinBoard.isLink(source) || !isInsidePinBoardStrip(x, y)) return null
+        val origin = IntArray(2)
+        pinnedContainerContent.getLocationOnScreen(origin)
+        return pinBoardCards.entries.firstOrNull { (card, _) ->
+            // Hit-test the stable layout slots, independently of preview animations.
+            card.isAttachedToWindow && x >= origin[0] + card.left + card.width * .25f &&
+                x <= origin[0] + card.left + card.width * .75f &&
+                y >= origin[1] + card.top && y < origin[1] + card.bottom
+        }?.value
+    }
+
+    private fun isInsidePinBoardStrip(x: Float, y: Float): Boolean {
+        val bounds = android.graphics.Rect()
+        return pinnedContainerBar.isAttachedToWindow && pinnedContainerBar.isShown && pinnedContainerBar.getGlobalVisibleRect(bounds) && bounds.contains(x.toInt(), y.toInt())
+    }
+
+    private fun pinBoardBeforeAtScreen(x: Float, y: Float): Uri? {
+        if (!isInsidePinBoardStrip(x, y)) return if (!homeMode && pinBoard.isRoot(current))
+            dragCardAtScreen(x, y)?.second?.takeIf { pinBoard.isLink(it) }?.uri else null
+        val rtl = pinnedContainerContent.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        for (i in 0 until pinnedContainerContent.childCount) {
+            val card = pinnedContainerContent.getChildAt(i)
+            val uri = pinBoardCards[card] ?: continue
+            val location = IntArray(2)
+            card.getLocationOnScreen(location)
+            val midpoint = location[0] - card.translationX + card.width / 2f
+            if (if (rtl) x > midpoint else x < midpoint) return uri
+        }
+        return null
+    }
+
+    private fun clearPinBoardDragFeedback() {
+        pinBoardScrollRunnable?.let { if (::pinnedContainerBar.isInitialized) pinnedContainerBar.removeCallbacks(it) }
+        pinBoardScrollRunnable = null
+        pinBoardInsertionMarker?.let { if (::pinnedContainerContent.isInitialized) pinnedContainerContent.overlay.remove(it) }
+        pinBoardInsertionMarker = null
+        pinBoardPreviewOffsets.keys.toList().forEach { card -> card.animate().cancel(); card.translationX = 0f }
+        pinBoardPreviewOffsets.clear()
+        pinBoardPreviewAlphas.forEach { (card, alpha) -> card.alpha = alpha }
+        pinBoardPreviewAlphas.clear()
+        pinBoardPreviewKey = null
+        pinBoardPreviewEdge = null
+    }
+
+    /** Animate existing cards into the candidate order without changing files or layout slots. */
+    private fun previewPinBoardOrder(before: Uri?, swap: Uri?): Int? {
+        val source = activeBrowserDragPayload?.entries?.singleOrNull()?.uri
+        if (!pinBoard.contains(source ?: return null)) return null
+        val key = Triple(source, before, swap)
+        if (pinBoardPreviewKey == key) return pinBoardPreviewEdge
+        val cards = (0 until pinnedContainerContent.childCount).map { pinnedContainerContent.getChildAt(it) }
+            .filter { pinBoardCards.containsKey(it) }
+        val moving = cards.firstOrNull { pinBoardCards[it] == source } ?: return null
+        val desired = cards.toMutableList()
+        val destination = swap?.let { uri -> cards.firstOrNull { pinBoardCards[it] == uri } }
+        if (destination != null) java.util.Collections.swap(desired, desired.indexOf(moving), desired.indexOf(destination))
+        else {
+            desired.remove(moving)
+            val anchor = if (before == source) cards.dropWhile { it !== moving }.drop(1).firstOrNull() else
+                desired.firstOrNull { pinBoardCards[it] == before }
+            desired.add(anchor?.let(desired::indexOf) ?: desired.size, moving)
+        }
+        if (!pinBoardPreviewAlphas.containsKey(moving)) pinBoardPreviewAlphas[moving] = moving.alpha
+        moving.alpha = .35f
+        val rtl = pinnedContainerContent.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        var cursor = if (rtl) cards.first().right else cards.first().left
+        var insertionEdge: Int? = null
+        desired.forEach { card ->
+            val left = if (rtl) cursor - card.width else cursor
+            val offset = (left - card.left).toFloat()
+            if (pinBoardPreviewOffsets[card] != offset) {
+                pinBoardPreviewOffsets[card] = offset
+                card.animate().translationX(offset).setDuration(140).start()
+            }
+            if (card === moving) insertionEdge = if (rtl) left + card.width else left
+            cursor += if (rtl) -card.width else card.width
+        }
+        pinBoardPreviewKey = key
+        pinBoardPreviewEdge = insertionEdge
+        return insertionEdge
+    }
+
+    private fun updatePinBoardDragFeedback() {
+        val point = lastDragScreenPosition
+        if (activeBrowserDragPayload == null || activeDragDropHandled || point == null || !isInsidePinBoardStrip(point.first, point.second)) {
+            clearPinBoardDragFeedback()
+            return
+        }
+        val before = pinBoardBeforeAtScreen(point.first, point.second)
+        val swap = activeBrowserDragPayload?.let { pinBoardSwapAtScreen(it, point.first, point.second) }
+        val previewEdge = previewPinBoardOrder(before, swap)
+        val target = (0 until pinnedContainerContent.childCount).map { pinnedContainerContent.getChildAt(it) }
+            .firstOrNull { pinBoardCards[it] == before && before != null }
+        val rtl = pinnedContainerContent.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        val edge = previewEdge ?: if (target != null) { if (rtl) target.right else target.left }
+            else if (rtl) 0 else pinnedContainerContent.width
+        val marker = pinBoardInsertionMarker ?: GradientDrawable().apply {
+            setColor(com.infinifolder.theme.ThemeManager.activeTheme.accent)
+        }.also { pinBoardInsertionMarker = it; pinnedContainerContent.overlay.add(it) }
+        marker.setBounds((edge - dp(2)).coerceAtLeast(0), dp(3), (edge + dp(2)).coerceAtLeast(dp(3)),
+            (pinnedContainerContent.height - dp(3)).coerceAtLeast(dp(4)))
+        marker.alpha = if (swap != null) 0 else 255
+        pinnedContainerContent.invalidate()
+        if (pinBoardScrollRunnable == null) {
+            val tick = object : Runnable {
+                override fun run() {
+                    val position = lastDragScreenPosition
+                    if (activeBrowserDragPayload == null || activeDragDropHandled || position == null ||
+                        !isInsidePinBoardStrip(position.first, position.second)) { clearPinBoardDragFeedback(); return }
+                    val location = IntArray(2)
+                    pinnedContainerBar.getLocationOnScreen(location)
+                    val x = position.first - location[0]
+                    val edgeWidth = minOf(dp(40), pinnedContainerBar.width / 3)
+                    val direction = when { x < edgeWidth -> -1; x > pinnedContainerBar.width - edgeWidth -> 1; else -> 0 }
+                    pinnedContainerBar.scrollBy(direction * dp(5), 0)
+                    updatePinBoardDragFeedback()
+                    pinnedContainerBar.postOnAnimation(this)
+                }
+            }
+            pinBoardScrollRunnable = tick
+            pinnedContainerBar.postOnAnimation(tick)
+        }
     }
 
     private fun installPinBoardDropTarget(view: View) {
@@ -7368,11 +7535,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
                 android.view.DragEvent.ACTION_DROP -> {
                     restoreBackground(target)
-                    if (payload != null && !activeDragDropHandled) {
-                        cancelDragContainerHover()
-                        activeDragDropHandled = true
-                        addPinBoardLinks(payload.entries)
-                    }
+                    if (enabled) dispatchPinBoardDropAtScreen(target, event)
                     enabled
                 }
                 android.view.DragEvent.ACTION_DRAG_EXITED, android.view.DragEvent.ACTION_DRAG_ENDED -> {
@@ -7384,30 +7547,23 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
 
-    private fun addPinBoardLinks(items: List<ResourceEntry>) {
+    private fun addPinBoardLinks(items: List<ResourceEntry>, before: Uri? = null, swapWith: Uri? = null) {
         val legacy = if (pinBoard.migrated()) emptyList() else pinnedContainers.toList()
         io.execute {
             try {
-                pinBoard.load(legacy)
-                var created = 0
-                var existing = 0
-                val errors = mutableListOf<String>()
-                items.distinctBy { it.uri }.forEach { entry ->
-                    try {
-                        if (pinBoard.addDropped(entry)) created++ else existing++
-                    } catch (error: Exception) {
-                        errors += "${entry.metadata.name}: ${error.message ?: "Cannot create link"}"
-                        com.infinifolder.storage.DiagnosticLog.record("browser.pin-board.drop-failed", entry.metadata.name, error)
-                    }
+                val (created, existing, moved, errors) = synchronized(pinBoard) {
+                    pinBoard.load(legacy)
+                    pinBoard.drop(items, before, swapWith)
                 }
                 com.infinifolder.storage.DiagnosticLog.record("browser.pin-board.drop",
-                    "created=$created existing=$existing failed=${errors.size}")
+                    "created=$created reordered=$moved existing=$existing failed=${errors.size}")
                 runOnUiThread {
                     if (isDestroyed || isFinishing) return@runOnUiThread
                     refreshPinBoard()
                     if (!homeMode && pinBoard.isRoot(current)) current?.let { load(it) }
                     val summary = when {
                         created > 0 -> if (created == 1) "Link added to pin board" else "$created links added to pin board"
+                        moved > 0 -> "Pin order saved"
                         existing > 0 && errors.isEmpty() -> "Already on the pin board"
                         else -> "Could not add links to pin board"
                     }
@@ -7429,8 +7585,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val legacy = if (pinBoard.migrated()) emptyList() else pinnedContainers.toList()
         io.execute {
             try {
-                pinBoard.load(legacy)
-                change()
+                synchronized(pinBoard) { pinBoard.load(legacy); change() }
                 runOnUiThread { if (!isDestroyed) refreshPinBoard() }
             } catch (error: Exception) {
                 runOnUiThread { if (!isDestroyed) Toast.makeText(this,
@@ -7513,7 +7668,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         showGroupedMenuDialog(pin.name, groups = listOf(actions)) { action ->
             when (action) {
                 "Open", "Open container" -> openPinnedContainer(pin)
-                "Rename" -> renameEntry(pin.entry) { refreshPinBoard() }
+                "Rename" -> renameEntry(pin.entry)
                 "Properties" -> showPropertiesDialog(pin.entry)
                 "Link properties" -> showPropertiesDialog(pin.entry)
                 "Unpin" -> unpinContainer(destination)
@@ -7522,10 +7677,73 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
 
+    /** Hold and release opens the existing menu; hold and move starts a single-pin drag. */
+    private fun installPinBoardDragSource(card: View, icon: View, currentPin: () -> PinnedContainer) {
+        val timeout = ViewConfiguration.getLongPressTimeout().toLong()
+        val slop = ViewConfiguration.get(this).scaledTouchSlop
+        card.isLongClickable = false
+        card.setOnTouchListener(object : View.OnTouchListener {
+            private var downX = 0f
+            private var downY = 0f
+            private var downAt = 0L
+            private var armed = false
+            private var moved = false
+            private var dragging = false
+            private val arm = Runnable {
+                if (!moved && !dragging) {
+                    armed = true
+                    card.isPressed = true
+                    card.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                    card.parent?.requestDisallowInterceptTouchEvent(true)
+                }
+            }
+            private fun release() {
+                card.removeCallbacks(arm)
+                card.isPressed = false
+                card.parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            override fun onTouch(view: View, event: MotionEvent): Boolean {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = event.rawX; downY = event.rawY; downAt = SystemClock.uptimeMillis()
+                        armed = false; moved = false; dragging = false
+                        card.postDelayed(arm, timeout)
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = event.rawX - downX; val dy = event.rawY - downY
+                        if (dx * dx + dy * dy > slop * slop) {
+                            if (!moved && SystemClock.uptimeMillis() - downAt >= timeout) armed = true
+                            moved = true
+                            card.removeCallbacks(arm)
+                            if (armed && !dragging) {
+                                dragging = true
+                                startEntryDrag(card, icon, currentPin().entry, createLinks = true)
+                                release()
+                            }
+                        }
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        val held = armed || SystemClock.uptimeMillis() - downAt >= timeout
+                        release()
+                        if (!moved && !dragging) {
+                            if (held) currentPin().let { showContainerPinMenu(it.entry, it.destination) }
+                            else card.performClick()
+                        }
+                    }
+                    MotionEvent.ACTION_CANCEL -> { release(); moved = true }
+                }
+                return true
+            }
+        })
+    }
+
     private fun renderPinnedContainers() {
         if (!::pinnedContainerContent.isInitialized) return
         val generation = ++pinnedRenderGeneration
+        val savedScrollX = pinnedContainerBar.scrollX
         cancelDragContainerHover()
+        clearPinBoardDragFeedback()
+        pinBoardCards.clear()
         for (index in 0 until pinnedContainerContent.childCount)
             dragNavigationTargets.remove(pinnedContainerContent.getChildAt(index))
         pinnedContainerContent.removeAllViews()
@@ -7564,9 +7782,12 @@ class MainActivity : Activity(), DebugDumpObserver {
             resourceIconResolver.peekCached(pin.entry, side)?.let { applyIcon(it) }
             card.setOnClickListener { openPinnedContainer(pin) }
             installPinBoardDropTarget(card)
-            card.setOnLongClickListener {
-                showContainerPinMenu(pin.entry, pin.destination)
-                true
+            if (pinBoard.isLink(pin.entry)) {
+                pinBoardCards[card] = pin.entry.uri
+                installPinBoardDragSource(card, iconHolder) { pin }
+            }
+            if (!pinBoard.isLink(pin.entry)) card.setOnLongClickListener {
+                showContainerPinMenu(pin.entry, pin.destination); true
             }
             pinnedContainerContent.addView(card, LinearLayout.LayoutParams(-2, -2))
             // Pins are outside the scrolling file list: they need their own resolver work
@@ -7601,6 +7822,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                         FileIconView.fallback(freshEntry.metadata), pin.name, freshEntry.metadata.isDirectory))
                 }
             }
+        }
+        updatePinBoardDropArea()
+        pinnedContainerBar.post {
+            if (generation == pinnedRenderGeneration && !isDestroyed) pinnedContainerBar.scrollTo(savedScrollX, 0)
         }
     }
 
@@ -8705,7 +8930,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
     private fun showAuthorizedRootActions(uri: Uri, name: String) {
         dialogBuilder().setTitle(name)
-            .setItems(arrayOf("Properties", "Remove from list")) { _, index ->
+            .setItems(MenuActionIcons.labels("Properties", "Remove from list")) { _, index ->
                 when (index) {
                     0 -> showAuthorizedRootProperties(uri, name)
                     1 -> dialogBuilder().setTitle("Remove $name?")
@@ -11093,16 +11318,19 @@ class MainActivity : Activity(), DebugDumpObserver {
                 listLayout.addView(divider)
             }
             group.forEach { actionLabel ->
-                val itemView = TextView(context).apply {
-                    text = actionLabel
-                    textSize = 16f
-                    setTextColor(setTextColorForTheme())
+                val itemView = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
                     minimumHeight = dp(48)
                     setPadding(dp(22), dp(12), dp(22), dp(12))
                     setBackgroundResource(android.R.drawable.list_selector_background)
                     isClickable = true
                     isFocusable = true
+                    contentDescription = actionLabel
+                    addView(MenuActionIcons.view(context, actionLabel), LinearLayout.LayoutParams(dp(32), -2).apply { marginEnd = dp(10) })
+                    addView(TextView(context).apply {
+                        text = actionLabel; textSize = 16f; setTextColor(setTextColorForTheme())
+                    }, LinearLayout.LayoutParams(0, -2, 1f))
                     setOnClickListener {
                         dialog?.dismiss()
                         if (actionLabel == "Exit selection mode") exitSelectionMode()
@@ -11374,7 +11602,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
 
         val dialog = showGroupedMenuDialog(
-            title = entry.metadata.name,
+            title = if (pinBoard.contains(entry.uri) && pinBoard.isLink(entry))
+                shortcut?.displayNameOverride?.takeIf { it.isNotBlank() } ?: entry.metadata.name else entry.metadata.name,
             subtitle = initialSubtitle,
             groups = listOf(openGroup + listOfNotNull(entryBrowseDestination(entry)?.let {
                 if (isContainerPinned(it)) "Unpin" else "Pin to top"
@@ -13514,7 +13743,48 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         enqueueOperationWindow(id)
     }
+    private fun renamePinBoardLabel(entry: ResourceEntry, onRenamed: ((ResourceEntry) -> Unit)?) {
+        io.execute {
+            try {
+                val label = pinBoard.displayName(entry)
+                runOnUiThread {
+                    if (isDestroyed || isFinishing) return@runOnUiThread
+                    val input = EditText(dialogContext()).apply {
+                        setText(label); selectAll(); setTextColor(setTextColorForTheme())
+                    }
+                    dialogBuilder().setTitle("Rename pin").setView(input).setNegativeButton("Cancel", null)
+                        .setPositiveButton("Rename") { _, _ ->
+                            val name = input.text.toString().trim()
+                            if (name.isBlank() || name == label) return@setPositiveButton
+                            io.execute {
+                                try {
+                                    val updated = pinBoard.renameLabel(entry, name)
+                                    runOnUiThread {
+                                        if (isDestroyed || isFinishing) return@runOnUiThread
+                                        shortcutCache.remove(entry.uri.toString())
+                                        refreshPinBoard()
+                                        if (pinBoard.isRoot(current)) current?.let { load(it) }
+                                        onRenamed?.invoke(updated)
+                                    }
+                                } catch (error: Exception) {
+                                    runOnUiThread { if (!isDestroyed && !isFinishing) Toast.makeText(this,
+                                        "Could not rename pin: ${error.message}", Toast.LENGTH_LONG).show() }
+                                }
+                            }
+                        }.show()
+                }
+            } catch (error: Exception) {
+                runOnUiThread { if (!isDestroyed && !isFinishing) Toast.makeText(this,
+                    "Could not read pin: ${error.message}", Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
+
     private fun renameEntry(entry: ResourceEntry, onRenamed: ((ResourceEntry) -> Unit)? = null) {
+        if (pinBoard.contains(entry.uri) && pinBoard.isLink(entry)) {
+            renamePinBoardLabel(entry, onRenamed)
+            return
+        }
         val currentName = entry.metadata.name
         val input = EditText(dialogContext()).apply {
             setText(currentName)
@@ -13525,16 +13795,10 @@ class MainActivity : Activity(), DebugDumpObserver {
         dialogBuilder().setTitle("Rename").setView(input).setNegativeButton("Cancel", null)
             .setPositiveButton("Rename") { _, _ ->
                 val requestedName = input.text.toString().trim()
-                val newName = if (requestedName.isNotEmpty() && pinBoard.contains(entry.uri) &&
-                    ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType) && !ShortcutInfo.isShortcut(requestedName))
-                    requestedName + ShortcutInfo.SHORTCUT_EXTENSION else requestedName
+                val newName = requestedName
                 if (newName.isEmpty() || newName == currentName) return@setPositiveButton
                 io.execute {
                     val result = provider.rename(entry.ref, newName)
-                    val labelError = if (result is ProviderResult.Success && pinBoard.contains(entry.uri) &&
-                        ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) runCatching {
-                        pinBoard.renamed(result.value)
-                    }.exceptionOrNull() else null
                     runOnUiThread {
                         if (result is ProviderResult.Success) {
                             val renamed = result.value
@@ -13553,8 +13817,6 @@ class MainActivity : Activity(), DebugDumpObserver {
                             }
                             onRenamed?.invoke(renamed)
                             if (pinBoard.contains(entry.uri)) refreshPinBoard()
-                            if (labelError != null) Toast.makeText(this,
-                                "File renamed, but its link label could not be updated: ${labelError.message}", Toast.LENGTH_LONG).show()
                         } else {
                             Toast.makeText(this, (result as? ProviderResult.Failure)?.message ?: "Rename unsupported", Toast.LENGTH_LONG).show()
                         }

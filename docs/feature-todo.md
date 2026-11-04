@@ -131,6 +131,12 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
   the board directory in both orientations. Include selected sets, existing links,
   duplicate targets, SAF/network/archive targets and write failures. Pin-board
   icons must not navigate on hover or move/copy originals.
+- [ ] Accept live pin-order previews, center-to-center swaps, gap insertion,
+  First/Last drop spaces, horizontal/edge scrolling, cancel and retained scroll
+  position. Check batch creation, dynamic padding, audit preservation of gaps,
+  full reindex only when needed, rename-label independence and interrupted-rename
+  recovery. Check emoji menu actions/accessibility and alternate pin/breadcrumb
+  backgrounds while the file pane retains the normal theme color.
 
 ## Transfer cancellation
 

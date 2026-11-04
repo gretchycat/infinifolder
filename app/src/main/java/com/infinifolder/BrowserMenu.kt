@@ -36,6 +36,7 @@ object BrowserMenu {
                     minimumHeight = dp(48); setPadding(dp(20), dp(8), dp(16), dp(8))
                     isEnabled = item.enabled; alpha = if (item.enabled) 1f else .4f
                 }
+                row.addView(MenuActionIcons.view(context, item.label), LinearLayout.LayoutParams(dp(32), -2).apply { marginEnd = dp(8) })
                 row.addView(TextView(context).apply { text = item.label; textSize = 16f; setTextColor(theme.textPrimary) },
                     LinearLayout.LayoutParams(0, -2, 1f))
                 row.addView(TextView(context).apply {

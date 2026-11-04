@@ -2,13 +2,21 @@
 
 > [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
-Updated 2026-10-24. See [current status](project-status.md) for acceptance distinctions.
+Updated 2026-11-04. See [current status](project-status.md) for acceptance distinctions.
 
 ## Menus and navigation
 
 Hamburger and overflow open the same nested File/Edit/View/Select/Settings menu, with right-aligned submenu triangles. The Tree/Files toolbar label switches panes. File → New contains folder, link, external storage connection links and supported document/archive templates. Link creation offers a protocol dropdown for custom URI, SFTP/SSH, SMB/Samba, WebDAV and FTP/FTPS, with saved-connection selection or the matching setup form. The same choices are available when adding container links at Virtual root. Unsupported archive writers are disabled explicitly. View exposes hidden files, sorting and themes; Settings manages default viewers/apps; Select offers mode and wildcard/regex matching in the current folder. Most-used sorting remains future work.
 
 Persistent half-size pins sit between toolbar and breadcrumbs; the row disappears when empty except during a drag. Pin to top/Unpin are long-press actions. Dropping onto the pin board always creates links. Other breadcrumbs, containers and visible tree nodes accept transfers and linger navigation. The navigation tree has no long-press actions and uses the common theme without a separate green tint.
+
+The pin-board strip and the full breadcrumb box use the theme's alternate
+background (10% toward white on dark backgrounds, toward black on light ones).
+The file icon/list area keeps the normal theme background. Long-press file,
+folder, pin and selection menus have a leading emoji/symbol column; nested browser
+menus use the same action icons. Connection/location and disk-usage context menus
+include icons too. Labels/indexes still identify the original actions, independently
+of the decorative icon. Screen readers receive the action label once.
 
 Hold countdown covers the icon; release after the hold opens the menu, movement begins drag. Selected sets drag together. Same-device drops move, cross/unknown-device drops copy. Source-self drops open the menu. Tree/file edges autoscroll and tree linger expands paths. Latest drops, autoscroll and pane switching are user-confirmed; broader backend/orientation checks remain.
 
@@ -39,9 +47,12 @@ UI thread through existing link/storage APIs, then refreshes the compact board
 and the open board directory. This currently handles in-app drags, not arbitrary
 external-app ClipData.
 
-Rename updates its filename and display-name field; `.iflink` is retained when
-omitted. The link label also supplies its tooltip/navigation title. If updating
-the label fails after the filename was renamed, the UI reports that partial result.
+**Rename** on a board `.iflink` updates only its JSON display name, including when
+invoked from the ordinary board directory listing. It preserves its filename,
+position, target, embedded image and extra JSON fields, using the shared checked
+replacement API. The dialog edits the display name without an extension or order
+prefix. Other files retain ordinary filesystem Rename. The label supplies the
+pin's tooltip/navigation title too.
 Properties uses the normal link editor, including embedded icons. Changes made
 in another app update the board through a debounced directory observer; returning
 to the browser refreshes it too. Hidden files/cache sidecars are excluded from
@@ -55,10 +66,60 @@ explicit Pin/Open/Unpin failures show an error. The public folder requires norma
 shared-storage access. After migration, deleting the directory recreates an empty
 board rather than resurrecting old preference entries.
 
+### Pin order and filename audit
+
+The board always displays filename order, ignoring case, independently of the
+file pane's saved sort preference. Valid board `.iflink` files have numeric prefixes
+such as `10 Music.iflink`, `20 Books.iflink`, `30 Pictures.iflink`. A worker audits
+these names on load and after updates. Old unnumbered links get a prefix after
+their existing label has been preserved in the JSON. Padding expands as needed
+(`010`, `020`, …, `100`) to preserve alphabetical order; there is no fixed digit
+count. Existing padding is retained when a high-numbered pin is removed.
+
+Hold a pin and move to drag; hold and release opens its existing menu. Drop in
+the middle of another pin to swap their existing order numbers. Drop between
+pins to insert into an available gap (for example `15` between `10` and `20`).
+Adjacent swaps also reuse their existing numbers. Only an exhausted insertion gap
+requires a full reindex, restoring spacing of 10 between every pin. The audit
+preserves valid gaps; malformed/duplicate numbering is repaired. Renaming a
+display label does not renumber the board. Incoming batches share one destination
+snapshot/number allocation and receive one final audit instead of re-enumerating
+the board for each new shortcut.
+
+The strip scrolls horizontally with a visible scrollbar and preserves its scroll
+position on refresh. During a drag, **First** and **Last** spaces allow insertion
+at either end. Holding near an edge scrolls to further pins. A live preview slides
+existing cards into the candidate order using native view animations, shows a
+faded source placeholder and marks insertion boundaries. Stable layout slots
+determine the drop independently of animations. Cancel restores the original
+view; only a drop changes stored order.
+
+Ordering uses exclusive storage-provider renames, with a bounded hidden
+`.pin-board-order.json` recovery plan and temporary link names. A restart resumes
+an interrupted two-phase rename rather than overwriting a conflicting file. The
+plan and temporary names disappear after successful completion. Failure is
+reported, and the plan is retained when recovery cannot finish (for example if an
+external app removed a participating link). Ordinary non-link files and invalid/
+unreadable `.iflink` data are not renumbered; unreadable links cannot be reordered.
+Other applications referencing a board link by its filename may need that reference
+updated after an order change; the linked target itself is unchanged.
+Renaming a label or ordering filenames invalidates only the affected link artwork,
+parsed destination and connection-badge cache entries. This also handles swaps
+whose links happen to share the same size/timestamp, while retaining other cached
+icons and decoded targets.
+
 Build evidence: `build/docs-audit/ebook-styles-pin-board-build.log` and
 `build/docs-audit/pin-board-iflink-build.log`. Migration,
 external edits, Rename/Properties/Unpin, restart, permissions, drag/drop and title
 behavior still need device acceptance. No automated tests were run for this change.
+
+The ordering, visual preview, menu-icon and alternate-background follow-up uses
+`build/docs-audit/pin-board-order-build.log`: app and combined standalone debug
+builds passed (`BUILD SUCCESSFUL in 28s`, 523 tasks). Documentation link checks
+found no missing files or anchors. No automated tests were added or run;
+drag insertion/swapping/cancel, First/Last drops, edge scrolling, batch pinning,
+restart recovery, label-only Rename, theme/rotation and menu action checks remain
+unverified on-device.
 
 ## Selection
 
