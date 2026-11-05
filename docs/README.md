@@ -49,7 +49,7 @@ validation records describe their recorded revisions, not new acceptance.
 - [WebDAV provider](webdav-support.md)
 - [Magnet networking diagnosis and changes](magnet-networking.md)
 - [Torrent checkpoint safety checks](torrent-checkpoint-safety.md)
-- [Private Partial downloads collection](partial-download-discovery.md)
+- [Unfinished downloads link directory](partial-download-discovery.md)
 
 ## Viewers and formats
 

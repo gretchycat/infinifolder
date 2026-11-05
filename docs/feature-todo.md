@@ -20,6 +20,15 @@ core cache/external-edit behavior, document viewing and earlier animations have
 owner confirmation. Opaque font content URIs and newer discovery/FLC/lifecycle
 changes still need device checks. Ordinary copy/move undo excludes torrents.
 
+## Unfinished downloads follow-up
+
+- [ ] Verify `.download`, `.crdownload`, `.part`, `.partial`, aria2 pairs and
+  torrent `.incomplete` files appear as links after browsing their source folders.
+  Check the expanded Virtual root tree, target icons, restart persistence,
+  completed-file pruning and link-only deletion on a device. Imported resume
+  formats require their original source metadata; see
+  [Unfinished downloads](partial-download-discovery.md).
+
 ## Appearance follow-up
 
 - [ ] Verify the new default Virtual root device/application stamps, USB/SD

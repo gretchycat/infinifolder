@@ -10,7 +10,7 @@ internal object BrowserLocations {
         Location("internal_shared", "Internal shared storage", "drive-harddisk", "📱"),
         Location("application_public", "Application public", "folder-application-public", "▦"),
         Location("installed_apps", "Installed Applications", "start-here-android", "▦"),
-        Location("partial_downloads", "Partial downloads", "folder-download", "⬇"),
+        Location("partial_downloads", "Unfinished downloads", "folder-download", "⬇"),
         Location("external_link_history", "External link history", "document-open-recent", "🕘"),
         Location("pin_board", "Pin board", "folder-bookmark", "📌"),
         Location("virtual-root", "Virtual root", "user-home", "🏠")

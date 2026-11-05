@@ -38,6 +38,13 @@ No new automated tests ran. USB/SD/provider metadata, theme swaps and the expand
 badge cases remain device checks; see [icons](resource-icons.md#default-storage-location-artwork--2026-11-04)
 and [badges](network-icon-badges.md#unavailable-folders-and-link-targets--2026-11-04).
 
+Virtual root's **Unfinished downloads** location now expands to its saved
+links in the tree. Browsed `.download` files and existing partial patterns enter
+the same private link catalog; their icons follow the source. Resuming foreign
+formats still needs compatible source metadata. The APKs build, while discovery,
+tree and link behavior require a handset check. See
+[Unfinished downloads](partial-download-discovery.md).
+
 ## Implemented foundations
 
 | Area | Current implementation | Reference |

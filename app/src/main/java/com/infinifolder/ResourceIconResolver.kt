@@ -169,7 +169,6 @@ class ResourceIconResolver(context: Context) {
             val saved=IconWork.bounded(lane="metadata:${entry.ref.providerId}") {artworkCache.load(entry,size,false)}
             if(saved!=null && !saved.generated && IconBitmapUsability.visible(saved.bitmap))return base.copy(bitmap=saved.bitmap,source="file-override")
         }
-        if(entry.ref.providerId==PartialDownloadsProvider.SCHEME) return base.copy(fallback="⬇",source="partial-download")
         if(ShortcutInfo.isShortcut(entry.metadata.name,entry.metadata.mimeType))return link(entry,size,seen)
         if(LinkIcons.isMagnet(entry.uri))return base.copy(bitmap=theme.resolveSchemeIcon("magnet",size) ?: LinkIcons.protocol("MAGNET",size),source="scheme")
         if(entry.metadata.isSymbolicLink) {

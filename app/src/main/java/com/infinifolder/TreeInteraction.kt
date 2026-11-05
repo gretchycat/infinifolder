@@ -1,6 +1,7 @@
 package com.infinifolder
 
 import android.net.Uri
+import com.infinifolder.model.ResourceEntry
 
 internal const val CREATE_DIR_KEY_PREFIX = "create_dir:"
 
@@ -23,7 +24,8 @@ internal data class TreeNode(
     var onRequestAccess: (() -> Unit)? = null,
     var providerAuthority: String? = null,
     var isHidden: Boolean = name.startsWith("."),
-    var placeId: String? = null
+    var placeId: String? = null,
+    var iconEntry: ResourceEntry? = null
 )
 
 internal fun isCreateDirectoryNode(node: TreeNode): Boolean =

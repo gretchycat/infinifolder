@@ -4059,7 +4059,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             currentProgramName = null
             history.clear(); historyNames.clear()
             shared.edit().putString("root", uri.toString()).apply()
-            navigate(uri, push = false, displayName = "Partial downloads")
+            navigate(uri, push = false, displayName = "Unfinished downloads")
             rebuildTreeRoots()
             return
         }
@@ -4628,7 +4628,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                 content.addView(TextView(this).apply {
                     text = openingVirtualDirectoryLabel?.let { "Opening $it…" }
                         ?: if (openingTorrentDirectory) "Opening a new torrent folder…" else listingError ?: if (listingIsLoading) "Waiting for the storage provider…" else
-                        listingNotice ?: "No files or folders were returned for this location."
+                        listingNotice ?: if (current == com.infinifolder.storage.PartialDownloadsProvider.ROOT)
+                            "No unfinished downloads found yet. Browse storage to discover them."
+                        else "No files or folders were returned for this location."
                     textSize = 16f; setTextColor(setTextColorForTheme()); setPadding(dp(18), dp(28), dp(18), dp(12))
                     setOnLongClickListener { onEmptyAreaLongPress() }
                 })
@@ -5556,7 +5558,10 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun openFoundPartialDownload(entry: ResourceEntry) {
         val catalog = com.infinifolder.storage.StorageRuntime.get(this).partialDownloads
-        val record = catalog.find(entry.ref) ?: return
+        val record = catalog.find(entry.ref) ?: run {
+            Toast.makeText(this, "This download link is no longer available", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (record.entry.metadata.name.endsWith(".incomplete", true)) {
             resumeIncompleteDownload(record.entry.ref)
             return
@@ -5909,9 +5914,10 @@ class MainActivity : Activity(), DebugDumpObserver {
 
         fun buildStaticTailItems(): List<HomeItem> {
             val tail = mutableListOf<HomeItem>()
-            tail += HomeItem("⬇", "Partial downloads", "Discovered unfinished downloads", {
+            tail += HomeItem("⬇", "Unfinished downloads", "Links to downloads found while browsing", {
                 openRoot(com.infinifolder.storage.PartialDownloadsProvider.ROOT, rememberAuthorizedRoot = false)
-            }, treeKey = "partial_downloads", treeUri = com.infinifolder.storage.PartialDownloadsProvider.ROOT)
+            }, treeKey = "partial_downloads", treeUri = com.infinifolder.storage.PartialDownloadsProvider.ROOT,
+                treeExpandable = true)
             tail += HomeItem("🕘", "External link history", "Recently opened storage links", {
                 showExternalLinkHistory()
             }, longAction = {
@@ -6245,7 +6251,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             return
         }
         io.execute {
-            val result = localProvider.list(resourceRef(localProvider.rootUri))
+            val result = provider.list(resourceRef(localProvider.rootUri))
             runOnUiThread {
                 if (generation != internalListGeneration || isFinishing) return@runOnUiThread
                 if (result is ProviderResult.Success) internalSharedEntries = result.value
@@ -8735,7 +8741,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val locationUri = BrowserLocations.uri(node.key)
         val placeId = node.placeId ?: BrowserLocations.forKey(node.key)?.key?.takeIf { it in setOf("internal_shared", "application_public", "installed_apps") }
         val linkEntry = rootContainerLinks.firstOrNull { "root_link_${it.first.uri}" == node.key }?.first
-        val entry = linkEntry ?: uri?.let { target -> provider.refForUri(target)?.let { ResourceEntry(it, metadata, target) } }
+        val entry = linkEntry ?: node.iconEntry ?: uri?.let { target -> provider.refForUri(target)?.let { ResourceEntry(it, metadata, target) } }
         val themeRevision = iconThemeManager.revision()
         val hasTheme = !iconThemeManager.getActiveThemeId().isNullOrBlank()
         val image = IconImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
@@ -8880,32 +8886,36 @@ class MainActivity : Activity(), DebugDumpObserver {
                         val previousChildren = node.children.associateBy { it.key }
                         node.children.clear()
                         val folders = result.value.filter {
-                            !AppsUri.isAppUri(it.uri) &&
-                            (it.metadata.isDirectory || (ArchiveFormats.isArchive(it.metadata.name, it.metadata.mimeType) && !ArchiveFormats.isPlaylist(it.metadata.name, it.metadata.mimeType))) &&
-                            (showHidden || !it.metadata.isHidden)
+                            (uri == com.infinifolder.storage.PartialDownloadsProvider.ROOT ||
+                                !AppsUri.isAppUri(it.uri) &&
+                                (it.metadata.isDirectory || (ArchiveFormats.isArchive(it.metadata.name, it.metadata.mimeType) && !ArchiveFormats.isPlaylist(it.metadata.name, it.metadata.mimeType)))) &&
+                                (showHidden || !it.metadata.isHidden)
                         }
                         folders.forEachIndexed { index, child ->
-                            val childIsArchive = !AppsUri.isAppUri(child.uri) &&
+                            val partialLink = uri == com.infinifolder.storage.PartialDownloadsProvider.ROOT
+                            val childIsArchive = !partialLink && !AppsUri.isAppUri(child.uri) &&
                                 ArchiveFormats.isArchive(child.metadata.name, child.metadata.mimeType) &&
                                 !ArchiveFormats.isPlaylist(child.metadata.name, child.metadata.mimeType)
                             val childUri = if (childIsArchive) ArchiveUri.toArchiveUri(child.uri) else child.uri
-                            val icon = if (childIsArchive) "📦" else "📁"
+                            val icon = if (partialLink) "🔗" else if (childIsArchive) "📦" else "📁"
+                            val childName = if (partialLink) child.metadata.name.removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION) else child.metadata.name
                             val previousChild = previousChildren["${node.key}/${sourceIdentity(childUri)}"]
                             lateinit var childNode: TreeNode
                             childNode = TreeNode(
                                 key = "${node.key}/${sourceIdentity(childUri)}",
                                 uri = childUri,
-                                name = child.metadata.name,
+                                name = childName,
                                 icon = icon,
                                 depth = node.depth + 1,
-                                onOpen = { openTreeNode(childNode) },
-                                canExpand = true,
+                                onOpen = { if (partialLink) openFoundPartialDownload(child) else openTreeNode(childNode) },
+                                canExpand = !partialLink,
                                 ancestorContinues = node.ancestorContinues + !node.isLast,
                                 isLast = index == folders.lastIndex,
                                 expanded = previousChild?.expanded ?: false,
                                 children = previousChild?.children ?: mutableListOf(),
                                 onLongPress = { showEntryMenu(child) },
-                                isHidden = child.metadata.isHidden
+                                isHidden = child.metadata.isHidden,
+                                iconEntry = if (partialLink) child else null
                             )
                             node.children += childNode
                         }
@@ -14461,7 +14471,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun dialogBuilder() = android.app.AlertDialog.Builder(dialogContext())
     private fun displayNameFor(treeUri: Uri): String? = try {
         if (treeUri == ContainerLinksProvider.ROOT) "Virtual root" else
-        if (treeUri == com.infinifolder.storage.PartialDownloadsProvider.ROOT) "Partial downloads" else
+        if (treeUri == com.infinifolder.storage.PartialDownloadsProvider.ROOT) "Unfinished downloads" else
         if (AppsUri.isAppsUri(treeUri)) {
             when {
                 AppsUri.isAppUri(treeUri) -> {
@@ -14522,7 +14532,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     /** Resolve provider document IDs to user-facing names; never interpret IDs as POSIX paths. */
     private fun displayPathFor(treeUri: Uri): String? = try {
-        if (treeUri == com.infinifolder.storage.PartialDownloadsProvider.ROOT) "Virtual root / Partial downloads" else
+        if (treeUri == com.infinifolder.storage.PartialDownloadsProvider.ROOT) "Virtual root / Unfinished downloads" else
         if (AppsUri.isAppsUri(treeUri)) {
             when {
                 AppsUri.isAppUri(treeUri) -> {
