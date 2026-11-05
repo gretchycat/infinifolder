@@ -46,7 +46,7 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
     private var playing=false
     private lateinit var session: HexSession
     private val main = Handler(Looper.getMainLooper())
-    private var dead = false
+    @Volatile private var dead = false
     private var discardDraft = false
     private var encoding = HexEncoding.Text.CP437
     private var stringsMode = false
@@ -54,7 +54,7 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
     private var page = 0L
     private var selected = 0L
     private var editMode = false
-    private var pageToken = 0L
+    @Volatile private var pageToken = 0L
     private var pattern: ByteArray? = null
     private var match: Long? = null
     private var length = 0L
@@ -458,11 +458,15 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
         val requestedEncoding = encoding
         session.worker.execute {
             try {
+                // Navigation can queue requests faster than a remote source can read.
+                // Superseded requests must not allocate or read another page.
+                if (dead || request != pageToken) return@execute
                 val doc = session.document ?: return@execute
                 val start = requestedPage.coerceIn(0, if (doc.length == 0L) 0 else (doc.length - 1) / PAGE_BYTES * PAGE_BYTES)
                 // Three bytes of context cover a UTF-8 code point crossing the page boundary.
                 val contextStart = (start - 3).coerceAtLeast(0)
                 val data = doc.read(contextStart, (start - contextStart).toInt() + PAGE_BYTES + 3)
+                if (dead || request != pageToken) return@execute
                 val glyphs = HexEncoding.glyphs(data, contextStart, requestedEncoding)
                 val changes = doc.changedOffsets(contextStart, minOf(doc.length, start + PAGE_BYTES + 3))
                 val rows = ArrayList<HexRow>()
@@ -475,6 +479,8 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
                     at += size
                 }
                 val canUndo = doc.canUndo; val canRedo = doc.canRedo; val changedCount = doc.changedCount; val total = doc.length
+                // Do not retain a decoded obsolete page in the main-thread queue.
+                if (dead || request != pageToken) return@execute
                 main.post {
                     if (dead || request != pageToken) return@post
                     length = total; changed = changedCount; page = start

@@ -259,6 +259,14 @@ access use the existing disk cache, subject to its configured capacity. Memory
 usage is independent of total source length; this viewer does not allocate a
 whole-file byte array or impose an in-memory file-size limit.
 
+HEX reads one 4096-byte page plus at most six bytes of UTF-8 boundary context.
+Page requests invalidated by newer navigation or closing the viewer are discarded
+before reading and before delivery, rather than buffering obsolete pages. Search,
+checksums, original snapshots and replacement writes scan in 64 KiB chunks.
+The full original snapshot needed before editing is stored on disk, not in RAM.
+These HEX buffer sizes do not describe PIC's separately bounded image decoding
+or WAVE's sample windows.
+
 Before editing, the worker creates a private original snapshot in
 `filesDir/hex_edits/<uuid>/`. Edits live in compact byte pages and a durable journal,
 with bounded undo/redo. Rotation retains the worker/handles; Android saved state
