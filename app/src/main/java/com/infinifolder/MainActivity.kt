@@ -5713,6 +5713,44 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             return
         }
+        // Some files use the legacy Word extension for plain text. Keep normal
+        // Word documents on Scribe, but let a bounded content probe route actual
+        // text content to the text viewer.
+        val extension = entry.metadata.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        if (!externalOnly && !hasExternalDefault && !skipMagic && cachedMagic == null &&
+            !entry.metadata.isDirectory && effectiveMime == "application/msword" && extension in setOf("doc", "dot")) {
+            val loadingToken = beginEntryActionLoading("Checking document content…") ?: return
+            val generation = ++browserNavigationGeneration
+            io.execute {
+                val detected = runCatching {
+                    if (localProvider.owns(entry.uri)) FileMagicDetector.detect(localProvider.fileFor(entry.uri))
+                    else FileMagicDetector.detectFromStream {
+                        when (val result = provider.openRead(entry.ref)) {
+                            is ProviderResult.Success -> result.value
+                            is ProviderResult.Failure -> throw java.io.IOException(result.message, result.cause)
+                            else -> throw java.io.IOException("Cannot read document content")
+                        }
+                    }
+                }.getOrNull()
+                val textMime = detected?.mimeType?.lowercase(Locale.ROOT)?.substringBefore(';')?.let {
+                    it.startsWith("text/") || it in setOf("application/json", "application/xml", "application/yaml",
+                        "application/x-yaml", "application/toml", "application/rtf", "image/x-ansi")
+                } == true
+                runOnUiThread {
+                    finishEntryActionLoading(loadingToken)
+                    if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
+                    if (textMime && detected != null) {
+                        ambiguousMagicCache.put(entry.uri.toString(), detected)
+                        open(entry.copy(metadata = entry.metadata.copy(mimeType = detected.mimeType)),
+                            externalOnly, confirmCommands, forceExternalChooser, skipRawMetadata = true, skipMagic = true)
+                    } else {
+                        open(entry, externalOnly, confirmCommands, forceExternalChooser,
+                            skipRawMetadata = true, skipMagic = true)
+                    }
+                }
+            }
+            return
+        }
         val termuxRule = if (!externalOnly && !hasExternalDefault && !preferInternal && !entry.metadata.isDirectory) TermuxAssociations(this).find(entry.metadata.name) else null
         if (termuxRule != null && TermuxEditorAvailability.state(this, termuxRule.command) == TermuxEditorAvailability.State.AVAILABLE) {
             startActivity(Intent(this, TermuxEditActivity::class.java).setData(entry.uri))

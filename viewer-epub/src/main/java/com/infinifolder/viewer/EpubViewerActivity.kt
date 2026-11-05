@@ -420,6 +420,23 @@ class EpubViewerActivity : ViewerActivity() {
                 }
             }catch(error:Throwable) {
                 if(error is ThreadDeath)throw error
+                val extension=displayName.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
+                val textFallbackMime=if(extension in setOf("doc","dot")) runCatching {
+                    stage?.source?.file?.let(com.infinifolder.storage.FileMagicDetector::detect)?.mimeType
+                        ?.lowercase(java.util.Locale.ROOT)?.substringBefore(';')
+                        ?.takeIf { mime -> mime.startsWith("text/") || mime in setOf(
+                            "application/json", "application/xml", "application/yaml", "application/x-yaml",
+                            "application/toml", "application/rtf", "image/x-ansi") }
+                }.getOrNull() else null
+                if(textFallbackMime!=null) {
+                    DiagnosticLog.record("document.open.text-fallback", "$displayName mime=$textFallbackMime")
+                    mainHandler.post {
+                        if(destroyed)return@post
+                        if(!launchPlainTextFallback(target,displayName,textFallbackMime))
+                            showDocumentError(error.message ?: error.javaClass.simpleName)
+                    }
+                    return@submit
+                }
                 if(error !is java.io.InterruptedIOException)DiagnosticLog.record("document.open.failed",displayName,error)
                 mainHandler.post {
                     if(destroyed)return@post
@@ -601,6 +618,21 @@ class EpubViewerActivity : ViewerActivity() {
         webView.loadDataWithBaseURL("about:blank", ReadingHtml.page("Cannot read book",
             "<h1>Cannot read book</h1><p>${ReadingHtml.escape(message)}</p>"), "text/html", "UTF-8", null)
     }
+
+    private fun launchPlainTextFallback(target: Uri, name: String, mime: String): Boolean = runCatching {
+        val textActivity=com.infinifolder.viewer.ViewerCatalog.activity(com.infinifolder.viewer.MediaType.TEXT)
+            ?: return false
+        val fallback=Intent(Intent.ACTION_VIEW).setClassName(packageName,textActivity)
+            .setDataAndType(target,mime)
+            .putExtra("uri",target.toString())
+            .putExtra("displayName",name)
+            .putExtra("mimeType",mime)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        fallback.clipData=android.content.ClipData.newRawUri(name,target)
+        startActivity(fallback)
+        finish()
+        true
+    }.getOrDefault(false)
 
     private fun makePillDrawable(bgColor: Int, strokeColor: Int): GradientDrawable {
         return GradientDrawable().apply {
