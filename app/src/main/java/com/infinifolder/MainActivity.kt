@@ -712,7 +712,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
                     when {
-                        entry == null -> openContainerLinkUri(uri, null, requireContainer = false, origin = LinkNavigationOrigin.EXTERNAL_HISTORY)
+                        entry == null -> openContainerLinkUri(uri, null, requireContainer = false, origin = LinkNavigationOrigin.VIRTUAL_ROOT)
                         entry.metadata.isDirectory -> navigate(entry.uri, displayName = entry.metadata.name)
                         else -> open(entry)
                     }
@@ -745,6 +745,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         request.action = null
         val title = externalLinkName(uri)
+        recordExternalLinkVisit(uri, title)
         openContainerLinkUri(uri, title, requireContainer = false, origin = LinkNavigationOrigin.EXTERNAL_HISTORY)
     }
 
@@ -2568,7 +2569,6 @@ class MainActivity : Activity(), DebugDumpObserver {
                 current = null
                 navigate(target, push = origin == LinkNavigationOrigin.DIRECTORY_LINK, displayName = title, deferInitialLoad = true)
                 setTreeVisible(false)
-                if (uri.scheme?.lowercase(Locale.ROOT) in externalLinkSchemes) recordExternalLinkVisit(uri, title)
             } catch (error: Exception) {
                 dialogBuilder().setTitle("Cannot browse $title")
                     .setMessage(error.message ?: "Invalid magnet link")
@@ -2576,7 +2576,6 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             return
         }
-        if (uri.scheme?.lowercase(Locale.ROOT) in externalLinkSchemes) recordExternalLinkVisit(uri, title)
         bindContainerUri(uri, title) { canonical ->
             val target = if (requireContainer) containerUriHint(canonical) else canonical
             val ref = provider.refForUri(target)
