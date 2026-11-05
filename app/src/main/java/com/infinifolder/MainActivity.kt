@@ -739,11 +739,12 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (scheme !in externalLinkSchemes) {
             val suppliedMime = request.type
             request.action = null
+            recordExternalLinkVisit(uri, externalLinkName(uri), suppliedMime)
             openExternalResource(uri, suppliedMime)
             return
         }
         request.action = null
-        val title = uri.host ?: "${uri.scheme?.uppercase(Locale.ROOT) ?: "External"} link"
+        val title = externalLinkName(uri)
         openContainerLinkUri(uri, title, requireContainer = false, origin = LinkNavigationOrigin.EXTERNAL_HISTORY)
     }
 
@@ -773,6 +774,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     else -> throw java.io.IOException("Cannot inspect this item")
                 }
                 val name = original.metadata.name
+                recordExternalLinkVisit(uri, name, original.metadata.mimeType, original.metadata.isDirectory)
                 var mime = com.infinifolder.mime.MimeRegistry.effective(name, suppliedMime ?: original.metadata.mimeType)
                 val genericMime = mime in setOf("application/octet-stream", "application/binary", "text/plain",
                     "application/x-archive", "application/x-compressed", "application/x-raw-disk-image")
@@ -830,42 +832,41 @@ class MainActivity : Activity(), DebugDumpObserver {
         }.sortedByDescending { it.openedAt }
     }.getOrDefault(emptyList())
 
-    private fun recordExternalLinkVisit(rawUri: Uri, title: String) {
+    private fun externalLinkName(uri: Uri): String = when {
+        uri.scheme.equals("magnet", true) -> runCatching { uri.getQueryParameter("dn") }.getOrNull()
+            ?.takeIf { it.isNotBlank() } ?: "Magnet link"
+        uri.isHierarchical && !uri.lastPathSegment.isNullOrBlank() -> uri.lastPathSegment!!
+        !uri.host.isNullOrBlank() -> uri.host!!
+        else -> "${uri.scheme?.uppercase(Locale.ROOT) ?: "External"} link"
+    }
+
+    private fun recordExternalLinkVisit(rawUri: Uri, title: String, mime: String? = null, directoryTarget: Boolean = false) {
         val safeUri = if (rawUri.isHierarchical && rawUri.userInfo != null)
             rawUri.buildUpon().encodedAuthority(rawUri.encodedAuthority?.substringAfter('@')).build()
         else rawUri
-        val visits = (externalLinkVisits().filterNot { it.uri == safeUri.toString() } +
-            ExternalLinkVisit(safeUri.toString(), title.ifBlank { "External link" }, System.currentTimeMillis()))
-            .takeLast(100).asReversed()
-        val array = JSONArray()
-        visits.forEach { visit -> array.put(JSONObject().put("uri", visit.uri).put("title", visit.title).put("openedAt", visit.openedAt)) }
-        shared.edit().putString(externalLinkHistoryKey, array.toString()).apply()
-        com.infinifolder.storage.DiagnosticLog.record("external-link.open", "scheme=${safeUri.scheme} title=$title uri=$safeUri")
-        if (homeMode && homePage == "external_link_history") runOnUiThread { renderHomeItems() }
-    }
-
-    private fun removeExternalLinkVisit(uri: String) {
-        val array = JSONArray()
-        externalLinkVisits().filterNot { it.uri == uri }.forEach { visit ->
-            array.put(JSONObject().put("uri", visit.uri).put("title", visit.title).put("openedAt", visit.openedAt))
+        io.execute {
+            runCatching { com.infinifolder.storage.StorageRuntime.get(this).recentExternalLinks.remember(
+                safeUri, title.ifBlank { externalLinkName(safeUri) }, mime, directoryTarget) }
+                .onFailure { com.infinifolder.storage.DiagnosticLog.record("external-link.save-failed", error = it) }
+            if (current == com.infinifolder.storage.RecentExternalLinksProvider.ROOT)
+                runOnUiThread { if (!isDestroyed) load(com.infinifolder.storage.RecentExternalLinksProvider.ROOT) }
         }
-        shared.edit().putString(externalLinkHistoryKey, array.toString()).apply()
-        renderHomeItems()
     }
 
     private fun showExternalLinkHistory() {
-        loadGeneration++
-        homeMode = true
-        listingIsLoading = false
-        cancelEntryActionLoading()
-        updateEntryLoadingFeedback()
-        homePage = "external_link_history"
-        logicalLocationPrefix = null
-        currentProgramName = null
-        updateCreateAction()
-        renderLocation()
-        status.text = "Links opened from other apps and recently browsed container links"
-        renderHomeItems()
+        io.execute {
+            val catalog = com.infinifolder.storage.StorageRuntime.get(this).recentExternalLinks
+            // Keep the preference payload until all legacy records have been written.
+            if (shared.contains(externalLinkHistoryKey)) runCatching {
+                externalLinkVisits().asReversed().forEach { visit ->
+                    val uri = Uri.parse(visit.uri)
+                    if (!uri.scheme.isNullOrBlank()) catalog.remember(uri, visit.title, ifAbsent = true)
+                }
+                shared.edit().remove(externalLinkHistoryKey).apply()
+            }.onFailure { com.infinifolder.storage.DiagnosticLog.record("external-link.migrate-failed", error = it) }
+            runOnUiThread { if (!isDestroyed && !isFinishing)
+                openRoot(com.infinifolder.storage.RecentExternalLinksProvider.ROOT, rememberAuthorizedRoot = false) }
+        }
     }
 
     private fun handleCacheCopyRequest(request: Intent?) {
@@ -1455,7 +1456,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         updateFloatingModeAction()
         val inArchive = current?.let { ArchiveUri.isArchiveUri(it) && !archiveProvider.cachedWritable(it) } ?: false
         val inApps = current?.let { AppsUri.isAppsUri(it) } ?: false
-        val inPrivateDownloads = current?.scheme == com.infinifolder.storage.PartialDownloadsProvider.SCHEME
+        val inPrivateDownloads = current?.scheme in setOf(com.infinifolder.storage.PartialDownloadsProvider.SCHEME,
+            com.infinifolder.storage.RecentExternalLinksProvider.SCHEME)
         val canWriteDir = !homeMode && current != null && !inArchive && !inApps && !inPrivateDownloads
         createButton.visibility = if ((homeMode && homePage != "root") || inArchive || inApps || inPrivateDownloads) View.GONE else View.VISIBLE
         createButton.text = if (homeMode) "＋" else "📁+"
@@ -2557,7 +2559,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 // The opaque magnet URI itself is a valid virtual root. Avoid provider
                 // initialization here so the browser can navigate before any loading work.
                 val target = uri
-                logicalLocationPrefix = if (origin == LinkNavigationOrigin.EXTERNAL_HISTORY) "External link history" else
+                logicalLocationPrefix = if (origin == LinkNavigationOrigin.EXTERNAL_HISTORY) "Recent external links" else
                     logicalLocationPrefix.takeIf { origin == LinkNavigationOrigin.DIRECTORY_LINK }
                 currentProgramName = null
                 if (origin != LinkNavigationOrigin.DIRECTORY_LINK) {
@@ -4053,13 +4055,15 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun openRoot(uri: Uri, logicalPrefix: String? = null, rememberAuthorizedRoot: Boolean = true) {
         if (uri == ContainerLinksProvider.ROOT) { showHomeRoot(); return }
-        if (uri == com.infinifolder.storage.PartialDownloadsProvider.ROOT) {
+        if (uri == com.infinifolder.storage.PartialDownloadsProvider.ROOT ||
+            uri == com.infinifolder.storage.RecentExternalLinksProvider.ROOT) {
             accessRequestGeneration++
             logicalLocationPrefix = null
             currentProgramName = null
             history.clear(); historyNames.clear()
             shared.edit().putString("root", uri.toString()).apply()
-            navigate(uri, push = false, displayName = "Unfinished downloads")
+            navigate(uri, push = false, displayName = if (uri == com.infinifolder.storage.PartialDownloadsProvider.ROOT)
+                "Unfinished downloads" else "Recent external links")
             rebuildTreeRoots()
             return
         }
@@ -4224,7 +4228,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
                 if (homePage == "external_link_history") {
                     breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
-                    breadcrumb.addView(crumbText("External link history", setTextColorForTheme(), true) { showExternalLinkHistory() })
+                    breadcrumb.addView(crumbText("Recent external links", setTextColorForTheme(), true) { showExternalLinkHistory() })
                 }
                 renderTree()
                 return
@@ -4242,7 +4246,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     when (prefix) {
                         "Application public" -> showApplicationPublic()
                         "Installed Applications" -> openInstalledApps()
-                        "External link history" -> showExternalLinkHistory()
+                        "Recent external links" -> showExternalLinkHistory()
                         else -> showInternalShared()
                     }
                 })
@@ -4630,6 +4634,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                         ?: if (openingTorrentDirectory) "Opening a new torrent folder…" else listingError ?: if (listingIsLoading) "Waiting for the storage provider…" else
                         listingNotice ?: if (current == com.infinifolder.storage.PartialDownloadsProvider.ROOT)
                             "No unfinished downloads found yet. Browse storage to discover them."
+                        else if (current == com.infinifolder.storage.RecentExternalLinksProvider.ROOT)
+                            "Links to external files and URIs will appear here after they are opened."
                         else "No files or folders were returned for this location."
                     textSize = 16f; setTextColor(setTextColorForTheme()); setPadding(dp(18), dp(28), dp(18), dp(12))
                     setOnLongClickListener { onEmptyAreaLongPress() }
@@ -5918,17 +5924,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                 openRoot(com.infinifolder.storage.PartialDownloadsProvider.ROOT, rememberAuthorizedRoot = false)
             }, treeKey = "partial_downloads", treeUri = com.infinifolder.storage.PartialDownloadsProvider.ROOT,
                 treeExpandable = true)
-            tail += HomeItem("🕘", "External link history", "Recently opened storage links", {
+            tail += HomeItem("🕘", "Recent external links", "Links to recently opened external files and URIs", {
                 showExternalLinkHistory()
-            }, longAction = {
-                dialogBuilder().setTitle("External link history")
-                    .setMessage("Clear all remembered external links?")
-                    .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Clear") { _, _ ->
-                        shared.edit().remove(externalLinkHistoryKey).apply()
-                        if (homeMode && homePage == "external_link_history") renderHomeItems()
-                    }.show()
-            }, treeKey = "external_link_history")
+            }, treeKey = "external_link_history", treeUri = com.infinifolder.storage.RecentExternalLinksProvider.ROOT,
+                treeExpandable = true)
             savedConnections().forEach { connection ->
                 if (shared.getBoolean("root_link_migrated_${connection.id}", false)) return@forEach
                 val source = providerRegistry.sourceTypes().firstOrNull { it.id == connection.sourceTypeId }
@@ -6335,30 +6334,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 .sortedBy { if (it.treeKey?.startsWith("public_") == true) 0 else 1 }
         } else if (homePage == "application_public") {
             applicationPublicItems
-        } else if (homePage == "external_link_history") {
-            externalLinkVisits().map { visit ->
-                val target = Uri.parse(visit.uri)
-                HomeItem(
-                    icon = if (target.scheme.equals("magnet", true)) "🧲" else "🔗",
-                    title = visit.title,
-                    detail = target.toString().take(180),
-                    action = { openContainerLinkUri(target, visit.title, requireContainer = true, origin = LinkNavigationOrigin.EXTERNAL_HISTORY) },
-                    longAction = {
-                        dialogBuilder().setTitle("Remove link from history?")
-                            .setNegativeButton("Cancel", null)
-                            .setPositiveButton("Remove") { _, _ -> removeExternalLinkVisit(visit.uri) }.show()
-                    }
-                )
-            }
         } else homeItems.filter { it.showInHome && it.treeParentKey == null && rootShortcutVisible(it) }
-        if (homePage == "external_link_history" && visibleItems.isEmpty()) {
-            content.addView(TextView(dialogContext()).apply {
-                text = "Links opened from other apps will appear here."
-                setTextColor(setTextColorForTheme())
-                setPadding(dp(16), dp(18), dp(16), dp(18))
-            })
-            return
-        }
         if (homePage == "internal_shared" && !localProvider.hasAccess()) {
             content.addView(Button(dialogContext()).apply {
                 text = "Allow internal storage access"
@@ -8887,18 +8863,20 @@ class MainActivity : Activity(), DebugDumpObserver {
                         node.children.clear()
                         val folders = result.value.filter {
                             (uri == com.infinifolder.storage.PartialDownloadsProvider.ROOT ||
+                                uri == com.infinifolder.storage.RecentExternalLinksProvider.ROOT ||
                                 !AppsUri.isAppUri(it.uri) &&
                                 (it.metadata.isDirectory || (ArchiveFormats.isArchive(it.metadata.name, it.metadata.mimeType) && !ArchiveFormats.isPlaylist(it.metadata.name, it.metadata.mimeType)))) &&
                                 (showHidden || !it.metadata.isHidden)
                         }
                         folders.forEachIndexed { index, child ->
                             val partialLink = uri == com.infinifolder.storage.PartialDownloadsProvider.ROOT
+                            val recentLink = uri == com.infinifolder.storage.RecentExternalLinksProvider.ROOT
                             val childIsArchive = !partialLink && !AppsUri.isAppUri(child.uri) &&
                                 ArchiveFormats.isArchive(child.metadata.name, child.metadata.mimeType) &&
                                 !ArchiveFormats.isPlaylist(child.metadata.name, child.metadata.mimeType)
                             val childUri = if (childIsArchive) ArchiveUri.toArchiveUri(child.uri) else child.uri
-                            val icon = if (partialLink) "🔗" else if (childIsArchive) "📦" else "📁"
-                            val childName = if (partialLink) child.metadata.name.removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION) else child.metadata.name
+                            val icon = if (partialLink || recentLink) "🔗" else if (childIsArchive) "📦" else "📁"
+                            val childName = if (partialLink || recentLink) child.metadata.name.removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION) else child.metadata.name
                             val previousChild = previousChildren["${node.key}/${sourceIdentity(childUri)}"]
                             lateinit var childNode: TreeNode
                             childNode = TreeNode(
@@ -8907,15 +8885,15 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 name = childName,
                                 icon = icon,
                                 depth = node.depth + 1,
-                                onOpen = { if (partialLink) openFoundPartialDownload(child) else openTreeNode(childNode) },
-                                canExpand = !partialLink,
+                                onOpen = { if (partialLink) openFoundPartialDownload(child) else if (recentLink) openShortcut(child) else openTreeNode(childNode) },
+                                canExpand = !partialLink && !recentLink,
                                 ancestorContinues = node.ancestorContinues + !node.isLast,
                                 isLast = index == folders.lastIndex,
                                 expanded = previousChild?.expanded ?: false,
                                 children = previousChild?.children ?: mutableListOf(),
                                 onLongPress = { showEntryMenu(child) },
                                 isHidden = child.metadata.isHidden,
-                                iconEntry = if (partialLink) child else null
+                                iconEntry = if (partialLink || recentLink) child else null
                             )
                             node.children += childNode
                         }
@@ -14472,6 +14450,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun displayNameFor(treeUri: Uri): String? = try {
         if (treeUri == ContainerLinksProvider.ROOT) "Virtual root" else
         if (treeUri == com.infinifolder.storage.PartialDownloadsProvider.ROOT) "Unfinished downloads" else
+        if (treeUri == com.infinifolder.storage.RecentExternalLinksProvider.ROOT) "Recent external links" else
         if (AppsUri.isAppsUri(treeUri)) {
             when {
                 AppsUri.isAppUri(treeUri) -> {
@@ -14533,6 +14512,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     /** Resolve provider document IDs to user-facing names; never interpret IDs as POSIX paths. */
     private fun displayPathFor(treeUri: Uri): String? = try {
         if (treeUri == com.infinifolder.storage.PartialDownloadsProvider.ROOT) "Virtual root / Unfinished downloads" else
+        if (treeUri == com.infinifolder.storage.RecentExternalLinksProvider.ROOT) "Virtual root / Recent external links" else
         if (AppsUri.isAppsUri(treeUri)) {
             when {
                 AppsUri.isAppUri(treeUri) -> {

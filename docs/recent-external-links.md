@@ -1,0 +1,7 @@
+# Recent external links
+
+Virtual root's **Recent external links** opens a normal, private directory of `.iflink` records. The backing files live in app storage under `files/recent-external-links`; they are not copies of target content. Opening a link uses the normal shortcut resolver, so local files, Android content URIs, supported remote folders, and other URI targets keep their usual viewers or navigation. Deleting one or many selected links removes only the private records.
+
+Opening a URI supplied to InfiniFolder by another app records it. Browsing supported external network and torrent links also records them. The best available display name is saved with the link: target metadata for resolved files, otherwise a URI path or host, and a magnet display name when supplied. The existing link icon resolver uses target MIME, provider metadata, URI scheme, theme artwork, and any discoverable site icon, with its usual fallbacks. Offline or inaccessible targets remain listed as links.
+
+On first opening this directory, old `external_link_history_v1` preferences are copied to `.iflink` records. Existing link files win if both sources contain the same URI. Preferences are removed only after the whole migration succeeds. Link files use a hash of the target URI as their storage filename; the visible name comes from the link metadata. There is no fixed 100-entry limit. The directory is read-only except for deleting links; editing link metadata and renaming links are not yet supported here.

@@ -11,7 +11,7 @@ internal object BrowserLocations {
         Location("application_public", "Application public", "folder-application-public", "▦"),
         Location("installed_apps", "Installed Applications", "start-here-android", "▦"),
         Location("partial_downloads", "Unfinished downloads", "folder-download", "⬇"),
-        Location("external_link_history", "External link history", "document-open-recent", "🕘"),
+        Location("external_link_history", "Recent external links", "document-open-recent", "🕘"),
         Location("pin_board", "Pin board", "folder-bookmark", "📌"),
         Location("virtual-root", "Virtual root", "user-home", "🏠")
     ).associateBy { it.key }

@@ -27,6 +27,7 @@ class StorageRuntime private constructor(context: Context) {
     val apps = AppsStorageProvider(app)
     val containerLinks = ContainerLinksProvider(app)
     val partialDownloads = PartialDownloadsProvider(app)
+    val recentExternalLinks = RecentExternalLinksProvider(app)
     private val sftpFactory = SftpProviderFactory(app) { id -> connections.list().firstOrNull { it.id == id } }
     private val ftpFactory = FtpProviderFactory(app) { id -> connections.list().firstOrNull { it.id == id } }
     private val smbFactory = SmbProviderFactory(app) { id -> connections.list().firstOrNull { it.id == id } }
@@ -40,7 +41,7 @@ class StorageRuntime private constructor(context: Context) {
         register(SafProviderFactory()); register(sftpFactory); register(ftpFactory); register(smbFactory); register(webDavFactory)
         installDiscovered(app) { id -> connections.list().firstOrNull { it.id==id } }
     }
-    val provider = RoutingStorageProvider(*(listOf(local, archives, apps, sftp, ftp, smb, webdav, torrents, containerLinks, partialDownloads, SafProvider(app.contentResolver)) +
+    val provider = RoutingStorageProvider(*(listOf(local, archives, apps, sftp, ftp, smb, webdav, torrents, containerLinks, partialDownloads, recentExternalLinks, SafProvider(app.contentResolver)) +
         registry.sourceTypes().filter { it.id !in setOf("saf","sftp","ftp","smb","webdav") }.mapNotNull { registry.create(it.id,app.contentResolver) }).toTypedArray(),
         uriResolver = { uri -> if (ContainerUris.networkType(uri) == null) uri else ContainerUris.resolve(uri, connections.list()) })
     private val knownSourceTypes=java.util.concurrent.ConcurrentHashMap.newKeySet<String>().apply {addAll(registry.sourceTypes().map {it.id})}

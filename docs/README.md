@@ -50,6 +50,7 @@ validation records describe their recorded revisions, not new acceptance.
 - [Magnet networking diagnosis and changes](magnet-networking.md)
 - [Torrent checkpoint safety checks](torrent-checkpoint-safety.md)
 - [Unfinished downloads link directory](partial-download-discovery.md)
+- [Recent external links directory](recent-external-links.md)
 
 ## Viewers and formats
 
