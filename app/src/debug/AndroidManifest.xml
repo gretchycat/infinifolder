@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
-        <!-- Runs independently of the browser and every default-process provider. -->
+        <!-- Debug-only report remains explicitly launchable for diagnosis but does not
+             install a second launcher icon or become the default app entry point. -->
         <activity
             android:name=".StartupReportActivity"
             android:process=":startup_report"
@@ -8,11 +9,6 @@
             android:exported="true"
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Material.Light.NoActionBar"
-            android:label="InfiniFolder startup report">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:label="InfiniFolder startup report" />
     </application>
 </manifest>

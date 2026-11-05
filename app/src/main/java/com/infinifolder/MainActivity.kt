@@ -961,7 +961,6 @@ class MainActivity : Activity(), DebugDumpObserver {
             contentDescription = "Open current directory in floating window"
             tooltipText = contentDescription
         }
-        button("⋮", toolbarFg) { showOptions() }
         DebugTools.attachToolbarButton(this, toolbar)
         operationLight = OperationActivityLight(this).apply {
             setOnClickListener { showOperations() }
@@ -11642,7 +11641,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
         val baseOpenGroup: List<String> = when {
             isFile && entry.metadata.name.endsWith(".wsz", ignoreCase = true) ->
-                listOf("Install and apply theme", "Open as archive", "Open with external app")
+                listOf("Install and apply theme", "Open as archive", "Open with…")
             isApp -> listOf("Launch")
             isCategory -> listOf("Browse folder")
             isShortcut -> {
@@ -11656,12 +11655,12 @@ class MainActivity : Activity(), DebugDumpObserver {
                     isAppShortcut -> listOf("Launch target app")
                     shortcut?.targetIsDirectory == true -> listOf("Open target folder")
                     isCustomScheme -> listOf("Open target URI")
-                    else -> listOf("Open target file", "Open target with external app")
+                    else -> listOf("Open target file", "Open target with…")
                 }
             }
             isPackagedFormat && archiveInfo.browsable -> {
                 if (inArchive) listOf("Open", "Browse archive")
-                else listOf("Open", "Browse archive", "Open with external app")
+                else listOf("Open", "Browse archive", "Open with…")
             }
             isPlaylist -> {
                 val audioCount = entries.count { !it.metadata.isDirectory && (MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.AUDIO || ArchiveFormats.isPlaylist(it.metadata.name)) }
@@ -11669,13 +11668,13 @@ class MainActivity : Activity(), DebugDumpObserver {
                 val list = mutableListOf("Open", "Browse", "Queue audio")
                 if (audioCount > 1) list.add("Queue all audio ($audioCount)")
                 if (videoCount > 0) list.add("Queue all multimedia (${audioCount + videoCount})")
-                list.add("Open with external app")
+                list.add("Open with…")
                 list
             }
             inArchive && entry.metadata.isDirectory -> listOf("Browse folder")
-            inArchive && isArchive -> listOf("Browse archive", "Open", "Open with external app")
-            inArchive -> listOf("Open", "Open with external app")
-            isArchive -> listOf("Browse archive", "Open with external app")
+            inArchive && isArchive -> listOf("Browse archive", "Open", "Open with…")
+            inArchive -> listOf("Open", "Open with…")
+            isArchive -> listOf("Browse archive", "Open with…")
             entry.metadata.isDirectory -> {
                 val list = mutableListOf("Browse folder")
                 val dir = MediaSourceAdapter.resolveLocalFile(this, entry.uri)
@@ -11702,7 +11701,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 val list = mutableListOf("Open", "Queue audio")
                 if (audioCount > 1) list.add("Queue all audio ($audioCount)")
                 if (videoCount > 0) list.add("Queue all multimedia (${audioCount + videoCount})")
-                list.add("Open with external app")
+                list.add("Open with…")
                 list
             }
             detectedMediaType == MediaType.VIDEO -> {
@@ -11711,20 +11710,13 @@ class MainActivity : Activity(), DebugDumpObserver {
                 val list = mutableListOf("Open")
                 if (videoCount > 1) list.add("Play all video ($videoCount)")
                 if (audioCount > 0) list.add("Queue all multimedia (${audioCount + videoCount})")
-                list.add("Open with external app")
+                list.add("Open with…")
                 list
             }
-            else -> listOf("Open", "Open with external app")
+            else -> listOf("Open", "Open with…")
         }
 
-        val openGroup = baseOpenGroup.flatMap {
-            when (it) {
-                "Open with external app" -> listOf("Open externally", "Open with…")
-                "Open target with external app" -> listOf("Open target externally", "Open target with…")
-                else -> listOf(it)
-            }
-        } + (if(isFile && entry.metadata.canRead && com.infinifolder.viewer.ViewerComponents.resolve(entry,edit=true)!=null)listOf("Edit with built-in editor")else emptyList()) +
-            (if (isFile && entry.metadata.canRead && entry.metadata.recoveryNote == null) listOf("Edit externally") else emptyList()) +
+        val openGroup = baseOpenGroup +
             (if (!entry.metadata.isDirectory && !isApp && !isCategory && entry.metadata.canRead) listOf("Open in hex editor") else emptyList()) +
             (if (canShowDeleted) listOf("Show deleted files") else emptyList())
         val canCopyContents = !entry.metadata.isDirectory && !isApp && !isCategory &&
@@ -11876,8 +11868,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     }
                 }
                 "Open link", "Open target URI", "Open target folder", "Open target file" -> openShortcut(entry)
-                "Open target externally" -> open(entry, externalOnly = true)
-                "Open target with external app", "Open target with…" -> openShortcutWithExternalApp(entry)
+                "Open target with…" -> openShortcutWithExternalApp(entry)
                 "Show deleted files" -> navigate(ArchiveUri.deletedFiles(entry.uri), displayName = "Deleted files — ${entry.metadata.name}")
                 "Recover partial copy…" -> showDestinationPicker(entry, false, partialRecovery = true)
                 "Undelete…" -> {
@@ -11893,11 +11884,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
                 "Browse archive", "Browse" -> if(ArchiveUri.isArchiveUri(entry.uri))browseNestedArchive(entry)
                     else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
-                "Open externally" -> open(entry, externalOnly = true)
-                "Open with external app", "Open with…" -> open(entry, externalOnly = true, forceExternalChooser = true)
-                "Edit with built-in editor" -> launchBuiltInViewer(entry,MediaTypeDetector.detect(entry.metadata.name,entry.metadata.mimeType),edit=true)
-                "Edit externally" -> startActivity(Intent(this, com.infinifolder.viewer.ExternalEditActivity::class.java)
-                    .setAction(Intent.ACTION_EDIT).setData(entry.uri))
+                "Open with…" -> open(entry, externalOnly = true, forceExternalChooser = true)
                 "Open in hex editor" -> openHexEditor(entry)
                 "Open" -> if (entry.metadata.isDirectory) navigate(entry.uri, displayName = entry.metadata.name) else open(entry)
                 "Use as debug dump folder" -> {

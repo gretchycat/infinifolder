@@ -66,18 +66,11 @@ class ExternalAppDefaults(context: Context) {
             ViewerComponents.registry.query(io.github.gretchycat.infinistream.Operations.VIEW)
                 .mapNotNull { it.handler.service(ViewerComponent::class.java)?.activityClassName }.toSet()
         }
-        val external by lazy {
-            val query = Intent(Intent.ACTION_VIEW).setDataAndType(
-                android.net.Uri.parse("content://$ownPackage.external-edit/choice/${android.net.Uri.encode(name)}"),
-                MimeRegistry.normalize(mime))
-            runCatching { packages.queryIntentActivities(query, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY) }
-                .getOrDefault(emptyList())
-                .filter { it.activityInfo.packageName != ownPackage && it.activityInfo.exported &&
-                    it.activityInfo.enabled && it.activityInfo.applicationInfo.enabled }
-                .map { ComponentName(it.activityInfo.packageName, it.activityInfo.name) }.toSet()
-        }
         return saved.firstOrNull { component ->
-            if (component.packageName == ownPackage) component.className in internal else component in external
+            if (component.packageName == ownPackage) component.className in internal else runCatching {
+                val activity = packages.getActivityInfo(component, 0)
+                activity.exported && activity.enabled && activity.applicationInfo.enabled
+            }.getOrDefault(false)
         }
     }
     var editor: ComponentName?

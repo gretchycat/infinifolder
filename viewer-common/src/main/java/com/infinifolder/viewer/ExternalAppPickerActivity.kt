@@ -17,8 +17,8 @@ import com.infinifolder.theme.ThemeManager
 
 /** Local file associations require an app-owned picker; Android's chooser has no local-default checkbox. */
 class ExternalAppPickerActivity : Activity() {
-    private data class Choice(val info: ResolveInfo?, val action: String, val label: String, val internal: Intent? = null) {
-        val component get() = internal?.component ?: ComponentName(info!!.activityInfo.packageName, info.activityInfo.name)
+    private data class Choice(val info: ResolveInfo?, val component: ComponentName, val action: String,
+        val label: String, val internal: Intent? = null) {
     }
     private lateinit var target: Intent
     private lateinit var defaults: ExternalAppDefaults
@@ -27,6 +27,7 @@ class ExternalAppPickerActivity : Activity() {
     private var dialog: AlertDialog? = null
     private var savedRemember = false
     private var savedFileScope = false
+    private var showingAllApps = false
     private var launched = false
     private val sourceKey get() = intent.getStringExtra(ExternalAppChooser.SOURCE)
     private val fileName get() = intent.getStringExtra(ExternalAppChooser.NAME).orEmpty()
@@ -63,7 +64,8 @@ class ExternalAppPickerActivity : Activity() {
             packageManager.queryIntentActivities(query, PackageManager.MATCH_DEFAULT_ONLY)
                 .filter { it.activityInfo.packageName != packageName && it.activityInfo.exported &&
                     it.activityInfo.enabled && it.activityInfo.applicationInfo.enabled }
-                .map { Choice(it, action, it.loadLabel(packageManager).toString()) }
+                .map { Choice(it, ComponentName(it.activityInfo.packageName, it.activityInfo.name), action,
+                    it.loadLabel(packageManager).toString()) }
         }.distinctBy { it.component }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
         @Suppress("DEPRECATION")
         val internal = intent.getParcelableExtra<Intent>(ExternalAppChooser.INTERNAL_TARGET)
@@ -72,14 +74,34 @@ class ExternalAppPickerActivity : Activity() {
                 ViewerComponents.registry.query(io.github.gretchycat.infinistream.Operations.VIEW).any {
                     it.handler.service(ViewerComponent::class.java)?.activityClassName == candidate.component?.className
                 } }
-        return listOfNotNull(internal?.let { Choice(null, Intent.ACTION_VIEW, "Open internally", it) }) + external
+        return listOfNotNull(internal?.let { Choice(null, it.component!!, Intent.ACTION_VIEW, "Open internally", it) }) + external
     }
+    private fun allApps(): List<Choice> {
+        val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        return packageManager.queryIntentActivities(query, 0)
+            .asSequence()
+            .filter { it.activityInfo.packageName != packageName && it.activityInfo.exported &&
+                it.activityInfo.enabled && it.activityInfo.applicationInfo.enabled }
+            .distinctBy { it.activityInfo.packageName }
+            .map { Choice(it, ComponentName(it.activityInfo.packageName, it.activityInfo.name),
+                target.action ?: Intent.ACTION_VIEW, it.loadLabel(packageManager).toString()) }
+            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+            .toList()
+    }
+    private fun installedChoice(component: ComponentName, action: String): Choice? = runCatching {
+        val activity = packageManager.getActivityInfo(component, 0)
+        if (activity.packageName == packageName || !activity.exported || !activity.enabled ||
+            !activity.applicationInfo.enabled) return null
+        val info = ResolveInfo().apply { activityInfo = activity }
+        Choice(info, component, action, info.loadLabel(packageManager).toString())
+    }.getOrNull()
     private fun loadChoices(useDefault: Boolean) {
         Thread({
             try {
                 val available = choices()
                 val preferred = if (useDefault) defaults.candidates(target.action!!, sourceKey, target.type)
-                    .firstNotNullOfOrNull { component -> available.firstOrNull { it.component == component } } else null
+                    .firstNotNullOfOrNull { component -> available.firstOrNull { it.component == component }
+                        ?: installedChoice(component, target.action!!) } else null
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     if (preferred != null) launch(preferred, available, rememberChoice = false)
@@ -99,7 +121,8 @@ class ExternalAppPickerActivity : Activity() {
             orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(4), dp(16), dp(4))
         }
         body.addView(TextView(builder.context).apply {
-            text = failure ?: if (available.isEmpty()) "No other installed app can handle this file."
+            text = failure ?: if (showingAllApps) "All installed apps. Some apps may not be able to open this file."
+                else if (available.isEmpty()) "No other installed app can handle this file."
                 else if (selectingEditor) "Used by Edit externally. Incompatible file types will still ask."
                 else "File type: ${MimeRegistry.normalize(target.type)}"
             setTextColor(colors.textSecondary); setPadding(0, dp(4), 0, dp(8))
@@ -129,7 +152,7 @@ class ExternalAppPickerActivity : Activity() {
                 setOnItemClickListener { _, _, position, _ -> launch(available[position], available, remember?.isChecked == true) }
             }, LinearLayout.LayoutParams(-1, minOf(dp(300), resources.displayMetrics.heightPixels / 3)))
         }
-        if (!selectingEditor && available.isNotEmpty()) {
+        if (!selectingEditor) {
             remember = CheckBox(builder.context).apply {
                 text = "Remember in InfiniFolder"; isChecked = savedRemember; setTextColor(colors.textPrimary)
             }
@@ -143,7 +166,30 @@ class ExternalAppPickerActivity : Activity() {
             remember!!.setOnCheckedChangeListener { _, checked -> scope?.visibility = if (checked) View.VISIBLE else View.GONE }
             body.addView(remember); body.addView(scope)
         }
-        dialog = builder.setTitle(intent.getCharSequenceExtra(ExternalAppChooser.TITLE) ?: "Open with…")
+        val title = intent.getCharSequenceExtra(ExternalAppChooser.TITLE) ?: "Open with…"
+        val allAppsButton = if (!selectingEditor) Button(builder.context).apply {
+            text = if (showingAllApps) "Show compatible apps" else "All apps…"
+            setOnClickListener {
+                savedRemember = remember?.isChecked ?: savedRemember
+                savedFileScope = scope?.checkedRadioButtonId == 1
+                if (showingAllApps) {
+                    showingAllApps = false
+                    showChoices(choices())
+                } else {
+                    Thread({
+                        val result = runCatching { allApps() }
+                        runOnUiThread {
+                            if (isFinishing || isDestroyed) return@runOnUiThread
+                            showingAllApps = true
+                            showChoices(result.getOrDefault(emptyList()), if (result.isFailure)
+                                "Could not list installed apps. Close this picker and try again." else null)
+                        }
+                    }, "ExternalAllApps").start()
+                }
+            }
+        } else null
+        if (allAppsButton != null) body.addView(allAppsButton)
+        dialog = builder.setTitle(if (showingAllApps) "$title — All apps" else title)
             .setView(ScrollView(builder.context).apply { addView(body) })
             .setNegativeButton("Cancel") { _, _ -> finish() }.setOnCancelListener { finish() }
             .create().also { it.show(); CacheDialogs.style(it) }
