@@ -8,7 +8,7 @@ internal object BrowserLocations {
     data class Location(val key: String, val title: String, val iconName: String, val fallback: String)
     private val locations = listOf(
         Location("internal_shared", "Internal shared storage", "drive-harddisk", "📱"),
-        Location("application_public", "Application public", "applications-other", "▦"),
+        Location("application_public", "Application public", "folder-application-public", "▦"),
         Location("installed_apps", "Installed Applications", "start-here-android", "▦"),
         Location("partial_downloads", "Partial downloads", "folder-download", "⬇"),
         Location("external_link_history", "External link history", "document-open-recent", "🕘"),

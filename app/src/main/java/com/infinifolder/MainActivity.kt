@@ -484,7 +484,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         val needsAccessBadge: Boolean = false,
         val providerAuthority: String? = null,
         val linkEntry: ResourceEntry? = null,
-        val isHidden: Boolean = title.startsWith(".")
+        val isHidden: Boolean = title.startsWith("."),
+        val placeId: String? = null
     )
     private inner class TreeBranchView(
         context: android.content.Context,
@@ -3577,7 +3578,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             .create().also { dialog ->
                 dialog.setOnShowListener {
                     dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                        val pair = extractConfigAndCreds("test_temp_id") ?: return@setOnClickListener
+                        val pair = extractConfigAndCreds(existing?.id ?: "test_temp_id") ?: return@setOnClickListener
                         val (config, creds) = pair
                         val progress = android.app.ProgressDialog(this).apply {
                             setMessage("Testing connection to ${config.host}:${config.port}…")
@@ -6039,7 +6040,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 val path = cachedPath ?: name
                 val key = "authorized_${sourceIdentity(uri)}"
                 discoveredItems += HomeItem("💾", name, path, { openRoot(uri) }, { showAuthorizedRootActions(uri, name) }, key, uri, true, false,
-                    initialUri = uri, treeParentKey = if (isPrimaryExternalStorageUri(uri)) "internal_shared" else null)
+                    initialUri = uri, treeParentKey = if (isPrimaryExternalStorageUri(uri)) "internal_shared" else null,
+                    placeId = resourceIconResolver.storagePlaceId(uri))
                 if (cachedPath == null) {
                     pathsToResolve += uri to name
                 }
@@ -6080,7 +6082,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                             } else {
                                 Toast.makeText(this, detail, Toast.LENGTH_SHORT).show()
                             }
-                        }, treeKey = key, treeUri = grantedUri, treeExpandable = mounted, needsAccessBadge = mounted && grantedUri == null && !hasDirectAccess)
+                        }, treeKey = key, treeUri = grantedUri ?: volDir?.takeIf { hasDirectAccess }?.let(localProvider::uriFor),
+                            treeExpandable = mounted, needsAccessBadge = mounted && grantedUri == null && !hasDirectAccess,
+                            placeId = resourceIconResolver.storagePlaceId(volume))
                     }
                 }
             } catch (_: Exception) {}
@@ -6417,9 +6421,10 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             layoutParams = iconParams
         }
+        val placeId = item.placeId ?: BrowserLocations.forKey(item.treeKey)?.key?.takeIf { it in setOf("internal_shared", "application_public", "installed_apps") }
         val themePlaceBmp:Bitmap?=when {
             item.providerAuthority!=null -> resourceIconResolver.peekAppStorageIcon(item.providerAuthority,iconWidth)
-            item.treeKey=="application_public" -> iconThemeManager.peekPlaceIcon("application_public",iconWidth)
+            placeId!=null -> iconThemeManager.peekPlaceIcon(placeId,iconWidth)
             else -> null
         }
 
@@ -6434,26 +6439,27 @@ class MainActivity : Activity(), DebugDumpObserver {
                 setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconTextSizeDp(asGrid))
                 gravity = Gravity.CENTER
                 includeFontPadding = false
-                if (BrowserLocations.forKey(item.treeKey) != null && !iconThemeManager.getActiveThemeId().isNullOrBlank()) visibility = View.GONE
+                if (placeId != null && !iconThemeManager.getActiveThemeId().isNullOrBlank()) visibility = View.GONE
             }
         }
         iconFrame.addView(placeholderView, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
         val locationUri = BrowserLocations.uri(item.treeKey)
         val targetTreeUri = locationUri ?: item.treeUri
         val providerAuthority=item.providerAuthority
-        if(providerAuthority!=null || locationUri!=null || (targetTreeUri!=null && !item.needsAccessBadge)) {
+        if(providerAuthority!=null || locationUri!=null || placeId!=null || (targetTreeUri!=null && !item.needsAccessBadge)) {
             val image=IconImageView(this).apply {scaleType=ImageView.ScaleType.FIT_CENTER}
             iconFrame.addView(image,FrameLayout.LayoutParams(-1,-1,Gravity.CENTER))
             val generation=loadGeneration
             registerVisibleCardProbe(box,generation) {
                 imageIo.execute {
                     if(generation!=loadGeneration || isDestroyed)return@execute
-                    val resolved=when {
+                    val resolved=resourceIconResolver.withPlaceTheme(when {
                         providerAuthority!=null -> resourceIconResolver.resolveAppStorage(providerAuthority,item.title,iconWidth)
                         locationUri!=null -> resourceIconResolver.resolveLocation(locationUri,item.title,iconWidth)
-                        targetTreeUri!=null -> resourceIconResolver.resolveLocation(targetTreeUri,item.title,iconWidth)
+                        targetTreeUri!=null && !item.needsAccessBadge -> resourceIconResolver.resolveLocation(targetTreeUri,item.title,iconWidth)
+                        placeId!=null -> resourceIconResolver.placeTheme(placeId,item.title,iconWidth)
                         else -> return@execute
-                    }
+                    },placeId,iconWidth)
                     runOnUiThread {
                         if(generation==loadGeneration && !isDestroyed) {
                             image.setImageBitmap(resolved.bitmap);image.tag=resolved
@@ -8360,6 +8366,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             node.canExpand = item.treeExpandable
             node.onLongPress = item.longAction
             node.isHidden = item.isHidden
+            node.placeId = item.placeId
             node.needsAccessBadge = item.needsAccessBadge && key != "installed_apps" && !key.startsWith("sftp_") && !key.startsWith("ftp_") && !key.startsWith("smb_")
             node.onRequestAccess = when {
                 !node.needsAccessBadge -> null
@@ -8392,6 +8399,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     } ?: TreeNode(childKey, childUri, childItem.title, childItem.icon, 2, childAction, childItem.treeExpandable)
                     childNode.onOpen = childAction
                     childNode.canExpand = childItem.treeExpandable
+                    childNode.placeId = childItem.placeId
                     childNode.onLongPress = childItem.longAction
                     childNode.isHidden = childItem.isHidden
                     childNode.needsAccessBadge = childItem.needsAccessBadge
@@ -8725,6 +8733,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val providerAuthority = node.providerAuthority
         val uri = node.uri
         val locationUri = BrowserLocations.uri(node.key)
+        val placeId = node.placeId ?: BrowserLocations.forKey(node.key)?.key?.takeIf { it in setOf("internal_shared", "application_public", "installed_apps") }
         val linkEntry = rootContainerLinks.firstOrNull { "root_link_${it.first.uri}" == node.key }?.first
         val entry = linkEntry ?: uri?.let { target -> provider.refForUri(target)?.let { ResourceEntry(it, metadata, target) } }
         val themeRevision = iconThemeManager.revision()
@@ -8751,11 +8760,11 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         // Cached artwork is immediately usable, including while a file-list load is in flight.
         val cached = if (providerAuthority == null && locationUri == null) entry?.let { resourceIconResolver.peekCached(it, size) }
-            ?.takeUnless { it.source == "fallback" } else null
+            ?.takeUnless { it.source == "fallback" || (placeId != null && it.source == "directory-theme") } else null
         if (cached != null) { applyIcon(cached, true); return } else {
             val hot = when {
                 providerAuthority != null -> resourceIconResolver.peekAppStorageIcon(providerAuthority, size)
-                node.key == "application_public" -> iconThemeManager.peekPlaceIcon("application_public", size)
+                placeId != null -> iconThemeManager.peekPlaceIcon(placeId, size)
                 uri != null && AppsUri.isRoot(uri) -> iconThemeManager.peekPlaceIcon("installed_apps", size)
                 else -> iconThemeManager.peekFileIcon(entry?.let(resourceIconResolver::directoryIconMetadata) ?: metadata, size)
             }
@@ -8770,6 +8779,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 locationUri != null -> resourceIconResolver.resolveLocation(locationUri, node.name, size)
                 node.key == "application_public" || providerAuthority != null ->
                     resourceIconResolver.resolveApplicationPublic(node.name, size)
+                placeId != null -> resourceIconResolver.placeTheme(placeId, node.name, size)
                 entry != null -> resourceIconResolver.directoryTheme(entry, size)
                 else -> ResourceIconResolver.Icon(
                     iconThemeManager.resolveFolderIcon(node.name, size) ?: FileTypeIcons.folder(size),
@@ -8782,7 +8792,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 if (!currentRequest()) return@sourceRead
                 val resolved = runCatching {
                     if (providerAuthority != null) resourceIconResolver.resolveAppStorage(providerAuthority, node.name, size)
-                    else resourceIconResolver.resolve(requireNotNull(entry), size)
+                    else resourceIconResolver.withPlaceTheme(resourceIconResolver.resolve(requireNotNull(entry), size),placeId,size)
                 }.getOrNull() ?: return@sourceRead
                 // Source failure must not replace an already resolved theme baseline.
                 if (resolved.source == "fallback") return@sourceRead

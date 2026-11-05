@@ -140,20 +140,18 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
     }
     private fun normalized(entry: ResourceEntry) = entry.copy(metadata = entry.metadata.copy(
         mimeType = MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType)))
-    private fun connectionKey(ref: ResourceRef): NetworkConnectionStatus.Key? =
-        if (ref.providerId !in setOf("sftp", "ftp", "smb", "webdav")) null else
-            Uri.parse(ref.documentId).authority?.takeIf { it.isNotBlank() }?.let { NetworkConnectionStatus.Key(ref.providerId, it) }
-    private fun <T> watchTransport(connection: NetworkConnectionStatus.Key?, work: () -> T): T {
-        val key = connection ?: return work()
-        return NetworkConnectionStatus.watchIo(key, work)
+    private fun connectionKey(ref: ResourceRef): NetworkConnectionStatus.Target? = NetworkConnectionStatus.target(ref)
+    private fun <T> watchTransport(connection: NetworkConnectionStatus.Target?, work: () -> T): T {
+        val target = connection ?: return work()
+        return NetworkConnectionStatus.watchIo(target.key, target.path, work)
     }
     private fun <T> call(operation: String, ref: ResourceRef, action: (StorageProvider) -> ProviderResult<T>): ProviderResult<T> = StorageActivity.track(
-        if (operation in setOf("batch.begin", "replace", "replace-file", "write", "mkdir", "create", "rename", "delete", "seekable-write", "transfer-target", "metadata.apply"))
+        if (operation in setOf("batch.begin", "replace", "replace-file", "write", "mkdir", "create", "rename", "delete", "seekable-write", "native-offset-write", "transfer-target", "metadata.apply"))
             StorageActivity.Kind.FILE_OPERATION else StorageActivity.Kind.LOADING
     ) {
         // Metadata-only helpers do not prove that a network round trip succeeded.
         val connectionRequest = if (ref.providerId in setOf("sftp", "ftp", "smb", "webdav") &&
-            operation in setOf("list", "stat", "read", "write", "mkdir", "create", "rename", "delete", "seekable", "seekable-write", "transfer-target", "replace", "replace-file")) {
+            operation in setOf("list", "stat", "read", "write", "mkdir", "create", "rename", "delete", "seekable", "seekable-write", "native-offset", "native-offset-write", "transfer-target", "replace", "replace-file")) {
             Uri.parse(ref.documentId).authority?.takeIf { it.isNotBlank() }?.let {
                 NetworkConnectionStatus.begin(NetworkConnectionStatus.Key(ref.providerId, it))
             }
@@ -162,11 +160,19 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
             byId[ref.providerId]?.let(action) ?: ProviderResult.Failure("Unknown provider: ${ref.providerId}")
         } catch (e: Exception) { ProviderResult.Failure(e.message ?: "$operation failed", e) }
         connectionRequest?.let { request -> when (result) {
-            is ProviderResult.Success -> if (!result.isLoading) NetworkConnectionStatus.succeeded(request)
-                else NetworkConnectionStatus.failed(request, null)
+            is ProviderResult.Success -> if (!result.isLoading && operation != "stat") NetworkConnectionStatus.succeeded(request)
+                else NetworkConnectionStatus.observed(request)
             is ProviderResult.Failure -> NetworkConnectionStatus.failed(request, result.cause, result.message)
-            is ProviderResult.Unsupported -> NetworkConnectionStatus.failed(request, null)
+            is ProviderResult.Unsupported -> NetworkConnectionStatus.observed(request)
         } }
+        if (connectionRequest != null && operation in setOf("list", "stat", "read", "seekable", "native-offset")) {
+            val path = NetworkConnectionStatus.target(ref)?.path
+            if (path != null) when (result) {
+                is ProviderResult.Success -> if (!result.isLoading && operation != "stat") NetworkConnectionStatus.accessible(connectionRequest, path)
+                is ProviderResult.Failure -> NetworkConnectionStatus.inaccessible(connectionRequest, path, result.cause, result.message)
+                is ProviderResult.Unsupported -> Unit
+            }
+        }
         when (result) {
             is ProviderResult.Failure -> DiagnosticLog.record("storage.$operation.failed", "provider=${ref.providerId} ${result.message}", result.cause)
             is ProviderResult.Unsupported -> DiagnosticLog.record("storage.$operation.unsupported", "provider=${ref.providerId} capability=${result.capability}")
@@ -208,7 +214,7 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
     override fun openTransferTarget(ref: ResourceRef): ProviderResult<BlockDevice> = call("transfer-target", ref) { backend ->
         checkedDevice(backend.openTransferTarget(ref), writable = true, resizable = true, ref = ref)
     }
-    override fun openNativeSeekable(ref: ResourceRef, writable: Boolean): ProviderResult<BlockDevice> = call("native-offset", ref) { backend ->
+    override fun openNativeSeekable(ref: ResourceRef, writable: Boolean): ProviderResult<BlockDevice> = call(if(writable) "native-offset-write" else "native-offset", ref) { backend ->
         checkedDevice(backend.openNativeSeekable(ref, writable), writable, ref = ref)
     }
     private fun checkedDevice(result: ProviderResult<BlockDevice>, writable: Boolean,

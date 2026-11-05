@@ -742,8 +742,12 @@ class IconThemeManager(private val context: Context) {
         return when {
             lower == "installed_apps" -> listOf("start-here-android", "view-app-grid", "applications-all", "applications-other")
             lower.startsWith("internal_shared") -> listOf("drive-harddisk", "drive-removable-media", "folder")
-            lower.startsWith("application_public") -> listOf("applications-other", "system-run", "folder")
-            lower.startsWith("sftp") || lower.startsWith("ftp") || lower.startsWith("smb") || lower.startsWith("network") ->
+            lower.startsWith("usb_storage") -> listOf("drive-removable-media-usb", "drive-removable-media-usb-pendrive", "drive-removable-media", "folder")
+            lower.startsWith("sd_card") -> listOf("media-flash-sd-mmc", "media-flash-sd", "drive-removable-media-sd", "drive-removable-media", "folder")
+            lower.startsWith("removable_storage") -> listOf("drive-removable-media", "drive-harddisk", "folder")
+            lower.startsWith("cloud_storage") -> listOf("folder-cloud", "cloud-storage", "folder-remote", "network-server", "folder")
+            lower.startsWith("application_public") -> listOf("folder-application-public", "applications-other", "system-run", "folder")
+            lower.startsWith("sftp") || lower.startsWith("ftp") || lower.startsWith("smb") || lower.startsWith("webdav") || lower.startsWith("network") ->
                 listOf("network-server", "folder-remote", "network-workgroup", "folder")
             lower.startsWith("user_home") || lower.startsWith("home") -> listOf("user-home", "folder-home", "folder")
             lower.startsWith("trash") -> listOf("user-trash", "user-trash-full", "folder")

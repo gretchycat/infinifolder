@@ -25,6 +25,15 @@ class ResourceIconResolver(context: Context) {
     private val registry = IconRegistry.at(context.filesDir)
     private val identityResolver = IconIdentityResolver(registry)
     private val theme = IconThemeManager(context.applicationContext)
+    private val storagePlaces = StoragePlaceIcons(context)
+    fun storagePlaceId(volume: android.os.storage.StorageVolume): String = storagePlaces.volume(volume)
+    fun storagePlaceId(uri: Uri): String? = storagePlaces.forUri(uri)
+    fun placeTheme(placeId: String, name: String, size: Int) = Icon(
+        theme.resolvePlaceIcon(placeId, size) ?: FileTypeIcons.folder(size), "📁", name, true, source = "place-theme")
+    /** A device card may navigate to a granted subfolder; its device role replaces only the folder baseline. */
+    fun withPlaceTheme(icon: Icon, placeId: String?, size: Int): Icon =
+        if (placeId != null && icon.source == "directory-theme")
+            icon.copy(bitmap = theme.resolvePlaceIcon(placeId,size) ?: icon.bitmap, source = "place-theme") else icon
     val archives = ArchiveIconCapabilities(context)
     @Volatile var onArtworkChanged: ((Uri) -> Unit)? = null
     private val decoder = ThumbnailDecoder(context.contentResolver) { uri ->
@@ -58,7 +67,7 @@ class ResourceIconResolver(context: Context) {
         return key
     }
     fun close() { onArtworkChanged=null; NetworkConnectionStatus.removeListener(connectionListener); retries.shutdownNow() }
-    fun invalidate() { rendered.evictAll(); identities.evictAll(); linkInfo.evictAll(); NetworkIconTargets.clear(); archives.clear(); audioArtwork.clear(); bookArtwork.clear(); ResourceArtworkCache.clearMemory() }
+    fun invalidate() { rendered.evictAll(); identities.evictAll(); linkInfo.evictAll(); NetworkIconTargets.clear(); storagePlaces.clear(); archives.clear(); audioArtwork.clear(); bookArtwork.clear(); ResourceArtworkCache.clearMemory() }
     /** Renumbered links can exchange paths even when size and timestamp match. */
     fun invalidateLinks(uris: Set<Uri>) {
         val prefixes = uris.map { "$it:" }
@@ -226,7 +235,7 @@ class ResourceIconResolver(context: Context) {
         }
         return base.copy(mimeType=id.mimeType,pending=artworkPending)
     }
-    /** Shared folder baseline, with no directory enumeration or document reads. Worker-only. */
+    /** Shared folder/device baseline. Bounded Android root metadata only, no directory listing. Worker-only. */
     fun directoryTheme(entry:ResourceEntry,size:Int):Icon {
         if(AppsUri.isRoot(entry.uri))return installedApplications(entry.metadata.name,size)
         val original=fallback(entry,size)
@@ -240,7 +249,9 @@ class ResourceIconResolver(context: Context) {
                 ?: FileTypeIcons.bitmap(metadata.copy(mimeType=id.mimeType),size,id.mimeType)
             return original.copy(bitmap=artwork,source="container-theme",mimeType=id.mimeType)
         }
-        return original.copy(bitmap=theme.resolveFolderIcon(entry.metadata.name,size) ?: original.bitmap,source="directory-theme")
+        val place = storagePlaces.forUri(entry.uri)
+        return original.copy(bitmap=(place?.let { theme.resolvePlaceIcon(it,size) }
+            ?: theme.resolveFolderIcon(entry.metadata.name,size)) ?: original.bitmap,source="directory-theme")
     }
     /** A mounted container is navigable like a directory, but keeps its file identity.
      * Internal archive directories continue to use normal folder artwork. No I/O. */
@@ -270,7 +281,8 @@ class ResourceIconResolver(context: Context) {
                 runtime.local.uriFor(File(runtime.local.store.root,PinBoardDirectory.RELATIVE_PATH)),
                 name,true,null,size,mutableSetOf()) else null)
                 ?: Icon(theme.resolveLogicalIcon(location.iconName,size),location.fallback,name,true,source="browser-location")
-            else -> Icon(theme.resolveLogicalIcon(location.iconName, size), location.fallback, name, true, source="browser-location")
+            else -> Icon((if(location.key == "internal_shared") theme.resolvePlaceIcon(location.key, size) else null)
+                ?: theme.resolveLogicalIcon(location.iconName, size), location.fallback, name, true, source="browser-location")
         }
     }
 
@@ -350,8 +362,9 @@ class ResourceIconResolver(context: Context) {
     private fun resolveTarget(target:Uri,name:String,directory:Boolean,mime:String?,size:Int,seen:MutableSet<ResourceRef>):Icon? {
         if(target.scheme?.lowercase() in setOf("magnet","torrent"))return null
         val ref=runtime.provider.refForUri(target) ?: return null
-        val connection=NetworkIconTargets.connection(appContext,target)
-        if(connection==null || NetworkConnectionStatus.state(connection)==NetworkConnectionStatus.State.CONNECTED) {
+        val resource=NetworkIconTargets.resource(appContext,target)
+        val connection=resource?.key
+        if(resource==null || NetworkConnectionStatus.state(resource)==NetworkConnectionStatus.State.CONNECTED) {
             val entry=(IconWork.bounded(lane="metadata:${ref.providerId}") {runtime.provider.stat(ref)} as? ProviderResult.Success)?.value
             if(entry!=null) {
                 // Reuse the actual target's icon cache; nested links still need cycle checks.

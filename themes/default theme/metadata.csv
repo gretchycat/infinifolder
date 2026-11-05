@@ -783,3 +783,9 @@ base-fallback-folder.svg,bases/folder.svg,base_fallback,base:folder,Folder base 
 base-fallback-image.svg,bases/image.svg,base_fallback,base:image,Image base fallback,,,,base icon fallback,Infinifolder icon set,,
 base-fallback-link.svg,bases/link.svg,base_fallback,base:link,Link base fallback,,,,base icon fallback,Infinifolder icon set,,
 base-fallback-video.svg,bases/video.svg,base_fallback,base:video,Video base fallback,,,,base icon fallback,Infinifolder icon set,,
+directory-internal-storage.svg,bases/folder.svg,directory_type,directory:internal-storage,INTERNAL STORAGE,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
+directory-usb-storage.svg,bases/folder.svg,directory_type,directory:usb-storage,USB STORAGE,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
+directory-sd-card.svg,bases/folder.svg,directory_type,directory:sd-card,SD CARD,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
+directory-removable-storage.svg,bases/folder.svg,directory_type,directory:removable-storage,REMOVABLE STORAGE,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
+directory-network-storage.svg,bases/folder.svg,directory_type,directory:network-storage,NETWORK STORAGE,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
+directory-application-public.svg,bases/folder.svg,directory_type,directory:application-public,APPLICATION PUBLIC,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.

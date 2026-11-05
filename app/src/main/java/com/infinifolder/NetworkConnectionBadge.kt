@@ -40,7 +40,8 @@ internal object NetworkIconTargets {
     fun addListener(listener: (Uri?) -> Unit) { listeners.add(listener) }
     fun removeListener(listener: (Uri?) -> Unit) { listeners.remove(listener) }
 
-    fun connection(context: Context, uri: Uri?): NetworkConnectionStatus.Key? {
+    fun connection(context: Context, uri: Uri?): NetworkConnectionStatus.Key? = resource(context, uri)?.key
+    fun resource(context: Context, uri: Uri?): NetworkConnectionStatus.Target? {
         var target = uri ?: return null
         repeat(16) {
             if (!ArchiveUri.isArchiveUri(target)) return@repeat
@@ -49,9 +50,7 @@ internal object NetworkIconTargets {
         if (ContainerUris.networkType(target) == null) return null
         // Bind host aliases through the same saved-connection resolver as actual opening.
         val ref = StorageRuntime.get(context).provider.refForUri(target) ?: return null
-        if (ref.providerId !in setOf("sftp", "ftp", "smb", "webdav")) return null
-        val id = Uri.parse(ref.documentId).authority?.takeIf { it.isNotBlank() } ?: return null
-        return NetworkConnectionStatus.Key(ref.providerId, id)
+        return NetworkConnectionStatus.target(ref)
     }
 }
 
@@ -80,14 +79,16 @@ internal class NetworkConnectionBadge private constructor(
     }
     private fun refreshState() {
         if (!isAttachedToWindow) return
-        connection = NetworkIconTargets.connection(context, target ?: entry?.let(NetworkIconTargets::target))
-        val next = connection?.let(NetworkConnectionStatus::state) ?: NetworkConnectionStatus.State.UNKNOWN
+        val resource = NetworkIconTargets.resource(context, target ?: entry?.let(NetworkIconTargets::target))
+        connection = resource?.key
+        val next = resource?.let(NetworkConnectionStatus::state) ?: NetworkConnectionStatus.State.UNKNOWN
         if (next != state) blinkStarted = SystemClock.uptimeMillis()
         state = next
         visibility = if (next == NetworkConnectionStatus.State.DISCONNECTED ||
             next == NetworkConnectionStatus.State.RECONNECTING) VISIBLE else INVISIBLE
         contentDescription = when (next) {
-            NetworkConnectionStatus.State.DISCONNECTED -> "Remote connection disconnected"
+            NetworkConnectionStatus.State.DISCONNECTED -> if (connection?.let(NetworkConnectionStatus::state) == NetworkConnectionStatus.State.DISCONNECTED)
+                "Remote connection disconnected" else "Remote folder or link target unavailable"
             NetworkConnectionStatus.State.RECONNECTING -> "Remote connection reconnecting"
             else -> null
         }
@@ -142,6 +143,9 @@ internal class NetworkConnectionBadge private constructor(
     }
     companion object {
         fun attach(frame: FrameLayout, entry: ResourceEntry? = null, target: Uri? = null) {
+            // Artwork replacement rebinds pins without accumulating identical overlays/listeners.
+            for (index in frame.childCount - 1 downTo 0)
+                if (frame.getChildAt(index) is NetworkConnectionBadge) frame.removeViewAt(index)
             if (entry == null && target == null) return
             val badge = NetworkConnectionBadge(frame.context, entry, target)
             val side = (16 * frame.resources.displayMetrics.density).toInt()

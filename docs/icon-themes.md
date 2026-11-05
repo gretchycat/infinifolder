@@ -10,7 +10,7 @@ The supplied artwork in `themes/default theme` is now bundled as **InfiniFolder
 Default**, alongside the existing desktop themes. Its source is a Freeicon SVG/CSV
 bundle; the app-ready archive follows the
 [freedesktop.org icon theme layout](https://specifications.freedesktop.org/icon-theme/latest/),
-with `index.theme`, a scalable directory and logical icon names. The 779 source
+with `index.theme`, a scalable directory and logical icon names. The 790 source
 SVGs produce 3,352 logical names for extensions, MIME types, directory variants,
 URI schemes and generic fallbacks. Source SVG bytes are copied, not regenerated.
 

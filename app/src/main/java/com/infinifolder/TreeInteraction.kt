@@ -22,7 +22,8 @@ internal data class TreeNode(
     var needsAccessBadge: Boolean = false,
     var onRequestAccess: (() -> Unit)? = null,
     var providerAuthority: String? = null,
-    var isHidden: Boolean = name.startsWith(".")
+    var isHidden: Boolean = name.startsWith("."),
+    var placeId: String? = null
 )
 
 internal fun isCreateDirectoryNode(node: TreeNode): Boolean =

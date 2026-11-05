@@ -31,6 +31,13 @@ opening; current-directory drops use confirmed copy/unused-name handling.
 Documentation cleanup does not constitute a new implementation test run. Older
 checkpoint totals are historical; they are not the current failure count.
 
+The storage-icon follow-up adds default theme keys for device/application roots
+and extends unavailable-target badges to denied folders and their links. Both
+APKs build; generated SVGs were visually reviewed and documentation links check.
+No new automated tests ran. USB/SD/provider metadata, theme swaps and the expanded
+badge cases remain device checks; see [icons](resource-icons.md#default-storage-location-artwork--2026-11-04)
+and [badges](network-icon-badges.md#unavailable-folders-and-link-targets--2026-11-04).
+
 ## Implemented foundations
 
 | Area | Current implementation | Reference |

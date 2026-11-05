@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import csv
+import argparse
 import html
 import re
 import sys
@@ -26,6 +27,12 @@ BOOK_STAMP = '<path d="M45 58q11-5 19 2 8-7 19-2v27q-11-5-19 2-8-7-19-2zM64 61v2
 MEDIA_STAMP = '<rect x="44" y="55" width="32" height="27" rx="3" fill="url(#directory-light)" stroke="#18324a" stroke-width="3"/><path d="m55 61 13 8-13 8z" fill="#75b5cb" stroke="#18324a" stroke-width="2" stroke-linejoin="round"/><path d="M84 79V60l6 3" fill="none" stroke="#18324a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="79" cy="82" rx="6" ry="4" transform="rotate(-18 79 82)" fill="#f39b62" stroke="#18324a" stroke-width="2"/>'
 
 DIRECTORIES = [
+    ("internal-storage", "INTERNAL STORAGE", '<rect x="52" y="51" width="25" height="39" rx="4" fill="url(#directory-light)" stroke="#18324a" stroke-width="3"/><path d="M59 57h11M61 84h7" stroke="#18324a" stroke-width="3" stroke-linecap="round"/><rect x="57" y="63" width="15" height="14" rx="2" fill="#75b5cb" fill-opacity=".65" stroke="#18324a" stroke-width="2"/>'),
+    ("usb-storage", "USB STORAGE", '<rect x="55" y="67" width="19" height="23" rx="4" fill="url(#directory-light)" stroke="#18324a" stroke-width="3"/><path d="M59 67V52h11v15M63 56v5m4-5v5" fill="none" stroke="#18324a" stroke-width="3" stroke-linejoin="round"/><circle cx="64.5" cy="81" r="3" fill="#75b5cb"/>'),
+    ("sd-card", "SD CARD", '<path d="M53 53h24v36H50V63z" fill="url(#directory-light)" stroke="#18324a" stroke-width="3" stroke-linejoin="round"/><path d="M57 54v10m5-10v10m5-10v10m5-10v10" stroke="#f2bd72" stroke-width="3"/><path d="M56 74h15m-15 6h15" stroke="#18324a" stroke-width="3" stroke-linecap="round"/>'),
+    ("removable-storage", "REMOVABLE STORAGE", '<rect x="46" y="56" width="37" height="27" rx="4" fill="url(#directory-light)" stroke="#18324a" stroke-width="3"/><path d="m64 61 7 8H57zM57 75h14M64 83v7m-13 0h26" fill="none" stroke="#18324a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'),
+    ("network-storage", "NETWORK STORAGE", '<rect x="49" y="53" width="30" height="25" rx="3" fill="url(#directory-light)" stroke="#18324a" stroke-width="3"/><path d="M55 60h18m-18 6h12M64 79v8M47 87h34m-34-4v8m34-8v8" fill="none" stroke="#18324a" stroke-width="3" stroke-linecap="round"/><circle cx="73" cy="72" r="2" fill="#87d9a7"/>'),
+    ("application-public", "APPLICATION PUBLIC", '<rect x="45" y="55" width="29" height="30" rx="4" fill="url(#directory-light)" stroke="#18324a" stroke-width="3"/><path d="M53 63h5v5h-5zm9 0h5v5h-5zm-9 10h5v5h-5z" fill="#75b5cb" stroke="#18324a" stroke-width="1.5"/><path d="M65 78h22m-7-7 7 7-7 7" fill="none" stroke="#18324a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>'),
     ("directory", "FOLDER", '<path d="M48 63h32v24H48zM53 58h22l5 5H48z" fill="url(#directory-light)" stroke="#18324a" stroke-width="3" stroke-linejoin="round"/>'),
     ("home", "HOME", '<path d="m42 68 22-19 22 19v19H70V74H57v13H42z" fill="url(#directory-light)" stroke="#18324a" stroke-width="4" stroke-linejoin="round"/>'),
     ("documents", "DOCS", '<path d="M48 54h27l9 9v25H48zM75 54v10h9M55 70h20M55 77h20" fill="url(#directory-light)" stroke="#18324a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>'),
@@ -137,6 +144,10 @@ def svg_for(row: dict[str, str], base_svg: str, label: str, marker: str = "") ->
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--directories-only", action="store_true",
+                        help="Regenerate directory stamps, preserving existing file/URI artwork and assignments")
+    args = parser.parse_args()
     if not CSV_PATH.is_file():
         print(f"Supported type CSV not found: {CSV_PATH}", file=sys.stderr)
         return 2
@@ -146,20 +157,24 @@ def main() -> int:
     if not file_rows:
         print("No file_type or uri_type rows found.", file=sys.stderr)
         return 2
-    assignments = load_base_assignments(file_rows)
+    assignments = {} if args.directories_only else load_base_assignments(file_rows)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     metadata_path = THEME_DIR / "metadata.csv"
+    if args.directories_only and not metadata_path.is_file():
+        parser.error("--directories-only requires an existing theme metadata.csv")
+    previous_metadata = []
     if metadata_path.is_file():
         with metadata_path.open("r", encoding="utf-8-sig", newline="") as previous:
-            for old_row in csv.DictReader(previous):
+            previous_metadata = list(csv.DictReader(previous))
+            for old_row in ([] if args.directories_only else previous_metadata):
                 old_icon = OUTPUT_DIR / old_row.get("filename", "")
                 if old_icon.parent == OUTPUT_DIR and old_icon.suffix == ".svg":
                     old_icon.unlink(missing_ok=True)
     bases: dict[str, str] = {}
     metadata: list[dict[str, str]] = []
     used_names: set[str] = set()
-    jobs = [(row, row["extensions"] or row["identifier"], None) for row in rows]
+    jobs = [] if args.directories_only else [(row, row["extensions"] or row["identifier"], None) for row in rows]
     for directory, label, marker in DIRECTORIES:
         jobs.append(({
             "category": "directory_type",
@@ -213,7 +228,7 @@ def main() -> int:
             "assignment_basis": assignment_basis,
             "assignment_reason": assignment_reason,
         })
-    for base_path in sorted(BASE_DIR.glob("*.svg")):
+    for base_path in ([] if args.directories_only else sorted(BASE_DIR.glob("*.svg"))):
         filename = f"base-fallback-{base_path.stem}.svg"
         (OUTPUT_DIR / filename).write_bytes(base_path.read_bytes())
         metadata.append(dict.fromkeys(metadata[0], "") | {
@@ -222,6 +237,11 @@ def main() -> int:
             "display_label": f"{base_path.stem.title()} base fallback",
             "support_level": "base icon fallback", "module": "Infinifolder icon set",
         })
+    if args.directories_only:
+        # Replace the generated roles in place; retain custom roles and all file/URI aliases.
+        merged = {row["filename"]: row for row in previous_metadata}
+        merged.update({row["filename"]: row for row in metadata})
+        metadata = list(merged.values())
     with metadata_path.open("w", encoding="utf-8-sig", newline="") as target:
         fields = list(metadata[0])
         writer = csv.DictWriter(target, fieldnames=fields)

@@ -43,8 +43,9 @@ errors. These wrappers preserve bytes, exceptions and close/flush behavior; they
 add no buffers or write retries. Buffered reads and metadata-only parent/capability
 helpers do not assert a fresh connection.
 
-DNS/socket/timeout/closed-session failures mark disconnected. Permission errors,
-missing files, unsupported actions and deliberate cancellation do not. This is
+DNS/socket/timeout/closed-session failures mark the entire connection disconnected.
+Permission errors and missing files mark only the attempted target unavailable;
+unsupported actions and deliberate cancellation do not create a badge. This is
 process-local observed backend state, not radio monitoring or polling: actual
 requests and existing transport timeouts detect loss. It adds no preferences or
 credentials. `network.connection.state` records transitions alongside existing
@@ -64,3 +65,30 @@ individually specified. The reviewed dumps predate these icon badges.
 Final debug APK build passed in 11 seconds (410 tasks, 17 executed), including
 cached per-handle connection identity and preservation of local output stream
 types. Log: `build/network-icon-badges/app-build-final.log`.
+
+## Unavailable folders and link targets — 2026-11-04
+
+The Samba log `build/infinifolder-debug-20261105-004425-347.log` reports a reachable
+server denying its directory listing. Previously only transport failures affected
+the icon, and the separate Test connection path did not publish connection state.
+
+Store now retains versioned availability for up to 256 canonical paths per
+connection. A denied/missing browse or read target gets the steady unplugged
+emblem, including `.iflink` references to the same target. Other accessible folders
+on that server are unaffected. Transport loss still marks all of its directories
+and links disconnected. A successful list/open clears that target's failure;
+cached `stat` results and buffered reads do not assert restored connectivity.
+Encoded paths, queries and fragments remain distinct, with trailing directory
+slashes normalized. Existing SFTP/FTP/SMB/WebDAV binding and archive unwrapping are
+shared by icon resolution and badges. Native offset I/O failures are observed too.
+
+SMB probes report the saved connection's identity rather than their temporary
+isolated client identity. Fresh, connected SMB probes distinguish a denied folder
+from transport loss. Replacing pinned artwork rebinds one badge instead of adding
+duplicate overlays/listeners. The badge does not replace theme or target artwork.
+
+App and standalone viewer debug APKs build; logs are in
+`build/docs-audit/storage-place-icons-build*.log`. No automated tests were added
+or run for this follow-up. Unreachable Samba, denied folders, recovery, direct and
+linked targets, and all icon surfaces still require device verification. There
+is no background health polling: availability changes when real requests run.

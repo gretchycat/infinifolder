@@ -145,8 +145,8 @@ or run. Existing EPUB fixtures were inventoried and contain no declared covers;
 handset cover display, remote provider behavior, editor toggles and link/tree
 acceptance remain unverified. Logs: `build/book-cover-icons/app-build-final.log`.
 
-The current default theme has 779 source SVGs after adding document, source-code, font and
-GEN ROM associations. Its MIME/extension labels use the same existing theme
+The current default theme has 790 source SVGs, including document, source-code, font,
+GEN ROM and storage-location artwork. Its MIME/extension labels use the same existing theme
 generation path.
 
 ## Exact filename and location
@@ -342,3 +342,30 @@ Temporary launcher icon resolvers release their connection listeners on completi
 The app debug build passed after this repair. No automated tests were added or run;
 live remote folder-cover/file icons, aliases, nested links, offline/reconnect,
 theme changes and list/tree/pin/overlay display remain device checks.
+
+## Default storage-location artwork — 2026-11-04
+
+The bundled theme supplies separate logical artwork for internal shared storage,
+USB, SD, other removable media, network storage, cloud roots, Application public,
+and Installed Applications. [Theme keys](../themes/default%20theme/README.md#storage-and-application-locations)
+are replaceable by imported themes. Shared root classification feeds the real
+resolver, so root links and tree/list/grid destinations inherit the role; nested
+folders retain their ordinary folder icons. Explicit icons and valid directory
+covers continue to win. Device cards awaiting grants can resolve their theme role
+without enumerating the directory. A volume card navigating into a granted
+subfolder keeps its device baseline while still accepting covers/overrides.
+
+Store's `DocumentRootInfo` exposes provider document IDs, titles, local-only flags
+and icon resource names. `AppDocumentSources` reuses the same discovery rather
+than duplicating it. Root queries run through bounded icon workers and cache up to
+32 authorities for 30 seconds; volume snapshots also expire after 30 seconds and
+resolver invalidation clears them. Missing or denied provider metadata falls
+back to neutral removable artwork instead of guessing USB/SD from a title.
+Existing application-owned roots retain their owning application's artwork.
+
+The directory-only generator preserves existing file/URI artwork and aliases.
+Packaging produces 790 source SVGs and 3,381 logical icons. SVG previews were
+rendered with `rsvg-convert` and reviewed. App/standalone viewer APKs build; no
+new automated tests were added or run. On-device Virtual root roles, USB/SD/cloud
+metadata availability, theme swaps, covers, links and unavailable badges remain
+unverified. See [connection badge behavior](network-icon-badges.md).

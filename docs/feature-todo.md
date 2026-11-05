@@ -22,6 +22,14 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 
 ## Appearance follow-up
 
+- [ ] Verify the new default Virtual root device/application stamps, USB/SD
+  identification and remote-provider cloud fallback; theme replacement, covers,
+  links and tree/list/grid consistency remain device checks. Verify the extended
+  unavailable-target badge on denied Samba folders and links, server loss and
+  recovery. Earlier connection-badge acceptance remains intact. See
+  [resource icons](resource-icons.md#default-storage-location-artwork--2026-11-04)
+  and [connection badges](network-icon-badges.md#unavailable-folders-and-link-targets--2026-11-04).
+
 - [ ] Verify unavailable-location × badges in list/grid/tree and pin-board access
   prompts after reinstall/revocation. Owner confirmed granting full shared-storage
   access restores the board. The new badge, grant/action continuation, denied

@@ -51,6 +51,18 @@ cross-checked against the [freedesktop shared MIME database](https://cgit.freede
 They select a display icon; they do not prove a file's actual content. Content
 detection can override an ambiguous or misleading filename extension.
 
+## Regenerate only directory and storage roles
+
+```sh
+python3 scripts/generate_icons.py --directories-only
+```
+
+This preserves existing file/URI/base artwork and custom directory rows while
+updating the generator's directory roles. It is useful when changing stamps
+without changing reviewed file assignments. The import layout and ZIP are rebuilt.
+The new storage roles and theme override keys are documented in the
+[default theme](../default%20theme/README.md#storage-and-application-locations).
+
 ## Prepare the Freeicon submission bundle
 
 ```sh
