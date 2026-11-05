@@ -164,6 +164,36 @@ The owner subsequently confirms that running the app again opens it. This
 confirms a repeat launch only; cold-start timing and installation/exercise of
 the newer watchdog build were not reported. The initial delay remains unresolved.
 
+## Storage permission and unavailable-location badges
+
+The owner confirmed the pin-board error followed a missing full shared-storage
+grant after reinstall. `build/infinifolder-debug-20261104-235821-407.log` records
+denied local access to the ordering journal; its screenshot shows shared storage
+locked. A restored preference or link is not proof of an Android permission grant.
+
+Startup/root rendering and return from Android settings check the actual storage
+grant. The pin board stays visible in Virtual root and the tree with a themed
+**×** badge when unavailable. The shared access badge also uses × for other
+locations awaiting their own grants. Tapping the item or badge opens the existing
+appropriate access flow; the public pin board requests Android's shared-storage
+permission. Pin creation/drop, unpin, label rename and pin-link deletion check
+access before attempting work. Automatic refresh and page-icon resolution avoid
+probing the inaccessible public board; restored board navigation returns to
+Virtual root while access is missing.
+
+After grant, an in-memory pending action resumes. Denial/cancel leaves data intact;
+pin-board actions preserve the current source view while requesting access. If
+Android recreates the activity while settings are open, a saved pending-board
+flag opens the board after grant; captured mutations are not replayed across
+recreation. Duplicate access dialogs are suppressed. Existing per-provider/SAF
+grant flows remain in use.
+
+Build command: `gradle :app:assembleDebug :viewer-host:assembleDebug --offline
+--console=plain`; evidence: `build/docs-audit/pin-board-access-build.log`. No new
+automated tests were added or run. Device checks remain for × in list/grid/tree,
+grant/deny/cancel, return to the requested board/action, settings rotation and
+revocation. The owner's manual full-storage grant itself is confirmed.
+
 ## Public pin board directory
 
 The compact pin board is a view of **Internal storage → InfiniFolder → Pin board**.

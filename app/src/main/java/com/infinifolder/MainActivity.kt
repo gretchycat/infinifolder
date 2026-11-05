@@ -317,6 +317,9 @@ class MainActivity : Activity(), DebugDumpObserver {
     private var installedAppCategories = emptyList<String>()
     private var appsListGeneration = 0
     private var waitingForStorageAccess = false
+    private var storageAccessGrantedAction: (() -> Unit)? = null
+    private var pendingPinBoardAfterAccess = false
+    private var storageAccessDialog: android.app.AlertDialog? = null
     private var hadStorageAccess = false
     private lateinit var providerRegistry: StorageProviderRegistry
     private lateinit var root: LinearLayout
@@ -604,6 +607,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         applicationStorage = provider
         hadStorageAccess = localProvider.hasAccess()
         waitingForStorageAccess = savedInstanceState?.getBoolean("storage_access_pending", false) ?: false
+        pendingPinBoardAfterAccess = savedInstanceState?.getBoolean("pin_board_access_pending", false) ?: false
         pendingTreeSourceKey = savedInstanceState?.getString("pending_tree_source")
         pendingTreeTarget = savedInstanceState?.getString("pending_tree_target")?.let(Uri::parse)
         pendingTreeAuthority = savedInstanceState?.getString("pending_tree_authority")
@@ -4288,6 +4292,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun setTextSecondaryColorForTheme(): Int = com.infinifolder.theme.ThemeManager.activeTheme.textSecondary
     private fun load(uri: Uri, loadingAttempt: Int = 0) {
         if (uri == ContainerLinksProvider.ROOT) { showHomeRoot(); return }
+        if (pinBoard.isRoot(uri) && !localProvider.hasAccess()) { showHomeRoot(); return }
         val boardLegacy = if (pinBoard.isRoot(uri) && !pinBoard.migrated()) pinnedContainers.toList() else emptyList()
         if (loadingAttempt == 0) cancelEntryActionLoading()
         val requestGeneration = ++loadGeneration
@@ -5904,6 +5909,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         status.text = "Locations and storage sources"
         content.removeAllViews()
         shared.edit().remove("tree_source_installed_apps").apply()
+        updateHomeStorageAccessBadges()
 
         fun buildStaticTailItems(): List<HomeItem> {
             val tail = mutableListOf<HomeItem>()
@@ -5985,7 +5991,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             tail += rootContainerLinks.map { (entry, shortcut) -> rootLinkHomeItem(entry, shortcut) }
             tail += HomeItem("📌", "Pin board", "InfiniFolder / Pin board", { openPinBoard() },
-                treeKey = "pin_board", treeUri = pinBoard.uri, treeExpandable = true)
+                treeKey = "pin_board", treeUri = pinBoard.uri, treeExpandable = true,
+                needsAccessBadge = !localProvider.hasAccess())
             tail += HomeItem("📱", "Application public", "Storage exposed by applications", {
                 showApplicationPublic()
             }, treeKey = "application_public", treeExpandable = true)
@@ -6155,16 +6162,20 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (promptForAccess) requestSharedStorageAccess()
     }
 
-    private fun requestSharedStorageAccess() {
-        if (localProvider.hasAccess()) { showInternalShared(false); return }
+    private fun requestSharedStorageAccess(onGranted: (() -> Unit)? = null, pinBoardRequest: Boolean = false) {
+        if (localProvider.hasAccess()) { if (onGranted != null) onGranted() else showInternalShared(false); return }
+        if (storageAccessDialog?.isShowing == true) return
         val modern = android.os.Build.VERSION.SDK_INT >= 30
-        dialogBuilder().setTitle("Access internal shared storage")
-            .setMessage(if (modern) "To list the actual files and folders, including Downloads, enable Allow access to manage all files for InfiniFolder in Android settings. Android’s folder picker cannot grant the storage root or Downloads. Other apps’ private data stays restricted."
+        storageAccessDialog = dialogBuilder().setTitle(if (pinBoardRequest) "Access pin board" else "Access internal shared storage")
+            .setMessage(if (pinBoardRequest && modern) "The pin board is stored in Internal shared storage / InfiniFolder / Pin board. Enable Allow access to manage all files for InfiniFolder in Android settings to read and update its links."
+                else if (modern) "To list the actual files and folders, including Downloads, enable Allow access to manage all files for InfiniFolder in Android settings. Android’s folder picker cannot grant the storage root or Downloads. Other apps’ private data stays restricted."
                 else "Allow storage access to browse the files and folders in internal shared storage.")
             .setNegativeButton("Not now", null)
             .setPositiveButton(if (modern) "Open settings" else "Allow access") { _, _ ->
+                storageAccessGrantedAction = onGranted
+                pendingPinBoardAfterAccess = pinBoardRequest
+                waitingForStorageAccess = true
                 if (modern) {
-                    waitingForStorageAccess = true
                     try {
                         startActivity(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
                             Uri.parse("package:$packageName")))
@@ -6172,20 +6183,54 @@ class MainActivity : Activity(), DebugDumpObserver {
                         try { startActivity(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
                         catch (_: android.content.ActivityNotFoundException) {
                             waitingForStorageAccess = false
+                            storageAccessGrantedAction = null
+                            pendingPinBoardAfterAccess = false
                             Toast.makeText(this, "This device does not provide the storage access settings page.", Toast.LENGTH_LONG).show()
                         }
                     }
                 } else requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE,
                     android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 4102)
-            }.show()
+            }.show().also { dialog -> dialog.setOnDismissListener {
+                if (storageAccessDialog === dialog) storageAccessDialog = null
+            } }
+    }
+
+    private fun completeSharedStorageAccessRequest() {
+        val granted = localProvider.hasAccess()
+        val changed = granted != hadStorageAccess
+        val action = storageAccessGrantedAction
+        val openBoard = pendingPinBoardAfterAccess
+        storageAccessGrantedAction = null
+        pendingPinBoardAfterAccess = false
+        waitingForStorageAccess = false
+        hadStorageAccess = granted
+        if (changed) resourceIconResolver.invalidate()
+        if (openBoard && !(homeMode && homePage == "root")) {
+            updateHomeStorageAccessBadges()
+            rebuildTreeRoots()
+            if (homeMode) renderHomeItems()
+        } else showHomeRoot()
+        when {
+            granted && action != null -> action()
+            granted && openBoard -> openPinBoard()
+            !openBoard -> showInternalShared(false)
+        }
+    }
+
+    private fun updateHomeStorageAccessBadges() {
+        val localAccess = localProvider.hasAccess()
+        homeItems.indices.forEach { index ->
+            val item = homeItems[index]
+            if (item.treeKey == "internal_shared" || item.treeKey == "pin_board")
+                homeItems[index] = item.copy(needsAccessBadge = !localAccess)
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 4102) {
-            hadStorageAccess = localProvider.hasAccess()
-            showHomeRoot()
-            showInternalShared(false)
+            if (waitingForStorageAccess || localProvider.hasAccess() != hadStorageAccess)
+                completeSharedStorageAccessRequest()
         } else if (requestCode == 9002) {
             OperationService.start(this)
             if (pendingMinimizeAfterNotificationPermission) {
@@ -7621,6 +7666,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun addPinBoardLinks(items: List<ResourceEntry>, before: Uri? = null, swapWith: Uri? = null) {
+        if (!ensurePinBoardAccess { addPinBoardLinks(items, before, swapWith) }) return
         val legacy = if (pinBoard.migrated()) emptyList() else pinnedContainers.toList()
         io.execute {
             try {
@@ -7654,7 +7700,15 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun unpinContainer(destination: Uri) = changePinBoard { pinBoard.remove(destination) }
 
+    /** Interactive actions request the OS grant; automatic refreshes never prompt or probe denied storage. */
+    private fun ensurePinBoardAccess(retry: () -> Unit): Boolean {
+        if (localProvider.hasAccess()) return true
+        requestSharedStorageAccess(onGranted = retry, pinBoardRequest = true)
+        return false
+    }
+
     private fun changePinBoard(change: () -> Unit) {
+        if (!ensurePinBoardAccess { changePinBoard(change) }) return
         val legacy = if (pinBoard.migrated()) emptyList() else pinnedContainers.toList()
         io.execute {
             try {
@@ -7668,6 +7722,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun openPinBoard() {
+        if (!ensurePinBoardAccess { openPinBoard() }) return
         val legacy = if (pinBoard.migrated()) emptyList() else pinnedContainers.toList()
         io.execute {
             try {
@@ -7688,6 +7743,10 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun refreshPinBoard() {
         if (isDestroyed || !::pinnedContainerContent.isInitialized) return
         val request = ++pinBoardLoadGeneration
+        if (!localProvider.hasAccess()) {
+            pinBoardObserver?.stopWatching(); pinBoardObserver = null
+            return
+        }
         val legacy = if (pinBoard.migrated()) emptyList() else pinnedContainers.toList()
         io.execute {
             try {
@@ -7746,7 +7805,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 "Properties" -> showPropertiesDialog(pin.entry)
                 "Link properties" -> showPropertiesDialog(pin.entry)
                 "Unpin" -> unpinContainer(destination)
-                "Delete link" -> confirmDelete(pin.entry) { refreshPinBoard() }
+                "Delete link" -> if (ensurePinBoardAccess { confirmDelete(pin.entry) { refreshPinBoard() } })
+                    confirmDelete(pin.entry) { refreshPinBoard() }
                 "Pin to top" -> pinContainer(entry, destination)
             }
         }
@@ -8225,6 +8285,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             if (uri != null && !seen.add(sourceIdentity(uri)) && !key.startsWith("root_link_")) return@forEach
             val action = when {
                 key == "installed_apps" -> ({ openInstalledApps() })
+                key == "pin_board" -> ({ openPinBoard() })
                 uri != null && item.treeExpandable -> ({ openRoot(uri) })
                 else -> item.action
             }
@@ -8678,11 +8739,16 @@ class MainActivity : Activity(), DebugDumpObserver {
         contentDescription = "Create directory"
     }
     private fun accessBadge(): TextView = TextView(this).apply {
-        text = "🔒"; textSize = 10f; gravity = Gravity.CENTER
+        val colors = com.infinifolder.theme.ThemeManager.activeTheme
+        text = "×"; textSize = 14f; gravity = Gravity.CENTER
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        includeFontPadding = false
+        setTextColor(colors.textPrimary)
+        setAutoSizeTextTypeUniformWithConfiguration(8, 14, 1, TypedValue.COMPLEX_UNIT_SP)
         background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(if (dark) 0xFF343A31.toInt() else 0xFFE8E4D8.toInt())
-            setStroke(dp(1), if (dark) 0xFF9BA994.toInt() else 0xFF687363.toInt())
+            setColor(colors.alternateBackground)
+            setStroke(dp(1), colors.textPrimary)
         }
         contentDescription = "Tap to grant folder access"
     }
@@ -13828,6 +13894,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         enqueueOperationWindow(id)
     }
     private fun renamePinBoardLabel(entry: ResourceEntry, onRenamed: ((ResourceEntry) -> Unit)?) {
+        if (!ensurePinBoardAccess { renamePinBoardLabel(entry, onRenamed) }) return
         io.execute {
             try {
                 val label = pinBoard.displayName(entry)
@@ -13983,6 +14050,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         outState.putStringArrayList("history", ArrayList(history.map(Uri::toString)))
         outState.putStringArrayList("history_names", ArrayList(historyNames))
         outState.putBoolean("storage_access_pending", waitingForStorageAccess)
+        outState.putBoolean("pin_board_access_pending", pendingPinBoardAfterAccess)
         outState.putString("pending_tree_source", pendingTreeSourceKey)
         outState.putString("pending_tree_target", pendingTreeTarget?.toString())
         outState.putString("pending_tree_authority", pendingTreeAuthority)
@@ -14244,10 +14312,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (::localProvider.isInitialized) {
             val access = localProvider.hasAccess()
             if (waitingForStorageAccess || access != hadStorageAccess) {
-                waitingForStorageAccess = false
-                hadStorageAccess = access
-                showHomeRoot()
-                showInternalShared(false)
+                completeSharedStorageAccessRequest()
                 return
             }
         }

@@ -266,8 +266,10 @@ class ResourceIconResolver(context: Context) {
         return when (location.key) {
             "installed_apps" -> installedApplications(name, size)
             "application_public" -> resolveApplicationPublic(name, size)
-            "pin_board" -> resolveTarget(runtime.local.uriFor(File(runtime.local.store.root,PinBoardDirectory.RELATIVE_PATH)),
-                name,true,null,size,mutableSetOf()) ?: Icon(theme.resolveLogicalIcon(location.iconName,size),location.fallback,name,true,source="browser-location")
+            "pin_board" -> (if (runtime.local.hasAccess()) resolveTarget(
+                runtime.local.uriFor(File(runtime.local.store.root,PinBoardDirectory.RELATIVE_PATH)),
+                name,true,null,size,mutableSetOf()) else null)
+                ?: Icon(theme.resolveLogicalIcon(location.iconName,size),location.fallback,name,true,source="browser-location")
             else -> Icon(theme.resolveLogicalIcon(location.iconName, size), location.fallback, name, true, source="browser-location")
         }
     }

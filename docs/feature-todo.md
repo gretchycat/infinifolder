@@ -22,6 +22,12 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 
 ## Appearance follow-up
 
+- [ ] Verify unavailable-location × badges in list/grid/tree and pin-board access
+  prompts after reinstall/revocation. Owner confirmed granting full shared-storage
+  access restores the board. The new badge, grant/action continuation, denied
+  refresh suppression and settings-recreation paths need device checks; see
+  [pin-board permissions](navigation-menus-disk-usage.md#storage-permission-and-unavailable-location-badges).
+
 - [ ] Diagnose the reported failure before the first browser screen on upgrade.
   Startup recovery now retains application-initialization exceptions/linkage
   failures and does not consider the transparent launcher a successful startup.
