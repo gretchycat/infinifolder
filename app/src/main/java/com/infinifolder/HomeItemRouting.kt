@@ -12,6 +12,6 @@ internal object HomeItemRouting {
         val scheme = target.scheme?.lowercase(Locale.ROOT)?.takeIf { it.isNotBlank() } ?: return false
         if (ContainerUris.networkType(target) != null) return false
         return scheme !in setOf("file", "content", "archive", "apps", "container-links",
-            "partial-downloads", "magnet", "torrent", "infinifolder-termux")
+            "partial-downloads", "recent-external-links", "magnet", "torrent", "infinifolder-termux")
     }
 }

@@ -3680,7 +3680,12 @@ class MainActivity : Activity(), DebugDumpObserver {
             if (localProvider.owns(target) || AppsUri.isAppsUri(target) || SftpUri.isSftpUri(target) ||
                 FtpUri.isFtpUri(target) || SmbUri.isSmbUri(target) || WebDavUri.owns(target) ||
                 ArchiveUri.isArchiveUri(target) || key.startsWith("sftp_") || key.startsWith("ftp_") || key.startsWith("smb_") || key.startsWith("archive_") ||
-                key == "internal_shared" || key == "application_public" || key == "installed_apps") return@mapNotNull null
+                target.scheme in setOf(ContainerLinksProvider.SCHEME,
+                    com.infinifolder.storage.PartialDownloadsProvider.SCHEME,
+                    com.infinifolder.storage.RecentExternalLinksProvider.SCHEME,
+                    "torrent", "magnet") ||
+                BrowserLocations.owns(target) || key == "internal_shared" || key == "application_public" ||
+                key == "installed_apps") return@mapNotNull null
             key to target
         }
         if (candidates.isEmpty()) return
