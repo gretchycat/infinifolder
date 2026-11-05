@@ -9,7 +9,7 @@ import java.io.InputStream
 import java.io.OutputStream
 
 /** Common routing, normalization, error boundaries, and diagnostics for every backend. */
-class RoutingStorageProvider(vararg providers: StorageProvider, private val uriResolver: ((Uri) -> Uri?)? = null) : StorageProvider, RandomAccessTransferRouter {
+class RoutingStorageProvider(vararg providers: StorageProvider, private val uriResolver: ((Uri) -> Uri?)? = null) : StorageProvider, RandomAccessTransferRouter, NativeRandomAccessProvider {
     override val id = "router"
     var onEntriesObserved: ((ResourceRef, List<ResourceEntry>, Boolean) -> Unit)? = null
     var onResourceRemoved: ((ResourceRef) -> Unit)? = null
@@ -207,6 +207,9 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
     }
     override fun openTransferTarget(ref: ResourceRef): ProviderResult<BlockDevice> = call("transfer-target", ref) { backend ->
         checkedDevice(backend.openTransferTarget(ref), writable = true, resizable = true, ref = ref)
+    }
+    override fun openNativeSeekable(ref: ResourceRef, writable: Boolean): ProviderResult<BlockDevice> = call("native-offset", ref) { backend ->
+        checkedDevice(backend.openNativeSeekable(ref, writable), writable, ref = ref)
     }
     private fun checkedDevice(result: ProviderResult<BlockDevice>, writable: Boolean,
                               resizable: Boolean = false, ref: ResourceRef): ProviderResult<BlockDevice> {

@@ -238,7 +238,7 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
             setOnCheckedChangeListener { _, checked ->
                 editMode = checked
                 if (checked && session.document != null && session.directory == null)
-                    runWork("Preserving original bytes…", cancellable = true) { session.snapshot(applicationContext, ::reportProgress) }
+                    runWork("Preparing byte-diff journal…", cancellable = true) { session.beginEditing(applicationContext) }
             }
         }
         val strings = Switch(this).apply {
@@ -413,7 +413,7 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
     private fun stepMode(direction:Int){when(mode){
         Mode.PIC->pic.step(direction)
         Mode.WAVE->wave.step(direction)
-        Mode.HEX->{val next=page+direction.toLong()*PAGE_BYTES;if(next>=0&&next<length){page=next;selected=page;refreshPage()}}
+        Mode.HEX->{val next=page+direction.toLong()*PAGE_BYTES;if(next>=0&&next<length&&session.canRead(next)){page=next;selected=page;refreshPage()}}
     }}
     private fun applyTheme() {
         root.setBackgroundColor(theme.background)
@@ -462,9 +462,10 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
                 // Superseded requests must not allocate or read another page.
                 if (dead || request != pageToken) return@execute
                 val doc = session.document ?: return@execute
-                val start = requestedPage.coerceIn(0, if (doc.length == 0L) 0 else (doc.length - 1) / PAGE_BYTES * PAGE_BYTES)
+                var start = requestedPage.coerceIn(0, if (doc.length == 0L) 0 else (doc.length - 1) / PAGE_BYTES * PAGE_BYTES)
+                if (!session.canRead(start)) start = (session.bufferedStart + PAGE_BYTES - 1) / PAGE_BYTES * PAGE_BYTES
                 // Three bytes of context cover a UTF-8 code point crossing the page boundary.
-                val contextStart = (start - 3).coerceAtLeast(0)
+                val contextStart = (start - 3).coerceAtLeast(if (session.randomRead) 0 else session.bufferedStart)
                 val data = doc.read(contextStart, (start - contextStart).toInt() + PAGE_BYTES + 3)
                 if (dead || request != pageToken) return@execute
                 val glyphs = HexEncoding.glyphs(data, contextStart, requestedEncoding)
@@ -511,14 +512,17 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
         pic.enabled(!session.busy&&session.document!=null);wave.enabled(!session.busy&&session.document!=null)
         save.isEnabled = !session.busy && session.writable && changed > 0
         editToggle.isEnabled = !session.busy && session.document != null
-        previousPage.isEnabled = !session.busy && when(mode){Mode.HEX->page>0;Mode.PIC->pic.config.offset>0;Mode.WAVE->wave.config.offset>0}
+        previousPage.isEnabled = !session.busy && when(mode){Mode.HEX->page>0&&session.canRead((page-PAGE_BYTES).coerceAtLeast(0));Mode.PIC->pic.config.offset>0;Mode.WAVE->wave.config.offset>0}
         nextPage.isEnabled = !session.busy && when(mode){Mode.HEX->length-page>PAGE_BYTES;Mode.PIC->pic.config.offset<length;Mode.WAVE->wave.config.offset<length}
         undo.isEnabled = !session.busy && canUndo
         redo.isEnabled = !session.busy && canRedo
     }
     private fun showPosition(message: String? = null) {
         val address = "0x${selected.toString(16).uppercase(Locale.ROOT)} ($selected)"
-        status.text = listOfNotNull(message, "$length bytes · offset $address · $changed changed",
+        val size = if (session.document?.lengthKnown == false) "Unknown length" else "$length bytes"
+        status.text = listOfNotNull(message, "$size · offset $address · $changed changed",
+            if (session.recoveryPending) "Interrupted save · Save resumes the retained byte differences" else null,
+            if (!session.randomRead) "Sequential source · backward navigation within the 128 KiB memory buffer only" else null,
             if (!session.writable) "Original read-only; Save copy available" else null).joinToString("\n")
     }
     private fun runWork(label: String, cancellable: Boolean = false, done: (() -> Unit)? = null, task: () -> Unit) {
@@ -531,6 +535,7 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
         session.worker.execute {
             var failure: Exception? = null
             try { task() } catch (error: Exception) { failure = error }
+            session.cancelled.set(false)
             session.busy = false
             main.post {
                 if (dead) return@post
@@ -571,6 +576,7 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
         val message = if (error is InterruptedIOException) "Cancelled; buffered edits retained" else error.message ?: error.javaClass.simpleName
         DiagnosticLog.record("hex.operation.failed", error = error)
         status.text = message
+        if (CacheFailureUi.offerCopy(this, error, session.uri)) return
         if (error !is InterruptedIOException) ThemeManager.createDialogBuilder(this).setTitle("Hex editor").setMessage(message).setPositiveButton("OK", null).show()
     }
     private fun input(hintText: String, value: String = "") = EditText(this).apply {
@@ -600,6 +606,7 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
         dialog("Go to byte offset", form(value), "Go") {
             val offset = HexEncoding.offset(value.text.toString())
             require(offset < length || offset == 0L && length == 0L) { "Offset is outside this file" }
+            require(session.canRead(offset / PAGE_BYTES * PAGE_BYTES)) { "Sequential source: choose an offset still in the memory buffer, or use Next to read forward" }
             jump(offset)
         }
     }
@@ -642,7 +649,7 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
         }) {
             val doc = checkNotNull(session.document)
             found = doc.find(needle, from, cancelled = session.cancelled::get, progress = ::reportProgress)
-            if (found == null && from > 0) found = doc.find(needle, 0,
+            if (found == null && from > 0 && session.canRead(0)) found = doc.find(needle, 0,
                 minOf(doc.length, from + needle.size - 1), session.cancelled::get, ::reportProgress)
         }
     }
@@ -650,11 +657,11 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
         if (length == 0L) { Toast.makeText(this, "This file is empty", Toast.LENGTH_SHORT).show(); return }
         if (!editMode || session.directory == null) {
             ThemeManager.createDialogBuilder(this).setTitle("Enable byte editing?")
-                .setMessage("Create a local snapshot, then overwrite bytes without changing the file length. The source changes only after Save.")
+                .setMessage("Record original and replacement bytes in a local difference journal. The source changes only after Save, without changing its length.")
                 .setPositiveButton("Enable") { _, _ ->
                     editMode = true
-                    runWork("Preserving original bytes…", cancellable = true, done = { editToggle.isChecked = true; editBytes() }) {
-                        session.snapshot(applicationContext, ::reportProgress)
+                    runWork("Preparing byte-diff journal…", cancellable = true, done = { editToggle.isChecked = true; editBytes() }) {
+                        session.beginEditing(applicationContext)
                     }
                 }.setNegativeButton("Cancel", null).show()
             return
@@ -671,12 +678,12 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
         }
     }
     private fun mutate(change: (HexDocument) -> Unit) {
-        runWork("Updating buffered bytes…") { change(checkNotNull(session.document)); session.persist() }
+        runWork("Updating buffered bytes…") { session.mutate(change) }
     }
     private fun confirmSave() {
         if (changed == 0 || !session.writable) return
         ThemeManager.createDialogBuilder(this).setTitle("Save changed bytes?")
-            .setMessage("Replace ${session.name} with the buffered bytes? The original will be checked for changes first.")
+            .setMessage("Merge changed bytes into ${session.name}? Edited ranges are checked first and written at their original offsets. Sources without random writes use the shared cache and guarded replacement.")
             .setPositiveButton("Save") { _, _ -> runWork("Saving and verifying…", done = {
                 editMode = false; editToggle.isChecked = false
                 Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
@@ -712,9 +719,9 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
             runWork("Filling buffered bytes…", cancellable = true, done = {
                 editMode = true; editToggle.isChecked = true; jump(first)
             }) {
-                session.snapshot(applicationContext, ::reportProgress)
+                session.beginEditing(applicationContext)
                 if (session.cancelled.get()) throw InterruptedIOException("Fill cancelled")
-                checkNotNull(session.document).fill(first, last, unit); session.persist()
+                session.mutate { it.fill(first, last, unit) }
             }
         }
     }
@@ -743,10 +750,10 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
                 }.setNegativeButton("Cancel", null) else builder.setPositiveButton("OK", null)
                 builder.show()
             }) {
-                if (adjusting) session.snapshot(applicationContext, ::reportProgress)
+                if (adjusting) session.beginEditing(applicationContext)
                 val doc = checkNotNull(session.document)
                 info = doc.checksums(first, last, session.cancelled::get, ::reportProgress)
-                old = doc.read(last - 1, 1)[0].toInt() and 255
+                if (adjusting) old = doc.read(last - 1, 1)[0].toInt() and 255
             }
         }
     }
@@ -756,7 +763,7 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
         val uri = data?.data ?: return
         if (requestCode == SAVE_COPY && resultCode == Activity.RESULT_OK) {
             runWork("Saving copy…", done = { Toast.makeText(this, "Copy saved", Toast.LENGTH_SHORT).show() }) {
-                session.snapshot(applicationContext, ::reportProgress); session.save(applicationContext, uri)
+                session.beginEditing(applicationContext); session.save(applicationContext, uri)
             }
         }
     }

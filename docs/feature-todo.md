@@ -142,6 +142,14 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 
 ## Current reliability priorities
 
+- [ ] Verify native hex range merges and rollback/recovery on disposable local,
+  SFTP, SMB and SAF files; sequential archive back-scroll must stop at the 128 KiB
+  memory window. Check old drafts, unknown EOF and shared cache-limit dialogs
+  for sequential-write fallback. See [hex editing](hex-editor.md#editing-and-saves).
+- [ ] Confirm Samba tests and folder opening agree on the configured share plus
+  subfolder, and report reachable/connected/list-denied stages. The latest log
+  confirms directory-list access denial; server permissions remain external.
+
 - [ ] Diagnose the freeze/crash reported after `d5b9d4b` using a current fatal/stall
   trace. Existing exported crash logs predate that build. Startup monitoring and
   automatic debug-folder stall-log export have been added; capture/export and

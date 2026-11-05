@@ -33,9 +33,8 @@ MP3 or UTF-8 text solely because of permissive signature/character checks.
 
 `viewer-hex` supplies Android presentation and a retained document worker. Scribe's
 `HexDocument` supplies positional reads, sparse buffered edits, undo/redo, search,
-encoding and checksums. Existing storage handles, staging and guarded replacement
-remain responsible for access and saves. `MediaSourceAdapter.stageCancellable`
-is an additive entry point on the existing shared cache path.
+encoding and checksums. Store supplies native offset handles, the durable byte-diff journal, cache capacity
+and guarded sequential replacement. Hex viewing does not stage a whole file.
 
 The viewer uses the active UI theme and follows theme changes. Native ListView,
 HorizontalScrollView, ScrollView, dialogs, text selection and input fields handle
@@ -240,8 +239,9 @@ listing cannot erase a newly saved configuration.
 Image thumbnails use positional reads when available and otherwise consume only
 a bounded sequential window, with no whole-file staging. A sequential thumbnail
 cannot skip more than 16 MiB to reach an offset; it falls back to an image icon.
-The full explorer retains its normal shared-cache staging support when a source
-cannot provide random access. Backend reads remain subject to provider timeouts;
+The full explorer shares the hex session's native offset source or sequential memory window; it does not stage the source.
+Changing to an offset outside a sequential source's retained window requires
+reopening it and reading forward. Backend reads remain subject to provider timeouts;
 icon work uses the existing bounded background workers. Sidecars inside a
 read-only archive require saving to a writable location first.
 
@@ -254,46 +254,94 @@ image and its geometry.
 
 ## Editing and saves
 
-View mode uses real positional access when available. Sources without positional
-access use the existing disk cache, subject to its configured capacity. Memory
-usage is independent of total source length; this viewer does not allocate a
-whole-file byte array or impose an in-memory file-size limit.
+View mode opens the original URI, including archive entries, with native offset
+reads whenever the provider supports them. `NativeRandomAccessProvider` is Store's
+optional direct-I/O contract; its extension falls back to existing genuinely
+seekable provider handles. Providers with staged seekable views override it:
+SFTP returns its existing direct writer, and Vault offers native slices without
+extracting the entry. Permission and transport failures are not treated as an
+unsupported-capability fallback.
+
+Without random reads, Scribe's `BinaryChunkReader` reuses the text/table reader's
+eight 16 KiB blocks: **128 KiB of source bytes in memory**. Input is consumed
+sequentially. Previous/Go to can revisit only retained blocks; Next reads forward.
+Evicted bytes cannot be revisited and future offsets cannot be jumped to. No
+whole-file byte array, disk staging or extraction is requested just to view bytes.
+A source with unknown length stays sequential and discovers EOF while reading;
+editing requires a known length. Search/checksum scans can consume the stream and
+evict old viewport bytes. Returning to HEX selects a retained page if needed.
 
 HEX reads one 4096-byte page plus at most six bytes of UTF-8 boundary context.
-Page requests invalidated by newer navigation or closing the viewer are discarded
-before reading and before delivery, rather than buffering obsolete pages. Search,
-checksums, original snapshots and replacement writes scan in 64 KiB chunks.
-The full original snapshot needed before editing is stored on disk, not in RAM.
-These HEX buffer sizes do not describe PIC's separately bounded image decoding
-or WAVE's sample windows.
+Superseded page requests are discarded before reading and delivery. Search,
+checksums and explicit copy/replacement work use 64 KiB chunks. PIC decoding,
+WAVE sample windows and codec dictionary memory have separate bounded working
+sets; these are not whole-file hex buffers.
 
-Before editing, the worker creates a private original snapshot in
-`filesDir/hex_edits/<uuid>/`. Edits live in compact byte pages and a durable journal,
-with bounded undo/redo. Rotation retains the worker/handles; Android saved state
-can reopen the original snapshot and journal after process recreation. Draft
-presence does not launch the viewer during a fresh browser startup. There is no
-separate browse-all-drafts recovery UI in this first version.
+Enabling editing creates `filesDir/hex_edits/<uuid>/session.properties` and
+`differences.bin`, **without copying or hashing the entire source**. Each sorted
+journal record contains a 64-bit offset, original byte and replacement byte.
+The versioned header contains a magic identifier, original length and record
+count. Journal replacement is atomic and synced; at most 1 MiB of changed bytes
+is retained, with up to 4096 sparse 4 KiB edit blocks. Undo/redo retains up to 100
+actions under 4 MiB, including their original bytes, and need not reread an evicted
+sequential range. Edits overwrite existing bytes; insertion/deletion/resizing are
+not included. Individual text/hex/bit edits accept up to 4096 bytes.
 
-Edits overwrite existing bytes; insertion, deletion and resizing are not included.
-An individual text/hex/bit edit accepts up to 4096 encoded bytes. Up to 1 MiB of
-changed bytes and 4096 distinct 4 KiB edit pages may be buffered between saves.
-Undo retains up to 100 actions within 4 MiB of before/after data. Opening a large
-image is cheap with positional access; enabling editing needs enough local disk
-space for an entire snapshot. Saving needs a replacement file and may need the
-storage backend's recovery copy too.
+**Save** confirms the operation, opens a native writable handle when available,
+checks source length and every edited original range, and writes only replacement
+ranges at their offsets. Untouched bytes are neither copied nor rewritten.
+The journal plus a synced `merge-pending` marker remains until verification and
+a durable journal clear. Failed merges attempt offset rollback of attempted
+ranges, defer cancellation for rollback, and retain recovery data if rollback
+cannot complete. Interrupted merges can resume original/replacement mixtures;
+editing those recovery differences is blocked until the merge is completed.
+Explicitly reopening that source also finds a pending merge after process loss;
+it does not open a file automatically at application startup.
+Concurrent unrelated changes are preserved; this is optimistic range checking,
+not a lock against other applications modifying the same bytes during a save.
 
-**Save** asks before replacing the original. The existing `ContentReplacement`
-path checks the original byte revision, uses native replacement where supported
-and retains the existing recovery/rollback behavior elsewhere. A conflict/error
-leaves buffered edits available. Successfully committed bytes become the viewer's
-new baseline, avoiding an old provider cache entry. A read-only original can be
-edited locally and exported using **Save copy…**; copy export leaves changes to
-the original unsaved. Back asks before discarding changed bytes.
+When random writes are unsupported, replacement uses an existing **DiskCache**
+lease and `ContentReplacement`: the file must fit the configured aggregate and
+individual cache limits, after ordinary eviction. The existing **Copy to folder /
+Raise cache limits / Cancel** dialog handles capacity errors. The replacement is
+built by streaming from the source and merging journal differences; source
+revision checking and existing recovery copies protect sequential publication.
+No new capacity policy or dialog is introduced. Full replacement/recovery storage
+is required only on this fallback or when safely replacing an existing export.
+
+**Save copy…** streams directly into a new, resizable native target with readback
+verification; unsupported or existing export targets use guarded, budgeted
+replacement. Export leaves the original's changes unsaved. Rotation retains the
+session, and saved state reopens the source plus journal after process recreation.
+Old snapshot drafts are still readable but new sessions never create snapshots.
+Draft presence does not launch the viewer during a fresh browser startup. Back
+asks before discarding changes; an interrupted merge's recovery journal is kept.
+There is no separate browse-all-drafts recovery interface.
+
+### Archive/decompressor failure reported November 4
+
+`build/infinifolder-debug-20261105-002521-266.log` shows XZ/LZMA2 attempting a
+256 MiB dictionary allocation inside Vault, before the first hex page could load.
+Built-in AR/TAR/CPIO and 7z entry reads now return streams rather than whole-entry
+byte arrays; uncompressed AR/TAR/CPIO members also support direct slices. Stored
+ZIP and supported filesystem slices retain their existing access. Compressed
+entries remain sequential. Shared Store decoder limits bound XZ/LZMA and built-in
+7z dictionary use to one eighth of the JVM heap, clamped to 16–64 MiB. An archive
+requiring a larger dictionary is reported as unsupported under that memory limit,
+rather than allocating it and crashing. Raising disk cache limits cannot reduce
+a codec's dictionary RAM requirement.
+
+Build evidence: `build/docs-audit/hex-random-access-build.log` (app and combined
+viewer host). No tests were added or run for this revision. Device verification
+remains for native local/SFTP/SMB/SAF range saves, source conflicts, interrupted
+merge recovery, sequential back-scroll limits, old drafts, cache-limit dialogs,
+archive streaming and explicit exports.
 
 ## Search
 
 **Search…** and **Next** scan buffered bytes in bounded blocks, preserving matches
-across block boundaries and wrapping to the beginning when necessary. Search can
+across block boundaries. Wrapping to the beginning requires random access or a
+still-retained first block; a consumed sequential source cannot rewind. Search can
 be cancelled between reads. A currently blocked backend read remains subject to
 that backend's own timeout. Patterns are limited to 4096 bytes.
 
@@ -452,8 +500,10 @@ Device checks pending:
    Reject a partial final chunk and an out-of-file range.
 6. On a disposable ROM copy, calculate checksums, correct the last byte to sum00
    and sumFF, save and independently verify the resulting sum and file length.
-7. Change the original outside the viewer while editing; Save must reject the
-   conflict, retain edited bytes and allow Save copy.
+7. Change an edited original range outside the viewer; Save must reject that
+   conflict and retain differences. Unrelated changes must survive a native save.
+   Exercise interrupted merge recovery and a sequential-write fallback under the
+   shared cache limit. Check that backward navigation stops at evicted bytes.
 8. Check exclusive bottom mode buttons, tools scrolling, image zoom, editable
    dimensions, accelerating hold repeat, live previews, packed 6-bit EGA and all
    four artifact phases with known raw images. Verify manual 319/320/321 widths,

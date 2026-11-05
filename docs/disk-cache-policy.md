@@ -23,6 +23,16 @@ Status reviewed 2026-10-24. See [current confirmations and remaining work](proje
 - File-returning nested/archive consumers and read-only exports without a close signal require conservative leases; editable external opens instead use durable sessions. Those exported/nested source files are conservatively retained for the process lifetime; they can occupy the budget and cause the copy/increase-limit choice. Provider/device and viewer reads also pin managed files for their read lifetime.
 - LRU timestamps and completion markers survive restart. Incomplete managed staging is discarded on the next process initialization. Known old internal media/network/icon read caches and decompressed image caches are adopted without duplicating their data. Historical external extraction directories are not automatically deleted: their contents may have been edited under older versions and lack reliable ownership/dirty metadata.
 
+## Hex source and write fallback
+
+Hex viewing never stages the entire source. Native offset reads are preferred;
+sequential sources retain only Scribe's 128 KiB memory window and cannot scroll
+back past evicted bytes. Native saves merge durable byte differences with offset
+writes. Only unsupported random writes (or guarded replacement of an existing
+export) use a normal shared-cache lease for the full replacement. Existing cache
+limits, LRU eviction and Copy/Raise/Cancel dialogs apply without a second policy.
+See [hex editing and saves](hex-editor.md#editing-and-saves).
+
 ## Boundaries
 
 This is a **disposable disk-data cache** budget, not a maximum source-file size. Raw seekable network images keep their existing bounded range reads and are not rejected just because their logical source size exceeds 200 MB. Compressed images needing full materialization are limited by their expanded cached size. The former production 512 MB remote-image/500 MB viewer-staging thresholds are replaced by the shared policy.

@@ -2111,8 +2111,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         updateProtocolFields()
 
         fun addConnectionShortcut(connection: ProviderConnection) {
-            val targetPath = if (connection.sourceTypeId == "smb" && !connection.options["initialShare"].isNullOrBlank())
-                "/${connection.options["initialShare"].orEmpty().trim('/')}" else connection.options["initialPath"] ?: "/"
+            val targetPath = if (connection.sourceTypeId == "smb") SmbConfig.rootPath(connection.options["initialShare"], connection.options["initialPath"]) else connection.options["initialPath"] ?: "/"
             val target = Uri.Builder().scheme(connection.sourceTypeId).authority(connection.id).path(targetPath).build()
             val title = nameInput.text.toString().trim().removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION)
                 .ifBlank { connection.displayName }
@@ -2447,13 +2446,13 @@ class MainActivity : Activity(), DebugDumpObserver {
                 if(protocol!="custom") {
                     val selected=pickedConnection
                     if(selected!=null) {
-                        val targetPath=when(selected.sourceTypeId){"smb"->if(!selected.options["initialShare"].isNullOrBlank()) "/${selected.options["initialShare"]!!.trim('/')}" else selected.options["initialPath"] ?: "/";else->selected.options["initialPath"] ?: "/"}
+                        val targetPath=when(selected.sourceTypeId){"smb"->SmbConfig.rootPath(selected.options["initialShare"],selected.options["initialPath"]);else->selected.options["initialPath"] ?: "/"}
                         val target=Uri.Builder().scheme(selected.sourceTypeId).authority(selected.id).path(targetPath).build()
                         dialog.dismiss(); addContainerRootLink(ShortcutInfo(targetUri=target.toString(),displayNameOverride=display.ifEmpty { selected.displayName },targetIsDirectory=true,targetMimeType="vnd.android.document/directory"));return@setOnClickListener
                     }
                     if(display.isEmpty()){name.error="Enter a link name";return@setOnClickListener}
                     val saved:(ProviderConnection)->Unit={ connection ->
-                        val targetPath=when(connection.sourceTypeId){"smb"->if(!connection.options["initialShare"].isNullOrBlank()) "/${connection.options["initialShare"]!!.trim('/')}" else connection.options["initialPath"] ?: "/";else->connection.options["initialPath"] ?: "/"}
+                        val targetPath=when(connection.sourceTypeId){"smb"->SmbConfig.rootPath(connection.options["initialShare"],connection.options["initialPath"]);else->connection.options["initialPath"] ?: "/"}
                         val target=Uri.Builder().scheme(connection.sourceTypeId).authority(connection.id).path(targetPath).build()
                         addContainerRootLink(ShortcutInfo(targetUri=target.toString(),displayNameOverride=display.ifEmpty { connection.displayName },targetIsDirectory=true,targetMimeType="vnd.android.document/directory"))
                     }
@@ -2517,8 +2516,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun migrateContainerConnectionLinks() {
         savedConnections().filter { it.sourceTypeId in setOf("ftp", "sftp", "smb", "webdav") }.forEach { connection ->
             if (shared.getBoolean("root_link_migrated_${connection.id}", false)) return@forEach
-            val path = if (connection.sourceTypeId == "smb" && !connection.options["initialShare"].isNullOrBlank())
-                "/${connection.options["initialShare"].orEmpty().trim('/')}" else connection.options["initialPath"] ?: "/"
+            val path = if (connection.sourceTypeId == "smb") SmbConfig.rootPath(connection.options["initialShare"], connection.options["initialPath"]) else connection.options["initialPath"] ?: "/"
             val target = Uri.Builder().scheme(connection.sourceTypeId).authority(connection.id).path(path).build()
             val name = WebMetadataResolver.sanitizeFileName(connection.displayName, "Container")
             val result = containerLinkProvider.add(ShortcutInfo(targetUri = target.toString(),
@@ -2825,11 +2823,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             dialogBuilder().setTitle(connection.displayName).setItems(MenuActionIcons.labels("Open", "Test connection", "Edit connection", "Remove saved connection")) { _, which ->
                 when (which) {
                     0 -> {
-                        val initialPath = if (!connection.options["initialShare"].isNullOrBlank()) {
-                            "/${connection.options["initialShare"]!!.trim('/')}"
-                        } else {
-                            connection.options["initialPath"] ?: "/"
-                        }
+                        val initialPath = SmbConfig.rootPath(connection.options["initialShare"], connection.options["initialPath"])
                         val rootUri = SmbUri.build(connection.id, initialPath)
                         openRoot(rootUri, rememberAuthorizedRoot = false)
                     }
@@ -3635,7 +3629,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         if (onSaved != null) { onSaved(connection); return@setOnClickListener }
                         showHomeRoot()
 
-                        val initialPath = if (!config.initialShare.isNullOrBlank()) "/${config.initialShare.orEmpty().trim('/')}" else "/"
+                        val initialPath = config.rootPath
                         val rootUri = SmbUri.build(connectionId, initialPath)
                         openRoot(rootUri, rememberAuthorizedRoot = false)
                     }
@@ -5959,11 +5953,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         treeExpandable = true
                     )
                 } else if (connection.sourceTypeId == "smb") {
-                    val initialPath = if (!connection.options["initialShare"].isNullOrBlank()) {
-                        "/${connection.options["initialShare"]!!.trim('/')}"
-                    } else {
-                        connection.options["initialPath"] ?: "/"
-                    }
+                    val initialPath = SmbConfig.rootPath(connection.options["initialShare"], connection.options["initialPath"])
                     val rootUri = SmbUri.build(connection.id, initialPath)
                     val userLabel = if (connection.options["isGuest"] == "true") "guest" else (connection.options["username"]?.ifEmpty { "guest" } ?: "guest")
                     tail += HomeItem(
@@ -13616,8 +13606,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             .toMutableList()
         if (localProvider.hasAccess()) candidates.add(RecommendedTargetsView.Candidate(localProvider.rootUri, "Internal shared storage"))
         savedConnections().filter { it.sourceTypeId in setOf("sftp", "smb", "ftp", "webdav") }.forEach { connection ->
-            val path = if (connection.sourceTypeId == "smb" && !connection.options["initialShare"].isNullOrBlank())
-                "/${connection.options["initialShare"].orEmpty().trim('/')}" else connection.options["initialPath"] ?: "/"
+            val path = if (connection.sourceTypeId == "smb") SmbConfig.rootPath(connection.options["initialShare"], connection.options["initialPath"]) else connection.options["initialPath"] ?: "/"
             val uri = Uri.Builder().scheme(connection.sourceTypeId).authority(connection.id).path(path).build()
             candidates.add(RecommendedTargetsView.Candidate(uri, connection.displayName))
         }

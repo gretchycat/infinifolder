@@ -2,15 +2,25 @@ package com.infinifolder.viewer
 
 import android.content.Context
 import android.net.Uri
+import com.infinifolder.archive.BlockDevice
+import com.infinifolder.archive.asInputStream
 import com.infinifolder.model.ProviderResult
+import com.infinifolder.storage.BlockDeviceSource
+import com.infinifolder.storage.BytePatchJournal
 import com.infinifolder.storage.ContentReplacement
 import com.infinifolder.storage.ContentRevision
+import com.infinifolder.storage.DiagnosticLog
+import com.infinifolder.storage.DiskCache
+import com.infinifolder.storage.ProviderStreams
 import com.infinifolder.storage.StorageRuntime
+import com.infinifolder.storage.validateSeekableResult
+import com.infinifolder.storage.openNativeSeekable
+import io.github.gretchycat.infiniscribe.BinaryChunkReader
 import io.github.gretchycat.infiniscribe.HexDocument
+import io.github.gretchycat.infinistream.CancellationToken
 import io.github.gretchycat.infinistream.PositionalReadable
 import java.io.Closeable
 import java.io.DataInputStream
-import java.io.DataOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
@@ -19,7 +29,7 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** All document/handle access happens on this retained session's single worker. */
+/** Source handles and durable differences belong to this retained, single-worker session. */
 internal class HexSession(val uri: Uri, val name: String) {
     val worker = Executors.newSingleThreadExecutor { Thread(it, "hex-document") }
     val cancelled = AtomicBoolean()
@@ -27,9 +37,13 @@ internal class HexSession(val uri: Uri, val name: String) {
     @Volatile var directory: File? = null
     var document: HexDocument? = null
     var writable = false
-    var revision: ContentRevision? = null
+    @Volatile var recoveryPending = false
+        private set
     private var owner: Closeable? = null
-    private var staged: MediaSourceAdapter.StagedSource? = null
+    private var sequential: BinaryChunkReader? = null
+    val randomRead get() = sequential == null
+    fun canRead(offset: Long) = sequential?.canRead(offset) ?: true
+    val bufferedStart get() = sequential?.bufferedStart ?: 0L
 
     private class FileReader(file: File) : PositionalReadable, Closeable {
         private val input = RandomAccessFile(file, "r")
@@ -39,131 +53,199 @@ internal class HexSession(val uri: Uri, val name: String) {
         }
         override fun close() = input.close()
     }
+
     fun open(context: Context, restoredId: String?) {
-        try { openDocument(context, restoredId) } catch (error: Exception) {
-            document = null
-            runCatching { owner?.close() }; owner = null
-            runCatching { staged?.close() }; staged = null
+        try {
+            val editsRoot = File(context.filesDir, "hex_edits")
+            val interrupted = if (restoredId == null) editsRoot.listFiles().orEmpty().filter { candidate ->
+                candidate.isDirectory && File(candidate, "merge-pending").isFile && runCatching {
+                    Properties().apply { File(candidate, "session.properties").inputStream().use(::load) }
+                        .getProperty("uri") == uri.toString()
+                }.getOrDefault(false)
+            } else emptyList()
+            require(interrupted.size <= 1) { "Multiple interrupted byte merges exist for this source; recovery journals have been retained" }
+            val folder = (restoredId ?: interrupted.singleOrNull()?.name)?.let {
+                require(Regex("[a-f0-9-]{36}").matches(it)) { "Invalid hex edit draft" }
+                File(editsRoot, it)
+            }
+            val propsFile = folder?.let { File(it, "session.properties") }
+            val props = propsFile?.takeIf { it.isFile }?.let { file ->
+                Properties().apply { file.inputStream().use(::load) }
+            }
+            if (props != null) require(props.getProperty("uri") == uri.toString()) { "Edit draft belongs to another file" }
+            else if (folder?.exists() == true) throw IOException("The edit draft is incomplete; its files have been retained")
+
+            // Old snapshots are read only for compatibility; new sessions never create one.
+            val legacy = folder?.let { File(it, "original.bin") }?.takeIf { props?.getProperty("version") == null && it.isFile }
+            if (legacy != null) {
+                val input = FileReader(legacy); owner = input; document = HexDocument(input, input.length)
+            } else openSource(context)
+            writable = MediaSourceAdapter.isWritable(context, uri)
+            if (props != null && folder != null) {
+                directory = folder
+                val journal = File(folder, "differences.bin")
+                if (journal.isFile) {
+                    val doc = checkNotNull(document)
+                    if (doc.lengthKnown && BytePatchJournal.length(journal) != doc.length)
+                        throw IOException("The source length changed; edit differences retained")
+                    BytePatchJournal.read(journal) { doc.restoreByteChange(it.offset, it.before, it.after) }
+                    if (doc.changedCount == 0) File(folder, "merge-pending").delete()
+                    else if (File(folder, "merge-pending").isFile) {
+                        recoveryPending = true
+                        DiagnosticLog.record("hex.merge.resume-required", "journal=${folder.name} changes=${doc.changedCount}")
+                    }
+                } else {
+                    val old = File(folder, "changes.bin")
+                    if (old.isFile && legacy != null) DataInputStream(old.inputStream().buffered()).use { input ->
+                        val count = input.readInt(); require(count in 0..1024 * 1024) { "Invalid edit journal" }
+                        document!!.restoreEntries(sequence { repeat(count) { yield(input.readLong() to input.readByte()) } })
+                        require(input.read() == -1) { "Invalid edit journal" }
+                    }
+                }
+            }
+        } catch (error: Exception) {
+            document = null; runCatching { owner?.close() }; owner = null; sequential = null
             throw error
         }
     }
-    private fun openDocument(context: Context, restoredId: String?) {
-        val root = File(context.filesDir, "hex_edits")
-        if (restoredId != null) {
-            require(Regex("[a-f0-9-]{36}").matches(restoredId)) { "Invalid hex edit draft" }
-            val folder = File(root, restoredId)
-            if (File(folder, "session.properties").isFile) {
-                val props = Properties().apply { File(folder, "session.properties").inputStream().use(::load) }
-                require(props.getProperty("uri") == uri.toString()) { "Edit draft belongs to another file" }
-                val input = FileReader(File(folder, "original.bin"))
-                owner = input; document = HexDocument(input, input.length)
-                revision = ContentRevision(input.length, props.getProperty("sha256") ?: error("Missing draft revision"))
-                directory = folder
-                val journal = File(folder, "changes.bin")
-                if (journal.isFile) DataInputStream(journal.inputStream().buffered()).use { stream ->
-                    val count = stream.readInt()
-                    require(count in 0..1024 * 1024) { "Invalid edit journal" }
-                    document!!.restoreEntries(sequence {
-                        repeat(count) { yield(stream.readLong() to stream.readByte()) }
-                    })
-                    require(stream.read() == -1) { "Unexpected data in edit journal" }
-                }
-            } else if (folder.exists()) throw IOException("The saved edit draft is incomplete; its files have been retained")
+
+    private fun openSource(context: Context) {
+        val provider = StorageRuntime.get(context).provider
+        val ref = provider.refForUri(uri) ?: throw IOException("No storage provider owns this source")
+        when (val opened = validateSeekableResult(provider.openNativeSeekable(ref, false), false)) {
+            is ProviderResult.Success -> {
+                val source = try { BlockDeviceSource(opened.value) } catch (error: Exception) { opened.value.close(); throw error }
+                owner = source; sequential = null; document = HexDocument(source, source.metadata.length!!)
+            }
+            is ProviderResult.Unsupported -> {
+                val metadata = (provider.stat(ref) as? ProviderResult.Success)?.value?.metadata
+                val source = ProviderStreams.openRead(provider, ref, metadata, uri.toString())
+                val reader = BinaryChunkReader(source, CancellationToken { cancelled.get() })
+                sequential = reader; owner = reader
+                document = HexDocument.sequential(reader, metadata?.sizeBytes)
+            }
+            is ProviderResult.Failure -> throw IOException(opened.message, opened.cause)
         }
-        writable = MediaSourceAdapter.isWritable(context, uri)
-        if (document != null) return
-        val positional = MediaSourceAdapter.openStreamingPositionalSource(context, uri)
-        if (cancelled.get()) { positional?.close(); throw java.io.InterruptedIOException("Viewer load cancelled") }
-        if (positional is PositionalReadable && positional.metadata.length != null) {
-            owner = positional; document = HexDocument(positional, positional.metadata.length!!)
-        } else {
-            positional?.close()
-            staged = MediaSourceAdapter.stageCancellable(context, uri, name, cancelled::get)
-            val input = FileReader(staged!!.file)
-            owner = input; document = HexDocument(input, input.length)
-        }
+        if (cancelled.get()) throw java.io.InterruptedIOException("Viewer load cancelled")
+        DiagnosticLog.record("hex.source", "access=${if (randomRead) "native-random" else "sequential-memory-window"} bytes=${document?.length?.takeIf { document?.lengthKnown == true }}")
     }
-    /** Freeze original bytes on disk before editing; file size never determines RAM consumption. */
-    fun snapshot(context: Context, progress: (Long) -> Unit) {
+
+    /** Enabling edits creates metadata only. Original bytes are captured with each changed byte. */
+    fun beginEditing(context: Context) {
         if (directory != null) return
         val doc = checkNotNull(document)
+        require(doc.lengthKnown) { "Read to the end before editing a stream with unknown length" }
         val folder = File(File(context.filesDir, "hex_edits"), UUID.randomUUID().toString())
-        check(folder.mkdirs()) { "Cannot create edit snapshot" }
-        val partial = File(folder, "original.partial")
+        check(folder.mkdirs()) { "Cannot create byte-diff journal" }
         try {
-            val digest = java.security.MessageDigest.getInstance("SHA-256")
-            partial.outputStream().use { output ->
-                doc.writeTo(java.security.DigestOutputStream(output, digest), cancelled = cancelled::get, progress = { at ->
-                    if (folder.usableSpace < 1024 * 1024) throw IOException("Not enough storage for the edit snapshot")
-                    progress(at)
-                })
-                output.fd.sync()
+            val props = Properties().apply {
+                setProperty("version", "2"); setProperty("uri", uri.toString()); setProperty("length", doc.length.toString())
             }
-            val fingerprint = ContentRevision(doc.length, digest.digest().joinToString("") { "%02x".format(it) })
-            check(partial.renameTo(File(folder, "original.bin"))) { "Cannot retain edit snapshot" }
-            val props = Properties().apply { setProperty("uri", uri.toString()); setProperty("sha256", fingerprint.sha256) }
-            File(folder, "session.properties").outputStream().use { props.store(it, "Hex edit original"); it.fd.sync() }
-            val input = FileReader(File(folder, "original.bin"))
-            owner?.close(); staged?.close(); staged = null
-            owner = input; document = HexDocument(input, input.length); revision = fingerprint
+            File(folder, "session.properties").outputStream().use { props.store(it, "Hex byte differences"); it.fd.sync() }
+            BytePatchJournal.write(File(folder, "differences.bin"), doc.length, emptySequence())
             directory = folder
         } catch (error: Exception) { folder.deleteRecursively(); throw error }
     }
+
     fun persist() {
         val folder = directory ?: return
-        val temporary = File(folder, "changes.partial")
-        val changes = checkNotNull(document).changes()
-        temporary.outputStream().use { raw ->
-            val output = DataOutputStream(raw)
-            output.writeInt(changes.size)
-            changes.forEach { (offset, byte) -> output.writeLong(offset); output.writeByte(byte.toInt()) }
-            output.flush(); raw.fd.sync()
-        }
-        check(temporary.renameTo(File(folder, "changes.bin"))) { "Cannot retain edited bytes" }
+        check(!File(folder, "merge-pending").exists()) { "Resume the interrupted save before changing its recovery differences" }
+        val doc = checkNotNull(document)
+        BytePatchJournal.write(File(folder, "differences.bin"), doc.length,
+            doc.byteChanges().map { BytePatchJournal.Change(it.offset, it.before, it.after) })
     }
-    fun save(context: Context, destination: Uri = uri): Boolean {
-        val folder = checkNotNull(directory)
-        val file = File(folder, "replacement.bin")
-        try {
-            val digest = java.security.MessageDigest.getInstance("SHA-256")
-            file.outputStream().use { output ->
-                checkNotNull(document).writeTo(java.security.DigestOutputStream(output, digest), cancelled = cancelled::get)
-                output.fd.sync()
+
+    fun mutate(change: (HexDocument) -> Unit) {
+        val folder = checkNotNull(directory) { "Enable editing first" }
+        check(!File(folder, "merge-pending").exists()) { "Resume the interrupted save before editing its recovery differences" }
+        change(checkNotNull(document)); persist()
+    }
+
+    private fun freshInput(context: Context): java.io.InputStream {
+        val provider = StorageRuntime.get(context).provider
+        val ref = provider.refForUri(uri) ?: throw IOException("Source provider unavailable")
+        return when (val opened = validateSeekableResult(provider.openNativeSeekable(ref, false), false)) {
+            is ProviderResult.Success -> object : java.io.FilterInputStream(opened.value.asInputStream()) {
+                override fun close() = opened.value.close()
             }
-            val fingerprint = ContentRevision(file.length(), digest.digest().joinToString("") { "%02x".format(it) })
-            val provider = StorageRuntime.get(context).provider
-            val ref = provider.refForUri(destination) ?: throw IOException("No storage provider owns this destination")
-            val sameOriginal = destination == uri || ref == provider.refForUri(uri)
-            when (val result = ContentReplacement.replaceFromFile(provider, ref, file, File(context.filesDir, "save_recovery"),
-                if (sameOriginal) revision else null)) {
-                is ProviderResult.Success -> {
-                    if (sameOriginal) {
-                        // Use the committed bytes as the new baseline. A provider's disposable
-                        // read cache can retain the old metadata key after an in-place write.
-                        val fresh = File(folder.parentFile, UUID.randomUUID().toString())
-                        try {
-                            check(fresh.mkdirs()) { "Cannot retain the new baseline" }
-                            val baseline = File(fresh, "original.bin")
-                            check(file.renameTo(baseline)) { "Cannot retain the saved bytes" }
-                            val props = Properties().apply { setProperty("uri", uri.toString()); setProperty("sha256", fingerprint.sha256) }
-                            File(fresh, "session.properties").outputStream().use { props.store(it, "Hex edit original"); it.fd.sync() }
-                            val input = FileReader(baseline)
-                            owner?.close(); owner = input
-                            document = HexDocument(input, input.length); revision = fingerprint; directory = fresh
-                            folder.deleteRecursively()
-                        } catch (error: Exception) {
-                            throw IOException("The file was saved, but the editor could not refresh its draft: ${error.message}. Reopen the file before saving again.", error)
-                        }
-                    }
-                    return sameOriginal
+            is ProviderResult.Unsupported -> when (val stream = provider.openRead(ref)) {
+                is ProviderResult.Success -> stream.value
+                is ProviderResult.Failure -> throw IOException(stream.message, stream.cause)
+                is ProviderResult.Unsupported -> throw IOException("Source is not readable")
+            }
+            is ProviderResult.Failure -> throw IOException(opened.message, opened.cause)
+        }
+    }
+
+    fun save(context: Context, destination: Uri = uri): Boolean {
+        beginEditing(context)
+        val folder = checkNotNull(directory)
+        val journal = File(folder, "differences.bin")
+        val pending = File(folder, "merge-pending")
+        val provider = StorageRuntime.get(context).provider
+        val ref = provider.refForUri(destination) ?: throw IOException("Destination provider unavailable")
+        val sameOriginal = destination == uri || ref == provider.refForUri(uri)
+        if (pending.exists()) check(sameOriginal) { "Resume saving the original before exporting interrupted differences" }
+        else persist()
+        if (sameOriginal) {
+            when (val opened = validateSeekableResult(provider.openNativeSeekable(ref, true), true)) {
+                is ProviderResult.Success -> try {
+                    opened.value.use { BytePatchJournal.merge(it, journal, pending, cancelled::get) }
+                } finally { recoveryPending = pending.exists() }
+                is ProviderResult.Failure -> throw IOException(opened.message, opened.cause)
+                is ProviderResult.Unsupported -> saveSequential(context, destination, journal, sameOriginal)
+            }
+            // A crash before this durable clear leaves an idempotently resumable merge.
+            BytePatchJournal.write(journal, checkNotNull(document).length, emptySequence())
+            pending.delete()
+            recoveryPending = false
+            owner?.close(); owner = null; sequential = null; document = null; directory = null
+            folder.deleteRecursively()
+            try { openSource(context) } catch (error: Exception) {
+                throw IOException("Bytes were saved, but the source could not be reopened: ${error.message}", error)
+            }
+        } else {
+            val exported = when (val opened = validateSeekableResult(provider.openNativeSeekable(ref, true), true)) {
+                is ProviderResult.Success -> opened.value.use { target ->
+                    if (target.size == 0L && com.infinifolder.archive.DeviceCapability.TRUNCATE in target.capabilities) {
+                        freshInput(context).use { BytePatchJournal.export(target, journal, it, cancelled::get) }; true
+                    } else false
                 }
+                is ProviderResult.Failure -> throw IOException(opened.message, opened.cause)
+                is ProviderResult.Unsupported -> false
+            }
+            if (!exported) saveSequential(context, destination, journal, sameOriginal)
+        }
+        return sameOriginal
+    }
+
+    private fun saveSequential(context: Context, destination: Uri, journal: File, sameOriginal: Boolean) {
+        // The shared cache owns limits, reservations, eviction and the capacity exception/dialog.
+        DiskCache.get(context).allocate("hex-replacement.bin", BytePatchJournal.length(journal)).use { lease ->
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            freshInput(context).use { input ->
+                java.security.DigestInputStream(input, digest).use { original ->
+                    lease.output().use { output -> BytePatchJournal.render(journal, original, output, cancelled::get,
+                        verifyOriginal = sameOriginal) }
+                }
+            }
+            RandomAccessFile(lease.file, "rw").use { it.fd.sync() }
+            val revision = ContentRevision(lease.file.length(), digest.digest().joinToString("") { "%02x".format(it) })
+            lease.complete()
+            val provider = StorageRuntime.get(context).provider
+            val ref = provider.refForUri(destination) ?: throw IOException("Destination provider unavailable")
+            when (val result = ContentReplacement.replaceFromFile(provider, ref, lease.file,
+                File(context.filesDir, "save_recovery"), if (sameOriginal) revision else null)) {
+                is ProviderResult.Success -> Unit
                 is ProviderResult.Failure -> throw IOException(result.message, result.cause)
                 is ProviderResult.Unsupported -> throw IOException("Saving is unsupported for this destination")
             }
-        } finally { file.delete() }
+        }
     }
+
     fun close(discard: Boolean) {
-        try { owner?.close() } finally { staged?.close() }
-        if (discard || document?.changedCount == 0) directory?.deleteRecursively()
+        owner?.close()
+        if ((discard || document?.changedCount == 0) && directory?.let { !File(it, "merge-pending").exists() } == true)
+            directory?.deleteRecursively()
     }
 }
