@@ -8,7 +8,7 @@ Updated 2026-11-04. See [current status](project-status.md) for acceptance disti
 
 Hamburger and overflow open the same nested File/Edit/View/Select/Settings menu, with right-aligned submenu triangles. The Tree/Files toolbar label switches panes. File → New contains folder, link, external storage connection links and supported document/archive templates. Link creation offers a protocol dropdown for custom URI, SFTP/SSH, SMB/Samba, WebDAV and FTP/FTPS, with saved-connection selection or the matching setup form. The same choices are available when adding container links at Virtual root. Unsupported archive writers are disabled explicitly. View exposes hidden files, sorting and themes; Settings manages default viewers/apps; Select offers mode and wildcard/regex matching in the current folder. Most-used sorting remains future work.
 
-Persistent half-size pins sit between toolbar and breadcrumbs; the row disappears when empty except during a drag. Pin to top/Unpin are long-press actions. Dropping onto the pin board always creates links. Other breadcrumbs, containers and visible tree nodes accept transfers and linger navigation. The navigation tree has no long-press actions and uses the common theme without a separate green tint.
+Persistent half-size pins sit between toolbar and breadcrumbs; the row disappears when empty except during a drag. Pin to top/Unpin are long-press actions. Empty pin-board space creates a link; dropping onto a pinned container copies into its destination. Other breadcrumbs, containers and visible tree nodes accept transfers and linger navigation. The navigation tree has no long-press actions and uses the common theme without a separate green tint.
 
 The pin-board strip and the full breadcrumb box use the theme's alternate
 background (10% toward white on dark backgrounds, toward black on light ones).
@@ -207,17 +207,28 @@ ordinary directory view instead of the shortcut-only Unpin action.
 
 Pin to top creates a real `.iflink` containing the target and existing embedded
 artwork when available. Names are made unique without overwriting other links.
-Dragging files, folders, archives, remote items or an existing link onto the compact
-board creates `.iflink` files too, including selected sets. Drops on a pinned icon
-or the space between icons add links to the board instead of transferring into
-that icon's destination. An empty board shows **Drop here to pin a link** during
-an in-app drag. Dropping onto the public Pin board directory via its Virtual root
-entry, tree, breadcrumb or file pane follows the same link-only rule. Pinned icons
-do not navigate on drag hover. Outside the board, existing transfer rules remain.
+Dragging a file, folder, archive, remote item or an existing link onto empty compact
+board space creates an `.iflink`. Create one link per drop; batches are rejected
+without creating any links. Dropping one or multiple items onto a pinned container
+instead copies into that destination through the normal assessment, confirmation,
+conflict and cancellable transfer pipeline. This defaults to copy even on the same
+backend. A pinned ordinary file rejects the drop rather than creating a link or
+copying into its parent. The ordinary board directory uses the same distinction
+between occupied container cards and empty space. Special browser pages without
+a writable directory ask the user to open the location and choose a folder.
+
+Lingering over a pinned container for 2.1 seconds opens it in the regular file area,
+using its existing link navigation and display name. Hovering over an ordinary-file
+pin does not open it. Dragging existing board links keeps reorder/swap behavior
+and does not trigger hover navigation or copy the link into another pin's target.
+An empty board shows **Drop here to pin a link** during a single-item in-app drag;
+multi-item drags show a hint to copy into a pinned folder. Dropping onto the public
+Pin board directory itself via Virtual root, tree or breadcrumb creates a link
+using the same single-item rule. Outside the board, existing transfer rules remain.
 An existing link retains its destination, display name and embedded artwork;
 duplicate targets are skipped, invalid links and write failures are reported.
-Original items are never moved or copied by a pin-board drop. Work runs off the
-UI thread through existing link/storage APIs, then refreshes the compact board
+Empty-space link creation and pin reordering leave original targets unchanged.
+Work runs off the UI thread through existing link/storage APIs, then refreshes the compact board
 and the open board directory. This currently handles in-app drags, not arbitrary
 external-app ClipData.
 
@@ -267,6 +278,13 @@ existing cards into the candidate order using native view animations, shows a
 faded source placeholder and marks insertion boundaries. Stable layout slots
 determine the drop independently of animations. Cancel restores the original
 view; only a drop changes stored order.
+
+Container-drop/hover changes build evidence is recorded in
+`build/docs-audit/pin-board-container-drop-build.log`. App and standalone-host
+compilation, rather than touch interaction, is the available verification; real
+single/batch folder copies, hover navigation, empty-space rejection and retained
+pin reorder/swap behavior still need device verification. No tests were added or
+run for this interaction change.
 
 Ordering uses exclusive storage-provider renames, with a bounded hidden
 `.pin-board-order.json` recovery plan and temporary link names. A restart resumes

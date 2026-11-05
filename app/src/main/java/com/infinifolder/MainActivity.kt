@@ -271,6 +271,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private val dragNavigationTargets = java.util.WeakHashMap<View, DragNavigationTarget>()
     private val pinBoardDropTargets = java.util.WeakHashMap<View, Boolean>()
     private val pinBoardCards = java.util.WeakHashMap<View, Uri>()
+    private val pinBoardItems = java.util.WeakHashMap<View, PinnedContainer>()
     private var pinBoardScrollRunnable: Runnable? = null
     private var pinBoardInsertionMarker: android.graphics.drawable.Drawable? = null
     private val pinBoardPreviewOffsets = java.util.WeakHashMap<View, Float>()
@@ -7339,8 +7340,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         })
     }
 
-    private fun performBrowserDrop(payload: BrowserDragPayload, destination: Uri, targetName: String) {
-        if (pinBoard.isRoot(destination)) { addPinBoardLinks(payload.entries); return }
+    private fun performBrowserDrop(payload: BrowserDragPayload, destination: Uri, targetName: String,
+        copyOnly: Boolean = false) {
+        if (!copyOnly && pinBoard.isRoot(destination)) { addPinBoardLinks(payload.entries); return }
         if (wouldDropIntoDraggedFolder(payload.entries, destination)) {
             Toast.makeText(this, "A folder cannot be dropped into itself or one of its subfolders", Toast.LENGTH_LONG).show()
             return
@@ -7356,7 +7358,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
                 // Dropping into the source parent requests a duplicate, not a move.
                 // The shared confirmation and transfer engine choose unused names.
-                val move = !alreadyHere && payload.canMove && StorageActionPolicy.preferMoveForDrop(provider, payload.entries, destinationRef)
+                val move = !copyOnly && !alreadyHere && payload.canMove && StorageActionPolicy.preferMoveForDrop(provider, payload.entries, destinationRef)
                 val assessment = StorageActionPolicy.destination(provider, destinationRef, payload.entries, move)
                 when (assessment) {
                     is ProviderResult.Success -> assessment.value.decision.requireAllowed()
@@ -7453,6 +7455,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 minimumHeight = dp(48)
                 setPadding(dp(12), dp(8), dp(12), dp(8))
             }.also { pinBoardDropHint = it }
+            hint.text = if ((activeBrowserDragPayload?.entries?.size ?: 0) > 1)
+                "Drop onto a pinned folder to copy these items" else "Drop here to pin a link"
             hint.setTextColor(com.infinifolder.theme.ThemeManager.activeTheme.textSecondary)
             if (hint.parent == null) pinnedContainerContent.addView(hint)
         } else pinBoardDropHint?.let { (it.parent as? ViewGroup)?.removeView(it) }
@@ -7494,8 +7498,56 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (!isPinBoardDropAtScreen(x, y)) return false
         cancelDragContainerHover()
         activeDragDropHandled = true
-        addPinBoardLinks(payload.entries, pinBoardBeforeAtScreen(x, y), pinBoardSwapAtScreen(payload, x, y))
+        val item = pinBoardItemAtScreen(x, y)?.second
+        if (item != null && !isPinBoardReorder(payload)) copyIntoPinnedContainer(item, payload)
+        else addPinBoardLinks(payload.entries, pinBoardBeforeAtScreen(x, y), pinBoardSwapAtScreen(payload, x, y))
         return true
+    }
+
+    private fun isPinBoardReorder(payload: BrowserDragPayload): Boolean = payload.entries.isNotEmpty() &&
+        payload.entries.all { pinBoard.contains(it.uri) && pinBoard.isLink(it) }
+
+    /** Only occupied, visible slots are containers; the gaps and end spaces create links. */
+    private fun pinBoardItemAtScreen(x: Float, y: Float): Pair<View, PinnedContainer>? {
+        if (isInsidePinBoardStrip(x, y)) {
+            val origin = IntArray(2)
+            pinnedContainerContent.getLocationOnScreen(origin)
+            return pinBoardItems.entries.firstOrNull { (card, _) ->
+                card.isAttachedToWindow && card.isShown &&
+                    x >= origin[0] + card.left && x < origin[0] + card.right &&
+                    y >= origin[1] + card.top && y < origin[1] + card.bottom
+            }?.let { it.key to it.value }
+        }
+        if (!homeMode && pinBoard.isRoot(current)) {
+            val (card, entry) = dragCardAtScreen(x, y) ?: return null
+            return card to pinBoardItem(entry)
+        }
+        return null
+    }
+
+    private fun pinBoardItem(entry: ResourceEntry): PinnedContainer =
+        pinnedContainers.firstOrNull { it.entry.uri == entry.uri } ?: run {
+            val destination = entryDropDestination(entry)
+            PinnedContainer(entry, destination ?: entry.uri, container = destination != null)
+        }
+
+    private fun copyIntoPinnedContainer(pin: PinnedContainer, payload: BrowserDragPayload) {
+        if (!pin.container) {
+            Toast.makeText(this, "Drop onto a folder to copy, or empty pin-board space to create a link", Toast.LENGTH_LONG).show()
+            return
+        }
+        val destination = when (BrowserLocations.find(pin.destination)?.key) {
+            "internal_shared" -> localProvider.rootUri
+            "pin_board" -> pinBoard.uri
+            else -> pin.destination
+        }
+        if (BrowserLocations.owns(destination)) {
+            Toast.makeText(this, "Open this location and choose a writable folder", Toast.LENGTH_LONG).show()
+            return
+        }
+        com.infinifolder.storage.DiagnosticLog.record("browser.pin-board.container-drop",
+            "items=${payload.entries.size} operation=copy")
+        performBrowserDrop(payload, destination, pin.name, copyOnly = true)
     }
 
     private fun pinBoardSwapAtScreen(payload: BrowserDragPayload, x: Float, y: Float): Uri? {
@@ -7601,7 +7653,10 @@ class MainActivity : Activity(), DebugDumpObserver {
         }.also { pinBoardInsertionMarker = it; pinnedContainerContent.overlay.add(it) }
         marker.setBounds((edge - dp(2)).coerceAtLeast(0), dp(3), (edge + dp(2)).coerceAtLeast(dp(3)),
             (pinnedContainerContent.height - dp(3)).coerceAtLeast(dp(4)))
-        marker.alpha = if (swap != null) 0 else 255
+        val containerDrop = activeBrowserDragPayload?.let { !isPinBoardReorder(it) } == true &&
+            pinBoardItemAtScreen(point.first, point.second) != null
+        val batchLinkDrop = activeBrowserDragPayload?.let { it.entries.size > 1 && !isPinBoardReorder(it) } == true
+        marker.alpha = if (swap != null || containerDrop || batchLinkDrop) 0 else 255
         pinnedContainerContent.invalidate()
         if (pinBoardScrollRunnable == null) {
             val tick = object : Runnable {
@@ -7614,7 +7669,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                     val x = position.first - location[0]
                     val edgeWidth = minOf(dp(40), pinnedContainerBar.width / 3)
                     val direction = when { x < edgeWidth -> -1; x > pinnedContainerBar.width - edgeWidth -> 1; else -> 0 }
+                    val oldScrollX = pinnedContainerBar.scrollX
                     pinnedContainerBar.scrollBy(direction * dp(5), 0)
+                    if (pinnedContainerBar.scrollX != oldScrollX) updateDragContainerHover()
                     updatePinBoardDragFeedback()
                     pinnedContainerBar.postOnAnimation(this)
                 }
@@ -7666,6 +7723,10 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun addPinBoardLinks(items: List<ResourceEntry>, before: Uri? = null, swapWith: Uri? = null) {
+        if (items.size > 1 && items.any { !pinBoard.contains(it.uri) || !pinBoard.isLink(it) }) {
+            Toast.makeText(this, "Drop one item at a time to create a pin-board link. Multiple items can be copied into a pinned folder.", Toast.LENGTH_LONG).show()
+            return
+        }
         if (!ensurePinBoardAccess { addPinBoardLinks(items, before, swapWith) }) return
         val legacy = if (pinBoard.migrated()) emptyList() else pinnedContainers.toList()
         io.execute {
@@ -7879,6 +7940,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         cancelDragContainerHover()
         clearPinBoardDragFeedback()
         pinBoardCards.clear()
+        pinBoardItems.clear()
         for (index in 0 until pinnedContainerContent.childCount)
             dragNavigationTargets.remove(pinnedContainerContent.getChildAt(index))
         pinnedContainerContent.removeAllViews()
@@ -7895,6 +7957,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             fileCard.addLabels(pin.name, pin.container, dp(96), "")
             val label = fileCard.nameView.apply { textSize = 10f; maxLines = 1 }
             fun bindTarget() {
+                pinBoardItems[card] = pin
                 label.setFileName(pin.name, pin.container)
                 card.contentDescription = "Pinned link: ${pin.name}"
                 card.tooltipText = pin.name
@@ -7940,7 +8003,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 val target = shortcut?.targetUri?.let { raw ->
                     runCatching { Uri.parse(raw).let { if (shortcut.targetIsDirectory) it else containerUriHint(it) } }.getOrNull()
                 }?.takeIf { provider.refForUri(it) != null } ?: storedPin.destination
-                val updated = storedPin.copy(entry = freshEntry, destination = target, displayName = name)
+                val updated = storedPin.copy(entry = freshEntry, destination = target, displayName = name,
+                    container = freshEntry.metadata.isDirectory || shortcut?.targetIsDirectory == true || ArchiveUri.isArchiveUri(target))
                 val artwork = runCatching { resourceIconResolver.resolve(freshEntry, side) }.getOrNull()
                 runOnUiThread {
                     if (generation != pinnedRenderGeneration || isDestroyed || isFinishing) return@runOnUiThread
@@ -7999,6 +8063,12 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun dragHoverTargetAtScreen(x: Float, y: Float): Pair<View, DragNavigationTarget>? {
+        pinBoardItemAtScreen(x, y)?.let { (view, pin) ->
+            if (!pin.container) return null
+            return view to DragNavigationTarget(pin.destination, pin.name, pin.entry.uri, "pin") {
+                openPinnedContainer(pin)
+            }
+        }
         if (isPinBoardDropAtScreen(x, y)) return null
         dragNavigationAtScreen(x, y)?.let { return it }
         val (view, entry) = dragCardAtScreen(x, y) ?: return null
@@ -8078,6 +8148,11 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun dispatchEntryDrop(entry: ResourceEntry, payload: BrowserDragPayload): Boolean {
         cancelDragContainerHover()
         if (activeDragDropHandled) return true
+        if (pinBoard.isRoot(current) && !isPinBoardReorder(payload)) {
+            activeDragDropHandled = true
+            copyIntoPinnedContainer(pinBoardItem(entry), payload)
+            return true
+        }
         if (pinBoard.isRoot(current) || pinBoard.isRoot(entryDropDestination(entry))) {
             activeDragDropHandled = true
             addPinBoardLinks(payload.entries)
@@ -8170,7 +8245,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun dispatchNavigationDrop(target: DragNavigationTarget, payload: BrowserDragPayload): Boolean {
         cancelDragContainerHover()
         if (activeDragDropHandled) return true
-        if (target.kind == "pin" || pinBoard.isRoot(target.destination)) {
+        if (pinBoard.isRoot(target.destination)) {
             activeDragDropHandled = true
             addPinBoardLinks(payload.entries)
             return true

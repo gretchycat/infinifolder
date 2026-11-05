@@ -160,11 +160,14 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
   restart, external file changes, Rename/Properties/Unpin and preserved targets;
   test storage denial, filename conflicts, embedded artwork and link navigation.
   See [public pin board](navigation-menus-disk-usage.md#public-pin-board-directory).
-- [ ] Validate pin/unpin, half-size themed icons, horizontal clipping and link-only
-  drops onto pins, empty space/empty board, Virtual root, tree, breadcrumbs and
-  the board directory in both orientations. Include selected sets, existing links,
-  duplicate targets, SAF/network/archive targets and write failures. Pin-board
-  icons must not navigate on hover or move/copy originals.
+- [ ] Validate pin/unpin, half-size themed icons, horizontal clipping and single-link
+  drops onto empty space/empty board, Virtual root, tree, breadcrumbs and the board
+  directory in both orientations. Check that batch link creation is rejected,
+  single/batch drops onto pinned folders default to real copies, and container
+  hover opens in the regular file area after 2.1 seconds. Ordinary-file pins must
+  reject drops. Include existing links, duplicate targets, SAF/network/archive
+  destinations, read-only targets and write failures; pin reorder/swap must remain
+  independent of container copying and hover navigation.
 - [ ] Accept live pin-order previews, center-to-center swaps, gap insertion,
   First/Last drop spaces, horizontal/edge scrolling, cancel and retained scroll
   position. Check batch creation, dynamic padding, audit preservation of gaps,

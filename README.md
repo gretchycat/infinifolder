@@ -9,7 +9,7 @@ An Android file browser with interchangeable storage providers, browsable archiv
 ## Current functionality
 
 - Local shared/removable storage, user-granted SAF sources, SFTP, FTP/FTPS, SMB and WebDAV. Virtual root supports editable container links, with credentials stored separately.
-- Grid/list browsing, navigation tree, breadcrumbs, persistent pinned targets, hold-to-drag files/selected sets and hover navigation. Same-device drops move; different/unknown devices copy. Two-finger rectangle selection leaves one finger available for scrolling.
+- Grid/list browsing, navigation tree, breadcrumbs, persistent pinned targets, hold-to-drag files/selected sets and hover navigation. Same-device drops move; different/unknown devices copy. Drops onto pinned containers default to copy; empty pin-board space creates one link per drop. Two-finger rectangle selection leaves one finger available for scrolling.
 - Shared nested File/Edit/View/Select/Settings menus; wildcard/regex selection; name/MIME/size/date sorting in either direction; supported new-document/archive templates.
 - MIME-driven icons, application-package opening and explicit Browse for packaged containers such as APK/LOVE. Native links and .iflink shortcuts share resolution protections.
 - Independent image, text, Markdown, HTML, PDF, CSV, EPUB/document, font, hex/raw-media, audio and video viewers, with editing where supported. External editing uses durable working copies, source fingerprints and explicit conflict choices.
