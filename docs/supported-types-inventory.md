@@ -1,33 +1,28 @@
 # Supported type inventory
 
 [supported-types.csv](supported-types.csv) is a UTF-8 CSV (with BOM for spreadsheet
-applications), generated from the current static registries and implementation
-sources. Regenerate from the repository root:
+applications), exported from the capability providers on the app's actual linked
+runtime classpath. It includes every handler's declared format profiles, including
+overlapping handlers and filesystem/disk image formats supplied by Vault. Regenerate
+it from the repository root with:
 
 ```sh
-python3 scripts/export-supported-types.py
+gradle :app:exportSupportedTypes --offline
 ```
 
-Columns separate category/identifier, extensions, MIME, capabilities, support level,
-write support, owning module, limitations and source paths. Categories cover MIME
-identifiers, file extensions, archive/package/image patterns, filesystems,
-partition/volume formats and URI schemes. Multi-valued extensions use semicolons.
+The task first exports `app/build/generated/capabilities/catalog.json` from the
+linked libraries and then writes the CSV. Columns include handler/library identity,
+profile index, operations, MIME types, extensions, URI schemes, magic signatures,
+metadata, limitations, attributes and runtime availability. Multi-valued selectors
+use semicolons. Availability in a build snapshot is `NOT_EVALUATED`; build-time
+discovery does not initialize platform codecs or open content.
 
-This is an inventory of advertised associations, routing and implemented subsets,
-not proof that every codec, filesystem feature or corrupt/encrypted/multipart input
-works. MIME recognition is explicitly separate from rendering or playback. Archive
-recognition requires actual parser validation before browsing. Filesystem writes
-are listed separately from reads. URI icon/external-handler support is distinguished
-from real storage providers; NFS has no native storage implementation.
-
-The 2026-11-04 exported snapshot contains **1,440 rows**: 709 file extension/pattern rows,
-354 MIME identifiers, 332 archive/package/image rows, 14 filesystem rows,
-4 partition/volume rows and 27 URI rows. Overlap between categories is intentional.
-File rows without a static MIME association leave that cell empty: Android's MIME
-map, provider metadata and content detection may supply it at runtime. Device MIME
-tables, arbitrary `text/*` fallbacks, user-defined MIME/URI rules and external app
-handlers are open-ended; this file does not export private user settings or
-credentials. Platform codec availability and per-device acceptance remain separate.
+This is an inventory of handler declarations, not proof that every codec,
+filesystem feature or corrupt/encrypted/multipart input works. MIME recognition is
+separate from rendering or playback. Archive recognition requires actual parser
+validation before browsing. Per-handler operations, limitations and resource-level
+capability checks describe read/write restrictions. URI recognition is distinct
+from storage-provider availability.
 
 Format limits and fixture evidence are documented in [images](image-formats.md),
 [audio](audio-formats.md), [video](video-formats.md),
@@ -35,15 +30,14 @@ Format limits and fixture evidence are documented in [images](image-formats.md),
 
 ## Installed handler catalog
 
-The CSV is the static compatibility inventory. For installed handlers, operations,
-overlapping candidates, dependency limits and viewer components, run:
+For the JSON catalog used both by Android intent generation and the CSV, run:
 
 ```sh
 gradle :app:exportRuntimeCapabilities --offline
 ```
 
 Output: `app/build/generated/capabilities/catalog.json` (schemaVersion 1). This
-queries the actual dependency classpath without starting InfiniFolder. Its
-availability values are NOT_EVALUATED; use CapabilityJson on the running platform
-for runtime dependency reports. No user MIME/icon/URI overrides or credentials are
-exported. See [runtime discovery](runtime-capabilities.md).
+queries the actual dependency classpath without starting InfiniFolder. Runtime
+availability from this build snapshot is `NOT_EVALUATED`; use CapabilityJson on the
+running platform for optional dependency reports. No user MIME/icon/URI overrides
+or credentials are exported. See [runtime discovery](runtime-capabilities.md).

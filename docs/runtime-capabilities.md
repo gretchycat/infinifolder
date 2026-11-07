@@ -134,10 +134,17 @@ existing safe publication/recovery rules.
   existing backend-specific wizards remain compatible.
 - `viewer-*` modules are found by the build, linked into app/all-viewer host and
   self-register through services/manifests. `hex` is now a standalone selector.
-- Android install-time filters supplement compatibility associations with a JSON
-  catalog exported from the actual dependency classpath. Providers execute without
-  Android application startup; availability is explicitly NOT_EVALUATED in this
-  build snapshot. Both AAR classes and Java resources enter the export classpath.
+- Android install-time filters are generated only from a JSON catalog exported
+  from each app's actual dependency classpath. Providers execute without Android
+  application startup; availability is explicitly NOT_EVALUATED in this build
+  snapshot. Both AAR classes and Java resources enter the export classpath. The
+  generated summary names every contributing handler and library. Vault's archive
+  and disk/filesystem-image MIME/extension profiles and Store's `.iflink` MIME and
+  extension association therefore enter Android registration from library data.
+  Opening `.iflink` enters `LinkResolver` before viewer defaults are checked, then
+  follows its target to a directory, internal viewer, app or external URI. Android reads
+  these filters at package install/update time; the running app uses the same
+  installed registry for recognition and dispatch.
 
 Adding support means implementing/registering the proper typed handler/component
 and linking its module. It does not require an InfiniFolder format switch, duplicate
@@ -149,7 +156,7 @@ own Android Activity/manifest and declared dependencies.
 | Area | Audit result / retained restriction |
 | --- | --- |
 | App/UI dependencies | None from libinfini repositories; Android framework dependencies remain explicit Android modules. Viewers use shared storage composition and content libraries without starting MainActivity. |
-| Format/protocol lists | Host recognition delegates to libraries. Historical MIME seeds, package safety policies and static inventory remain compatibility/presentation data, not a second decoder catalog. |
+| Format/protocol lists | Host recognition delegates to libraries. Android intent filters and the supported-types CSV use linked runtime capability descriptors; historical MIME seeds remain compatibility/presentation data. |
 | Legacy handler granularity | Canvas legacy/platform formats, Sound legacy formats and Vault parsers retain grouped compatibility handlers. These report CONDITIONAL and parser-specific limitations; they do not claim every variant or native dependency succeeds. Further splitting can use the same registry. |
 | Optional dependencies | Portable JAAD/JLayer classes, Android audio codec list and optional native symbols/ABI are checked; missing implementations are unavailable. SoundFont/source/codec and libVLC surface constraints remain per-open checks. |
 | Read/write | General Vault discovery offers reads/list/extract, not universal writes. Actual provider flags and input metadata restrict mutation. Read-only Office documents are not promoted to CSV editors. |

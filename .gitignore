@@ -12,6 +12,7 @@ __pycache__/
 
 # Temporary loose files in repository root
 /*.zip
+!/icons.zip
 /*.ZIP
 /*.bin
 /*.torrent

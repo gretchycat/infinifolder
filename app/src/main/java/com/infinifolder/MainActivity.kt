@@ -546,6 +546,11 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
     private var forwardingHomeShortcut = false
+    /** External file/content requests should return to their calling app after a viewer closes. */
+    private var externalViewerLaunchPending = false
+    private var closeAfterExternalViewerReturn = false
+    private var externalLaunchUiHidden = false
+    private var externalLaunchRequestActive = false
     override fun onContentChanged() {
         super.onContentChanged()
         if (backNavigation != null) {
@@ -573,6 +578,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             return
         }
         super.onCreate(savedInstanceState)
+        if (isExternalResourceRequest(intent)) hideBrowserForExternalLaunch()
         backNavigation = ActivityBackNavigation.register(this) { onBackPressed() }
         com.infinifolder.viewer.DebugTools.install(application)
         initSafetyNotificationChannel()
@@ -581,6 +587,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         com.infinifolder.storage.StorageActivity.addListener(storageActivityListener)
         operations.addListener(operationsListener)
         shared = getSharedPreferences("browser", MODE_PRIVATE)
+        closeAfterExternalViewerReturn = savedInstanceState?.getBoolean("close_after_external_viewer_return", false) == true
         if (!shared.getBoolean("pin_board_directory_migrated", false))
             pinnedContainers.addAll(PinnedContainerPreferences(shared).load())
         isOperationWindowHidden = savedInstanceState?.getBoolean("operation_window_hidden", false) ?: false
@@ -638,21 +645,32 @@ class MainActivity : Activity(), DebugDumpObserver {
         logicalLocationPrefix = savedInstanceState?.getString("logical_location_prefix")
         currentProgramName = savedInstanceState?.getString("current_program_name")
         showHomeRoot()
-        val saved = savedInstanceState?.getStringArrayList("history")?.map(Uri::parse)
-        if (!saved.isNullOrEmpty()) {
-            history.addAll(saved)
-            val names = savedInstanceState.getStringArrayList("history_names")
-            if (names != null && names.size == saved.size) historyNames.addAll(names) else historyNames.addAll(saved.mapIndexed { index, _ -> if (index == 0) "Storage" else "Folder" })
-            current = history.last(); homeMode = false; updateCreateAction(); renderLocation(); load(current!!)
-        } else shared.getString("root", null)?.let {
-            val savedRoot = Uri.parse(it)
-            if (AppsUri.isAppsUri(savedRoot)) {
-                shared.edit().remove("root").apply()
+        // A VIEW request is the launch destination. Restoring the previous
+        // browser location here can race the request and leave an external item
+        // sitting behind the saved location (often the pin board).
+        if (!isExternalResourceRequest(intent)) {
+            val saved = savedInstanceState?.getStringArrayList("history")?.map(Uri::parse)
+            if (!saved.isNullOrEmpty()) {
+                history.addAll(saved)
+                val names = savedInstanceState.getStringArrayList("history_names")
+                if (names != null && names.size == saved.size) historyNames.addAll(names) else historyNames.addAll(saved.mapIndexed { index, _ -> if (index == 0) "Storage" else "Folder" })
+                current = history.last(); homeMode = false; updateCreateAction(); renderLocation(); load(current!!)
             } else {
-                openRoot(savedRoot)
+                val savedRoot = shared.getString("root", null)?.let(Uri::parse)
+                if (savedRoot == null || AppsUri.isAppsUri(savedRoot) || pinBoard.isRoot(savedRoot)) {
+                    // The pin board and installed-apps page are virtual destinations,
+                    // not useful startup locations. Start in device shared storage
+                    // instead of reopening the pin board from its persisted root.
+                    if (savedRoot != null) shared.edit().remove("root").apply()
+                    showInternalShared()
+                } else {
+                    openRoot(savedRoot)
+                }
             }
         }
-        dispatchLaunchRequest(intent, restoringLaunch)
+        // Saved browser UI state does not make a newly delivered external file
+        // request stale. Only a recents/history relaunch should suppress it.
+        dispatchLaunchRequest(intent, intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0)
         io.execute { HomeShortcuts.refreshPinned(applicationContext) }
         com.infinifolder.storage.DiagnosticLog.record("startup.browser.created", "elapsedMs=${SystemClock.uptimeMillis() - started}")
     }
@@ -677,10 +695,21 @@ class MainActivity : Activity(), DebugDumpObserver {
         setIntent(Intent(this, MainActivity::class.java).setAction(Intent.ACTION_MAIN))
         // A fresh browser launch also cancels older asynchronous resource opens.
         browserNavigationGeneration++
-        if (launch == null || restoring) {
-            if (restoring) com.infinifolder.storage.DiagnosticLog.record("browser.launch.restored", "resourceRequest=ignored")
+        if (launch == null) return
+        val externalUri = externalResourceUri(launch)
+        val hasExternalRequest = launch.action in setOf(Intent.ACTION_VIEW, Intent.ACTION_EDIT,
+            Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE) && externalUri != null
+        if (hasExternalRequest) hideBrowserForExternalLaunch()
+        com.infinifolder.storage.DiagnosticLog.record("browser.launch.request",
+            "action=${launch.action ?: "none"} scheme=${externalUri?.scheme ?: launch.data?.scheme ?: "none"} " +
+                "mime=${launch.type ?: "none"} restored=$restoring externalTarget=$hasExternalRequest")
+        if (restoring && !hasExternalRequest) {
+            com.infinifolder.storage.DiagnosticLog.record("browser.launch.restored", "resourceRequest=ignored")
             return
         }
+        externalViewerLaunchPending = hasExternalRequest &&
+            externalUri?.scheme?.lowercase(Locale.ROOT) in setOf("content", "file")
+        closeAfterExternalViewerReturn = false
         handleCacheCopyRequest(launch)
         handleExternalLinkIntent(launch)
         handleHomeItemIntent(launch)
@@ -693,6 +722,32 @@ class MainActivity : Activity(), DebugDumpObserver {
                 }
             }
         }
+    }
+
+    /** Extracts Android's common URI payload forms without assuming a file path. */
+    private fun externalResourceUri(request: Intent): Uri? = runCatching {
+        request.data
+            ?: androidx.core.content.IntentCompat.getParcelableExtra(request, Intent.EXTRA_STREAM, Uri::class.java)
+            ?: androidx.core.content.IntentCompat.getParcelableArrayListExtra(request, Intent.EXTRA_STREAM, Uri::class.java)?.firstOrNull()
+            ?: request.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+            ?: request.getStringExtra(Intent.EXTRA_TEXT)?.let { raw -> Uri.parse(raw.trim()).takeIf { it.scheme != null } }
+    }.getOrNull()
+
+    private fun isExternalResourceRequest(request: Intent?): Boolean = request != null &&
+        request.action in setOf(Intent.ACTION_VIEW, Intent.ACTION_EDIT,
+            Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE) && externalResourceUri(request) != null
+
+    private fun hideBrowserForExternalLaunch() {
+        externalLaunchUiHidden = true
+        externalLaunchRequestActive = true
+        window.decorView.visibility = View.INVISIBLE
+    }
+
+    private fun revealBrowserAfterExternalLaunch() {
+        externalLaunchRequestActive = false
+        if (!externalLaunchUiHidden) return
+        externalLaunchUiHidden = false
+        window.decorView.visibility = View.VISIBLE
     }
 
     private fun handleHomeItemIntent(request: Intent?) {
@@ -727,25 +782,42 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun handleExternalLinkIntent(request: Intent?) {
-        if (request?.action != Intent.ACTION_VIEW) return
-        val uri = request.data ?: return
-        if (BrowserLocations.owns(uri)) { request.action = null; openBrowserLocation(uri); return }
+        val request = request ?: return
+        if (request.action !in setOf(Intent.ACTION_VIEW, Intent.ACTION_EDIT,
+                Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) return
+        val uri = externalResourceUri(request) ?: return
+        com.infinifolder.storage.DiagnosticLog.record(
+            "browser.external-open.received",
+            "action=${request.action} scheme=${uri.scheme ?: "none"} mime=${request.type ?: "none"}"
+        )
+        if (BrowserLocations.owns(uri)) {
+            request.action = null
+            revealBrowserAfterExternalLaunch()
+            openBrowserLocation(uri)
+            return
+        }
         val scheme = uri.scheme?.lowercase(Locale.ROOT)
         if (scheme == "infinifolder-termux") {
             request.action = null
+            revealBrowserAfterExternalLaunch()
             reviewExternalTermuxCommand(uri)
             return
         }
         if (scheme !in externalLinkSchemes) {
             val suppliedMime = request.type
             request.action = null
-            recordExternalLinkVisit(uri, externalLinkName(uri), suppliedMime)
-            openExternalResource(uri, suppliedMime)
+            val title = externalLinkName(uri)
+            recordExternalLinkVisit(uri, title, suppliedMime)
+            if (scheme.equals("content", true) || scheme.equals("file", true))
+                openExternalResource(uri, suppliedMime)
+            else
+                launchExternalViewIntent(uri, suppliedMime, title)
             return
         }
         request.action = null
         val title = externalLinkName(uri)
         recordExternalLinkVisit(uri, title)
+        revealBrowserAfterExternalLaunch()
         openContainerLinkUri(uri, title, requireContainer = false, origin = LinkNavigationOrigin.EXTERNAL_HISTORY)
     }
 
@@ -768,13 +840,55 @@ class MainActivity : Activity(), DebugDumpObserver {
         val generation = ++browserNavigationGeneration
         io.execute {
             try {
+                // A third-party file manager can deliver a .iflink as an opaque
+                // content:// URI whose provider blocks or omits metadata queries.
+                // The shortcut JSON is small and already covered by the URI grant,
+                // so inspect it directly before asking the storage router to stat it.
+                val shortcutInfo = if (isExternalShortcutRequest(uri, suppliedMime)) {
+                    try {
+                        readExternalShortcut(uri).also {
+                            shortcutCache.put(uri.toString(), it)
+                            com.infinifolder.storage.DiagnosticLog.record(
+                                "browser.external-shortcut.read", "success=true"
+                            )
+                        }
+                    } catch (error: Exception) {
+                        com.infinifolder.storage.DiagnosticLog.record(
+                            "browser.external-shortcut.read", "success=false", error
+                        )
+                        null
+                    }
+                } else null
+                val shortcutTarget = shortcutInfo?.targetUri?.let { runCatching { Uri.parse(it) }.getOrNull() }
+                if (shortcutInfo != null && shortcutTarget != null) {
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
+                        openExternalShortcutTarget(shortcutInfo, shortcutTarget)
+                    }
+                    return@execute
+                }
                 val ref = provider.refForUri(uri) ?: throw java.io.IOException("No storage provider owns this URI")
+                com.infinifolder.storage.DiagnosticLog.record("browser.external-open.provider", "provider=${ref.providerId}")
                 val original = when (val result = provider.stat(ref)) {
                     is ProviderResult.Success -> result.value
                     is ProviderResult.Failure -> throw java.io.IOException(result.message, result.cause)
                     else -> throw java.io.IOException("Cannot inspect this item")
                 }
+                // External VIEW requests should leave the browser in the file's
+                // containing directory when the viewer closes. Some content
+                // providers don't expose parent navigation, so this is best effort.
+                val containingDirectory = if (original.metadata.isDirectory) null else runCatching {
+                    val parentRef = (provider.parent(ref) as? ProviderResult.Success)?.value
+                    parentRef?.let { (provider.stat(it) as? ProviderResult.Success)?.value }
+                        ?.takeIf { it.metadata.isDirectory }
+                }.getOrNull()
                 val name = original.metadata.name
+                val containingRoute = containingDirectory?.let {
+                    externalAbsoluteBreadcrumbRoute(it.uri, it.metadata.name, it)
+                }
+                val itemRoute = if (original.metadata.isDirectory) {
+                    externalAbsoluteBreadcrumbRoute(original.uri, name, original)
+                } else null
                 recordExternalLinkVisit(uri, name, original.metadata.mimeType, original.metadata.isDirectory)
                 var mime = com.infinifolder.mime.MimeRegistry.effective(name, suppliedMime ?: original.metadata.mimeType)
                 val genericMime = mime in setOf("application/octet-stream", "application/binary", "text/plain",
@@ -799,23 +913,55 @@ class MainActivity : Activity(), DebugDumpObserver {
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
                     when {
-                        entry.metadata.isDirectory -> openRoot(uri, rememberAuthorizedRoot = false)
-                        name.endsWith(".incomplete", true) || mime == "application/vnd.infinifolder.torrent-partial" -> resumeIncompleteDownload(ref)
-                        (name.endsWith(".torrent", true) || mime == "application/x-bittorrent") && ref.providerId != "torrent" -> openTorrentFile(entry)
-                        name.endsWith(".wsz", true) || mime == "application/x-winamp-skin" -> importWinampSkin(uri, applyToAudio = true)
-                        com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null || AppsUri.isAppUri(uri) -> open(entry, confirmCommands = true)
-                        com.infinifolder.viewer.ExternalAppDefaults(this).openPreference(entry.ref, mime, name)
-                            ?.let { it.packageName != packageName } == true -> open(entry)
-                        hasRawMetadata -> openHexEditor(entry,loadMetadata=true)
-                        com.infinifolder.viewer.ViewerComponents.canView(entry) || com.infinifolder.viewer.ViewerCatalog.activity(type) != null -> launchBuiltInViewer(entry, type)
-                        ArchiveFormats.isArchive(name, mime) || magic?.isArchiveOrDiscImage == true ->
+                        entry.metadata.isDirectory -> {
+                            externalViewerLaunchPending = false
+                            logExternalOpenRoute("directory")
+                            revealBrowserAfterExternalLaunch()
+                            navigateToAbsoluteLocation(uri, itemRoute ?: listOf(ContainerLinksProvider.ROOT to "Virtual root", uri to name), name)
+                        }
+                        ArchiveFormats.isDefaultBrowsableArchive(name, mime) ||
+                            (magic?.isArchiveOrDiscImage == true && !ArchiveFormats.isPackagedFormat(name, mime)) -> {
+                            externalViewerLaunchPending = false
+                            // A launched archive is a child of its real containing folder.
+                            // Opaque content URIs without a discoverable parent start at the
+                            // Virtual root tab instead of inheriting the last browser location.
+                            logExternalOpenRoute("archive")
+                            revealBrowserAfterExternalLaunch()
+                            seedExternalBreadcrumb(containingRoute)
                             navigate(ArchiveUri.toArchiveUri(uri), displayName = name)
-                        com.infinifolder.viewer.MediaTypeDetector.isGenericBinary(name,mime) -> openHexEditor(entry)
-                        else -> Toast.makeText(this, "No built-in viewer or container browser supports this item", Toast.LENGTH_LONG).show()
+                        }
+                        else -> {
+                            if (containingDirectory != null) {
+                                navigateToAbsoluteLocation(containingDirectory.uri,
+                                    containingRoute ?: listOf(containingDirectory.uri to containingDirectory.metadata.name),
+                                    containingDirectory.metadata.name)
+                            } else {
+                                showHomeRoot()
+                            }
+                            when {
+                                name.endsWith(".incomplete", true) || mime == "application/vnd.infinifolder.torrent-partial" -> { externalViewerLaunchPending = false; revealBrowserAfterExternalLaunch(); logExternalOpenRoute("incomplete-download"); resumeIncompleteDownload(ref) }
+                                (name.endsWith(".torrent", true) || mime == "application/x-bittorrent") && ref.providerId != "torrent" -> { externalViewerLaunchPending = false; revealBrowserAfterExternalLaunch(); logExternalOpenRoute("torrent"); openTorrentFile(entry) }
+                                name.endsWith(".wsz", true) || mime == "application/x-winamp-skin" -> { externalViewerLaunchPending = false; revealBrowserAfterExternalLaunch(); logExternalOpenRoute("winamp-skin"); importWinampSkin(uri, applyToAudio = true) }
+                                com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null || AppsUri.isAppUri(uri) -> { logExternalOpenRoute("link"); open(entry, confirmCommands = true) }
+                                com.infinifolder.viewer.ExternalAppDefaults(this).openPreference(entry.ref, mime, name)
+                                    ?.let { it.packageName != packageName } == true -> { logExternalOpenRoute("saved-viewer"); open(entry) }
+                                hasRawMetadata -> { logExternalOpenRoute("raw-metadata-hex"); openHexEditor(entry,loadMetadata=true) }
+                                com.infinifolder.viewer.ViewerComponents.canView(entry) || com.infinifolder.viewer.ViewerCatalog.activity(type) != null -> {
+                                    logExternalOpenRoute("internal-viewer:$type")
+                                    if (!launchBuiltInViewer(entry, type)) revealBrowserAfterExternalLaunch()
+                                }
+                                com.infinifolder.viewer.MediaTypeDetector.isGenericBinary(name,mime) -> { logExternalOpenRoute("hex"); openHexEditor(entry) }
+                                else -> { externalViewerLaunchPending = false; revealBrowserAfterExternalLaunch(); logExternalOpenRoute("unsupported"); Toast.makeText(this, "No built-in viewer or container browser supports this item", Toast.LENGTH_LONG).show() }
+                            }
+                        }
                     }
                 }
             } catch (error: Exception) {
+                externalViewerLaunchPending = false
+                com.infinifolder.storage.DiagnosticLog.record("browser.external-open.failed",
+                    "scheme=${uri.scheme ?: "none"}", error)
                 runOnUiThread {
+                    revealBrowserAfterExternalLaunch()
                     if (!isFinishing && !isDestroyed && generation == browserNavigationGeneration &&
                         !com.infinifolder.viewer.CacheFailureUi.offerCopy(this, error, uri))
                         Toast.makeText(this, error.message ?: "Cannot open item", Toast.LENGTH_LONG).show()
@@ -823,6 +969,91 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         }
     }
+
+    private fun isExternalShortcutRequest(uri: Uri, suppliedMime: String?): Boolean {
+        val mime = suppliedMime?.substringBefore(';')?.trim()?.lowercase(Locale.ROOT).orEmpty()
+        return mime in setOf(
+            ShortcutInfo.SHORTCUT_MIME,
+            "application/iflink",
+            "application/x-shortcut",
+            "application/x-ms-shortcut"
+        ) || uri.lastPathSegment?.endsWith(ShortcutInfo.SHORTCUT_EXTENSION, ignoreCase = true) == true
+    }
+
+    private fun readExternalShortcut(uri: Uri): ShortcutInfo {
+        val bytes = contentResolver.openInputStream(uri)?.use { input ->
+            val output = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                if (output.size() + count > 1024 * 1024) throw java.io.IOException("Shortcut file is too large")
+                output.write(buffer, 0, count)
+            }
+            output.toByteArray()
+        } ?: throw java.io.IOException("Cannot read shortcut content")
+        return ShortcutInfo.fromJson(String(bytes, Charsets.UTF_8))
+            ?: throw java.io.IOException("Unsupported link-file encoding")
+    }
+
+    private fun openExternalShortcutTarget(shortcut: ShortcutInfo, target: Uri) {
+        val title = shortcut.displayNameOverride
+            ?: target.lastPathSegment?.let { Uri.decode(it) }?.takeIf { it.isNotBlank() }
+            ?: "Link"
+        when {
+            AppsUri.isAppUri(target) -> {
+                val packageName = AppsUri.getPackageName(target)
+                if (packageName.isNullOrBlank()) {
+                    revealBrowserAfterExternalLaunch()
+                    logExternalOpenRoute("iflink-invalid-app")
+                    Toast.makeText(this, "This app link has no package name", Toast.LENGTH_LONG).show()
+                } else {
+                    logExternalOpenRoute("iflink-app")
+                    launchApp(packageName)
+                }
+            }
+            BrowserLocations.owns(target) -> {
+                externalViewerLaunchPending = false
+                revealBrowserAfterExternalLaunch()
+                logExternalOpenRoute("iflink-browser-location")
+                openBrowserLocation(target)
+            }
+            TermuxCommandLink.owns(target) -> {
+                externalViewerLaunchPending = false
+                revealBrowserAfterExternalLaunch()
+                logExternalOpenRoute("iflink-termux")
+                reviewExternalTermuxCommand(target)
+            }
+            ArchiveUri.isArchiveUri(target) -> {
+                externalViewerLaunchPending = false
+                revealBrowserAfterExternalLaunch()
+                logExternalOpenRoute("iflink-archive")
+                seedExternalBreadcrumb(null)
+                navigate(target, displayName = title)
+            }
+            ContainerUris.networkType(target) != null ||
+                target.scheme.equals("magnet", true) || target.scheme.equals("torrent", true) -> {
+                if (shortcut.targetIsDirectory) externalViewerLaunchPending = false
+                revealBrowserAfterExternalLaunch()
+                logExternalOpenRoute("iflink-container-uri")
+                openContainerLinkUri(target, title, requireContainer = shortcut.targetIsDirectory,
+                    origin = LinkNavigationOrigin.VIRTUAL_ROOT, knownDirectory = shortcut.targetIsDirectory)
+            }
+            target.scheme.equals("content", true) || target.scheme.equals("file", true) -> {
+                logExternalOpenRoute("iflink-file-uri")
+                openExternalResource(target, shortcut.targetMimeType)
+            }
+            else -> {
+                // Web, mail, phone, and other registered Android URI handlers should
+                // receive their URI directly; they are not storage-browser locations.
+                logExternalOpenRoute("iflink-external-uri")
+                launchExternalViewIntent(target, shortcut.targetMimeType, title)
+            }
+        }
+    }
+
+    private fun logExternalOpenRoute(route: String) =
+        com.infinifolder.storage.DiagnosticLog.record("browser.external-open.route", "route=$route")
 
     private fun externalLinkVisits(): List<ExternalLinkVisit> = runCatching {
         val array = JSONArray(shared.getString(externalLinkHistoryKey, "[]"))
@@ -996,12 +1227,30 @@ class MainActivity : Activity(), DebugDumpObserver {
         installPinBoardDropTarget(pinnedContainerBar)
         renderPinnedContainers()
         breadcrumb = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        root.addView(HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
+        val breadcrumbRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(theme.alternateBackground)
-            setPadding(dp(12), dp(4), dp(12), dp(4))
+        }
+        breadcrumbRow.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = true
+            setPadding(dp(12), dp(4), dp(4), dp(4))
             addView(breadcrumb, android.view.ViewGroup.LayoutParams(-2, -2))
-        })
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        breadcrumbRow.addView(TextView(this).apply {
+            text = "↻"
+            textSize = 22f
+            gravity = Gravity.CENTER
+            setTextColor(theme.textPrimary)
+            minWidth = dp(48)
+            minimumHeight = dp(48)
+            contentDescription = "Refresh current location"
+            tooltipText = contentDescription
+            setBackgroundResource(android.R.drawable.list_selector_background)
+            setOnClickListener { refreshCurrentLocation() }
+        }, LinearLayout.LayoutParams(dp(48), -2))
+        root.addView(breadcrumbRow, LinearLayout.LayoutParams(-1, -2))
         val breadcrumbDivider = View(this).apply {
             setBackgroundColor(fg)
         }
@@ -2615,6 +2864,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     runOnUiThread {
                         if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
                         if (resolvedDestination != null) {
+                            externalViewerLaunchPending = false
                             setTreeVisible(false)
                             if (ArchiveUri.isArchiveUri(resolvedDestination)) {
                                 // A mounted archive or disk image stays nested at the point where
@@ -4040,6 +4290,35 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         }
         return reversed.asReversed().ifEmpty { listOf(uri to fallbackName) }
+    }
+
+    private fun externalAbsoluteBreadcrumbRoute(
+        uri: Uri,
+        fallbackName: String,
+        knownEntry: ResourceEntry? = null
+    ): List<Pair<Uri, String>> {
+        val route = absoluteBreadcrumbRoute(uri, fallbackName, knownEntry)
+        // Some SAF providers expose only a document URI, without a navigable
+        // parent. Keep that item under the Virtual root tab instead of reusing
+        // whichever physical folder happened to be open before the intent.
+        return if (uri.scheme.equals("content", true) && route.size == 1) {
+            listOf(ContainerLinksProvider.ROOT to "Virtual root", uri to fallbackName)
+        } else route
+    }
+
+    /** Install a new external item's parent trail without loading that folder. */
+    private fun seedExternalBreadcrumb(route: List<Pair<Uri, String>>?) {
+        logicalLocationPrefix = null
+        currentProgramName = null
+        history.clear()
+        historyNames.clear()
+        val crumbs = route.orEmpty().filterNot { it.first == ContainerLinksProvider.ROOT }
+        history.addAll(crumbs.map { it.first })
+        historyNames.addAll(crumbs.map { it.second })
+        current = crumbs.lastOrNull()?.first
+        homeMode = false
+        updateCreateAction()
+        renderLocation()
     }
 
     /** Replace the previous device trail with the target's absolute storage route. */
@@ -5511,8 +5790,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             try {
-                startActivity(launchIntent)
+                startViewerActivity(launchIntent)
             } catch (e: Exception) {
+                revealBrowserAfterExternalLaunch()
                 Toast.makeText(this, "Cannot launch app: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         } else {
@@ -5521,8 +5801,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                     data = Uri.parse("package:$packageName")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                startActivity(settingsIntent)
+                startViewerActivity(settingsIntent)
             } catch (e: Exception) {
+                revealBrowserAfterExternalLaunch()
                 Toast.makeText(this, "Cannot open settings for $packageName: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
@@ -5555,11 +5836,27 @@ class MainActivity : Activity(), DebugDumpObserver {
         return try {
             com.infinifolder.storage.DiagnosticLog.record("browser.open.internal",
                 "viewer=${intent.component?.className} mime=${intent.type}")
-            startActivity(intent)
+            startViewerActivity(intent)
             true
         } catch (e: Exception) {
+            revealBrowserAfterExternalLaunch()
             Toast.makeText(this, "Failed to start built-in viewer: ${e.message}", Toast.LENGTH_SHORT).show()
             false
+        }
+    }
+
+    private fun startViewerActivity(intent: Intent) {
+        val shouldCloseOnReturn = externalViewerLaunchPending || externalLaunchRequestActive
+        try {
+            startActivity(intent)
+            if (shouldCloseOnReturn) {
+                externalViewerLaunchPending = false
+                externalLaunchUiHidden = false
+                externalLaunchRequestActive = false
+                closeAfterExternalViewerReturn = true
+            }
+        } catch (error: Exception) {
+            throw error
         }
     }
 
@@ -5627,10 +5924,20 @@ class MainActivity : Activity(), DebugDumpObserver {
                     (BrowserLocations.owns(linkedUri) || ContainerUris.networkType(linkedUri) != null || linkedUri.scheme.equals("magnet", true) ||
                         linkedUri.scheme.equals("torrent", true) || entry.ref.providerId == containerLinkProvider.id)) {
                     runOnUiThread {
-                        if (!isDestroyed && (linkNavigationToken == null || browserNavigationGeneration == linkNavigationToken))
+                        if (!isDestroyed && (linkNavigationToken == null || browserNavigationGeneration == linkNavigationToken)) {
+                            revealBrowserAfterExternalLaunch()
                             openContainerLinkUri(linkedUri, info.displayNameOverride,
                                 info.targetIsDirectory || entry.ref.providerId == containerLinkProvider.id,
                                 LinkNavigationOrigin.DIRECTORY_LINK, knownDirectory = info.targetIsDirectory)
+                        }
+                    }
+                    return@execute
+                }
+                if (!externalOnly && linkedUri != null && AppsUri.isAppUri(linkedUri)) {
+                    runOnUiThread {
+                        if (isDestroyed || (linkNavigationToken != null && browserNavigationGeneration != linkNavigationToken)) return@runOnUiThread
+                        if (linkNavigationToken != null && sourceLocation != null) navigate(sourceLocation, push = false)
+                        AppsUri.getPackageName(linkedUri)?.let(::launchApp)
                     }
                     return@execute
                 }
@@ -5648,24 +5955,30 @@ class MainActivity : Activity(), DebugDumpObserver {
                             val target = resolved.value
                             val targetEntry = target.entry
                             if (!externalOnly && BrowserLocations.owns(target.uri)) {
+                                revealBrowserAfterExternalLaunch()
                                 openBrowserLocation(target.uri)
                                 return@runOnUiThread
                             }
                             if (TermuxCommandLink.owns(target.uri)) {
                                 if (linkNavigationToken != null && sourceLocation != null) navigate(sourceLocation, push = false)
+                                revealBrowserAfterExternalLaunch()
                                 if (confirmCommands) reviewExternalTermuxCommand(target.uri)
                                 else TermuxCommandLink.launch(this, target.uri)
                                 return@runOnUiThread
                             }
                             if (targetEntry == null) launchExternalViewIntent(target.uri, target.mime, target.name, forceExternalChooser)
                             else if (targetEntry.metadata.isDirectory && !externalOnly) {
+                                revealBrowserAfterExternalLaunch()
                                 if (ArchiveUri.isArchiveUri(targetEntry.uri)) navigate(targetEntry.uri, displayName = targetEntry.metadata.name)
                                 else navigateToAbsoluteLocation(targetEntry.uri,
                                     absoluteRoute ?: listOf(targetEntry.uri to targetEntry.metadata.name), targetEntry.metadata.name)
                             }
                             else open(targetEntry, externalOnly, confirmCommands, forceExternalChooser)
                         }
-                        is ProviderResult.Failure -> Toast.makeText(this, resolved.message, Toast.LENGTH_LONG).show()
+                        is ProviderResult.Failure -> {
+                            revealBrowserAfterExternalLaunch()
+                            Toast.makeText(this, resolved.message, Toast.LENGTH_LONG).show()
+                        }
                         else -> Unit
                     }
                 }
@@ -5753,7 +6066,12 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         val termuxRule = if (!externalOnly && !hasExternalDefault && !preferInternal && !entry.metadata.isDirectory) TermuxAssociations(this).find(entry.metadata.name) else null
         if (termuxRule != null && TermuxEditorAvailability.state(this, termuxRule.command) == TermuxEditorAvailability.State.AVAILABLE) {
-            startActivity(Intent(this, TermuxEditActivity::class.java).setData(entry.uri))
+            try {
+                startViewerActivity(Intent(this, TermuxEditActivity::class.java).setData(entry.uri))
+            } catch (error: Exception) {
+                revealBrowserAfterExternalLaunch()
+                Toast.makeText(this, "Failed to start Termux editor: ${error.message}", Toast.LENGTH_SHORT).show()
+            }
             return
         }
         val isPkg = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isPackagedFormat(entry.metadata.name, effectiveMime)
@@ -5814,19 +6132,24 @@ class MainActivity : Activity(), DebugDumpObserver {
             com.infinifolder.storage.DiagnosticLog.record("browser.open.external",
                 "mime=$effectiveMime explicit=$externalOnly savedDefault=$hasExternalDefault chooser=$forceExternalChooser")
             if (forceExternalChooser && !entry.metadata.isDirectory) {
-                startActivity(com.infinifolder.viewer.ExternalAppChooser.forResource(this,
+                startViewerActivity(com.infinifolder.viewer.ExternalAppChooser.forResource(this,
                     entry.copy(metadata = entry.metadata.copy(mimeType = effectiveMime)), current))
                 return
             }
-            startActivity(Intent(this, com.infinifolder.viewer.ExternalEditActivity::class.java).setData(entry.uri)
+            startViewerActivity(Intent(this, com.infinifolder.viewer.ExternalEditActivity::class.java).setData(entry.uri)
                 .putExtra(com.infinifolder.viewer.ExternalAppChooser.FORCE_CHOOSER, forceExternalChooser))
         } else launchExternalViewIntent(entry.uri, externalMime, entry.metadata.name, forceExternalChooser)
     }
 
     private fun openHexEditor(entry:ResourceEntry,loadMetadata:Boolean=false){
-        startActivity(Intent(this,com.infinifolder.viewer.HexViewerActivity::class.java).setData(entry.uri)
-            .putExtra("displayName",entry.metadata.name).putExtra("raw_metadata",loadMetadata)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        try {
+            startViewerActivity(Intent(this,com.infinifolder.viewer.HexViewerActivity::class.java).setData(entry.uri)
+                .putExtra("displayName",entry.metadata.name).putExtra("raw_metadata",loadMetadata)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        } catch (error: Exception) {
+            revealBrowserAfterExternalLaunch()
+            Toast.makeText(this, "Failed to start the hex viewer: ${error.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     /** Enter a blank torrent directory first, then parse local .torrent metadata off the UI thread. */
@@ -5879,16 +6202,17 @@ class MainActivity : Activity(), DebugDumpObserver {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             try {
-                startActivity(browsableIntent)
+                startViewerActivity(browsableIntent)
                 return
             } catch (_: Exception) {
                 try {
                     val plainIntent = Intent(Intent.ACTION_VIEW, targetUri).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
-                    startActivity(plainIntent)
+                    startViewerActivity(plainIntent)
                     return
                 } catch (_: Exception) {
+                    revealBrowserAfterExternalLaunch()
                     Toast.makeText(this, "No app can open this URI ($targetUri).", Toast.LENGTH_SHORT).show()
                     return
                 }
@@ -5923,7 +6247,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         }
         try {
-            startActivity(com.infinifolder.viewer.ExternalAppChooser.create(this, intent, "Open $fileName",
+            startViewerActivity(com.infinifolder.viewer.ExternalAppChooser.create(this, intent, "Open $fileName",
                 com.infinifolder.viewer.ExternalAppDefaults.uriKey(targetUri.toString()), fileName, forceChooser))
         } catch (_: Exception) {
             try {
@@ -5931,9 +6255,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                startActivity(com.infinifolder.viewer.ExternalAppChooser.create(this, fallback, "Open $fileName",
+                startViewerActivity(com.infinifolder.viewer.ExternalAppChooser.create(this, fallback, "Open $fileName",
                     com.infinifolder.viewer.ExternalAppDefaults.uriKey(targetUri.toString()), fileName, forceChooser))
             } catch (_: Exception) {
+                revealBrowserAfterExternalLaunch()
                 Toast.makeText(this, "No app can open this file or URI.", Toast.LENGTH_SHORT).show()
             }
         }
@@ -6360,6 +6685,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
     private fun treeSourceUri(key: String): Uri? = shared.getString("tree_source_$key", null)?.let(Uri::parse)
     private fun renderHomeItems() {
+        saveFloatingSelectorRootSnapshot()
         artworkRenderGeneration++
         pendingCardProbes.clear()
         visibleProbeScheduled = false
@@ -6582,6 +6908,27 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun rootShortcutVisible(item: HomeItem) = item.treeKey == null ||
         item.treeKey !in shared.getStringSet("hidden_virtual_root_locations_v1", emptySet()).orEmpty()
+
+    /** Persist the real Virtual root presentation for floating selectors. The overlay
+     * consumes this snapshot instead of maintaining its own parallel root catalog. */
+    private fun saveFloatingSelectorRootSnapshot() {
+        if (!homeMode || homePage != "root") return
+        val rows = org.json.JSONArray()
+        homeItems.asSequence()
+            .filter { it.showInHome && it.treeParentKey == null && rootShortcutVisible(it) }
+            .forEach { item ->
+                val uri = when {
+                    item.linkEntry != null -> item.linkEntry.uri
+                    item.treeKey == "internal_shared" && localProvider.hasAccess() -> localProvider.rootUri
+                    item.treeKey == "pin_board" -> if (item.needsAccessBadge) BrowserLocations.uri("pin_board") else item.treeUri
+                    BrowserLocations.forKey(item.treeKey) != null -> BrowserLocations.uri(item.treeKey)
+                    else -> item.treeUri ?: item.initialUri
+                } ?: return@forEach
+                rows.put(org.json.JSONObject().put("uri", uri.toString()).put("name", item.title))
+            }
+        shared.edit().putString("floating_selector_virtual_root_v1", rows.toString()).apply()
+    }
+
     private fun activateHomeItem(item: HomeItem) {
         if (item.needsAccessBadge) {
             when {
@@ -13493,32 +13840,47 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         }
         if (!createLinks && !recovering && !transferConfirmed) {
-            val action = if (move) "Move" else "Copy"
             val count = entries.size
             val itemDescription = if (count == 1) "'${entries[0].metadata.name}'" else "$count items"
             val destinationName = displayPathFor(destination) ?: getPathDisplay(destination)
-            val appMoveNote = if (move && entries.any { AppsUri.isAppUri(it.uri) }) {
-                "\n\nMoving an installed app exports it and then asks Android to uninstall it."
-            } else ""
-            val copyNameNote = if (!move) "\n\nExisting files are kept. Copies receive unused names, including when copying into the same folder." else ""
-            dialogBuilder().setTitle("$action $itemDescription?")
-                .setMessage("$action $itemDescription to:\n$destinationName$appMoveNote$copyNameNote")
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton(action) { _, _ ->
-                    startBatchTransfer(
-                        entries = entries,
-                        move = move,
-                        destination = destination,
-                        createLinks = createLinks,
-                        refreshLocationAfterTransfer = refreshLocationAfterTransfer,
-                        restoreScrollYAfterTransfer = restoreScrollYAfterTransfer,
-                        refreshLocationDisplayName = refreshLocationDisplayName,
-                        recoveryConfirmed = recoveryConfirmed,
-                        partialRecovery = partialRecovery,
-                        transferConfirmed = true
-                    )
+            val moveDecision = StorageActionPolicy.selection(StorageAction.MOVE, entries)
+            val canMove = moveDecision.mayAttempt
+            val containsInstalledApps = entries.any { AppsUri.isAppUri(it.uri) }
+            val message = buildString {
+                append("Transfer $itemDescription to:\n$destinationName\n\n")
+                append("Copy keeps the originals. Existing files are kept and copies receive unused names, including when copying into the same folder.")
+                if (canMove) {
+                    append("\n\nMove removes the originals after a successful transfer.")
+                    if (containsInstalledApps) append(" Moving an installed app exports it and then asks Android to uninstall it.")
+                } else {
+                    append("\n\nMove is unavailable: ${moveDecision.reason ?: "one or more selected items cannot be moved"}")
                 }
-                .show()
+            }
+            val continueTransfer: (Boolean) -> Unit = { selectedMove ->
+                startBatchTransfer(
+                    entries = entries,
+                    move = selectedMove,
+                    destination = destination,
+                    createLinks = createLinks,
+                    refreshLocationAfterTransfer = refreshLocationAfterTransfer,
+                    restoreScrollYAfterTransfer = restoreScrollYAfterTransfer,
+                    refreshLocationDisplayName = refreshLocationDisplayName,
+                    recoveryConfirmed = recoveryConfirmed,
+                    partialRecovery = partialRecovery,
+                    transferConfirmed = true
+                )
+            }
+            val dialog = dialogBuilder().setTitle("${if (canMove) "Copy or move" else "Copy"} $itemDescription?")
+                .setMessage(message)
+                .setNegativeButton("Cancel", null)
+            if (move && canMove) {
+                dialog.setPositiveButton("Move") { _, _ -> continueTransfer(true) }
+                    .setNeutralButton("Copy") { _, _ -> continueTransfer(false) }
+            } else {
+                dialog.setPositiveButton("Copy") { _, _ -> continueTransfer(false) }
+                if (canMove) dialog.setNeutralButton("Move") { _, _ -> continueTransfer(true) }
+            }
+            dialog.show()
             return
         }
         if (destination == ContainerLinksProvider.ROOT && !createLinks) {
@@ -14136,6 +14498,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         super.onSaveInstanceState(outState)
         if (forwardingHomeShortcut) return
         outState.putBoolean("operation_window_hidden", isOperationWindowHidden)
+        outState.putBoolean("close_after_external_viewer_return", closeAfterExternalViewerReturn)
         outState.putString("logical_location_prefix", logicalLocationPrefix)
         outState.putString("current_program_name", currentProgramName)
         outState.putStringArrayList("history", ArrayList(history.map(Uri::toString)))
@@ -14232,7 +14595,13 @@ class MainActivity : Activity(), DebugDumpObserver {
                     }
                     is ProviderResult.Failure -> {
                         com.infinifolder.storage.DiagnosticLog.record("browser.back.failed", "location=$location elapsedMs=${SystemClock.uptimeMillis() - requestedAt}", result.cause)
-                        Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
+                        if (resource.scheme.equals("content", true) && breadcrumbIndex <= 0) {
+                            // Opaque content providers commonly expose no parent.
+                            // The Virtual root tab is the stable fallback location.
+                            showHomeRoot()
+                        } else {
+                            Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
+                        }
                     }
                     is ProviderResult.Unsupported -> Unit
                 }
@@ -14377,6 +14746,14 @@ class MainActivity : Activity(), DebugDumpObserver {
     override fun onResume() {
         super.onResume()
         if (forwardingHomeShortcut) return
+        if (closeAfterExternalViewerReturn) {
+            closeAfterExternalViewerReturn = false
+            com.infinifolder.storage.DiagnosticLog.record(
+                "browser.external-viewer.return", "action=finish"
+            )
+            finish()
+            return
+        }
         checkIconRegistryRevision()
         refreshPinBoard()
         if (backNavigation == null) {

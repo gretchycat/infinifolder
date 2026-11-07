@@ -1,0 +1,21 @@
+<resources>
+    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#4D8A63</item>
+        <item name="android:statusBarColor">#F4F5F2</item>
+        <item name="android:navigationBarColor">#F4F5F2</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+    <style name="InfiniScribeTheme" parent="@style/AppTheme" />
+    <!-- InfiniScribeActivity is a transparent routing host while the user picks a file.
+         InfiniFolder's overlay remains visible above the calling app or launcher. -->
+    <style name="InfiniScribePickerHostTheme" parent="android:style/Theme.Translucent.NoTitleBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowDisablePreview">true</item>
+    </style>
+</resources>

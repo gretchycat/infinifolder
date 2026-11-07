@@ -61,6 +61,23 @@
             android:theme="@style/HomeShortcutTheme"
             android:excludeFromRecents="true"
             android:taskAffinity="" />
+        <activity
+            android:name=".FileSelectionActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="io.github.gretchycat.infiniselect.action.SELECT_FILE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <provider
+            android:name=".FileSelectionRelayProvider"
+            android:authorities="${applicationId}.selection"
+            android:exported="false"
+            android:grantUriPermissions="true" />
         <activity android:name=".TermuxEditActivity" android:exported="false" />
         <activity-alias android:name=".TermuxFileHandler" android:targetActivity=".TermuxEditActivity"
             android:exported="true" android:enabled="false" android:label="Open with Termux">

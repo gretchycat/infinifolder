@@ -1,9 +1,61 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")"
+repo_dir="$(cd "$(dirname "$0")" && pwd)"
+cd "$repo_dir"
 
-# Configure Android SDK location if not already defined
+target="all"
+open_apks=true
+
+usage() {
+    cat <<'USAGE'
+Usage: ./build.sh [--only TARGET] [--open-apks|--no-open]
+
+Targets:
+  all            InfiniFolder, viewer host, InfiniScribe, and InfiniKey if present (default)
+  infinifolder   InfiniFolder and its viewer host
+  viewer-host    The standalone viewer host
+  infiniscribe   InfiniScribe
+  infinikey      InfiniKey from the neighboring ../infinikey-ime checkout
+
+--open-apks opens each built APK with xdg-open, pausing between APKs when interactive.
+--no-open skips the installer launch and only builds/lists the APKs.
+USAGE
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --only)
+            [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+            target="$2"
+            shift 2
+            ;;
+        --open-apks|--send-apks)
+            open_apks=true
+            shift
+            ;;
+        --no-open|--no-send)
+            open_apks=false
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+done
+
+case "$target" in
+    all|infinifolder|viewer-host|infiniscribe|infinikey) ;;
+    *) echo "Unknown build target: $target" >&2; usage >&2; exit 2 ;;
+esac
+
+# Configure Android SDK location if not already defined.
 if [ -z "${ANDROID_HOME:-}" ]; then
     if [ -d "$HOME/android-sdk" ]; then
         export ANDROID_HOME="$HOME/android-sdk"
@@ -12,36 +64,119 @@ if [ -z "${ANDROID_HOME:-}" ]; then
     fi
 fi
 
-# Ensure local.properties points to the SDK
-if [ ! -f "local.properties" ] && [ -n "${ANDROID_HOME:-}" ]; then
-    echo "sdk.dir=$ANDROID_HOME" > local.properties
+if [ ! -f "$repo_dir/local.properties" ] && [ -n "${ANDROID_HOME:-}" ]; then
+    printf 'sdk.dir=%s\n' "$ANDROID_HOME" > "$repo_dir/local.properties"
 fi
 
-# In Termux, ensure user gradle.properties points to native aapt2 if present
+# In Termux, prefer its native aapt2 when available.
 if [ -x "/data/data/com.termux/files/usr/bin/aapt2" ]; then
     mkdir -p "$HOME/.gradle"
     if [ ! -f "$HOME/.gradle/gradle.properties" ] || ! grep -q "android.aapt2FromMavenOverride" "$HOME/.gradle/gradle.properties"; then
-        echo "android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2" >> "$HOME/.gradle/gradle.properties"
+        printf '%s\n' 'android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2' >> "$HOME/.gradle/gradle.properties"
     fi
 fi
 
-echo "Building InfiniFolder APK..."
-if ! gradle :app:assembleDebug; then
-    echo "Gradle build failed. Stopping Gradle daemons and retrying once without a persistent daemon..." >&2
-    gradle --stop || true
-    gradle --no-daemon :app:assembleDebug
-fi
+run_gradle() {
+    if ! gradle "$@"; then
+        echo "Gradle failed; stopping daemons and retrying once without a persistent daemon." >&2
+        gradle --stop || true
+        gradle --no-daemon "$@"
+    fi
+}
 
-APK="app/build/outputs/apk/debug/app-debug.apk"
-if [ -f "$APK" ]; then
-    echo "Build succeeded: $APK"
-    if command -v xdg-open >/dev/null 2>&1; then
-        echo "Launching APK with xdg-open..."
-        xdg-open "$APK"
+apk_files=()
+append_apk() {
+    local apk_path="$1"
+    if [ -f "$apk_path" ]; then
+        apk_files+=("$apk_path")
     else
-        echo "xdg-open not found; APK is available at $APK"
+        echo "Expected APK was not produced: $apk_path" >&2
+        return 1
     fi
-else
-    echo "Error: APK not found at $APK" >&2
+}
+
+# InfiniKey is maintained as a neighboring project. Build it when checked out beside
+# InfiniFolder, without making this repository depend on a separate checkout.
+key_project="$repo_dir/../infinikey-ime"
+build_folder=false
+build_viewer_host=false
+build_scribe=false
+build_key=false
+case "$target" in
+    all)
+        build_folder=true
+        build_viewer_host=true
+        build_scribe=true
+        build_key=true
+        ;;
+    infinifolder)
+        build_folder=true
+        build_viewer_host=true
+        ;;
+    viewer-host) build_viewer_host=true ;;
+    infiniscribe) build_scribe=true ;;
+    infinikey) build_key=true ;;
+esac
+
+if [ "$build_folder" = true ]; then
+    echo "Building InfiniFolder..."
+    run_gradle :app:assembleDebug
+    append_apk "$repo_dir/app/build/outputs/apk/debug/app-debug.apk"
+fi
+
+if [ "$build_viewer_host" = true ]; then
+    echo "Building the standalone viewer host..."
+    run_gradle :viewer-host:assembleDebug
+    append_apk "$repo_dir/viewer-host/build/outputs/apk/debug/viewer-host-debug.apk"
+fi
+
+if [ "$build_scribe" = true ]; then
+    echo "Building InfiniScribe..."
+    run_gradle -p "$repo_dir/infiniscribe" assembleDebug
+    append_apk "$repo_dir/infiniscribe/build/outputs/apk/debug/InfiniScribe-debug.apk"
+fi
+
+if [ "$build_key" = true ]; then
+    if [ ! -f "$key_project/settings.gradle.kts" ]; then
+        echo "InfiniKey checkout not found at $key_project" >&2
+        exit 1
+    fi
+    echo "Building InfiniKey..."
+    run_gradle -p "$key_project" assembleDebug
+    while IFS= read -r -d '' apk_path; do
+        apk_files+=("$apk_path")
+    done < <(find "$key_project" -type f -path '*/build/outputs/apk/debug/*.apk' -print0 | sort -z)
+fi
+
+if [ "${#apk_files[@]}" -eq 0 ]; then
+    echo "No APKs were produced." >&2
     exit 1
 fi
+
+printf '\nBuilt APKs:\n'
+printf '  %s\n' "${apk_files[@]}"
+
+if [ "$open_apks" = false ]; then
+    echo "APK opening disabled (--no-open)."
+    exit 0
+fi
+
+if ! command -v xdg-open >/dev/null 2>&1; then
+    echo "xdg-open not found; APKs are listed above."
+    exit 0
+fi
+
+for index in "${!apk_files[@]}"; do
+    apk_path="${apk_files[$index]}"
+    echo "Opening $(basename "$apk_path") with xdg-open..."
+    xdg-open "$apk_path"
+
+    if [ "$index" -lt "$(( ${#apk_files[@]} - 1 ))" ]; then
+        if [ -t 0 ]; then
+            read -r -p "Install or dismiss this APK, then press Enter to open the next one. " _
+        else
+            echo "No interactive terminal; waiting 3 seconds before the next APK."
+            sleep 3
+        fi
+    fi
+done

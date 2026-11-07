@@ -34,6 +34,13 @@ class ExternalAppPickerActivity : Activity() {
     private val selectingEditor get() = intent.getBooleanExtra(ExternalAppChooser.SELECT_EDITOR, false)
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
 
+    /** Keep the Infini app family together at the top of both app lists. */
+    private fun appOrder(): Comparator<Choice> = compareBy<Choice> {
+        val packageName = it.component.packageName.substringAfterLast('.').startsWith("infini", ignoreCase = true)
+        val appName = it.label.startsWith("Infini", ignoreCase = true)
+        if (packageName || appName) 0 else 1
+    }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.label }
+
     override fun onCreate(state: Bundle?) {
         setTheme(com.infinifolder.viewer.common.R.style.ExternalEditHandoffTheme)
         super.onCreate(state)
@@ -66,7 +73,7 @@ class ExternalAppPickerActivity : Activity() {
                     it.activityInfo.enabled && it.activityInfo.applicationInfo.enabled }
                 .map { Choice(it, ComponentName(it.activityInfo.packageName, it.activityInfo.name), action,
                     it.loadLabel(packageManager).toString()) }
-        }.distinctBy { it.component }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+        }.distinctBy { it.component }.sortedWith(appOrder())
         @Suppress("DEPRECATION")
         val internal = intent.getParcelableExtra<Intent>(ExternalAppChooser.INTERNAL_TARGET)
             ?.takeIf { candidate -> !selectingEditor && target.action == Intent.ACTION_VIEW &&
@@ -85,7 +92,7 @@ class ExternalAppPickerActivity : Activity() {
             .distinctBy { it.activityInfo.packageName }
             .map { Choice(it, ComponentName(it.activityInfo.packageName, it.activityInfo.name),
                 target.action ?: Intent.ACTION_VIEW, it.loadLabel(packageManager).toString()) }
-            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+            .sortedWith(appOrder())
             .toList()
     }
     private fun installedChoice(component: ComponentName, action: String): Choice? = runCatching {

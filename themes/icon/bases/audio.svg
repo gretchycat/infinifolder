@@ -1,6 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+<?xml version='1.0' encoding='UTF-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="512" height="512">
   <defs><linearGradient id="speaker" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#75d7b5"/><stop offset="1" stop-color="#218e79"/></linearGradient><linearGradient id="sound" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#377d6e"/><stop offset="1" stop-color="#205c56"/></linearGradient></defs>
-  <path d="M23 49h22l27-21v72L45 79H23z" fill="url(#speaker)" stroke="#29445d" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M23 49h22l27-21v72L45 79H23z" fill="url(#speaker)" stroke="#000000" stroke-width="4" stroke-linejoin="round"/>
   <path d="M84 47q17 17 0 34M96 36q28 28 0 56" fill="none" stroke="url(#sound)" stroke-width="4.5" stroke-linecap="round"/>
   <path d="M30 55h13l19-15" fill="none" stroke="#e5fff4" stroke-width="2.5" stroke-linecap="round" opacity=".9"/>
 </svg>

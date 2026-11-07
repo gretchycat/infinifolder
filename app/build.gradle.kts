@@ -8,6 +8,7 @@ dependencies {
         .sortedBy { it.name }.forEach { implementation(project(it.path)) }
 
     implementation(project(":storage-engine"))
+    implementation("io.github.gretchycat.libinfiniselect:select-android:0.1.0")
     implementation("io.github.gretchycat.libinfiniscribe:scribe-android:0.1.0")
     implementation("io.github.gretchycat.libinfiniscribe:scribe-mobi-android:0.1.0")
 
@@ -58,18 +59,8 @@ val generateIntentManifest by tasks.registering(Exec::class) {
     description = "Register supported file types and URI handlers with Android"
     inputs.file(layout.projectDirectory.file("src/main/AndroidManifest.xml"))
     inputs.file(rootProject.file("scripts/build-android-intent-manifest.py"))
-    inputs.file(rootProject.file("scripts/export-supported-types.py"))
     inputs.file(layout.projectDirectory.file("src/main/java/com/infinifolder/BrowserLocations.kt"))
-    inputs.files(rootProject.files(
-        "libraries/libinfinistore/store-android/src/main/java/com/infinifolder/mime/MimeRegistry.kt",
-        "libraries/libinfinistore/store-android/src/main/java/com/infinifolder/archive/ArchiveFormats.kt",
-        "viewer-common/src/main/java/com/infinifolder/preview/ImageFormats.kt",
-        "viewer-common/src/main/java/com/infinifolder/viewer/MediaTypeDetector.kt",
-        "libraries/libinfinisound/audio-processing/src/main/java/com/infinifolder/audio/AudioProcessing.kt",
-        "libraries/libinfinisound/audio-core/src/main/java/com/infinifolder/audio/decoder/BuiltInAudioDecoders.kt",
-        "libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/DocumentFormats.kt",
-        "libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/FontDocuments.kt",
-        "libraries/libinfinistore/store-android/src/main/java/com/infinifolder/storage/FileMagicDetector.kt"))
+    inputs.file(layout.projectDirectory.file("src/main/java/com/infinifolder/TermuxCommandLink.kt"))
     inputs.property("host", "app")
     outputs.file(generatedIntentManifest)
     outputs.file(generatedIntentManifest.map { it.asFile.resolveSibling("AndroidManifest.json") })
@@ -82,3 +73,19 @@ android.sourceSets.getByName("main").manifest.srcFile(generatedIntentManifest)
 tasks.named("preBuild").configure { dependsOn(generateIntentManifest) }
 
 apply(from = rootProject.file("scripts/runtime-capability-catalog.gradle"))
+
+val exportSupportedTypes by tasks.registering(Exec::class) {
+    group = "documentation"
+    description = "Export every linked library's runtime capability profiles as CSV"
+    dependsOn("exportRuntimeCapabilities")
+    inputs.file(layout.buildDirectory.file("generated/capabilities/catalog.json"))
+    inputs.file(rootProject.file("scripts/export-supported-types.py"))
+    val inventory = rootProject.file("docs/supported-types.csv")
+    outputs.file(inventory)
+    commandLine(
+        providers.gradleProperty("intentManifestPython").orElse("python3").get(),
+        rootProject.file("scripts/export-supported-types.py"),
+        "--catalog", layout.buildDirectory.file("generated/capabilities/catalog.json").get().asFile,
+        "--output", inventory,
+    )
+}

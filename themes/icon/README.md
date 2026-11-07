@@ -41,6 +41,13 @@ The build also compiles the canonical base SVGs and artwork associations into th
 app, so runtime fallback icons use these bases without file or network reads.
 After editing the palette or generator bases, regenerate the source icons.
 
+The ten pictogram bases in `bases/` are sourced from the root `icons.zip` bundle.
+To refresh the full theme and app icon set from the root `icons.zip` and
+`infini.svg`, run `python3 ../../scripts/regenerate-icons.py` from the repository
+root. See [`../app-icons/README.md`](../app-icons/README.md) for launcher asset
+details. The theme-only command above remains useful while editing the checked-in
+base SVGs directly.
+
 `base-assignments.csv` stores a reviewed base-icon assignment for every file type,
 including its MIME type, inventory notes, source paths, and assignment rationale.
 The generator checks this cache against the inventory and stops if file types or

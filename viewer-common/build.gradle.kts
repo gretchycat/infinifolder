@@ -3,15 +3,17 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val themeSource = rootProject.layout.projectDirectory.dir("themes/default theme")
-val themeBuilder = rootProject.layout.projectDirectory.file("themes/icon/scripts/build_icon_theme.py")
+// Resolve shared artwork relative to this library instead of the consuming
+// Gradle root so standalone viewer applications can include viewer-common.
+val themeSource = layout.projectDirectory.dir("../themes/default theme")
+val themeBuilder = layout.projectDirectory.file("../themes/icon/scripts/build_icon_theme.py")
 val themeBuildRoot = layout.buildDirectory.dir("generated/default-icon-theme")
 val prepareDefaultIconTheme by tasks.registering(Exec::class) {
     description = "Package the default icon theme directly from themes/"
     inputs.dir(themeSource.dir("svg"))
     inputs.file(themeSource.file("metadata.csv"))
     inputs.file(themeBuilder)
-    inputs.file(rootProject.layout.projectDirectory.file("themes/icon/scripts/icon_style.py"))
+    inputs.file(layout.projectDirectory.file("../themes/icon/scripts/icon_style.py"))
     outputs.dir(themeBuildRoot)
     commandLine(providers.gradleProperty("iconThemePython").orElse("python3").get(),
         themeBuilder.asFile.absolutePath, "--no-layout",

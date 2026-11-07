@@ -349,6 +349,21 @@ open class ViewerActivity : Activity() {
         com.infinifolder.storage.DiagnosticLog.record(
             "navigation.viewer.return", "activity=${javaClass.simpleName} state=begin finishing=$isFinishing"
         )
+        // Built-in viewers are launched by MainActivity in the same task. Finishing
+        // the viewer returns to that existing browser instance and preserves its
+        // back stack. Starting MainActivity again with CLEAR_TOP/SINGLE_TOP can
+        // deliver a synthetic ACTION_MAIN intent to the existing activity and
+        // leaves Android's task/back dispatcher to reconcile two competing routes.
+        if (!isTaskRoot) {
+            finish()
+            com.infinifolder.storage.DiagnosticLog.record(
+                "navigation.viewer.return", "activity=${javaClass.simpleName} state=finished-to-caller finishing=$isFinishing"
+            )
+            return
+        }
+
+        // Keep a recovery route for viewers launched as a task root (for example,
+        // from a standalone host that did not provide the file manager activity).
         val intent = android.content.Intent().apply {
             setClassName(this@ViewerActivity, "com.infinifolder.MainActivity")
             action = android.content.Intent.ACTION_MAIN

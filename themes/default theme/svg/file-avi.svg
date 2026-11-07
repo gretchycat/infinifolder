@@ -8,8 +8,8 @@
     </linearGradient>
   </defs>
   <defs xmlns="http://www.w3.org/2000/svg"><linearGradient id="screen" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#b9dfff" /><stop offset="1" stop-color="#789fea" /></linearGradient></defs>
-  <rect xmlns="http://www.w3.org/2000/svg" x="15" y="25" width="98" height="70" rx="14" fill="url(#screen)" stroke="#29445d" stroke-width="3.5" />
-  <path xmlns="http://www.w3.org/2000/svg" d="m54 43 29 17-29 17z" fill="#fff" stroke="#29445d" stroke-width="2.5" stroke-linejoin="round" />
+  <rect xmlns="http://www.w3.org/2000/svg" x="15" y="25" width="98" height="70" rx="14" fill="url(#screen)" stroke="#000000" stroke-width="3.5" />
+  <path xmlns="http://www.w3.org/2000/svg" d="m54 43 29 17-29 17z" fill="#fff" stroke="#000000" stroke-width="2.5" stroke-linejoin="round" />
   <path xmlns="http://www.w3.org/2000/svg" d="M25 34h18" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity=".8" />
 
   

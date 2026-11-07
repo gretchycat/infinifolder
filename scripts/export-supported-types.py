@@ -1,207 +1,116 @@
 #!/usr/bin/env python3
-"""Export the static format/routing inventory; this is not a codec acceptance test."""
+"""Export the linked libraries' runtime capability catalog as a CSV inventory."""
+import argparse
 import csv
-import re
-from collections import Counter, defaultdict
+import json
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-STORE = 'libraries/libinfinistore/store-android/src/main/java/com/infinifolder/'
-VAULT = 'libraries/libinfinivault/vault-android/src/main/java/com/infinifolder/archive/'
-MIME = STORE + 'mime/MimeRegistry.kt'
-ARCHIVE = STORE + 'archive/ArchiveFormats.kt'
-IMAGE = 'libraries/libinfinicanvas/canvas-android/src/main/java/com/infinifolder/preview/CanvasFormats.kt'
-MEDIA = 'viewer-common/src/main/java/com/infinifolder/viewer/MediaTypeDetector.kt'
-AUDIO = 'libraries/libinfinisound/audio-processing/src/main/java/com/infinifolder/audio/AudioProcessing.kt'
-BUILTIN = 'libraries/libinfinisound/audio-core/src/main/java/com/infinifolder/audio/decoder/BuiltInAudioDecoders.kt'
-TEXT_FORMATS = 'libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/ScribeTextFormats.kt'
-FONTS = 'libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/FontDocuments.kt'
-DOCUMENTS = 'libraries/libinfiniscribe/scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/DocumentFormats.kt'
+FIELDS = [
+    "handler_id", "library", "title", "profile_index", "operations",
+    "mime_types", "extensions", "uri_schemes", "magic_signatures",
+    "metadata", "limitations", "attributes", "availability_state",
+    "availability_reason", "availability_dependencies",
+]
 
-def read(path):
-    return (ROOT / path).read_text()
 
-def literals(text):
-    return re.findall(r'"([^"\n]*)"', re.sub(r'//[^\n]*', '', text))
+def joined(values):
+    return ";".join(str(value) for value in sorted(values or []))
 
-def values(path, name):
-    text = read(path)
-    match = re.search(r'\b' + re.escape(name) + r'[^=\n]*=\s*(?:setOf|listOf)\(', text)
-    if not match:
-        raise ValueError(f'Cannot find literal collection {path}:{name}')
-    return set(literals(text[match.end():text.index(')', match.end())]))
 
-mime_text = read(MIME)
-mapping = dict(re.findall(r'"([a-z0-9]+)"\s+to\s+"([a-z0-9.+-]+/[a-z0-9.+-]+)"',
-    mime_text.split('private val extensions =', 1)[1].split('fun normalize', 1)[0]))
-packages = {ext: (mime, container) for ext, mime, container in re.findall(
-    r'"([a-z0-9]+)"\s+to\s+PackageFormat\("([^"]+)",\s*"([^"]+)"\)', mime_text)}
-mapping.update({ext: value[0] for ext, value in packages.items()})
-aliases = dict(re.findall(r'"([^"]+)"\s+to\s+"([^"]+)"',
-    mime_text.split('private val aliases =', 1)[1].split('private val extensions', 1)[0]))
-fonts = values(FONTS, 'extensions')
-font_mimes = values(FONTS, 'mimeTypes')
-images = values(IMAGE, 'builtInExtensions')
-audio = {ext for ext,mime in mapping.items() if mime.startswith('audio/')} | values('libraries/libinfinisound/audio-processing/src/main/java/com/infinifolder/audio/AndroidSoundCapabilityProvider.kt', 'extensions') | values(BUILTIN, 'SUPPORTED_EXTENSIONS')
-video = values('libraries/libinfinivideo/video-android/src/main/java/io/github/gretchycat/infinivideo/VideoCapabilities.kt', 'extensions')
-text = values(TEXT_FORMATS, 'TEXT_EXTENSIONS')
-markdown = values(TEXT_FORMATS, 'MARKDOWN_EXTENSIONS')
-html = values(TEXT_FORMATS, 'HTML_EXTENSIONS')
-discs = values(ARCHIVE, 'DISC_BASE_EXTENSIONS')
-compression = values(ARCHIVE, 'COMPRESSION_SUFFIXES')
-playlists = values(ARCHIVE, 'PLAYLIST_EXTENSIONS')
-archives = values(ARCHIVE, 'SIMPLE_EXTENSIONS') | set(packages)
-compounds = {item.lstrip('.') for item in values(ARCHIVE, 'TAR_COMPOUND_EXTENSIONS')}
-compounds |= {f'{ext}.{suffix}' for ext in discs for suffix in compression}
-text_mimes = values(TEXT_FORMATS, 'TEXT_MIME_TYPES')
-audio_mimes = {'application/vnd.smaf','application/x-smaf','application/x-guitar-pro','application/x-gtp'}
-document_formats = dict(re.findall(r'"([a-z0-9]+)"\s+to\s+Kind\.([A-Z0-9_]+)', read(DOCUMENTS).split('val mimeKinds', 1)[0]))
-rows = []
+def catalog_profiles(catalog):
+    handlers = {handler["id"]: handler for handler in catalog["handlers"]}
+    profiles = catalog.get("supportedFormats")
+    if profiles is None:
+        # Read older schemaVersion 1 snapshots while they are regenerated.
+        profiles = []
+        for handler in catalog["handlers"]:
+            for index, profile in enumerate(handler.get("formats", [])):
+                profiles.append({
+                    "handlerId": handler["id"], "library": handler["library"],
+                    "title": handler["title"], "operations": handler.get("operations", []),
+                    "attributes": handler.get("attributes", {}), "profileIndex": index,
+                    **profile,
+                })
+    rows = []
+    profiled_handlers = set()
+    for profile in profiles:
+        handler_id = profile["handlerId"]
+        handler = handlers.get(handler_id)
+        if handler is None:
+            raise ValueError(f"Format profile references missing handler: {handler_id}")
+        profiled_handlers.add(handler_id)
+        availability = handler.get("availability", {})
+        magic = [
+            {"hex": item.get("hex", ""), "offset": item.get("offset", 0),
+             "description": item.get("description", "")}
+            for item in profile.get("magic", [])
+        ]
+        rows.append({
+            "handler_id": handler_id,
+            "library": profile.get("library", handler.get("library", "")),
+            "title": profile.get("title", handler.get("title", "")),
+            "profile_index": profile.get("profileIndex", ""),
+            "operations": joined(profile.get("operations", handler.get("operations", []))),
+            "mime_types": joined(profile.get("mimeTypes", [])),
+            "extensions": joined(profile.get("extensions", [])),
+            "uri_schemes": joined(profile.get("uriSchemes", [])),
+            "magic_signatures": json.dumps(magic, ensure_ascii=False, separators=(",", ":")),
+            "metadata": joined(handler.get("metadata", [])),
+            "limitations": " | ".join(handler.get("limitations", [])),
+            "attributes": json.dumps(profile.get("attributes", handler.get("attributes", {})),
+                                      ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+            "availability_state": availability.get("state", "NOT_EVALUATED"),
+            "availability_reason": availability.get("reason") or "",
+            "availability_dependencies": json.dumps(availability.get("dependencies", {}),
+                                                     sort_keys=True, separators=(",", ":")),
+        })
+    for handler in catalog["handlers"]:
+        if handler["id"] in profiled_handlers:
+            continue
+        availability = handler.get("availability", {})
+        rows.append({
+            "handler_id": handler["id"], "library": handler.get("library", ""),
+            "title": handler.get("title", ""), "profile_index": "",
+            "operations": joined(handler.get("operations", [])), "mime_types": "",
+            "extensions": "", "uri_schemes": "", "magic_signatures": "[]",
+            "metadata": joined(handler.get("metadata", [])),
+            "limitations": " | ".join(handler.get("limitations", [])),
+            "attributes": json.dumps(handler.get("attributes", {}), ensure_ascii=False,
+                                      sort_keys=True, separators=(",", ":")),
+            "availability_state": availability.get("state", "NOT_EVALUATED"),
+            "availability_reason": availability.get("reason") or "",
+            "availability_dependencies": json.dumps(availability.get("dependencies", {}),
+                                                     sort_keys=True, separators=(",", ":")),
+        })
+    return rows
 
-def add(category, identifier, extensions='', mime_type='', capabilities='', support_level='',
-        write_support='not asserted', module='', notes='', source_paths=''):
-    rows.append(dict(category=category, identifier=identifier, extensions=extensions,
-        mime_type=mime_type, capabilities=capabilities, support_level=support_level,
-        write_support=write_support, module=module, notes=notes, source_paths=source_paths))
-
-def capability(ext, mime):
-    if ext in {'fli', 'flc', 'flic'}:
-        return 'indexed FLI/FLC animation viewer; content thumbnail; bounded header recovery', 'Canvas', '8-bit palette, COPY/BLACK/BRUN/LC/SS2; recover geometry/count only from complete consistent rows/frames, report missing timing. 32 MiB encoded, 4 MP, 10000 frames. No DTA/EGI extended codecs.'
-    if ext == 'mng':
-        return 'PNG-based MNG animation/interactive viewer; content thumbnail', 'Canvas', 'Stored PNG objects, SHOW/MOVE, FRAM modes 1-4, global palettes, TERM, evNT pointer events and named states. No Delta-PNG/JNG or nested loops.'
-    if ext in {'gif', 'webp', 'apng'}:
-        return 'image animation viewer; still thumbnail', 'Canvas/Android', 'GIF/WebP use Android native animation on API 28+; APNG uses PNG frame composition; device acceptance pending.'
-    if ext in fonts or mime in font_mimes:
-        return 'read-only font preview; native glyph rendering; collection face selection', 'Scribe/Android', 'TTF/OTF/TTC/OTC; 64 MiB limit. Device font support applies; not WOFF/WOFF2, Type 1 or legacy bitmap fonts.'
-    if ext == 'gen':
-        return 'MIME identity/icon; external open fallback', 'Store/host', 'Sega Genesis ROM association with a binary icon. No built-in ROM parser, emulator or audio decoder is asserted.'
-    if ext == 'bin': return 'generic binary identity; optional magic/container probe', 'Store/Vault', 'No disc-image identity is assumed from .bin alone.'
-    if ext == 'torrent': return 'torrent metadata parse/browse/download', 'Store/host', 'Opened by the host torrent path; peer/tracker availability applies.'
-    if ext == 'lnk': return 'legacy InfiniFolder JSON shortcut', 'Store/host', 'Not a general Windows Shell Link binary decoder.'
-    if ext in {'ans', 'ansi', 'asc', 'diz', 'nfo'}:
-        return 'text/CP437/ANSI viewer; art preview by content', 'Scribe/Canvas/Sound', 'ANSI music uses the dedicated CP437 viewer; byte/content detection controls art handling.'
-    if mime == 'application/pdf': return 'PDF viewer', 'Scribe', 'Android PDF backend; not general PostScript typesetting.'
-    if ext == 'epub': return 'EPUB viewer; ZIP browse', 'Scribe/Vault', 'Supported EPUB layout subset.'
-    if ext in document_formats:
-        kind = document_formats[ext]
-        if kind in {'SHEET', 'ODF_SHEET'}:
-            return 'read-only worksheet viewer; sheet selection; cell copy', 'Scribe', 'Bounded preview; saved formula values, no recalculation. Android acceptance pending.'
-        if kind == 'MOBI':
-            return 'MOBI/KF8 ebook viewer; embedded cover icon', 'Scribe/libmobi', 'Unencrypted supported MOBI variants; no KFX. Native/source/resource limits apply. Android acceptance pending.'
-        if kind == 'FB2':
-            return 'FictionBook ebook viewer; embedded cover icon', 'Scribe', 'Reflowed text/tables and supported embedded images; Android acceptance pending.'
-        if kind == 'RTF':
-            return 'RTF text reader', 'Scribe/RTF Parser Kit', 'Unicode text extraction, not rich page layout or embedded-image rendering. Android acceptance pending.'
-        return 'read-only reflowed document/slide viewer' + ('; ZIP browse' if ext in packages else ''), 'Scribe', 'Basic text/tables/images; layout and embedded-object subsets. Android acceptance pending.'
-    if ext in {'csv', 'tsv'}: return 'delimited spreadsheet viewer/editor', 'Scribe', ''
-    if ext in markdown: return 'Markdown viewer', 'Scribe', ''
-    if ext in html: return 'HTML viewer', 'Scribe', ''
-    if ext in images: return 'image rendering/thumbnail', 'Canvas', 'Implemented subsets; platform RAW/modern codecs depend on device/API. See docs/image-formats.md.'
-    if ext in playlists: return 'playlist parse/browse/playback routing', 'Vault/Sound', 'Referenced media needs its own working decoder.'
-    if mime.startswith('video/') or ext in {'rm', 'rmvb'}:
-        return 'video playback routing' + ('; audio decoder route' if ext in audio else ''), 'Video/Sound/libVLC', 'Container/codec variants must be supported by the registered backend.'
-    if ext in audio or mime.startswith('audio/'):
-        return 'audio playback/codec routing', 'Sound', 'Registered route, not a guarantee for every codec variant; unavailable codecs fail. See docs/audio-formats.md.'
-    if mime.startswith('text/') or ext in text or mime in text_mimes:
-        return 'text/code viewer/editor', 'Scribe', 'Content detection/encoding and explicit MIME identity apply; .ts also names MPEG transport streams.' if ext == 'ts' else ''
-    if ext in video or mime.startswith('video/') or ext in {'rm', 'rmvb'}:
-        return 'video playback routing', 'Video/libVLC', 'Container/codec variants must be supported by the registered backend.'
-    if ext in archives or ext in discs or ext in compounds:
-        return 'container recognition; browse/extract when parser accepts', 'Vault', 'Recognition does not imply every variant is browsable or writable.'
-    if ext == 'iflink': return 'InfiniFolder shortcut parse/open; embedded icons', 'Store/host', 'Destination capability is independent of local link-file identity.'
-    if ext == 'incomplete': return 'torrent resume', 'Store', 'Requires compatible saved torrent/session metadata.'
-    return 'MIME identity/icon; external open fallback', 'Store/host', 'No built-in viewer is asserted by this association alone.'
-
-exts = set(mapping) | fonts | images | audio | video | text | markdown | html | archives | discs | compounds | {'csv', 'tsv', 'pdf', 'epub', 'iflink', 'torrent'}
-by_mime = defaultdict(set)
-for ext in sorted(exts):
-    mime = mapping.get(ext, '')
-    if mime: by_mime[mime].add(ext)
-    caps, module, notes = capability(ext, mime)
-    add('file_type', '.' + ext, '.' + ext, mime, caps,
-        'registered association/route' if mime else 'registered extension/pattern',
-        write_support='read-only' if ext in document_formats or ext in fonts else 'not asserted', module=module,
-        notes=notes + ((' ' if notes else '') + 'MIME may be supplied dynamically by Android/providers or content detection.' if not mime else ''),
-        source_paths='|'.join([MIME, MEDIA, IMAGE, ARCHIVE] +
-            (['app/src/main/java/com/infinifolder/MainActivity.kt'] if ext == 'torrent' else []) +
-            ([DOCUMENTS] if ext in document_formats else []) + ([FONTS] if ext in fonts else [])))
-
-mime_sources = [MIME, MEDIA, IMAGE, ARCHIVE, DOCUMENTS, FONTS, TEXT_FORMATS, STORE + 'storage/FileMagicDetector.kt',
-    'viewer-common/src/main/java/com/infinifolder/preview/AudioIconFormats.kt']
-all_mimes = set(by_mime) | set(aliases) | set(aliases.values())
-for path in mime_sources:
-    all_mimes.update(re.findall(r'"([a-z][a-z0-9.+-]*/[a-z0-9.+-]+)"', read(path)))
-for mime in sorted(all_mimes):
-    extensions = by_mime.get(mime, set())
-    add('mime_type', mime, ';'.join('.' + ext for ext in sorted(extensions)), mime,
-        'identity/association/content detection', 'recognized MIME', module='Store/host',
-        notes=('Alias of ' + aliases[mime] + '. ' if mime in aliases else '') +
-            'Recognition alone does not assert a decoder; consult matching file_type rows. Android/provider/user-defined MIME sets are open-ended.',
-        source_paths='|'.join(path for path in mime_sources if mime in read(path)))
-
-for ext in sorted(archives | discs | compounds | playlists):
-    kind = 'disk-image/partition wrapper' if ext in discs or ext in compounds and ext.split('.')[0] in discs else 'playlist' if ext in playlists else 'archive/package'
-    add('archive_type', '.' + ext, '.' + ext, mapping.get(ext, ''),
-        'recognize; browse/extract supported structures', 'registered ' + kind,
-        module='Vault' if kind != 'playlist' else 'Vault/Sound',
-        notes='Content validation is required; writes, multipart/encryption and compression variants have separate restrictions. Generic .bin stays binary unless detected.',
-        source_paths=ARCHIVE + '|' + MIME)
-for pattern in ['.rar/.r00-.r99', '.partNN.rar/.NNN.rar', '.arj/.a00-.a99']:
-    add('archive_type', pattern, pattern, capabilities='multipart archive browse/extract',
-        support_level='supported subset', write_support='read-only', module='Vault/native archive backend',
-        notes='Volumes must be available and supported; no native archive writes.', source_paths=STORE + 'archive/NativeArchiveNames.kt')
-
-filesystems = [
-    ('FAT12', 'fat;img;ima;flp', 'read/write; deleted-file recovery', 'supported subset', 'FatFileSystem.kt'),
-    ('FAT16', 'fat;img;ima', 'read/write; deleted-file recovery', 'supported subset', 'FatFileSystem.kt'),
-    ('FAT32/VFAT', 'fat;vfat;img', 'read/write; deleted-file recovery', 'supported subset', 'FatFileSystem.kt'),
-    ('ext2', 'ext2;img', 'read/write', 'journal/feature-aware subset', 'ExtFileSystem.kt'),
-    ('ext3', 'ext3;img', 'read/write', 'journal/feature-aware subset', 'ExtFileSystem.kt'),
-    ('ext4', 'ext4;img', 'read/write', 'journal/feature-aware subset', 'ExtFileSystem.kt'),
-    ('exFAT', 'exfat;img', 'browse/extract', 'read-only', 'DiscImageReader.kt'),
-    ('ISO 9660/Joliet/Rock Ridge', 'iso;cdr', 'browse/extract', 'read-only', 'DiscImageReader.kt'),
-    ('UFS1', 'ufs;ufs1;ffs;img', 'browse/extract', 'read-only subset', 'UfsFileSystem.kt'),
-    ('UFS2', 'ufs;ufs2;ffs;img', 'browse/extract', 'read-only subset', 'UfsFileSystem.kt'),
-    ('NTFS', 'ntfs;img', 'browse/extract', 'read-only subset', 'NtfsFileSystem.kt'),
-    ('HFS', 'hfs;img', 'browse/extract', 'read-only subset', 'HfsFileSystem.kt'),
-    ('HFS+', 'hfsplus;img', 'browse/extract', 'read-only subset', 'HfsFileSystem.kt'),
-    ('HFSX', 'hfsx;img', 'browse/extract', 'read-only subset', 'HfsFileSystem.kt')]
-for name, extensions, caps, level, source in filesystems:
-    add('filesystem_type', name, ';'.join('.' + x for x in extensions.split(';')),
-        capabilities=caps, support_level=level, write_support='supported subset' if 'write' in caps else 'read-only',
-        module='Vault', notes='Image browsing through shared storage abstractions; not an Android kernel mount. Unsupported features fail explicitly.', source_paths=VAULT + source)
-for name, notes in [('MBR/EBR', 'Partition slices; filesystem support is separate.'), ('GPT', 'Partition slices; filesystem support is separate.'),
-                    ('APM', 'Apple partition-map slices; filesystem support is separate.'), ('LVM', 'Linear single-PV subset; not RAID/thin/snapshot/general LVM support.')]:
-    add('volume_type', name, capabilities='volume/partition browsing', support_level='supported subset', module='Vault', notes=notes, source_paths=VAULT + 'DiscImageReader.kt|' + VAULT + 'LvmDecoder.kt')
-
-uris = {
-    'file': ('local file access', 'implemented', 'Store', 'Subject to Android access rights.'),
-    'content': ('SAF/document provider access', 'implemented', 'Store', 'Opaque IDs; grants/provider capabilities apply; optional size.'),
-    'archive': ('archive/filesystem/container view', 'implemented', 'Vault', 'Nested backing sources keep their provider access requirements.'),
-    'apps': ('installed applications/categories', 'implemented', 'Store', 'Android application provider.'),
-    'container-links': ('Virtual Root link storage', 'implemented', 'Store', 'Internal provider; .iflink destination is independent.'),
-    'partial-downloads': ('partial torrent entries', 'implemented', 'Store', 'Internal session/checkpoint-backed provider.'),
-    'magnet': ('BitTorrent metadata/browse/download', 'implemented subset', 'Store', 'Peer/tracker availability and supported metadata apply.'),
-    'torrent': ('resolved torrent container', 'implemented subset', 'Store', 'Internal virtual torrent tree.'),
-    'infinifolder-termux': ('explicit Termux command shortcut', 'implemented', 'host', 'Requires installed Termux, RUN_COMMAND permission and external-app configuration.'),
-}
-for scheme in ['sftp', 'ssh', 'sshfs', 'ftp', 'ftps', 'smb', 'cifs', 'webdav', 'dav', 'davs']:
-    uris[scheme] = ('remote file browsing/transfers', 'implemented/alias', 'Store', 'Saved connection binding/credentials and backend capabilities apply; ssh/sshfs use the SFTP backend.')
-for scheme in ['http', 'https', 'mailto', 'tel', 'sms', 'irc', 'ircs']:
-    uris[scheme] = ('shortcut target/icon rules; external open', 'delegated target', 'host', 'Not a native filesystem backend; actual opening requires an Android handler. HTTP(S) may discover favicons.')
-uris['nfs'] = ('URI icon rules/fallback only', 'no native NFS storage provider', 'host', 'Do not confuse URI recognition/icon support with filesystem browsing support.')
-for scheme, (caps, level, module, notes) in sorted(uris.items()):
-    add('uri_type', scheme + ':', capabilities=caps, support_level=level, module=module, notes=notes,
-        source_paths=STORE + 'storage/ContainerUris.kt|app/src/main/java/com/infinifolder/ResourceIconResolver.kt|docs/file-formats.md')
 
 def main():
-    destination = ROOT / 'docs/supported-types.csv'
-    with destination.open('w', encoding='utf-8-sig', newline='') as out:
-        writer = csv.DictWriter(out, fieldnames=list(rows[0]), lineterminator='\n')
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--catalog", type=Path,
+                        default=ROOT / "app/build/generated/capabilities/catalog.json")
+    parser.add_argument("--output", type=Path, default=ROOT / "docs/supported-types.csv")
+    args = parser.parse_args()
+    catalog = json.loads(args.catalog.read_text(encoding="utf-8"))
+    if catalog.get("schemaVersion") != 1:
+        raise ValueError("Unsupported runtime capability catalog schema")
+    if catalog.get("failures"):
+        raise ValueError("Capability catalog has provider failures: " + json.dumps(catalog["failures"]))
+    if not isinstance(catalog.get("handlers"), list):
+        raise ValueError("Capability catalog has no handler list")
+    rows = catalog_profiles(catalog)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    with args.output.open("w", encoding="utf-8-sig", newline="") as output:
+        writer = csv.DictWriter(output, fieldnames=FIELDS, lineterminator="\n")
         writer.writeheader()
-        writer.writerows(sorted(rows, key=lambda row: (row['category'], row['identifier'])))
-    print(f'{destination}: {len(rows)} rows; {dict(Counter(row["category"] for row in rows))}')
+        writer.writerows(sorted(rows, key=lambda row: (
+            row["library"], row["handler_id"], row["profile_index"]
+        )))
+    print(f"{args.output}: {len(rows)} capability profiles; "
+          f"{dict(Counter(row['library'] for row in rows))}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

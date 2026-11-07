@@ -14,6 +14,9 @@ import android.os.IBinder
 import android.os.Bundle
 import android.os.Handler
 import android.os.ResultReceiver
+import android.os.Environment
+import android.os.storage.StorageManager
+import android.provider.DocumentsContract
 import android.provider.Settings
 import android.view.Gravity
 import android.view.DragEvent
@@ -29,6 +32,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import com.infinifolder.BrowserLocations
 import com.infinifolder.MainActivity
 import com.infinifolder.FileEntryCard
 import com.infinifolder.FileViewGrid
@@ -36,6 +40,7 @@ import com.infinifolder.ResourceIconResolver
 import com.infinifolder.HomeItemActivity
 import com.infinifolder.HomeShortcuts
 import com.infinifolder.HomeShortcutDragActivity
+import com.infinifolder.PinBoardDirectory
 import com.infinifolder.FileIconView
 import com.infinifolder.PullToRefreshScrollView
 import com.infinifolder.preview.CustomIconStore
@@ -45,7 +50,10 @@ import com.infinifolder.archive.ArchiveFormats
 import com.infinifolder.archive.ArchiveUri
 import com.infinifolder.model.ProviderResult
 import com.infinifolder.model.ResourceEntry
+import com.infinifolder.model.ResourceMetadata
+import com.infinifolder.model.ResourceRef
 import com.infinifolder.storage.StorageRuntime
+import io.github.gretchycat.infiniselect.FileSelectionContract
 import java.io.IOException
 import kotlin.math.roundToInt
 
@@ -85,16 +93,19 @@ class FloatingContainerService : Service() {
     private var loadGeneration = 0
     private var currentEntries: List<ResourceEntry> = emptyList()
     private var listingReady = false
-    private var startX = 0f
-    private var startY = 0f
-    private var startWindowX = 0
-    private var startWindowY = 0
     private var resizeReflowScheduled = false
     private data class DragItem(val card: View, val icon: View, val entry: ResourceEntry)
     private data class LauncherDrag(val token: String, var observer: ResultReceiver? = null)
     private val dragItems = mutableListOf<DragItem>()
     private var launcherDrag: LauncherDrag? = null
     private var systemDialogsRegistered = false
+    private var selectionMode = false
+    private var selectionAllowMultiple = false
+    private var selectionMimeTypes: List<String> = emptyList()
+    private var selectionReceiver: ResultReceiver? = null
+    private val selectedEntries = linkedMapOf<String, ResourceEntry>()
+    private var selectionDoneView: TextView? = null
+    private var normalActionView: View? = null
     private val systemDialogs = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             // Recents/Home can leave an application overlay focused. Receiving
@@ -119,18 +130,44 @@ class FloatingContainerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        selectionMode = intent?.getBooleanExtra(EXTRA_SELECTION_MODE, false) == true
+        selectionAllowMultiple = intent?.getBooleanExtra(EXTRA_ALLOW_MULTIPLE, false) == true
+        selectionMimeTypes = intent?.getStringArrayListExtra(EXTRA_SELECTION_MIME_TYPES).orEmpty()
+        selectedEntries.clear()
+        selectionReceiver = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            intent?.getParcelableExtra(EXTRA_SELECTION_RECEIVER, ResultReceiver::class.java)
+        } else @Suppress("DEPRECATION") (intent?.getParcelableExtra(EXTRA_SELECTION_RECEIVER) as? ResultReceiver)
         val uri = intent?.data ?: intent?.getStringExtra(EXTRA_URI)?.let(Uri::parse)
         if (uri == null) {
+            if (selectionMode) finishSelection(FileSelectionContract.RESULT_FALLBACK, Bundle().apply {
+                putBoolean(FileSelectionContract.EXTRA_FALLBACK_TO_SOURCES, true)
+                putString(FileSelectionContract.EXTRA_FAILURE_MESSAGE, "InfiniFolder could not open its file browser")
+            })
             stopSelf(startId)
             return START_NOT_STICKY
         }
         if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(this, "Allow display over other apps to open this floating container", Toast.LENGTH_LONG).show()
+            if (selectionMode) finishSelection(FileSelectionContract.RESULT_FALLBACK, Bundle().apply {
+                putBoolean(FileSelectionContract.EXTRA_FALLBACK_TO_SOURCES, true)
+                putString(FileSelectionContract.EXTRA_FAILURE_MESSAGE, "Allow display over other apps to use InfiniFolder's floating selector")
+            }) else Toast.makeText(this, "Allow display over other apps to open this floating container", Toast.LENGTH_LONG).show()
             stopSelf(startId)
             return START_NOT_STICKY
         }
-        if (windowView == null) createWindow()
-        show(uri, intent?.getStringExtra(EXTRA_DISPLAY_NAME), resetRoot = true)
+        try {
+            if (windowView == null) createWindow()
+            updateSelectionControls()
+            show(uri, intent?.getStringExtra(EXTRA_DISPLAY_NAME), resetRoot = true)
+        } catch (error: Exception) {
+            com.infinifolder.storage.DiagnosticLog.record("floating.selector.initialize-failed", error = error)
+            if (selectionMode) finishSelection(FileSelectionContract.RESULT_FALLBACK, Bundle().apply {
+                putBoolean(FileSelectionContract.EXTRA_FALLBACK_TO_SOURCES, true)
+                putString(FileSelectionContract.EXTRA_FAILURE_MESSAGE,
+                    error.message ?: "InfiniFolder could not initialize its floating selector")
+            }) else Toast.makeText(this, error.message ?: "Could not open floating window", Toast.LENGTH_LONG).show()
+            removeWindow()
+            stopSelf(startId)
+        }
         return START_NOT_STICKY
     }
 
@@ -181,8 +218,7 @@ class FloatingContainerService : Service() {
         }
         containerIcon = android.widget.FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(dp(TOOLBAR_HEIGHT_DP - 8), -1).apply { marginEnd = dp(6) }
-            contentDescription = "Drag to move window"
-            tooltipText = "Drag to move window"
+            contentDescription = "Window location icon"
         }
         breadcrumbs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -194,44 +230,37 @@ class FloatingContainerService : Service() {
             layoutParams = LinearLayout.LayoutParams(0, -1, 1f)
             addView(breadcrumbs, ViewGroup.LayoutParams(-2, -1))
         }
-        val dragHandle = View.OnTouchListener { _, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    startX = event.rawX; startY = event.rawY
-                    // Use the rendered position, since WindowManager may have constrained it.
-                    val position = IntArray(2)
-                    root.getLocationOnScreen(position)
-                    startWindowX = position[0]; startWindowY = position[1]
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val bounds = if (android.os.Build.VERSION.SDK_INT >= 30) {
-                        windows.currentWindowMetrics.bounds
-                    } else {
-                        android.graphics.Rect(0, 0, resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
-                    }
-                    params.x = (startWindowX + (event.rawX - startX).roundToInt())
-                        .coerceIn(0, (bounds.width() - root.width).coerceAtLeast(0))
-                    params.y = (startWindowY + (event.rawY - startY).roundToInt())
-                        .coerceIn(0, (bounds.height() - root.height).coerceAtLeast(0))
-                    // Rebase at every event so dragging against an edge creates no overscroll debt.
-                    startWindowX = params.x; startWindowY = params.y
-                    startX = event.rawX; startY = event.rawY
-                    runCatching { windows.updateViewLayout(root, params) }
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    saveWindowPlacement()
-                    true
-                }
-                else -> true
+        // Keep taps and horizontal scrolling on breadcrumb buttons intact. Only blank
+        // title-bar space is claimed as a move surface.
+        val titleDrag = windowDragTouchListener()
+        bar.setOnTouchListener(titleDrag)
+        containerIcon.setOnTouchListener(windowDragTouchListener())
+        breadcrumbScroll.setOnTouchListener(windowDragTouchListener(acceptDown = { _, event ->
+            val contentX = (event.x + breadcrumbScroll.scrollX).toInt()
+            val contentY = event.y.toInt()
+            (0 until breadcrumbs.childCount).none { index ->
+                val child = breadcrumbs.getChildAt(index)
+                child.isClickable && contentX >= child.left && contentX < child.right &&
+                    contentY >= child.top && contentY < child.bottom
             }
-        }
-        containerIcon.setOnTouchListener(dragHandle)
+        }))
         val openFull = openInAppButton {
             current?.let { launchInMain(it, inApp = true) }
         }
-        bar.addView(containerIcon); bar.addView(breadcrumbScroll); bar.addView(openFull)
+        normalActionView = openFull
+        selectionDoneView = TextView(this).apply {
+            gravity = Gravity.CENTER
+            textSize = 13f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(theme.toolbarText)
+            setPadding(dp(8), 0, dp(8), 0)
+            minWidth = dp(54)
+            visibility = View.GONE
+            contentDescription = "Finish selecting files"
+            tooltipText = "Finish selecting files"
+            setOnClickListener { completeMultipleSelection() }
+        }
+        bar.addView(containerIcon); bar.addView(breadcrumbScroll); bar.addView(openFull); bar.addView(selectionDoneView)
         grid = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -247,12 +276,22 @@ class FloatingContainerService : Service() {
                     item.card.getLocationOnScreen(origin)
                     item.card.getLocalVisibleRect(bounds) &&
                         bounds.contains((event.rawX - origin[0]).toInt(), (event.rawY - origin[1]).toInt())
-                }?.let(::startLauncherDrag) ?: false
+                }?.let { item ->
+                    if (selectionMode) {
+                        if (selectionAllowMultiple && !item.entry.metadata.isDirectory &&
+                            com.infinifolder.storage.LinkResolver.kind(item.entry.metadata) == null) {
+                            toggleSelection(item.entry, item.card)
+                        }
+                        true
+                    } else startLauncherDrag(item)
+                } ?: selectionMode
             }
             // Empty-space holds still open this location in the full browser.
             onGridLongPress = {
-                current?.let {
-                    launchInMain(it, inApp = true)
+                if (!selectionMode) {
+                    current?.let {
+                        launchInMain(it, inApp = true)
+                    }
                 }
             }
             onRefreshListener = { current?.let { show(it, currentDisplayName) } }
@@ -475,13 +514,22 @@ class FloatingContainerService : Service() {
         grid.addView(loading)
         Thread {
             try {
-                val ref = runtime.provider.refForUri(uri) ?: throw IOException("No storage provider owns this location")
+                val ref = runtime.provider.refForUri(uri)
+                val syntheticApplicationPublic = selectionMode && uri == BrowserLocations.uri("application_public")
+                if (ref == null && !syntheticApplicationPublic) throw IOException("No storage provider owns this location")
                 headerEntry?.let { entry ->
                     iconResolver.cached(entry, headerSize)?.let { saved ->
                         onMain { if (generation == loadGeneration) showContainerIcon(saved) }
                     }
                 }
-                when (val result = runtime.provider.list(ref)) {
+                val listing = when {
+                    selectionMode && uri == com.infinifolder.storage.ContainerLinksProvider.ROOT ->
+                        ProviderResult.Success(selectionRootEntries())
+                    selectionMode && uri == BrowserLocations.uri("application_public") ->
+                        ProviderResult.Success(selectionApplicationPublicEntries())
+                    else -> runtime.provider.list(requireNotNull(ref))
+                }
+                when (val result = listing) {
                     is ProviderResult.Success -> onMain {
                         if (generation == loadGeneration) {
                             listingReady = true
@@ -491,7 +539,7 @@ class FloatingContainerService : Service() {
                     }.also {
                         com.infinifolder.ResourceIconSidecars.observe(result.value, uri,complete=!result.isLoading)
                         // Resolve artwork off the UI thread; listing feedback remains immediate.
-                        val entry = (runtime.provider.stat(ref) as? ProviderResult.Success)?.value
+                        val entry = ref?.let { (runtime.provider.stat(it) as? ProviderResult.Success)?.value }
                         val artwork = entry?.let {
                             runCatching { iconResolver.resolve(it, ((TOOLBAR_HEIGHT_DP - 12) * resources.displayMetrics.density).roundToInt()) }.getOrNull()
                         }
@@ -545,10 +593,198 @@ class FloatingContainerService : Service() {
                 }
                 tooltipText = crumb.name
                 setOnClickListener { show(crumb.uri, crumb.name) }
+                if (currentCrumb) setOnTouchListener(windowDragTouchListener(clickOnTap = true))
             }, LinearLayout.LayoutParams(-2, -1))
         }
         breadcrumbScroll.post { breadcrumbScroll.fullScroll(View.FOCUS_RIGHT) }
     }
+
+    private fun windowDragTouchListener(
+        acceptDown: (View, MotionEvent) -> Boolean = { _, _ -> true },
+        clickOnTap: Boolean = false
+    ): View.OnTouchListener {
+        var active = false
+        var moved = false
+        var startRawX = 0f
+        var startRawY = 0f
+        var startWindowX = 0
+        var startWindowY = 0
+        val touchSlop = android.view.ViewConfiguration.get(this).scaledTouchSlop
+        return View.OnTouchListener { handle, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    active = acceptDown(handle, event)
+                    moved = false
+                    if (active) {
+                        startRawX = event.rawX
+                        startRawY = event.rawY
+                        // Layout params are in the overlay's TOP|LEFT coordinate space.
+                        startWindowX = params.x
+                        startWindowY = params.y
+                        handle.parent?.requestDisallowInterceptTouchEvent(true)
+                    }
+                    active
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (!active) return@OnTouchListener false
+                    val deltaX = (event.rawX - startRawX).roundToInt()
+                    val deltaY = (event.rawY - startRawY).roundToInt()
+                    if (!moved && maxOf(kotlin.math.abs(deltaX), kotlin.math.abs(deltaY)) >= touchSlop)
+                        moved = true
+                    if (moved) {
+                        val bounds = displayBounds()
+                        params.x = (startWindowX + deltaX)
+                            .coerceIn(0, (bounds.width() - root.width).coerceAtLeast(0))
+                        params.y = (startWindowY + deltaY)
+                            .coerceIn(0, (bounds.height() - root.height).coerceAtLeast(0))
+                        runCatching { windows.updateViewLayout(root, params) }.onFailure { error ->
+                            com.infinifolder.storage.DiagnosticLog.record("floating.window.move-failed", error = error)
+                        }
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (!active) return@OnTouchListener false
+                    active = false
+                    handle.parent?.requestDisallowInterceptTouchEvent(false)
+                    if (moved) saveWindowPlacement()
+                    else if (event.actionMasked == MotionEvent.ACTION_UP && clickOnTap) handle.performClick()
+                    true
+                }
+                else -> active
+            }
+        }
+    }
+
+    /** Reuse the full browser's persisted, already-filtered Virtual root presentation.
+     * The small fallback covers a first-run selector before MainActivity has rendered
+     * the root once. */
+    private fun selectionRootEntries(): List<ResourceEntry> {
+        val prefs = getSharedPreferences("browser", MODE_PRIVATE)
+        val savedRoot = prefs.getString("floating_selector_virtual_root_v1", null)
+        if (savedRoot != null) runCatching {
+            val rows = org.json.JSONArray(savedRoot)
+            val sharedEntries = buildList {
+                for (index in 0 until rows.length()) {
+                    val row = rows.getJSONObject(index)
+                    val uri = Uri.parse(row.getString("uri"))
+                    val name = row.getString("name")
+                    val ref = runtime.provider.refForUri(uri)
+                    if (ref == null) {
+                        if (BrowserLocations.find(uri) != null) add(ResourceEntry(
+                            ResourceRef("browser-location", uri.toString()),
+                            ResourceMetadata(name, "vnd.android.document/directory", null, null, true), uri))
+                        continue
+                    }
+                    val entry = if (ref.providerId == runtime.containerLinks.id) {
+                        (runtime.containerLinks.stat(ref) as? ProviderResult.Success)?.value
+                    } else null
+                    add(entry?.copy(metadata = entry.metadata.copy(name = name)) ?: ResourceEntry(
+                        ref, ResourceMetadata(name, "vnd.android.document/directory", null, null, true), uri))
+                }
+            }
+            return sharedEntries
+        }.onFailure { error ->
+            com.infinifolder.storage.DiagnosticLog.record("floating.selector.root-snapshot.invalid", error = error)
+        }
+
+        // Bootstrap only: once the full browser has rendered Virtual root, its exact
+        // visible item order and destinations are persisted above and reused here.
+        val result = mutableListOf<ResourceEntry>()
+        val seen = mutableSetOf<String>()
+        val hidden = prefs.getStringSet("hidden_virtual_root_locations_v1", emptySet()).orEmpty()
+        val directoryMime = "vnd.android.document/directory"
+
+        fun visible(key: String) = key !in hidden
+
+        fun location(key: String, name: String, detail: String = ""): ResourceEntry {
+            val uri = BrowserLocations.uri(key)!!
+            return ResourceEntry(ResourceRef("browser-location", uri.toString()),
+                ResourceMetadata(name, directoryMime, null, null, true,
+                    readError = detail.takeIf(String::isNotBlank)), uri)
+        }
+
+        fun addRoot(uri: Uri?, name: String, detail: String = "") {
+            uri ?: return
+            val key = uri.normalizeScheme().toString()
+            if (!seen.add(key)) return
+            val ref = runtime.provider.refForUri(uri) ?: return
+            result += ResourceEntry(ref, ResourceMetadata(name, directoryMime, null, null, true,
+                readError = detail.takeIf(String::isNotBlank)), uri)
+        }
+
+        val localAccess = runtime.local.hasAccess()
+        if (visible("internal_shared")) {
+            if (localAccess) addRoot(runtime.local.rootUri, "Internal shared storage", "Shared folders")
+            else result += location("internal_shared", "Internal shared storage", "Allow storage access to browse shared folders")
+        }
+
+        // Include mounted secondary volumes when the app has direct access. SAF-granted
+        // roots below cover SD cards and providers that need an explicit tree grant.
+        if (localAccess) runCatching {
+            getSystemService(StorageManager::class.java)?.storageVolumes.orEmpty()
+                .filterNot { it.isPrimary }
+                .forEach { volume ->
+                    val directory = if (android.os.Build.VERSION.SDK_INT >= 30) volume.directory else null
+                    if (volume.state == Environment.MEDIA_MOUNTED && directory?.canRead() == true) {
+                        addRoot(runtime.local.uriFor(directory), volume.getDescription(this))
+                    }
+                }
+        }
+
+        runCatching {
+            contentResolver.persistedUriPermissions
+                .filter { it.isReadPermission && DocumentsContract.isTreeUri(it.uri) }
+                .forEach { permission ->
+                    val uri = permission.uri
+                    val documentId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull().orEmpty()
+                    if (localAccess && documentId == "primary:") return@forEach
+                    val savedName = prefs.getString("source_name_$uri", null)
+                    val inferredName = documentId.substringAfter(':').substringAfterLast('/').ifBlank {
+                        uri.authority?.substringBefore('.')?.replaceFirstChar(Char::uppercase) ?: "Storage folder"
+                    }
+                    addRoot(uri, savedName?.takeIf(String::isNotBlank) ?: inferredName)
+                }
+        }
+
+        // Saved remote connections are shown without probing the network. Connection
+        // errors appear only after the user opens a connection.
+        runtime.connections.list().filterNot { prefs.getBoolean("root_link_migrated_${it.id}", false) }.forEach { connection ->
+            val uri = runCatching { runtime.registry.rootUri(connection) }.getOrNull()
+            addRoot(uri, connection.displayName, connection.endpoint.orEmpty())
+        }
+
+        if (visible("partial_downloads"))
+            result += location("partial_downloads", "Unfinished downloads", "Continuable downloads found while browsing")
+        if (visible("external_link_history"))
+            result += location("external_link_history", "Recent external links", "Files and URIs opened from other apps")
+
+        runCatching {
+            val ref = runtime.containerLinks.refForUri(com.infinifolder.storage.ContainerLinksProvider.ROOT)
+                ?: return@runCatching
+            (runtime.containerLinks.list(ref) as? ProviderResult.Success)?.value?.let(result::addAll)
+        }
+        if (visible("pin_board") && localAccess) {
+            val pinBoardUri = runtime.local.uriFor(java.io.File(runtime.local.store.root, PinBoardDirectory.RELATIVE_PATH))
+            val pinBoardRef = runtime.provider.refForUri(pinBoardUri)
+            if (pinBoardRef != null && runtime.provider.stat(pinBoardRef) is ProviderResult.Success)
+                addRoot(pinBoardUri, "Pin board")
+        } else if (visible("pin_board")) result += location("pin_board", "Pin board", "Requires internal storage access")
+
+        if (visible("application_public"))
+            result += location("application_public", "Application public", "Storage exposed by installed apps")
+        if (visible("installed_apps")) addRoot(com.infinifolder.apps.AppsUri.ROOT_URI, "Installed Applications")
+        return result
+    }
+
+    /** This is the same AppDocumentSources discovery used by the full browser's Application public page. */
+    private fun selectionApplicationPublicEntries(): List<ResourceEntry> =
+        com.infinifolder.storage.AppDocumentSources(this).discover().mapNotNull { source ->
+            val uri = source.granted ?: return@mapNotNull null
+            val ref = runtime.provider.refForUri(uri) ?: return@mapNotNull null
+            val entry = (runtime.provider.stat(ref) as? ProviderResult.Success)?.value ?: return@mapNotNull null
+            entry.copy(metadata = entry.metadata.copy(name = source.title, isDirectory = true))
+        }
 
     private fun containerName(uri: Uri): String {
         var location = uri
@@ -596,7 +832,9 @@ class FloatingContainerService : Service() {
         val sortByName = preferences.getBoolean("sort_name", true)
         val sortKey = preferences.getString("sort_key", if (sortByName) "name" else "modified") ?: "name"
         val descending = preferences.getBoolean("sort_descending", !sortByName)
-        val rows = FileViewGrid.sortedEntries(entries, showHidden = false, sortKey, descending)
+        val rows = if (selectionMode && current == com.infinifolder.storage.ContainerLinksProvider.ROOT)
+            entries.filterNot { it.metadata.isHidden }
+        else FileViewGrid.sortedEntries(entries, showHidden = false, sortKey, descending)
         val iconRevision=iconResolver.revision()
         val table = FileViewGrid.build(this, rows, columns) { entry ->
             val card = FileEntryCard(this, entry, true, iconDp, ThemeManager.activeTheme.isDark)
@@ -665,8 +903,20 @@ class FloatingContainerService : Service() {
             })
             val dragItem = DragItem(card.container, icon, entry)
             dragItems += dragItem
-            card.container.setOnClickListener { activate(entry) }
-            card.container.setOnLongClickListener { startLauncherDrag(dragItem) }
+            val entryKey = entry.uri.toString()
+            card.container.alpha = if (entryKey in selectedEntries) 0.58f else 1f
+            card.container.setOnClickListener {
+                if (selectionMode && selectionAllowMultiple && !entry.metadata.isDirectory &&
+                    com.infinifolder.storage.LinkResolver.kind(entry.metadata) == null) toggleSelection(entry, card.container)
+                else activate(entry)
+            }
+            card.container.setOnLongClickListener {
+                if (selectionMode) {
+                    if (selectionAllowMultiple && !entry.metadata.isDirectory &&
+                        com.infinifolder.storage.LinkResolver.kind(entry.metadata) == null) toggleSelection(entry, card.container)
+                    true
+                } else startLauncherDrag(dragItem)
+            }
             card.container
         }
         grid.addView(table)
@@ -750,6 +1000,54 @@ class FloatingContainerService : Service() {
     }
 
     private fun activate(entry: ResourceEntry) {
+        if (selectionMode) {
+            val location = BrowserLocations.find(entry.uri)
+            if (current == com.infinifolder.storage.ContainerLinksProvider.ROOT && location != null) {
+                when (location.key) {
+                    "application_public" -> show(entry.uri, entry.metadata.name)
+                    "partial_downloads" -> show(com.infinifolder.storage.PartialDownloadsProvider.ROOT, entry.metadata.name)
+                    "external_link_history" -> show(com.infinifolder.storage.RecentExternalLinksProvider.ROOT, entry.metadata.name)
+                    "installed_apps" -> show(com.infinifolder.apps.AppsUri.ROOT_URI, entry.metadata.name)
+                    "virtual-root" -> show(com.infinifolder.storage.ContainerLinksProvider.ROOT, entry.metadata.name)
+                    "internal_shared", "pin_board" -> {
+                        if (entry.ref.providerId == "browser-location") {
+                            fallbackSelection("This location needs access through InfiniFolder's full browser")
+                        } else show(entry.uri, entry.metadata.name)
+                    }
+                    else -> if (entry.metadata.isDirectory) show(entry.uri, entry.metadata.name)
+                        else selectEntry(entry)
+                }
+            } else if (entry.metadata.isDirectory) show(entry.uri, entry.metadata.name)
+            else if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null) {
+                when (val resolved = com.infinifolder.storage.LinkResolver.resolve(runtime.provider, entry)) {
+                    is ProviderResult.Success -> {
+                        val target = resolved.value
+                        val targetEntry = target.entry
+                        val namedTarget = targetEntry?.let { actual ->
+                            actual.copy(metadata = actual.metadata.copy(
+                                name = target.name?.takeIf { it.isNotBlank() } ?: actual.metadata.name
+                            ))
+                        }
+                        when {
+                            namedTarget == null -> Toast.makeText(this, "This link does not resolve to a readable file", Toast.LENGTH_SHORT).show()
+                            namedTarget.metadata.isDirectory -> show(namedTarget.uri, target.name)
+                            !com.infinifolder.apps.AppsUri.isAppUri(target.uri) &&
+                                !ArchiveFormats.isPackagedFormat(namedTarget.metadata.name, namedTarget.metadata.mimeType) &&
+                                (ArchiveFormats.isArchive(namedTarget.metadata.name, namedTarget.metadata.mimeType) ||
+                                    ArchiveFormats.isDiscImage(namedTarget.metadata.name, namedTarget.metadata.mimeType)) -> {
+                                val mounted = ArchiveUri.toArchiveUri(namedTarget.uri)
+                                if (runtime.provider.refForUri(mounted) != null) show(mounted, target.name)
+                                else selectEntry(namedTarget)
+                            }
+                            else -> selectEntry(namedTarget)
+                        }
+                    }
+                    is ProviderResult.Failure -> Toast.makeText(this, resolved.message, Toast.LENGTH_SHORT).show()
+                    is ProviderResult.Unsupported -> Toast.makeText(this, "This link cannot be opened", Toast.LENGTH_SHORT).show()
+                }
+            } else selectEntry(entry)
+            return
+        }
         when {
             entry.metadata.isDirectory -> show(entry.uri, entry.metadata.name)
             !com.infinifolder.apps.AppsUri.isAppUri(entry.uri) &&
@@ -760,6 +1058,85 @@ class FloatingContainerService : Service() {
             }
             else -> launchInMain(entry.uri)
         }
+    }
+
+    private fun selectEntry(entry: ResourceEntry) {
+        val mime = entry.metadata.mimeType.ifBlank { "application/octet-stream" }
+        if (selectionMimeTypes.isNotEmpty() && selectionMimeTypes.none { matchesMime(it, mime) }) {
+            Toast.makeText(this, "Choose a file matching ${selectionMimeTypes.joinToString()}", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (selectionAllowMultiple) {
+            toggleSelection(entry)
+            return
+        }
+        val result = Bundle().apply {
+            putString(FileSelectionContract.EXTRA_RESULT_URI, entry.uri.toString())
+            putString(FileSelectionContract.EXTRA_RESULT_NAME, entry.metadata.name)
+            putString(FileSelectionContract.EXTRA_RESULT_MIME, mime)
+            entry.metadata.sizeBytes?.let { putLong(FileSelectionContract.EXTRA_RESULT_SIZE, it) }
+        }
+        finishSelection(FileSelectionContract.RESULT_SELECTED, result)
+        removeWindow()
+        stopSelf()
+    }
+
+    private fun toggleSelection(entry: ResourceEntry, card: View? = null) {
+        val key = entry.uri.toString()
+        if (selectedEntries.remove(key) == null) selectedEntries[key] = entry
+        card?.alpha = if (key in selectedEntries) 0.58f else 1f
+        updateSelectionControls()
+    }
+
+    private fun updateSelectionControls() {
+        selectionDoneView?.visibility = if (selectionMode && selectionAllowMultiple) View.VISIBLE else View.GONE
+        selectionDoneView?.text = "Open (${selectedEntries.size})"
+        normalActionView?.visibility = if (selectionMode) View.GONE else View.VISIBLE
+    }
+
+    private fun completeMultipleSelection() {
+        if (selectedEntries.isEmpty()) {
+            Toast.makeText(this, "Select at least one file", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val entries = selectedEntries.values.toList()
+        val result = Bundle().apply {
+            putStringArrayList(FileSelectionContract.EXTRA_RESULT_URIS, ArrayList(entries.map { it.uri.toString() }))
+            putStringArrayList(FileSelectionContract.EXTRA_RESULT_NAMES, ArrayList(entries.map { it.metadata.name }))
+            putStringArrayList(FileSelectionContract.EXTRA_RESULT_MIMES, ArrayList(entries.map {
+                it.metadata.mimeType.ifBlank { "application/octet-stream" }
+            }))
+            putLongArray(FileSelectionContract.EXTRA_RESULT_SIZES,
+                entries.map { it.metadata.sizeBytes ?: -1L }.toLongArray())
+        }
+        finishSelection(FileSelectionContract.RESULT_SELECTED, result)
+        removeWindow()
+        stopSelf()
+    }
+
+    private fun matchesMime(pattern: String, mime: String): Boolean {
+        val p = pattern.trim().lowercase()
+        val m = mime.trim().lowercase()
+        return p == "*/*" || p == m || (p.endsWith("/*") && m.startsWith(p.substringBefore('/') + "/"))
+    }
+
+    private fun finishSelection(code: Int, data: Bundle) {
+        val receiver = selectionReceiver ?: return
+        selectionReceiver = null
+        selectionMode = false
+        selectionAllowMultiple = false
+        selectionMimeTypes = emptyList()
+        selectedEntries.clear()
+        receiver.send(code, data)
+    }
+
+    private fun fallbackSelection(message: String) {
+        finishSelection(FileSelectionContract.RESULT_FALLBACK, Bundle().apply {
+            putBoolean(FileSelectionContract.EXTRA_FALLBACK_TO_SOURCES, true)
+            putString(FileSelectionContract.EXTRA_FAILURE_MESSAGE, message)
+        })
+        removeWindow()
+        stopSelf()
     }
 
     private fun launchInMain(uri: Uri, inApp: Boolean = false) {
@@ -783,6 +1160,7 @@ class FloatingContainerService : Service() {
         // Going to Home deliberately changes focus during a shortcut drag. Its
         // activity/native drag callbacks handle cancellation and final dismissal.
         if (windowView == null || launcherDrag != null) return
+        if (selectionMode) finishSelection(FileSelectionContract.RESULT_CANCELLED, Bundle.EMPTY)
         removeWindow()
         stopSelf()
     }
@@ -803,6 +1181,7 @@ class FloatingContainerService : Service() {
     }
 
     override fun onDestroy() {
+        if (selectionMode) finishSelection(FileSelectionContract.RESULT_CANCELLED, Bundle.EMPTY)
         if (systemDialogsRegistered) {
             unregisterReceiver(systemDialogs)
             systemDialogsRegistered = false
@@ -825,6 +1204,10 @@ class FloatingContainerService : Service() {
         private const val TOOLBAR_HEIGHT_DP = 39
         const val EXTRA_URI = "com.infinifolder.overlay.URI"
         const val EXTRA_DISPLAY_NAME = "com.infinifolder.overlay.DISPLAY_NAME"
+        const val EXTRA_SELECTION_MODE = "com.infinifolder.overlay.SELECTION_MODE"
+        const val EXTRA_ALLOW_MULTIPLE = "com.infinifolder.overlay.ALLOW_MULTIPLE"
+        const val EXTRA_SELECTION_RECEIVER = "com.infinifolder.overlay.SELECTION_RECEIVER"
+        const val EXTRA_SELECTION_MIME_TYPES = "com.infinifolder.overlay.SELECTION_MIME_TYPES"
         fun intent(context: android.content.Context, uri: Uri) = Intent(context, FloatingContainerService::class.java).setData(uri)
         fun intent(context: android.content.Context, uri: Uri, displayName: String?) = intent(context, uri)
             .putExtra(EXTRA_DISPLAY_NAME, displayName)

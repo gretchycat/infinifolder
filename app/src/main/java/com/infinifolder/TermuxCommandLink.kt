@@ -12,7 +12,7 @@ import com.infinifolder.theme.ThemeManager
 
 /** Portable shortcut payload; command text is only sent to Termux after a user opens the link. */
 object TermuxCommandLink {
-    private const val SCHEME = "infinifolder-termux"
+    const val SCHEME = "infinifolder-termux"
     private const val PERMISSION = "com.termux.permission.RUN_COMMAND"
     const val SUFFIX = ".termux.iflink"
     fun uri(command: String, workingDirectory: String?): Uri = Uri.Builder()

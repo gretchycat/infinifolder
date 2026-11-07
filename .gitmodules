@@ -19,3 +19,6 @@
 [submodule "libraries/libinfinivideo"]
 	path = libraries/libinfinivideo
 	url = https://github.com/gretchycat/libinfinivideo.git
+[submodule "libraries/libinfiniselect"]
+	path = libraries/libinfiniselect
+	url = https://github.com/gretchycat/libinfiniselect.git

@@ -1,14 +1,18 @@
 # Android file and URI registration
 
-Implemented 2026-11-03. The main app and standalone host generate their Android
-intent filters from the live supported-type definitions at build time.
+The main app, InfiniScribe and standalone viewer hosts generate Android intent
+filters from the runtime capability catalog of their linked libraries. Android
+reads intent filters when a package is installed or updated, so an app cannot
+add them when it starts. During each build, the catalog queries every registered
+`CapabilityProvider` on that target's actual runtime classpath; the manifest
+generator does not maintain a second file-type list. The running app separately
+discovers those same providers for format detection and dispatch.
 
 ## Registered handlers
 
-The main APK generates MIME entries (including generic `text/*`), filename
-suffixes including multipart RAR/ARJ names, and native URI schemes from linked
-handlers plus compatibility definitions. Exact counts belong to the generated
-JSON summaries, not a separate handwritten registry. Native scheme groups include:
+The main APK generates MIME entries, filename suffixes and URI schemes from linked
+handlers. Exact values belong to the generated JSON summary, not a separate
+handwritten registry. Native scheme groups currently include:
 
 | Group | Schemes |
 | --- | --- |
@@ -81,34 +85,37 @@ Separate untyped and generic-binary filters use filename constraints. Android 12
 uses `pathSuffix`, covering dotted filenames/directories. Lowercase and uppercase
 suffixes are included. Older Android retains the basic escaped `pathPattern`
 fallback; filenames with multiple dots can require a supplied MIME on those
-versions. No unrestricted file `*/*` handler is added. **`.iflink` files** additionally
-have a filename-constrained any-MIME filter, so a file manager's differing MIME
-label does not prevent Android from offering InfiniFolder. The canonical
-`application/vnd.infinifolder.shortcut+json` registration handles opaque
-`content://` IDs without a filename. Untyped `.iflink` paths use the existing
-untyped suffix filter. All three routes invoke the existing link resolver;
-this does not register a new `iflink://` protocol or bypass provider grants.
-The existing conditional
-**Open with Termux** alias remains separate, and the old any-MIME `.incomplete`
-resume contract remains constrained to that suffix. Typed and untyped native URI
-filters are separate from file MIME/path filters to avoid accidental combinations.
+versions. InfiniFolder accepts generic MIME and untyped `content://` and `file://`
+view requests because Android cannot inspect provider content before choosing an
+app. This also covers `.iflink` when a provider supplies an unusual MIME; every
+route still invokes the normal target resolver and provider grants remain
+required. The share receiver accepts arbitrary MIME because it records externally
+shared file and URI references.
+
+These filters are Android package metadata. A library capability change updates
+them when the host is rebuilt and installed/updated; an Activity cannot add new
+package intent filters after startup. The running app separately queries its
+installed capability registry for format detection and dispatch.
 
 ## Generation and build evidence
 
-`scripts/build-android-intent-manifest.py` reuses the source inventory in
-`scripts/export-supported-types.py`; importing the inventory no longer rewrites
-its CSV. Gradle exports the capability catalog from each host's actual dependency classpath.
-The generator reads it alongside Store/Scribe/Canvas/Sound compatibility inventory,
-writes each module's generated manifest and a JSON registration summary,
-and is wired into Gradle before manifest processing. Source templates retain
-permissions and components. There is no fixed count of MIME placeholders to fill.
+`scripts/runtime-capability-catalog.gradle` exports each host's capability catalog
+from its linked runtime classpath before manifest processing. The generator reads
+only that catalog for file MIME types, extensions and library URI schemes, then
+writes the generated manifest and a JSON summary listing the contributing
+handlers and libraries. InfiniFolder's browser-page and Termux-command URI
+schemes are read from their app-owned handlers. Source templates retain
+permissions and components.
 
-The source-type follow-up adds 107 explicit extension associations, including
-C/C++ headers, Pascal, Ada, BASIC, batch and other programming languages. Both
-Android registrations and the bundled theme consume the expanded identities; no
-new handwritten manifest list is required. Editable MIME entries derive from the selected installed viewers and retain
-launch/save capability checks. See [source identity and highlighting](syntax-highlighting.md#source-file-identity)
-for the distinction between file identity, text editing and lexical profiles.
+Store's identification handler publishes its explicit filename identities
+through the same capability catalog. This includes 107 source extension
+associations such as C/C++ headers, Pascal, Ada, BASIC and batch files, along
+with archive, ebook, font, media, link and package identities. Adding or changing
+an association in a linked library therefore updates generated Android filters
+on the next build. Editable MIME entries come from handlers that advertise edit
+support and retain launch/save capability checks. See [source identity and
+highlighting](syntax-highlighting.md#source-file-identity) for the distinction
+between file identity, text editing and lexical profiles.
 Read-only [font previews](font-viewer.md) add four filename suffixes and ten
 MIME identifiers/aliases; dedicated `-Pviewer=font` builds register only these
 font inputs. GEN ROM identity/icons do not advertise a parser or native opener.
@@ -116,28 +123,32 @@ font inputs. GEN ROM identity/icons do not advertise a parser or native opener.
 Generated summaries:
 
 - `app/build/generated/android-intents/AndroidManifest.json`
+- `infiniscribe/build/generated/android-intents/AndroidManifest.json`
 - `viewer-host/build/generated/android-intents/AndroidManifest.json`
 
-Command:
+Build commands:
 
 ```sh
-gradle :app:assembleDebug :viewer-host:assembleDebug --offline --console=plain
+gradle :app:assembleDebug :viewer-host:assembleDebug -Pviewer=all --offline --console=plain
+gradle -p infiniscribe assembleDebug --offline --console=plain
 ```
 
-The main and combined standalone APKs built in the
-[runtime-discovery gate](runtime-capabilities.md); the subsequent FLC alias fix also
-passed the app debug build. Exact commands, provider counts and test scope belong
-to that gate. Earlier font-registration/manifest inspections remain historical.
-Selected-viewer Android chooser/permission/default behavior still needs device checks.
-No new tests were run for this documentation/FLC follow-up.
+Current build evidence:
 
-The 2026-11-04 `.iflink` filename fallback and pin-board drop follow-up built both
-APKs successfully with the command above: `BUILD SUCCESSFUL in 34s`, 523 tasks.
-Evidence: `build/docs-audit/pin-board-iflink-build.log`. The merged and packaged
-app manifests contain the canonical link MIME, untyped/binary filename filters
-and the filename-constrained any-MIME fallback. Documentation link checks found
-no missing files or anchors. No automated tests were run for this follow-up;
-Android chooser/grant behavior and pin-board drag UI remain unverified on-device.
+| Command | Result |
+| --- | --- |
+| `gradle :app:assembleDebug --offline --console=plain` | Passed; catalog contains 63 handlers from 7 libraries, 324 MIME types and 927 extensions. Includes `.iflink`, `.incomplete`, `.torrent`, `.wsz`, split archive volumes and the Termux URI scheme. |
+| `gradle -p infiniscribe assembleDebug --offline --console=plain` | Passed; catalog contains 21 Scribe/viewer handlers, 78 MIME types and 190 extensions. It excludes unrelated image, audio and storage formats. |
+| `gradle :viewer-host:assembleDebug -Pviewer=all --offline --console=plain` | Passed; catalog contains 12 viewer handlers, 123 MIME types and 402 extensions. |
+
+The catalog is regenerated from each app's linked runtime classpath, so newly
+registered providers flow into its manifest without edits to a central type
+list. A new capability only reaches a host that links the library or component
+that provides it.
+
+Both generated summaries include the catalog fingerprint and contributing handler
+and library names. These builds validate capability export, manifest generation
+and packaging; no tests or on-device chooser/grant checks were run for this change.
 
 Check Open-with on a real image, Office/ebook file, ZIP/disk image, torrent/link,
 opaque provider URI with MIME, generic-binary URI with a real filename, network

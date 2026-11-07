@@ -1,9 +1,9 @@
 ﻿filename,base_artwork,category,identifier,display_label,extensions,mime_type,capabilities,support_level,module,assignment_basis,assignment_reason
 file-16sv.svg,bases/audio.svg,file_type,.16sv,.16sv,.16sv,audio/x-16sv,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
-file-3g2.svg,bases/video.svg,file_type,.3g2,.3g2,.3g2,video/3gpp2,video playback routing; audio decoder route,registered association/route,Video/Sound/libVLC,mime_type,MIME media family video.
+file-3g2.svg,bases/video.svg,file_type,.3g2,.3g2,.3g2,video/3gpp2,video playback routing,registered association/route,Video/Sound/libVLC,mime_type,MIME media family video.
 file-3ga.svg,bases/audio.svg,file_type,.3ga,.3ga,.3ga,audio/3gpp,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
-file-3gp.svg,bases/video.svg,file_type,.3gp,.3gp,.3gp,video/3gpp,video playback routing; audio decoder route,registered association/route,Video/Sound/libVLC,mime_type,MIME media family video.
-file-3gpp.svg,bases/video.svg,file_type,.3gpp,.3gpp,.3gpp,video/3gpp,video playback routing; audio decoder route,registered association/route,Video/Sound/libVLC,mime_type,MIME media family video.
+file-3gp.svg,bases/video.svg,file_type,.3gp,.3gp,.3gp,video/3gpp,video playback routing,registered association/route,Video/Sound/libVLC,mime_type,MIME media family video.
+file-3gpp.svg,bases/video.svg,file_type,.3gpp,.3gpp,.3gpp,video/3gpp,video playback routing,registered association/route,Video/Sound/libVLC,mime_type,MIME media family video.
 file-7z.svg,bases/archive.svg,file_type,.7z,.7z,.7z,application/x-7z-compressed,container recognition; browse/extract when parser accepts,registered association/route,Vault,mime_type,"MIME type identifies an archive, package, or compressed container."
 file-8svx.svg,bases/audio.svg,file_type,.8svx,.8svx,.8svx,audio/x-8svx,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
 file-a52.svg,bases/audio.svg,file_type,.a52,.a52,.a52,audio/ac3,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
@@ -33,7 +33,7 @@ file-apm-lzma.svg,bases/archive.svg,file_type,.apm.lzma,.apm.lzma,.apm.lzma,,con
 file-apm-xz.svg,bases/archive.svg,file_type,.apm.xz,.apm.xz,.apm.xz,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
 file-apm-z.svg,bases/archive.svg,file_type,.apm.z,.apm.z,.apm.z,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
 file-apm-zst.svg,bases/archive.svg,file_type,.apm.zst,.apm.zst,.apm.zst,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
-file-apng.svg,bases/image.svg,file_type,.apng,.apng,.apng,image/apng,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
+file-apng.svg,bases/image.svg,file_type,.apng,.apng,.apng,image/apng,image animation viewer; still thumbnail,registered association/route,Canvas/Android,mime_type,MIME media family image.
 file-ar.svg,bases/archive.svg,file_type,.ar,.ar,.ar,application/x-archive,container recognition; browse/extract when parser accepts,registered association/route,Vault,mime_type,"MIME type identifies an archive, package, or compressed container."
 file-arj.svg,bases/archive.svg,file_type,.arj,.arj,.arj,application/x-arj,container recognition; browse/extract when parser accepts,registered association/route,Vault,mime_type,"MIME type identifies an archive, package, or compressed container."
 file-asc.svg,bases/document.svg,file_type,.asc,.asc,.asc,text/plain,text/CP437/ANSI viewer; art preview by content,registered association/route,Scribe/Canvas/Sound,extension,"Document, ebook, or readable text format."
@@ -46,6 +46,7 @@ file-avif.svg,bases/image.svg,file_type,.avif,.avif,.avif,image/avif,MIME identi
 file-avifs.svg,bases/image.svg,file_type,.avifs,.avifs,.avifs,image/avif,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-avr.svg,bases/audio.svg,file_type,.avr,.avr,.avr,audio/x-avr,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
 file-awb.svg,bases/audio.svg,file_type,.awb,.awb,.awb,audio/amr-wb,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
+file-ay.svg,bases/audio.svg,file_type,.ay,.ay,.ay,,audio playback/codec routing,registered extension/pattern,Sound,capability_family,Registered audio playback route.
 file-azw.svg,bases/document.svg,file_type,.azw,.azw,.azw,application/vnd.amazon.ebook,MOBI/KF8 ebook viewer; embedded cover icon,registered association/route,Scribe/libmobi,document_reader,Scribe reading route for MOBI: use the document base; content previews remain a separate policy.
 file-azw3.svg,bases/document.svg,file_type,.azw3,.azw3,.azw3,application/vnd.amazon.mobi8-ebook,MOBI/KF8 ebook viewer; embedded cover icon,registered association/route,Scribe/libmobi,document_reader,Scribe reading route for MOBI: use the document base; content previews remain a separate policy.
 file-bas.svg,bases/code.svg,file_type,.bas,.bas,.bas,text/x-basic,text/code viewer/editor,registered association/route,Scribe,source_type,"Source code, markup, or structured configuration format."
@@ -54,13 +55,6 @@ file-bashrc.svg,bases/code.svg,file_type,.bashrc,.bashrc,.bashrc,,text/code view
 file-bat.svg,bases/code.svg,file_type,.bat,.bat,.bat,application/x-bat,text/code viewer/editor,registered association/route,Scribe,extension,"Source code, markup, or structured configuration format."
 file-bi.svg,bases/code.svg,file_type,.bi,.bi,.bi,text/x-basic,text/code viewer/editor,registered association/route,Scribe,source_type,"Source code, markup, or structured configuration format."
 file-bin.svg,bases/binary.svg,file_type,.bin,.bin,.bin,application/octet-stream,generic binary identity; optional magic/container probe,registered association/route,Store/Vault,generic_fallback,Generic binary extension with no more specific association.
-file-bin-bz.svg,bases/archive.svg,file_type,.bin.bz,.bin.bz,.bin.bz,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
-file-bin-bz2.svg,bases/archive.svg,file_type,.bin.bz2,.bin.bz2,.bin.bz2,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
-file-bin-gz.svg,bases/archive.svg,file_type,.bin.gz,.bin.gz,.bin.gz,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
-file-bin-lzma.svg,bases/archive.svg,file_type,.bin.lzma,.bin.lzma,.bin.lzma,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
-file-bin-xz.svg,bases/archive.svg,file_type,.bin.xz,.bin.xz,.bin.xz,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
-file-bin-z.svg,bases/archive.svg,file_type,.bin.z,.bin.z,.bin.z,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
-file-bin-zst.svg,bases/archive.svg,file_type,.bin.zst,.bin.zst,.bin.zst,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
 file-bmp.svg,bases/image.svg,file_type,.bmp,.bmp,.bmp,image/bmp,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-bw.svg,bases/image.svg,file_type,.bw,.bw,.bw,image/x-sgi,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-bz2.svg,bases/archive.svg,file_type,.bz2,.bz2,.bz2,application/x-bzip2,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,"MIME type identifies an archive, package, or compressed container."
@@ -233,6 +227,9 @@ file-fish.svg,bases/code.svg,file_type,.fish,.fish,.fish,application/x-fishscrip
 file-fit.svg,bases/image.svg,file_type,.fit,.fit,.fit,image/fits,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-fits.svg,bases/image.svg,file_type,.fits,.fits,.fits,image/fits,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-flac.svg,bases/audio.svg,file_type,.flac,.flac,.flac,audio/flac,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
+file-flc.svg,bases/video.svg,file_type,.flc,.flc,.flc,video/x-fli,indexed FLI/FLC animation viewer; content thumbnail; bounded header recovery,registered association/route,Canvas,mime_type,MIME video animation type.
+file-fli.svg,bases/video.svg,file_type,.fli,.fli,.fli,video/x-fli,indexed FLI/FLC animation viewer; content thumbnail; bounded header recovery,registered association/route,Canvas,mime_type,MIME video animation type.
+file-flic.svg,bases/video.svg,file_type,.flic,.flic,.flic,video/x-fli,indexed FLI/FLC animation viewer; content thumbnail; bounded header recovery,registered association/route,Canvas,mime_type,MIME video animation type.
 file-flp.svg,bases/disk.svg,file_type,.flp,.flp,.flp,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,"Disk image, partition table, or filesystem image."
 file-flp-bz.svg,bases/archive.svg,file_type,.flp.bz,.flp.bz,.flp.bz,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
 file-flp-bz2.svg,bases/archive.svg,file_type,.flp.bz2,.flp.bz2,.flp.bz2,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
@@ -250,12 +247,13 @@ file-fs.svg,bases/code.svg,file_type,.fs,.fs,.fs,text/x-fsharp,text/code viewer/
 file-fsx.svg,bases/code.svg,file_type,.fsx,.fsx,.fsx,text/x-fsharp,text/code viewer/editor,registered association/route,Scribe,source_type,"Source code, markup, or structured configuration format."
 file-fts.svg,bases/image.svg,file_type,.fts,.fts,.fts,image/fits,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-g722.svg,bases/audio.svg,file_type,.g722,.g722,.g722,audio/x-g722,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
+file-gbs.svg,bases/audio.svg,file_type,.gbs,.gbs,.gbs,,audio playback/codec routing,registered extension/pattern,Sound,capability_family,Registered audio playback route.
 file-gen.svg,bases/binary.svg,file_type,.gen,.gen,.gen,application/x-genesis-rom,MIME identity/icon; external open fallback,registered association/route,Store/host,extension_identity,Sega Genesis ROM data; no supported audio parser is assumed.
-file-gif.svg,bases/image.svg,file_type,.gif,.gif,.gif,image/gif,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
+file-gif.svg,bases/image.svg,file_type,.gif,.gif,.gif,image/gif,image animation viewer; still thumbnail,registered association/route,Canvas/Android,mime_type,MIME media family image.
 file-gitattributes.svg,bases/code.svg,file_type,.gitattributes,.gitattributes,.gitattributes,,text/code viewer/editor,registered extension/pattern,Scribe,extension,"Source code, markup, or structured configuration format."
 file-gitignore.svg,bases/code.svg,file_type,.gitignore,.gitignore,.gitignore,,text/code viewer/editor,registered extension/pattern,Scribe,extension,"Source code, markup, or structured configuration format."
 file-go.svg,bases/code.svg,file_type,.go,.go,.go,text/x-go,text/code viewer/editor,registered association/route,Scribe,extension,"Source code, markup, or structured configuration format."
-file-gp3.svg,bases/audio.svg,file_type,.gp3,.gp3,.gp3,application/x-guitar-pro,audio playback/codec routing,registered association/route,Sound,extension,"Audio cue, music score, or instrument patch format."
+file-gp3.svg,bases/audio.svg,file_type,.gp3,.gp3,.gp3,application/x-guitar-pro,MIME identity/icon; external open fallback,registered association/route,Store/host,extension,"Audio cue, music score, or instrument patch format."
 file-gpt.svg,bases/disk.svg,file_type,.gpt,.gpt,.gpt,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,"Disk image, partition table, or filesystem image."
 file-gpt-bz.svg,bases/archive.svg,file_type,.gpt.bz,.gpt.bz,.gpt.bz,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
 file-gpt-bz2.svg,bases/archive.svg,file_type,.gpt.bz2,.gpt.bz2,.gpt.bz2,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
@@ -267,6 +265,7 @@ file-gpt-zst.svg,bases/archive.svg,file_type,.gpt.zst,.gpt.zst,.gpt.zst,,contain
 file-gradle.svg,bases/code.svg,file_type,.gradle,.gradle,.gradle,text/x-groovy,text/code viewer/editor,registered association/route,Scribe,extension,"Source code, markup, or structured configuration format."
 file-groovy.svg,bases/code.svg,file_type,.groovy,.groovy,.groovy,text/x-groovy,text/code viewer/editor,registered association/route,Scribe,source_type,"Source code, markup, or structured configuration format."
 file-gsm.svg,bases/audio.svg,file_type,.gsm,.gsm,.gsm,audio/x-gsm,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
+file-gym.svg,bases/audio.svg,file_type,.gym,.gym,.gym,,audio playback/codec routing,registered extension/pattern,Sound,capability_family,Registered audio playback route.
 file-gz.svg,bases/archive.svg,file_type,.gz,.gz,.gz,application/gzip,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,"MIME type identifies an archive, package, or compressed container."
 file-h.svg,bases/code.svg,file_type,.h,.h,.h,text/x-chdr,text/code viewer/editor,registered association/route,Scribe,extension,"Source code, markup, or structured configuration format."
 file-hdr.svg,bases/image.svg,file_type,.hdr,.hdr,.hdr,image/vnd.radiance,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
@@ -274,6 +273,7 @@ file-heic.svg,bases/image.svg,file_type,.heic,.heic,.heic,image/heic,MIME identi
 file-heics.svg,bases/image.svg,file_type,.heics,.heics,.heics,image/heic,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-heif.svg,bases/image.svg,file_type,.heif,.heif,.heif,image/heif,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-heifs.svg,bases/image.svg,file_type,.heifs,.heifs,.heifs,image/heif,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
+file-hes.svg,bases/audio.svg,file_type,.hes,.hes,.hes,,audio playback/codec routing,registered extension/pattern,Sound,capability_family,Registered audio playback route.
 file-hfs.svg,bases/disk.svg,file_type,.hfs,.hfs,.hfs,application/x-raw-disk-image,container recognition; browse/extract when parser accepts,registered association/route,Vault,extension,"Disk image, partition table, or filesystem image."
 file-hfs-bz.svg,bases/archive.svg,file_type,.hfs.bz,.hfs.bz,.hfs.bz,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
 file-hfs-bz2.svg,bases/archive.svg,file_type,.hfs.bz2,.hfs.bz2,.hfs.bz2,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
@@ -368,6 +368,7 @@ file-kla.svg,bases/image.svg,file_type,.kla,.kla,.kla,image/x-koala,MIME identit
 file-koa.svg,bases/image.svg,file_type,.koa,.koa,.koa,image/x-koala,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-kra.svg,bases/image.svg,file_type,.kra,.kra,.kra,image/x-krita,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-ksh.svg,bases/code.svg,file_type,.ksh,.ksh,.ksh,application/x-sh,text/code viewer/editor,registered association/route,Scribe,source_type,"Source code, markup, or structured configuration format."
+file-kss.svg,bases/audio.svg,file_type,.kss,.kss,.kss,,audio playback/codec routing,registered extension/pattern,Sound,capability_family,Registered audio playback route.
 file-kt.svg,bases/code.svg,file_type,.kt,.kt,.kt,text/x-kotlin,text/code viewer/editor,registered association/route,Scribe,extension,"Source code, markup, or structured configuration format."
 file-kts.svg,bases/code.svg,file_type,.kts,.kts,.kts,text/x-kotlin,text/code viewer/editor,registered association/route,Scribe,extension,"Source code, markup, or structured configuration format."
 file-ktx.svg,bases/image.svg,file_type,.ktx,.ktx,.ktx,image/ktx,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
@@ -411,20 +412,22 @@ file-mkd.svg,bases/document.svg,file_type,.mkd,.mkd,.mkd,text/markdown,Markdown 
 file-mkdn.svg,bases/document.svg,file_type,.mkdn,.mkdn,.mkdn,text/markdown,Markdown viewer,registered association/route,Scribe,extension,"Document, ebook, or readable text format."
 file-mkv.svg,bases/video.svg,file_type,.mkv,.mkv,.mkv,video/x-matroska,video playback routing,registered association/route,Video/Sound/libVLC,mime_type,MIME media family video.
 file-mlp.svg,bases/audio.svg,file_type,.mlp,.mlp,.mlp,audio/x-mlp,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
-file-mmf.svg,bases/audio.svg,file_type,.mmf,.mmf,.mmf,application/vnd.smaf,audio playback/codec routing,registered association/route,Sound,mime_type,"Audio interchange, cue sheet, or playlist MIME type."
+file-mmf.svg,bases/audio.svg,file_type,.mmf,.mmf,.mmf,application/vnd.smaf,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,"Audio interchange, cue sheet, or playlist MIME type."
+file-mng.svg,bases/video.svg,file_type,.mng,.mng,.mng,video/x-mng,PNG-based MNG animation/interactive viewer; content thumbnail,registered association/route,Canvas,mime_type,MIME video animation type.
 file-mobi.svg,bases/document.svg,file_type,.mobi,.mobi,.mobi,application/x-mobipocket-ebook,MOBI/KF8 ebook viewer; embedded cover icon,registered association/route,Scribe/libmobi,document_reader,Scribe reading route for MOBI: use the document base; content previews remain a separate policy.
 file-mod.svg,bases/audio.svg,file_type,.mod,.mod,.mod,audio/x-mod,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
 file-mov.svg,bases/video.svg,file_type,.mov,.mov,.mov,,video playback routing,registered extension/pattern,Video/libVLC,extension,Known video container or stream extension.
 file-mp1.svg,bases/audio.svg,file_type,.mp1,.mp1,.mp1,audio/mpeg,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
 file-mp2.svg,bases/audio.svg,file_type,.mp2,.mp2,.mp2,audio/mpeg,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
 file-mp3.svg,bases/audio.svg,file_type,.mp3,.mp3,.mp3,audio/mpeg,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
-file-mp4.svg,bases/video.svg,file_type,.mp4,.mp4,.mp4,video/mp4,video playback routing; audio decoder route,registered association/route,Video/Sound/libVLC,mime_type,MIME media family video.
+file-mp4.svg,bases/video.svg,file_type,.mp4,.mp4,.mp4,video/mp4,video playback routing,registered association/route,Video/Sound/libVLC,mime_type,MIME media family video.
 file-mts.svg,bases/code.svg,file_type,.mts,.mts,.mts,text/typescript,text/code viewer/editor,registered association/route,Scribe,source_type,"Source code, markup, or structured configuration format."
 file-neo.svg,bases/image.svg,file_type,.neo,.neo,.neo,image/x-neochrome,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-nfo.svg,bases/document.svg,file_type,.nfo,.nfo,.nfo,text/plain,text/CP437/ANSI viewer; art preview by content,registered association/route,Scribe/Canvas/Sound,extension,"Document, ebook, or readable text format."
 file-nim.svg,bases/code.svg,file_type,.nim,.nim,.nim,text/x-nim,text/code viewer/editor,registered association/route,Scribe,source_type,"Source code, markup, or structured configuration format."
 file-nims.svg,bases/code.svg,file_type,.nims,.nims,.nims,text/x-nimscript,text/code viewer/editor,registered association/route,Scribe,source_type,"Source code, markup, or structured configuration format."
 file-nsf.svg,bases/audio.svg,file_type,.nsf,.nsf,.nsf,audio/x-nsf,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
+file-nsfe.svg,bases/audio.svg,file_type,.nsfe,.nsfe,.nsfe,,audio playback/codec routing,registered extension/pattern,Sound,capability_family,Registered audio playback route.
 file-ntfs.svg,bases/disk.svg,file_type,.ntfs,.ntfs,.ntfs,application/x-raw-disk-image,container recognition; browse/extract when parser accepts,registered association/route,Vault,extension,"Disk image, partition table, or filesystem image."
 file-ntfs-bz.svg,bases/archive.svg,file_type,.ntfs.bz,.ntfs.bz,.ntfs.bz,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
 file-ntfs-bz2.svg,bases/archive.svg,file_type,.ntfs.bz2,.ntfs.bz2,.ntfs.bz2,,container recognition; browse/extract when parser accepts,registered extension/pattern,Vault,extension,Compressed stream or compressed disk/archive variant.
@@ -535,6 +538,7 @@ file-rs.svg,bases/code.svg,file_type,.rs,.rs,.rs,text/rust,text/code viewer/edit
 file-rtf.svg,bases/document.svg,file_type,.rtf,.rtf,.rtf,application/rtf,RTF text reader,registered association/route,Scribe/RTF Parser Kit,document_reader,Scribe reading route for RTF: use the document base; content previews remain a separate policy.
 file-s.svg,bases/code.svg,file_type,.s,.s,.s,text/x-asm,text/code viewer/editor,registered association/route,Scribe,extension,"Source code, markup, or structured configuration format."
 file-s3m.svg,bases/audio.svg,file_type,.s3m,.s3m,.s3m,audio/x-s3m,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
+file-sap.svg,bases/audio.svg,file_type,.sap,.sap,.sap,,audio playback/codec routing,registered extension/pattern,Sound,capability_family,Registered audio playback route.
 file-sass.svg,bases/code.svg,file_type,.sass,.sass,.sass,text/x-sass,text/code viewer/editor,registered association/route,Scribe,source_type,"Source code, markup, or structured configuration format."
 file-sc.svg,bases/code.svg,file_type,.sc,.sc,.sc,text/x-scala,text/code viewer/editor,registered association/route,Scribe,source_type,"Source code, markup, or structured configuration format."
 file-scala.svg,bases/code.svg,file_type,.scala,.scala,.scala,text/x-scala,text/code viewer/editor,registered association/route,Scribe,source_type,"Source code, markup, or structured configuration format."
@@ -543,12 +547,13 @@ file-scr.svg,bases/image.svg,file_type,.scr,.scr,.scr,image/x-zx-spectrum-scr,MI
 file-scss.svg,bases/code.svg,file_type,.scss,.scss,.scss,text/x-scss,text/code viewer/editor,registered association/route,Scribe,source_type,"Source code, markup, or structured configuration format."
 file-sf2.svg,bases/audio.svg,file_type,.sf2,.sf2,.sf2,audio/x-soundfont,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
 file-sfz.svg,bases/audio.svg,file_type,.sfz,.sfz,.sfz,audio/x-sfz,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
+file-sgc.svg,bases/audio.svg,file_type,.sgc,.sgc,.sgc,,audio playback/codec routing,registered extension/pattern,Sound,capability_family,Registered audio playback route.
 file-sgi.svg,bases/image.svg,file_type,.sgi,.sgi,.sgi,image/x-sgi,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-sh.svg,bases/code.svg,file_type,.sh,.sh,.sh,application/x-sh,text/code viewer/editor,registered association/route,Scribe,extension,"Source code, markup, or structured configuration format."
 file-sid.svg,bases/audio.svg,file_type,.sid,.sid,.sid,audio/x-sid,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
 file-six.svg,bases/image.svg,file_type,.six,.six,.six,image/x-sixel,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-sixel.svg,bases/image.svg,file_type,.sixel,.sixel,.sixel,image/x-sixel,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
-file-smaf.svg,bases/audio.svg,file_type,.smaf,.smaf,.smaf,application/vnd.smaf,audio playback/codec routing,registered association/route,Sound,mime_type,"Audio interchange, cue sheet, or playlist MIME type."
+file-smaf.svg,bases/audio.svg,file_type,.smaf,.smaf,.smaf,application/vnd.smaf,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,"Audio interchange, cue sheet, or playlist MIME type."
 file-snd.svg,bases/audio.svg,file_type,.snd,.snd,.snd,audio/basic,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
 file-spc.svg,bases/audio.svg,file_type,.spc,.spc,.spc,audio/x-spc,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
 file-sph.svg,bases/audio.svg,file_type,.sph,.sph,.sph,audio/x-nist-sphere,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
@@ -668,7 +673,7 @@ file-wav.svg,bases/audio.svg,file_type,.wav,.wav,.wav,audio/wav,audio playback/c
 file-wbmp.svg,bases/image.svg,file_type,.wbmp,.wbmp,.wbmp,image/vnd.wap.wbmp,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-weba.svg,bases/audio.svg,file_type,.weba,.weba,.weba,audio/webm,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
 file-webm.svg,bases/video.svg,file_type,.webm,.webm,.webm,video/webm,video playback routing,registered association/route,Video/Sound/libVLC,mime_type,MIME media family video.
-file-webp.svg,bases/image.svg,file_type,.webp,.webp,.webp,image/webp,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
+file-webp.svg,bases/image.svg,file_type,.webp,.webp,.webp,image/webp,image animation viewer; still thumbnail,registered association/route,Canvas/Android,mime_type,MIME media family image.
 file-wma.svg,bases/audio.svg,file_type,.wma,.wma,.wma,audio/x-ms-wma,audio playback/codec routing,registered association/route,Sound,mime_type,MIME media family audio.
 file-wmf.svg,bases/image.svg,file_type,.wmf,.wmf,.wmf,image/wmf,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-wmv.svg,bases/video.svg,file_type,.wmv,.wmv,.wmv,,video playback routing,registered extension/pattern,Video/libVLC,extension,Known video container or stream extension.
@@ -730,6 +735,13 @@ uri-sshfs.svg,bases/link.svg,uri_type,sshfs:,sshfs:,,,remote file browsing/trans
 uri-tel.svg,bases/link.svg,uri_type,tel:,tel:,,,shortcut target/icon rules; external open,delegated target,host,uri_scheme,URI schemes use the link pictogram.
 uri-torrent.svg,bases/link.svg,uri_type,torrent:,torrent:,,,resolved torrent container,implemented subset,Store,uri_scheme,URI schemes use the link pictogram.
 uri-webdav.svg,bases/link.svg,uri_type,webdav:,webdav:,,,remote file browsing/transfers,implemented/alias,Store,uri_scheme,URI schemes use the link pictogram.
+file-mindnodetouch.svg,bases/document.svg,file_type,.mindnodetouch,.mindnodetouch,.mindnodetouch,application/x-mindnode-touch,read-only visual mind-map viewer,registered viewer,MindNode Touch,mime_type,MIME identifies a readable document format.
+directory-internal-storage.svg,bases/folder.svg,directory_type,directory:internal-storage,INTERNAL STORAGE,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
+directory-usb-storage.svg,bases/folder.svg,directory_type,directory:usb-storage,USB STORAGE,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
+directory-sd-card.svg,bases/folder.svg,directory_type,directory:sd-card,SD CARD,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
+directory-removable-storage.svg,bases/folder.svg,directory_type,directory:removable-storage,REMOVABLE STORAGE,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
+directory-network-storage.svg,bases/folder.svg,directory_type,directory:network-storage,NETWORK STORAGE,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
+directory-application-public.svg,bases/folder.svg,directory_type,directory:application-public,APPLICATION PUBLIC,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
 directory-directory.svg,bases/folder.svg,directory_type,directory:directory,FOLDER,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
 directory-home.svg,bases/folder.svg,directory_type,directory:home,HOME,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
 directory-documents.svg,bases/folder.svg,directory_type,directory:documents,DOCS,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
@@ -783,9 +795,3 @@ base-fallback-folder.svg,bases/folder.svg,base_fallback,base:folder,Folder base 
 base-fallback-image.svg,bases/image.svg,base_fallback,base:image,Image base fallback,,,,base icon fallback,Infinifolder icon set,,
 base-fallback-link.svg,bases/link.svg,base_fallback,base:link,Link base fallback,,,,base icon fallback,Infinifolder icon set,,
 base-fallback-video.svg,bases/video.svg,base_fallback,base:video,Video base fallback,,,,base icon fallback,Infinifolder icon set,,
-directory-internal-storage.svg,bases/folder.svg,directory_type,directory:internal-storage,INTERNAL STORAGE,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
-directory-usb-storage.svg,bases/folder.svg,directory_type,directory:usb-storage,USB STORAGE,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
-directory-sd-card.svg,bases/folder.svg,directory_type,directory:sd-card,SD CARD,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
-directory-removable-storage.svg,bases/folder.svg,directory_type,directory:removable-storage,REMOVABLE STORAGE,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
-directory-network-storage.svg,bases/folder.svg,directory_type,directory:network-storage,NETWORK STORAGE,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
-directory-application-public.svg,bases/folder.svg,directory_type,directory:application-public,APPLICATION PUBLIC,,,,directory icon,Infinifolder icon set,directory_type,Directory pictogram layered on the shared folder base.
