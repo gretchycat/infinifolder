@@ -49,6 +49,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     private lateinit var headerText: TextView
     private lateinit var backBtn: TextView
     private lateinit var themeBtn: TextView
+    private lateinit var soundFontBtn: TextView
     private lateinit var playlistBtn: TextView
     private lateinit var castBtn: TextView
     private lateinit var openExtBtn: TextView
@@ -433,6 +434,19 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             setOnClickListener { showThemeChooser() }
         }
         topBar.addView(themeBtn, LinearLayout.LayoutParams(dp(38), dp(38)))
+
+        soundFontBtn = TextView(this).apply {
+            text = "🎹"
+            textSize = 17f
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            isClickable = true
+            isFocusable = true
+            contentDescription = "MIDI soundfont"
+            if (selectableRes != 0) setBackgroundResource(selectableRes)
+            setOnClickListener { showMidiSoundFontSettings() }
+        }
+        topBar.addView(soundFontBtn, LinearLayout.LayoutParams(dp(38), dp(38)))
 
         playlistBtn = TextView(this).apply {
             text = "☰"
@@ -1430,6 +1444,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         backBtn.setTextColor(barText)
         headerText.setTextColor(barText)
         themeBtn.setTextColor(barText)
+        soundFontBtn.setTextColor(barText)
         playlistBtn.setTextColor(barText)
         castBtn.setTextColor(barText)
         openExtBtn.setTextColor(barSubText)
@@ -1560,6 +1575,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         stopBtn.setTextColor(theme.textPrimary)
         nextBtn.setTextColor(theme.textPrimary)
         themeBtn.setTextColor(theme.textPrimary)
+        soundFontBtn.setTextColor(theme.textPrimary)
         playlistBtn.setTextColor(theme.textPrimary)
         openExtBtn.setTextColor(theme.textSecondary)
 
@@ -1657,7 +1673,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                 intArrayOf(theme.toolbarBorder, theme.toolbarBackground)).apply {
                 setStroke(dp(1).coerceAtLeast(1), theme.cardStroke)
             }
-            listOf(backBtn, headerText, themeBtn, playlistBtn, castBtn, openExtBtn).forEach {
+            listOf(backBtn, headerText, themeBtn, soundFontBtn, playlistBtn, castBtn, openExtBtn).forEach {
                 it.setTextColor(theme.textPrimary)
             }
             headerText.setOnClickListener { showPlaylistDialog() }
@@ -1739,6 +1755,30 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             .show()
     }
 
+    private fun showMidiSoundFontSettings() {
+        val selected = MidiSoundFontSettings.selectedName(this)
+        ThemeManager.createDialogBuilder(this)
+            .setTitle("MIDI SoundFont")
+            .setMessage(if (selected == null) "Using the bundled FluidR3Mono_GM.sf3 soundfont."
+                else "Using $selected. The soundfont is stored privately by InfiniFolder.")
+            .setPositiveButton("Choose SF2/SF3…") { _, _ ->
+                try {
+                    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                    }, 29162)
+                } catch (_: Exception) {
+                    Toast.makeText(this, "Cannot open file picker", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNeutralButton("Use bundled") { _, _ ->
+                MidiSoundFontSettings.useBundled(this)
+                Toast.makeText(this, "Bundled MIDI soundfont selected", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
     private fun promptImportWszSkin() {
         val input = android.widget.EditText(this).apply {
             hint = "/sdcard/Download/classic.wsz"
@@ -1778,6 +1818,22 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 29161 && resultCode == Activity.RESULT_OK) data?.data?.let { importAudioSkin(it) }
+        if (requestCode == 29162 && resultCode == Activity.RESULT_OK) data?.data?.let { importMidiSoundFont(it) }
+    }
+
+    private fun importMidiSoundFont(uri: Uri) {
+        Toast.makeText(this, "Importing MIDI soundfont…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val result = runCatching { MidiSoundFontSettings.import(applicationContext, uri) }
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                val message = result.fold(
+                    { "Using $it for new MIDI playback" },
+                    { "Soundfont import failed: ${it.message ?: "invalid file"}" }
+                )
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            }
+        }.start()
     }
 
     private fun importAudioSkin(uri: Uri) {

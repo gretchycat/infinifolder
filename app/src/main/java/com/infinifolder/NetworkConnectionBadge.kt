@@ -142,11 +142,23 @@ internal class NetworkConnectionBadge private constructor(
         if (reconnecting && isShown && windowVisibility == VISIBLE) postDelayed(frame, 80)
     }
     companion object {
+        private fun needsConnectionBadge(entry: ResourceEntry?, target: Uri?): Boolean {
+            // Local files cannot have a transport state. Avoid creating one
+            // listener View for every item in large local ROM/media folders.
+            if (entry != null && ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)) return true
+            var uri = target ?: entry?.uri ?: return false
+            repeat(16) {
+                if (!ArchiveUri.isArchiveUri(uri)) return ContainerUris.networkType(uri) != null
+                uri = runCatching { ArchiveUri.getSourceUri(uri) }.getOrNull() ?: return false
+            }
+            return false
+        }
+
         fun attach(frame: FrameLayout, entry: ResourceEntry? = null, target: Uri? = null) {
             // Artwork replacement rebinds pins without accumulating identical overlays/listeners.
             for (index in frame.childCount - 1 downTo 0)
                 if (frame.getChildAt(index) is NetworkConnectionBadge) frame.removeViewAt(index)
-            if (entry == null && target == null) return
+            if (!needsConnectionBadge(entry, target)) return
             val badge = NetworkConnectionBadge(frame.context, entry, target)
             val side = (16 * frame.resources.displayMetrics.density).toInt()
             frame.addView(badge, FrameLayout.LayoutParams(side, side, Gravity.TOP or Gravity.END))

@@ -105,10 +105,11 @@ The backend outputs signed 16-bit PCM and retains full PCM preparation when an
 exact output frame total is unknown. It does not invent a WAVE length from a
 container duration. The established portable MPEG/FLAC policy remains.
 
-`AudioProcessing.initialize(context)` enables lazy bundled FluidR3_GM extraction
-and selects libVLC's FluidLite for MIDI. Three consecutive bz2 fragments contain
-the unmodified MIT-licensed bank; a bounded installer checks its original SHA-256
-before atomic publication to a private SF2 cache. Core/portable synthesis remains
+`AudioProcessing.initialize(context)` enables lazy installation of the bundled
+FluidR3Mono_GM.sf3 and selects libVLC's FluidLite for MIDI. The 14.5 MB
+MIT-licensed SF3 asset is streamed and SHA-256 checked before atomic publication
+to a private cache; FluidLite reads its Ogg-compressed samples directly. The
+previous 148 MB SF2 expansion is no longer bundled. Core/portable synthesis remains
 available. Explicit `PORTABLE_FIRST`/`PORTABLE_ONLY` policies retain their meaning.
 Upstream LGPL/MIT/Apache notices are packaged with the library assets. Android
 CMake/NDK source is provided for the callback bridge; the current Termux build

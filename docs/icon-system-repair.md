@@ -37,6 +37,22 @@ is no longer treated as an explicit per-file override. Existing genuine custom
 artwork remains supported. MainActivity's pre-existing unrelated changes were
 preserved.
 
+## Listing before content inspection
+
+The local provider returns filesystem metadata and provisional extension hints
+without opening each file or initializing the managed disk cache. Explicit stat
+and opening retain content validation. Browser cards, floating windows and pins
+start with generated default icons; theme/custom-store construction and artwork
+cache signatures are deferred to workers after the initial frame. Visible items
+then receive validated MIME artwork and thumbnails. The virtualized grid builds
+visible cards in small batches and stops requesting layout when unchanged.
+
+`scripts/verify-local-listing-runtime.py` uses the actual local provider and
+filesystem notifications to verify zero content opens while listing, followed
+by real validation of misleading extensions, extensionless PNG and unknown
+binary bytes. It also checks native links and managed-snapshot access policy.
+Visual frame timing still requires device confirmation.
+
 ## Behavior and persistence
 
 - Visible hidden files and folders have an eye-with-slash badge in browser
@@ -328,8 +344,9 @@ Repairs keep the generated-versus-generic icon policy intact:
   reusable for five minutes with identity/mtime/size/registry/theme/custom-icon
   keys (links and items without modification timestamps retain the 30-second
   lifetime); directories for five seconds, including observed cover candidate stamps.
-  Existing invalidation still applies. Final cached artwork can be drawn directly
-  on the first frame via a memory-only revision snapshot, without enqueuing work.
+  Existing invalidation still applies. Listing cards now perform even cached
+  signature lookups in a worker after their initial default-icon frame, avoiding
+  sidecar-lock contention and lazy resolver/store construction on the UI thread.
 - Reuse complete directory observations for five seconds, including absence of
   covers. Partial asynchronous listings are marked incomplete. Filesystem case
   metadata is requested only when cover candidates exist. Show the shared theme

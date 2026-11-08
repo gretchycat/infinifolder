@@ -108,18 +108,31 @@ class ResourceIconResolver(context: Context) {
     fun identity(entry: ResourceEntry): IconIdentity {
         val key="${linkKey(entry)}:${entry.metadata.name}:${entry.metadata.mimeType}:${registry.revision}:${io.github.gretchycat.infinistream.RuntimeCapabilities.installed().revision}"
         identities.get(key)?.takeIf {System.currentTimeMillis()<it.expires}?.let { return it.identity }
+        val probeStarted = android.os.SystemClock.uptimeMillis()
+        DiagnosticLog.record("artwork.identity.start",
+            "name=${entry.metadata.name} provider=${entry.ref.providerId} mime=${entry.metadata.mimeType} size=${entry.metadata.sizeBytes}")
         val identity=identityResolver.resolve(entry.metadata.name,entry.metadata.mimeType) {
             val extensionMime = MimeRegistry.guess(entry.metadata.name)
             if (entry.metadata.sizeBytes == 0L && MimeRegistry.isTextBased(extensionMime)) extensionMime
-            else IconWork.bounded(lane="metadata:${entry.ref.providerId}") { FileMagicDetector.detectFromStream(
-                    fileNameHint = entry.metadata.name,
-                    expectedMimeType = extensionMime,
-                    resourceLength = entry.metadata.sizeBytes
-                ) {
-                    (runtime.provider.openRead(entry.ref) as? ProviderResult.Success)?.value ?: error("Cannot probe source")
-                } }?.mimeType
+            else IconWork.bounded(lane="metadata:${entry.ref.providerId}") {
+                if (FileMagicDetector.requiresPositionalProbe(entry.metadata.name, extensionMime)) {
+                    FileMagicDetector.detectFromSource(entry.metadata.name, extensionMime,
+                        ProviderStreams.resource(runtime.provider, entry.ref, entry.metadata, positional = true))
+                } else {
+                    FileMagicDetector.detectFromStream(
+                        fileNameHint = entry.metadata.name,
+                        expectedMimeType = extensionMime,
+                        resourceLength = entry.metadata.sizeBytes
+                    ) {
+                        (runtime.provider.openRead(entry.ref) as? ProviderResult.Success)?.value ?: error("Cannot probe source")
+                    }
+                }
+            }?.mimeType
         }
-        identities.put(key,IdentityCache(identity,System.currentTimeMillis()+30000));return identity
+        identities.put(key,IdentityCache(identity,System.currentTimeMillis()+30000))
+        DiagnosticLog.record("artwork.identity.complete",
+            "name=${entry.metadata.name} provider=${entry.ref.providerId} detected=${identity.mimeType} magic=${identity.magicMime} elapsedMs=${android.os.SystemClock.uptimeMillis() - probeStarted}")
+        return identity
     }
     fun resolve(entry: ResourceEntry, size: Int, deferCacheWrite: Boolean = false): Icon {
         require(size>0)
@@ -129,7 +142,13 @@ class ResourceIconResolver(context: Context) {
         cached(entry,size)?.let { return it }
         val requestRevision = revision()
         val started=System.nanoTime()
-        val result=runCatching { resolve(entry,size,mutableSetOf()) }.getOrElse { fallback(entry,size) }
+        DiagnosticLog.record("artwork.resolve.start",
+            "name=${entry.metadata.name} provider=${entry.ref.providerId} mime=${entry.metadata.mimeType} size=${entry.metadata.sizeBytes} iconPx=$size")
+        val result=runCatching { resolve(entry,size,mutableSetOf()) }.getOrElse {
+            DiagnosticLog.record("artwork.resolve.failed",
+                "name=${entry.metadata.name} provider=${entry.ref.providerId} mime=${entry.metadata.mimeType}", it)
+            fallback(entry,size)
+        }
         // A cancelled first-install wait or a theme switch must not cache old
         // artwork/fallback as a completed result for the current theme.
         if (Thread.currentThread().isInterrupted || revision() != requestRevision) return result
@@ -137,6 +156,8 @@ class ResourceIconResolver(context: Context) {
         val elapsed=(System.nanoTime()-started)/1_000_000
         if(elapsed>=100)DiagnosticLog.record("artwork.resolve.slow",
             "name=${entry.metadata.name} provider=${entry.ref.providerId} source=${result.source} elapsedMs=$elapsed")
+        DiagnosticLog.record("artwork.resolve.complete",
+            "name=${entry.metadata.name} provider=${entry.ref.providerId} result=${result.source} mime=${result.mimeType} elapsedMs=$elapsed")
         return result
     }
     private fun cacheResolved(entry:ResourceEntry,size:Int,result:Icon,requestRevision:String) {

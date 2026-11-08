@@ -20,6 +20,25 @@ object FileIconView {
     fun fallback(meta: ResourceMetadata): String = if (meta.isDirectory) "📁" else
         MimeRegistry.fallbackIcon(MimeRegistry.effective(meta.name, meta.mimeType))
 
+    /** No theme/store construction or source access is needed for the initial card. */
+    fun createDefault(
+        context: Context,
+        entry: ResourceEntry,
+        meta: ResourceMetadata,
+        asGrid: Boolean,
+        iconSizeDp: Int
+    ): IconImageView = IconImageView(context).apply {
+        scaleType=ImageView.ScaleType.FIT_CENTER
+        val size=((if(asGrid)iconSizeDp else 44)*context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
+        setImageBitmap(when {
+            AppsUri.isRoot(entry.uri) -> FileTypeIcons.installedApplications(size)
+            meta.isDirectory -> FileTypeIcons.folder(size)
+            else -> FileTypeIcons.bitmap(meta,size)
+        })
+        contentDescription="File icon"
+        layoutParams=FrameLayout.LayoutParams(-1,-1,Gravity.CENTER)
+    }
+
     fun create(
         context: Context,
         entry: ResourceEntry,
@@ -36,8 +55,7 @@ object FileIconView {
         // A visible card's worker supplies the authoritative result from ResourceIconResolver.
         // Put a complete local icon in the view immediately; selected-theme artwork and
         // directory covers can then replace it asynchronously without an empty first frame.
-        return IconImageView(context).apply {
-            scaleType=ImageView.ScaleType.FIT_CENTER
+        return createDefault(context,entry,meta,asGrid,iconSizeDp).apply {
             val size=((if(asGrid)iconSizeDp else 44)*context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
             val hasTheme=!theme.getActiveThemeId().isNullOrBlank()
             val themed=when {
@@ -45,14 +63,7 @@ object FileIconView {
                 hasTheme -> theme.peekFileIcon(meta,size)
                 else -> null
             }
-            val immediateDefault=when {
-                AppsUri.isRoot(entry.uri) -> FileTypeIcons.installedApplications(size)
-                meta.isDirectory -> FileTypeIcons.folder(size)
-                else -> FileTypeIcons.bitmap(meta,size)
-            }
-            setImageBitmap(themed ?: immediateDefault)
-            contentDescription="Loading file icon"
-            layoutParams=FrameLayout.LayoutParams(-1,-1,Gravity.CENTER)
+            if(themed!=null)setImageBitmap(themed)
         }
     }
 }

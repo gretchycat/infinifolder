@@ -12,8 +12,6 @@ import com.infinifolder.model.ResourceMetadata
 import io.github.gretchycat.infiniscribe.DocumentFormats
 import com.infinifolder.preview.AudioIconFormats
 import com.infinifolder.archive.ArchiveFormats
-import com.infinifolder.viewer.MediaType
-import com.infinifolder.viewer.MediaTypeDetector
 import java.util.Locale
 import com.caverock.androidsvg.SVG
 import com.infinifolder.theme.BundledDefaultThemeInfo
@@ -63,6 +61,20 @@ object FileTypeIcons {
         return null
     }
 
+    /** Runtime parser registrations may add an extension without a theme-specific icon. */
+    private fun runtimeAssociatedExtension(name: String, mime: String): String? {
+        val lower = name.lowercase(Locale.ROOT)
+        var dot = lower.indexOf('.')
+        while (dot >= 0) {
+            val extension = lower.substring(dot + 1)
+            if (MimeRegistry.runtimeAssociations()[extension].orEmpty().any {
+                    MimeRegistry.normalize(it) == mime
+                }) return extension
+            dot = lower.indexOf('.', dot + 1)
+        }
+        return null
+    }
+
     /** App-drawer artwork for Android's virtual installed-applications root. */
     @Synchronized
     fun installedApplications(requestedSize:Int):Bitmap {
@@ -87,12 +99,15 @@ object FileTypeIcons {
     fun bitmap(meta: ResourceMetadata, requestedSize: Int, resolvedMime: String? = null): Bitmap {
         val mime = resolvedMime?.let(MimeRegistry::normalize) ?: MimeRegistry.effective(meta.name, meta.mimeType)
         val extension = meta.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
-        val text = MediaTypeDetector.detect(if(resolvedMime==null)meta.name else "", mime) in setOf(MediaType.TEXT, MediaType.MARKDOWN, MediaType.HTML)
-        val known=mime!="application/octet-stream"
+        // Viewer routing may offer a text fallback for an otherwise unknown
+        // binary MIME. That capability must not turn the icon into a TXT label.
+        val text = !MimeRegistry.isUnspecified(mime) && MimeRegistry.isTextBased(mime)
+        val known=!MimeRegistry.isUnspecified(mime)
         val audio=AudioIconFormats.isAudio(mime)
         val audioLabel=if(audio)AudioIconFormats.label(meta.name,mime) else null
-        val mappedExtension = associatedExtension(meta.name, mime)
-        val base = mappedExtension?.let(BundledIconStyle.EXTENSION_BASES::get)
+        val themeExtension = associatedExtension(meta.name, mime)
+        val labelExtension = themeExtension ?: runtimeAssociatedExtension(meta.name, mime)
+        val base = themeExtension?.let(BundledIconStyle.EXTENSION_BASES::get)
             ?: BundledIconStyle.MIME_BASES[mime] ?: when {
                 mime.startsWith("font/") || mime == "application/font-sfnt" -> "document"
                 audio -> "audio"
@@ -112,7 +127,7 @@ object FileTypeIcons {
             else -> mime.substringAfter('/').removePrefix("x-").removePrefix("vnd.")
         }
         val documentLabel=DocumentFormats.forMime(mime)?.let {DocumentFormats.canonicalExtension(meta.name,mime)}
-        val label = (audioLabel ?: mappedExtension ?: documentLabel ?: if(text)"TXT" else if(known)mimeLabel else extension.ifBlank {"FILE"}).uppercase(Locale.ROOT).filter { it.isLetterOrDigit() || it == '+' || it == '-' || it == '.' }.take(8).ifBlank { "FILE" }
+        val label = (audioLabel ?: labelExtension ?: documentLabel ?: if(text)"TXT" else if(known)mimeLabel else extension.ifBlank {"FILE"}).uppercase(Locale.ROOT).filter { it.isLetterOrDigit() || it == '+' || it == '-' || it == '.' }.take(8).ifBlank { "FILE" }
         val size = requestedSize.coerceIn(1, 1024)
         val key = "$base:$label:$size"
         cache.get(key)?.let { return it }

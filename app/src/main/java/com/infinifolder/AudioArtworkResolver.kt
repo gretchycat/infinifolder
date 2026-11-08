@@ -53,6 +53,9 @@ internal class AudioArtworkResolver(context:Context,private val runtime:StorageR
     private fun embedded(entry:ResourceEntry,size:Int):Bitmap? {
         val key="${entry.ref}:${entry.uri}:${entry.metadata.name}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$size"
         embedded.get(key)?.takeIf {System.currentTimeMillis()<it.expires}?.let {return it.bitmap}
+        val started = android.os.SystemClock.uptimeMillis()
+        DiagnosticLog.record("artwork.audio-embedded.start",
+            "name=${entry.metadata.name} provider=${entry.ref.providerId} mime=${entry.metadata.mimeType} size=${entry.metadata.sizeBytes}")
         val bitmap=IconWork.bounded(1500,lane="audio-tags:${entry.ref.providerId}") {
             val diskKey="embedded:$key:"+if(entry.metadata.modifiedAtMillis==null)System.currentTimeMillis()/30000 else "known"
             readDisk(diskKey,size)?.let {return@bounded it}
@@ -74,6 +77,8 @@ internal class AudioArtworkResolver(context:Context,private val runtime:StorageR
             }
         }
         embedded.put(key,Cached(bitmap,System.currentTimeMillis()+if(bitmap==null || entry.metadata.modifiedAtMillis==null)30000 else 300000))
+        DiagnosticLog.record("artwork.audio-embedded.complete",
+            "name=${entry.metadata.name} provider=${entry.ref.providerId} found=${bitmap != null} elapsedMs=${android.os.SystemClock.uptimeMillis() - started}")
         return bitmap
     }
 

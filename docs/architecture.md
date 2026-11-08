@@ -100,6 +100,15 @@ The current sampled image editor exports a new PNG. External browser opens use a
 
 ## MIME, icons, and links
 
+Directory listings reach the browser before content inspection. Local listing
+returns filesystem metadata and provisional extension hints without opening file
+contents or scanning the private cache. Cards draw a default icon immediately;
+after a frame is drawn, background workers index sidecars and resolve cached
+artwork, validate types and generate thumbnails for visible items. Full and
+floating browsers defer this work. Large listings create visible cards within a
+frame budget, and an unchanged virtual grid does not request another layout.
+Opening a file still validates its contents before choosing a viewer.
+
 `MimeRegistry` is the shared alias, inference, application-package, container, and MIME icon mapping. Icon themes and custom MIME keys consume its normalized results. Tapping a package opens an appropriate handler; long-press Browse mounts its registered container. Built-in viewer detection consumes the same MIME identity.
 
 `LinkResolver` gives native links and application shortcuts common cycle/depth protection while retaining link kind and target semantics. `.iflink` is the application JSON format. Legacy JSON `.lnk` is recognized; native Windows LNK decoding is unsupported. Backends resolve native link targets rather than the UI guessing paths.

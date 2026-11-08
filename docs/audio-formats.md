@@ -63,11 +63,15 @@ counts: this backend uses full PCM preparation before WAVE publication, with
 bounded encoded reads and no additional encoded-file copy inside the adapter.
 
 Android MIDI defaults to libVLC's FluidLite with the bundled MIT-licensed
-FluidR3_GM bank. The first MIDI open streams its bz2 asset fragments into a
-checksum-verified private SF2 cache (148,398,306 bytes), reused on later opens.
+FluidR3Mono_GM.sf3 bank. The first MIDI open streams this 14.5 MB asset into a
+checksum-verified private SF3 cache, reused on later opens. Its samples are
+already Ogg Vorbis-compressed, so no 148 MB SF2 expansion is needed.
 Actual bank presets/programs and channel-10 percussion are handled by FluidLite.
 The portable legacy synthesizer remains available separately; its preview SF2
-reader is not the GM preset engine. Licenses and source references are bundled.
+reader is not the GM preset engine. From the audio player's top-bar piano button,
+users can import an `.sf2` or `.sf3` bank or restore the bundled default. Imported
+banks are signature-checked, streamed into private app storage, and reapplied when
+the playback service starts. Licenses and source references are bundled.
 
 Unreadable files skip without an error toast. Their entries remain in the
 playlist, duration is cleared to `--`, and late metadata cannot restore a failed
@@ -187,7 +191,7 @@ The synthesizer pipeline (`com.infinifolder.audio.synth`) provides full polyphon
 
 | Format | Extensions | MIME Type | Engine | Description & Capabilities |
 | --- | --- | --- | --- | --- |
-| **Standard MIDI & RMID** | `.mid`, `.midi`, `.kar`, `.rmi` | `audio/midi` | libVLC/FluidLite; portable `MidiSequencer` | Android uses the resident FluidR3_GM bank with independent voices per stream. SMF 0/1 and RMID timing supports lazy PCM and a two-second release tail. The portable parser/renderer and RMID unwrap path remain available with their existing limits; complete SMF variant conformance is not claimed. |
+| **Standard MIDI & RMID** | `.mid`, `.midi`, `.kar`, `.rmi` | `audio/midi` | libVLC/FluidLite; portable `MidiSequencer` | Android uses the resident FluidR3Mono_GM.sf3 bank with independent voices per stream. SMF 0/1 and RMID timing supports lazy PCM and a two-second release tail. The portable parser/renderer and RMID unwrap path remain available with their existing limits; complete SMF variant conformance is not claimed. |
 | **ProTracker Module** | `.mod` | `audio/x-mod` | `OpenMpt` / `TrackerEngine` | Industry-standard `libopenmpt` tracker engine (with pure Kotlin fallback). Full support for 4 to 32 channels (`M.K.`, `4CHN`, `6CHN`, `8CHN`, `OCTA`, `16CN`, `32CN`). Paula period to frequency calculation ($f = \frac{3546895}{2p}$), Amiga stereo panning, 31 sample definitions, 64-row pattern playback, tick scheduling, speed/tempo control (`Fxx`), and volume slides. |
 | **Scream Tracker 3** | `.s3m` | `audio/x-s3m` | `OpenMpt` / `TrackerEngine` | `libopenmpt` engine (`SCRM` header). Supports C4 speed calculations, signed/unsigned 8/16-bit samples, multi-channel rendering, portamentos, vibrato, and ST3 panning. |
 | **FastTracker II** | `.xm` | `audio/x-xm` | `OpenMpt` / `TrackerEngine` | `libopenmpt` engine (`Extended Module: ` header). Multi-sample instruments, volume/panning envelopes, delta-encoded 8/16-bit sample decoding, linear and Amiga frequency tables. |

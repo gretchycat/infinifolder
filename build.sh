@@ -120,13 +120,18 @@ esac
 
 if [ "$build_folder" = true ]; then
     echo "Building InfiniFolder..."
-    run_gradle :app:assembleDebug
+    # Dropped large, uncompressed assets can remain as zero padding in an
+    # incrementally rewritten APK. Start this package fresh so stale payload
+    # space does not survive an asset replacement/removal.
+    run_gradle :app:clean :app:assembleDebug
     append_apk "$repo_dir/app/build/outputs/apk/debug/app-debug.apk"
 fi
 
 if [ "$build_viewer_host" = true ]; then
     echo "Building the standalone viewer host..."
-    run_gradle :viewer-host:assembleDebug
+    # As with InfiniFolder, removed uncompressed assets can leave large stale
+    # holes in an incrementally rewritten APK.
+    run_gradle :viewer-host:clean :viewer-host:assembleDebug
     append_apk "$repo_dir/viewer-host/build/outputs/apk/debug/viewer-host-debug.apk"
 fi
 

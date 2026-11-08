@@ -249,6 +249,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     )
     private val pendingCardProbes = mutableListOf<PendingCardProbe>()
     private var visibleProbeScheduled = false
+    @Volatile private var directoryIconIndexReady = java.util.concurrent.CompletableFuture.completedFuture(Unit)
     private val customIconStore by lazy { CustomIconStore(filesDir) }
     private val iconThemeManager by lazy { IconThemeManager(applicationContext) }
     private val thumbnailDecoder by lazy {
@@ -372,6 +373,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     @Volatile private var rootContainerLinks = emptyList<Pair<ResourceEntry, ShortcutInfo>>()
     private var homeSourcesGeneration = 0
     private val entryIconViews = mutableMapOf<Uri, View>()
+    private var largeEntrySurface: VirtualizedEntrySurface? = null
     private var renderedFileLocation: Uri? = null
     private var restoringFileScrollLocation: Uri? = null
     private var restoringFileScrollGeneration = -1
@@ -1334,6 +1336,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             updateHeaderTheme(dark)
             addView(content, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             viewTreeObserver.addOnScrollChangedListener {
+                largeEntrySurface?.updateViewport(scrollY, height)
                 scheduleVisibleProbe()
                 scheduleDirectoryScrollPersistence()
             }
@@ -4487,7 +4490,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 entries = emptyList()
                 status.text = "Opening torrent folder…"
                 updateEntryLoadingFeedback()
-                content.removeAllViews()
+                clearEntryContentViews()
                 renderEntries()
                 val navigationToken = browserNavigationGeneration
                 // Show an unlocked, empty virtual folder first. Start network/metadata work
@@ -4628,7 +4631,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 cancelDragContainerHover()
                 dragContainerCards.clear()
                 entries = emptyList()
-                content.removeAllViews()
+                clearEntryContentViews()
                 renderedFileLocation = null
             }
         }
@@ -4653,16 +4656,39 @@ class MainActivity : Activity(), DebugDumpObserver {
                         when (result) {
                             is ProviderResult.Success -> {
                                 entries = result.value
-                                if (!result.isLoading || result.value.isNotEmpty()) {
-                                    cacheDirectoryIconListing(uri, ref, result.value, complete=!result.isLoading)
-                                }
-                                result.value.forEach { child ->
-                                    if (child.uri != uri) knownResourceParents.put(child.uri, uri)
-                                }
+                                val iconIndex = java.util.concurrent.CompletableFuture<Unit>()
+                                directoryIconIndexReady = iconIndex
                                 listingIsLoading = result.isLoading
                                 listingNotice = result.notice
                                 updateListingStatus(result.notice, result.isLoading, loadingAttempt)
                                 renderEntries()
+                                // Default icons and the valid listing are already on screen.
+                                // Index sibling artwork and parent links afterward, away from
+                                // the UI thread; visible artwork workers wait for this index.
+                                fileScroll.postOnAnimation {
+                                    fileScroll.post {
+                                        if (requestGeneration != loadGeneration || homeMode || current != uri || isDestroyed) {
+                                            iconIndex.complete(Unit)
+                                        } else try {
+                                            io.execute {
+                                                try {
+                                                    if (!result.isLoading || result.value.isNotEmpty())
+                                                        cacheDirectoryIconListing(uri, ref, result.value, complete=!result.isLoading)
+                                                    result.value.forEach { child ->
+                                                        if (child.uri != uri) knownResourceParents.put(child.uri, uri)
+                                                    }
+                                                } catch (error: Exception) {
+                                                    com.infinifolder.storage.DiagnosticLog.record(
+                                                        "artwork.directory-index.failed", "uri=$uri", error)
+                                                } finally {
+                                                    iconIndex.complete(Unit)
+                                                }
+                                            }
+                                        } catch (error: java.util.concurrent.RejectedExecutionException) {
+                                            iconIndex.complete(Unit)
+                                        }
+                                    }
+                                }
                                 if (result.isLoading && loadingAttempt < 8) root.postDelayed({
                                     if (!isFinishing && !isDestroyed && requestGeneration == loadGeneration && !homeMode && current == uri) {
                                         load(uri, loadingAttempt + 1)
@@ -4728,14 +4754,14 @@ class MainActivity : Activity(), DebugDumpObserver {
             status.text = "$count item${if (count == 1) "" else "s"} selected (long-press to act)"
             return
         }
-        val visible = if (showHidden) entries else entries.filterNot { it.metadata.isHidden }
-        val hiddenCount = entries.size - visible.size
+        val visibleCount = if (showHidden) entries.size else entries.count { !it.metadata.isHidden }
+        val hiddenCount = entries.size - visibleCount
         val hiddenNotice = if (!showHidden && hiddenCount > 0) " ($hiddenCount hidden)" else ""
         status.text = when {
             isLoading && loadingAttempt >= 8 -> "The storage provider is still loading. Tap Refresh to try again."
             isLoading -> "Loading… ${entries.size} items received"
-            notice != null -> "${visible.size} items$hiddenNotice · $notice"
-            else -> "${visible.size} items$hiddenNotice"
+            notice != null -> "$visibleCount items$hiddenNotice · $notice"
+            else -> "$visibleCount items$hiddenNotice"
         }
     }
 
@@ -4772,7 +4798,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         openingVirtualDirectoryLabel = label.ifBlank { "Container" }
         updateCreateAction()
         renderLocation()
-        content.removeAllViews()
+        clearEntryContentViews()
         renderEntries()
         status.text = "Opening virtual directory…"
         return browserNavigationGeneration
@@ -4855,10 +4881,19 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun scheduleVisibleProbe() {
         if (visibleProbeScheduled || !::fileScroll.isInitialized) return
         visibleProbeScheduled = true
-        fileScroll.post {
-            visibleProbeScheduled = false
-            probeVisibleCards()
+        // Animation callbacks precede traversal; posting from one lets that
+        // traversal draw the default icons before any content work starts.
+        fileScroll.postOnAnimation {
+            fileScroll.post {
+                visibleProbeScheduled = false
+                probeVisibleCards()
+            }
         }
+    }
+
+    private fun clearEntryContentViews() {
+        largeEntrySurface = null
+        content.removeAllViews()
     }
 
     private fun isCardVisibleInScroll(cardView: View): Boolean {
@@ -4898,6 +4933,36 @@ class MainActivity : Activity(), DebugDumpObserver {
         scheduleVisibleProbe()
     }
 
+    private fun finishEntriesRender(
+        location: Uri?,
+        generation: Int,
+        savedScrollY: Int,
+        preserveCurrentScroll: Boolean = false
+    ) {
+        val listener = object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                if (fileScroll.viewTreeObserver.isAlive)
+                    fileScroll.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                if (!isDestroyed && !homeMode && current == location && loadGeneration == generation) {
+                    val targetScrollY = if (preserveCurrentScroll && fileScroll.scrollY > 0)
+                        fileScroll.scrollY else savedScrollY
+                    fileScroll.scrollTo(0, targetScrollY)
+                    if (restoringFileScrollLocation == location && restoringFileScrollGeneration == generation) {
+                        restoringFileScrollLocation = null
+                        restoringFileScrollGeneration = -1
+                    }
+                    location?.let { persistDirectoryScrollPosition(it, fileScroll.scrollY) }
+                    scheduleVisibleProbe()
+                } else if (restoringFileScrollLocation == location && restoringFileScrollGeneration == generation) {
+                    restoringFileScrollLocation = null
+                    restoringFileScrollGeneration = -1
+                }
+            }
+        }
+        fileScroll.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        fileScroll.requestLayout()
+    }
+
     private fun readShortcutInfo(entry: ResourceEntry): ShortcutInfo? {
         shortcutCache.get(entry.uri.toString())?.let { return it }
         return try {
@@ -4919,9 +4984,6 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun renderEntries() {
         artworkRenderGeneration++
-        if ((!listingIsLoading || entries.isNotEmpty()) && listingError == null) {
-            ResourceIconSidecars.observe(entries, current, complete=!listingIsLoading)
-        }
         val renderStartedAt = SystemClock.uptimeMillis()
         if (renderedPinnedIconSize != iconSizeDp) renderPinnedContainers()
         val location = current
@@ -4944,7 +5006,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             pendingCardProbes.clear()
             visibleProbeScheduled = false
             entryIconViews.clear()
-            content.removeAllViews()
+            clearEntryContentViews()
             val rows = if (pinBoard.isRoot(current)) entries.filter { showHidden || !it.metadata.isHidden }
                 .sortedWith(compareBy<ResourceEntry> { it.metadata.name.lowercase(Locale.ROOT) }.thenBy { it.metadata.name })
                 else FileViewGrid.sortedEntries(entries, showHidden, sortKey, sortDescending)
@@ -4972,7 +5034,39 @@ class MainActivity : Activity(), DebugDumpObserver {
                 })
                 return
             }
-            if (grid) {
+            if (rows.size > 48) {
+                val containerPx = if (content.width > 0) content.width else if (fileScroll.width > 0) fileScroll.width else 0
+                val availableWidth = if (containerPx > 0) {
+                    (containerPx / resources.displayMetrics.density).roundToInt()
+                } else {
+                    (resources.configuration.screenWidthDp - if (treeVisible) 220 else 32).coerceAtLeast(iconSizeDp)
+                }
+                val columns = if (grid) gridColumns(availableWidth) else 1
+                val cellHeight = dp(if (grid) iconSizeDp + 48 else 88)
+                val surface = VirtualizedEntrySurface(
+                    this,
+                    rows,
+                    columns,
+                    cellHeight,
+                    makeCard = { entry -> entryCard(entry, grid) },
+                    onCardRemoved = { entry, card ->
+                        val icon = entryIconViews[entry.uri]
+                        if (icon?.parent === card) entryIconViews.remove(entry.uri)
+                        pendingCardProbes.removeAll { it.view === card }
+                        visibleArtworkUris = visibleArtworkUris - entry.uri
+                    }
+                ).apply {
+                    isLongClickable = true
+                    setOnLongClickListener { onEmptyAreaLongPress() }
+                }
+                largeEntrySurface = surface
+                content.addView(surface, LinearLayout.LayoutParams(-1, -2))
+                fileScroll.post { if (largeEntrySurface === surface) surface.updateViewport(fileScroll.scrollY, fileScroll.height) }
+                com.infinifolder.storage.DiagnosticLog.record(
+                    "ui.render-entries.virtualized",
+                    "elapsedMs=${SystemClock.uptimeMillis() - renderStartedAt} entries=${rows.size} columns=$columns rowHeightPx=$cellHeight"
+                )
+            } else if (grid) {
                 val containerPx = if (content.width > 0) content.width else if (fileScroll.width > 0) fileScroll.width else 0
                 val availableWidth = if (containerPx > 0) {
                     (containerPx / resources.displayMetrics.density).roundToInt()
@@ -4993,27 +5087,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         } finally {
             val elapsed = SystemClock.uptimeMillis() - renderStartedAt
             if (elapsed >= 100L) com.infinifolder.storage.DiagnosticLog.record("ui.render-entries.slow", "elapsedMs=$elapsed entries=${entries.size} grid=$grid")
-            // Restore after measurement, when ScrollView knows the new content bounds.
-            val listener = object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
-                override fun onGlobalLayout() {
-                    if (fileScroll.viewTreeObserver.isAlive)
-                        fileScroll.viewTreeObserver.removeOnGlobalLayoutListener(this)
-                    if (!isDestroyed && !homeMode && current == location && loadGeneration == generation) {
-                        fileScroll.scrollTo(0, savedScrollY)
-                        if (restoringFileScrollLocation == location && restoringFileScrollGeneration == generation) {
-                            restoringFileScrollLocation = null
-                            restoringFileScrollGeneration = -1
-                        }
-                        location?.let { persistDirectoryScrollPosition(it, fileScroll.scrollY) }
-                        scheduleVisibleProbe()
-                    } else if (restoringFileScrollLocation == location && restoringFileScrollGeneration == generation) {
-                        restoringFileScrollLocation = null
-                        restoringFileScrollGeneration = -1
-                    }
-                }
-            }
-            fileScroll.viewTreeObserver.addOnGlobalLayoutListener(listener)
-            fileScroll.requestLayout()
+            // Virtualized listings already have their complete scroll extent; restore
+            // the saved position after the surface is measured.
+            finishEntriesRender(location, generation, savedScrollY)
         }
     }
     private fun directoryScrollPreferenceKey(location: Uri): String {
@@ -5106,6 +5182,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun entryCard(entry: ResourceEntry, asGrid: Boolean): View {
+        val artworkIndexReady = directoryIconIndexReady
         val isSelected = selectedUris.contains(entry.uri)
         val card = FileEntryCard(this, entry, asGrid, iconSizeDp, dark, isSelected, ::onEmptyAreaLongPress)
         val box = card.container
@@ -5115,8 +5192,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val shortcut = if (isShortcut) shortcutCache.get(entry.uri.toString()) else null
 
         val effectiveMeta=entry.metadata
-        val rawIcon=FileIconView.create(this,entry,effectiveMeta,asGrid,iconSizeDp,
-            customIconStore,iconThemeManager,localProvider,appsProvider)
+        val rawIcon=FileIconView.createDefault(this,entry,effectiveMeta,asGrid,iconSizeDp)
         val icon = card.attachIcon(rawIcon)
         // Shared stale-while-refresh artwork; source access stays in the visible-card worker.
         run {
@@ -5125,8 +5201,11 @@ class MainActivity : Activity(), DebugDumpObserver {
             val cardRender = artworkRenderGeneration
             var authoritativeApplied = false
             fun applyArtwork(artwork: ResourceIconResolver.Icon) {
-                val bitmap=artwork.bitmap ?: return
                 if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return
+                val metadata = if (artwork.mimeType.isNotBlank())
+                    effectiveMeta.copy(mimeType = artwork.mimeType) else effectiveMeta
+                card.metaView?.text = metadataLine(entry.copy(metadata = metadata))
+                val bitmap=artwork.bitmap ?: return
                 val image = IconImageView(this).apply {
                     scaleType = ImageView.ScaleType.FIT_CENTER
                     setImageBitmap(bitmap)
@@ -5137,20 +5216,20 @@ class MainActivity : Activity(), DebugDumpObserver {
                 if (icon.childCount > 0) icon.removeViewAt(0)
                 icon.addView(image, 0, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             }
-            resourceIconResolver.peekCached(entry,artworkSize)?.let {
-                authoritativeApplied=true
-                applyArtwork(it)
-            }
+            // Even cache signatures can take sidecar locks or initialize a
+            // resolver. Keep them in the worker after the default-icon frame.
             lateinit var startArtwork: () -> Unit
             fun retryWhenVisible() {
+                if (!box.isAttachedToWindow) return
                 runOnUiThread {
-                    if (artworkGeneration == loadGeneration && cardRender == artworkRenderGeneration && !isDestroyed)
+                    if (box.isAttachedToWindow && artworkGeneration == loadGeneration &&
+                        cardRender == artworkRenderGeneration && !isDestroyed)
                         registerVisibleCardProbe(box, artworkGeneration, startArtwork)
                 }
             }
             startArtwork = {
                 val queuedAt = SystemClock.uptimeMillis()
-                ResourceArtworkCache.reads.execute cacheRead@ {
+                artworkIndexReady.whenComplete { _, _ -> ResourceArtworkCache.reads.execute cacheRead@ {
                     if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return@cacheRead
                     if (entry.uri !in visibleArtworkUris) { retryWhenVisible(); return@cacheRead }
                     val readStartedAt = SystemClock.uptimeMillis()
@@ -5179,10 +5258,17 @@ class MainActivity : Activity(), DebugDumpObserver {
                         if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return@sourceRead
                         if (entry.uri !in visibleArtworkUris) { retryWhenVisible(); return@sourceRead }
                         val sourceStartedAt=SystemClock.uptimeMillis()
+                        com.infinifolder.storage.DiagnosticLog.record("artwork.visible-source.start",
+                            "name=${entry.metadata.name} provider=${entry.ref.providerId} mime=${entry.metadata.mimeType} size=${entry.metadata.sizeBytes}")
                         val resolved = runCatching {
                             resourceIconResolver.resolve(entry.copy(metadata = effectiveMeta), artworkSize, deferCacheWrite = true)
+                        }.onFailure {
+                            com.infinifolder.storage.DiagnosticLog.record("artwork.visible-source.failed",
+                                "name=${entry.metadata.name} provider=${entry.ref.providerId}", it)
                         }.getOrNull()
                         val sourceFinishedAt=SystemClock.uptimeMillis()
+                        com.infinifolder.storage.DiagnosticLog.record("artwork.visible-source.complete",
+                            "name=${entry.metadata.name} provider=${entry.ref.providerId} success=${resolved != null} elapsedMs=${sourceFinishedAt - sourceStartedAt}")
                         if (resolved != null) runOnUiThread {
                             if (artworkGeneration != loadGeneration || cardRender != artworkRenderGeneration || isDestroyed) return@runOnUiThread
                             val displayedAt=SystemClock.uptimeMillis()
@@ -5205,7 +5291,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                             }
                         }
                     }
-                }
+                } }
             }
             if(!authoritativeApplied)registerVisibleCardProbe(box, artworkGeneration, startArtwork)
         }
@@ -6353,7 +6439,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         updateCreateAction()
         renderLocation()
         status.text = "Locations and storage sources"
-        content.removeAllViews()
+        clearEntryContentViews()
         shared.edit().remove("tree_source_installed_apps").apply()
         updateHomeStorageAccessBadges()
 
@@ -6768,7 +6854,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val generation = loadGeneration
         val page = homePage
         if (homePage == "root") entries = rootContainerLinks.map { it.first }
-        content.removeAllViews()
+        clearEntryContentViews()
         val visibleItems = if (homePage == "internal_shared") {
             homeItems.filter { it.treeParentKey == "internal_shared" }
                 .sortedBy { if (it.treeKey?.startsWith("public_") == true) 0 else 1 }
@@ -8391,8 +8477,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             var pin = storedPin
             val fileCard = FileEntryCard(this, pin.entry, true, sideDp, dark)
             val card = fileCard.container.apply { minimumWidth = dp(48); minimumHeight = dp(48) }
-            val iconHolder = fileCard.attachIcon(FileIconView.create(this, pin.entry, pin.entry.metadata, true, sideDp,
-                customIconStore, iconThemeManager, localProvider, appsProvider))
+            val iconHolder = fileCard.attachIcon(FileIconView.createDefault(this, pin.entry, pin.entry.metadata, true, sideDp))
             fileCard.addLabels(pin.name, pin.container, dp(96), "")
             val label = fileCard.nameView.apply { textSize = 10f; maxLines = 1 }
             fun bindTarget() {
@@ -8416,7 +8501,6 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             NetworkConnectionBadge.attach(iconHolder, target = pin.destination)
             bindTarget()
-            resourceIconResolver.peekCached(pin.entry, side)?.let { applyIcon(it) }
             card.setOnClickListener { openPinnedContainer(pin) }
             installPinBoardDropTarget(card)
             if (pinBoard.isLink(pin.entry)) {
@@ -8429,7 +8513,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             pinnedContainerContent.addView(card, LinearLayout.LayoutParams(-2, -2))
             // Pins are outside the scrolling file list: they need their own resolver work
             // and lifetime, independent of listing visibility and loadGeneration changes.
-            ResourceArtworkCache.sourceExecutor(storedPin.entry).execute {
+            card.postOnAnimation { card.post { ResourceArtworkCache.sourceExecutor(storedPin.entry).execute {
                 if (generation != pinnedRenderGeneration || isDestroyed) return@execute
                 val freshEntry = (IconWork.bounded(lane = "metadata:${storedPin.entry.ref.providerId}") {
                     provider.stat(storedPin.entry.ref)
@@ -8459,7 +8543,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     else applyIcon(ResourceIconResolver.Icon(FileTypeIcons.bitmap(freshEntry.metadata, side),
                         FileIconView.fallback(freshEntry.metadata), pin.name, freshEntry.metadata.isDirectory))
                 }
-            }
+            } } }
         }
         updatePinBoardDropArea()
         pinnedContainerBar.post {
@@ -9179,7 +9263,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         val placeId = node.placeId ?: BrowserLocations.forKey(node.key)?.key?.takeIf { it in setOf("internal_shared", "application_public", "installed_apps") }
         val linkEntry = rootContainerLinks.firstOrNull { "root_link_${it.first.uri}" == node.key }?.first
         val entry = linkEntry ?: node.iconEntry ?: uri?.let { target -> provider.refForUri(target)?.let { ResourceEntry(it, metadata, target) } }
-        val themeRevision = iconThemeManager.revision()
+        val themeRevision = shared.getInt("icon_theme_revision", 0)
+        val themeId = shared.getString("active_icon_theme", null)
         val image = IconImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
         val immediateDefault = if (placeId == "installed_apps" || (uri != null && AppsUri.isRoot(uri)))
             FileTypeIcons.installedApplications(size) else FileTypeIcons.folder(size)
@@ -9193,7 +9278,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         stack.addView(image, FrameLayout.LayoutParams(size, dp(32)))
         var authoritativeApplied = false
         fun currentRequest() = !cancelled.get() && !isDestroyed && !isFinishing &&
-            iconThemeManager.revision() == themeRevision
+            shared.getInt("icon_theme_revision", 0) == themeRevision && shared.getString("active_icon_theme", null) == themeId
         fun applyIcon(icon: ResourceIconResolver.Icon, authoritative: Boolean) {
             if (!currentRequest() || image.tag !== request || (!authoritative && authoritativeApplied)) return
             if (authoritative) authoritativeApplied = true
@@ -9204,21 +9289,16 @@ class MainActivity : Activity(), DebugDumpObserver {
             // or directory cover is still being resolved.
             placeholder.visibility = View.GONE
         }
-        // Cached artwork is immediately usable, including while a file-list load is in flight.
-        val cached = if (providerAuthority == null && locationUri == null) entry?.let { resourceIconResolver.peekCached(it, size) }
-            ?.takeUnless { it.source == "fallback" || (placeId != null && it.source == "directory-theme") } else null
-        if (cached != null) { applyIcon(cached, true); return } else {
-            val hot = when {
-                providerAuthority != null -> resourceIconResolver.peekAppStorageIcon(providerAuthority, size)
-                placeId != null -> iconThemeManager.peekPlaceIcon(placeId, size)
-                uri != null && AppsUri.isRoot(uri) -> iconThemeManager.peekPlaceIcon("installed_apps", size)
-                else -> iconThemeManager.peekFileIcon(entry?.let(resourceIconResolver::directoryIconMetadata) ?: metadata, size)
-            }
-            image.setImageBitmap(hot ?: immediateDefault)
-            placeholder.visibility = View.GONE
-        }
-        ResourceArtworkCache.reads.execute {
+        image.setImageBitmap(immediateDefault)
+        placeholder.visibility = View.GONE
+        image.postOnAnimation { image.post { ResourceArtworkCache.reads.execute {
             if (!currentRequest()) return@execute
+            val cached = if (providerAuthority == null && locationUri == null) entry?.let { resourceIconResolver.cached(it, size) }
+                ?.takeUnless { it.source == "fallback" || (placeId != null && it.source == "directory-theme") } else null
+            if (cached != null) {
+                runOnUiThread { applyIcon(cached, true) }
+                return@execute
+            }
             val baseline = runCatching { when {
                 locationUri != null -> resourceIconResolver.resolveLocation(locationUri, node.name, size)
                 node.key == "application_public" || providerAuthority != null ->
@@ -9242,7 +9322,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 if (resolved.source == "fallback") return@sourceRead
                 runOnUiThread { applyIcon(resolved, true) }
             }
-        }
+        } } }
     }
 
     private fun createDirBadge(): TextView = TextView(this).apply {

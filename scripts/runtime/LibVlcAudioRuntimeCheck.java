@@ -122,27 +122,31 @@ public class LibVlcAudioRuntimeCheck {
             try { AudioProcessing.INSTANCE.openPcm(file(new File(audio,"c_major_piano.wma")),DecoderPreference.PLATFORM_FIRST);throw new AssertionError("Cancellation ignored"); }
             catch(Exception expected) { check(expected instanceof InterruptedIOException,"Wrong cancellation result"); } finally { Thread.interrupted(); }
             System.out.println("PASS vlc-audio.cancellation");
-            // Run the actual bundled asset loader: bounded bz2 extraction + checksum + native SF2 presets.
+            // Run the actual bundled asset loader: streamed copy + checksum + native SF3 presets.
             FilesContext context=new FilesContext(apk,new File(work,"font-state"));
+            File legacy=new File(context.getFilesDir(),"soundfonts/FluidR3_GM.sf2");
+            legacy.getParentFile().mkdirs();
+            try(RandomAccessFile old=new RandomAccessFile(legacy,"rw")){old.setLength(148398306L);}
             AudioProcessing.INSTANCE.initialize(context);
             Set<String> hashes=new HashSet<>();
             for(String name:new String[]{"piano.mid","flute.mid","low-piano.mid","drums.mid"}) {
                 Decoded result=decode(file(new File(work,name)));
-                check(result.backend.equals("libVLC.FluidLite(FluidR3_GM)"),"MIDI did not use the configured SoundFont");
+                check(result.backend.equals("libVLC.FluidLite(FluidR3Mono_GM)"),"MIDI did not use the configured SoundFont");
                 hashes.add(result.hash);
             }
             check(hashes.size()==4,"MIDI program/percussion selection ignored");
             System.out.println("PASS vlc-audio.fluidr3-programs-and-percussion");
-            File font=new File(context.getFilesDir(),"soundfonts/FluidR3_GM.sf2");
-            check(font.length()==148398306L,"Incomplete cached SoundFont");
+            File font=new File(context.getFilesDir(),"soundfonts/FluidR3Mono_GM.sf3");
+            check(font.length()==14540067L,"Incomplete cached SoundFont");
             try(InputStream input=new FileInputStream(font)) {
                 MessageDigest digest=MessageDigest.getInstance("SHA-256");byte[] b=new byte[65536];int count;
                 while((count=input.read(b))>=0)digest.update(b,0,count);
-                check(hex(digest.digest()).equals("74594e8f4250680adf590507a306655a299935343583256f3b722c48a1bc1cb0"),"SoundFont asset checksum");
+                check(hex(digest.digest()).equals("bac3363e097d182d2659db2e84a00f1c68d6c712181addc77c9f51da23a24897"),"SoundFont asset checksum");
             }
+            check(!legacy.exists(),"Legacy 148 MB SF2 cache was not removed");
             check(decode(file(new File(audio,"c_major_piano.mid"))).samples>0,"Bundled font reuse failed");
             check(Arrays.stream(font.getParentFile().listFiles()).noneMatch(f->f.getName().endsWith(".partial")),"Partial SoundFont left behind");
-            System.out.println("PASS vlc-audio.bundled-bzip2-checksum-and-reuse");
+            System.out.println("PASS vlc-audio.bundled-sf3-checksum-reuse-and-legacy-cache-removal");
             System.out.println("LIBVLC_AUDIO_COMPLETE controls="+controls.size());System.exit(0);
         } catch(Throwable error) { error.printStackTrace();System.exit(1); }
     }

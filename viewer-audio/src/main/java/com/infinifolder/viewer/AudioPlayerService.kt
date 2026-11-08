@@ -224,6 +224,7 @@ class AudioPlayerService : Service() {
         super.onCreate()
         currentService = this
         AudioProcessing.initialize(applicationContext)
+        MidiSoundFontSettings.apply(applicationContext)
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()

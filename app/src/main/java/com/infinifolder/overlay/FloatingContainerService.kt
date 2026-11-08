@@ -36,6 +36,7 @@ import com.infinifolder.BrowserLocations
 import com.infinifolder.MainActivity
 import com.infinifolder.FileEntryCard
 import com.infinifolder.FileViewGrid
+import com.infinifolder.VirtualizedEntrySurface
 import com.infinifolder.ResourceIconResolver
 import com.infinifolder.HomeItemActivity
 import com.infinifolder.HomeShortcuts
@@ -43,8 +44,6 @@ import com.infinifolder.HomeShortcutDragActivity
 import com.infinifolder.PinBoardDirectory
 import com.infinifolder.FileIconView
 import com.infinifolder.PullToRefreshScrollView
-import com.infinifolder.preview.CustomIconStore
-import com.infinifolder.theme.IconThemeManager
 import com.infinifolder.theme.ThemeManager
 import com.infinifolder.archive.ArchiveFormats
 import com.infinifolder.archive.ArchiveUri
@@ -68,13 +67,12 @@ class FloatingContainerService : Service() {
     private lateinit var breadcrumbScroll: HorizontalScrollView
     private lateinit var grid: LinearLayout
     private lateinit var scroll: PullToRefreshScrollView
+    private var largeEntrySurface: VirtualizedEntrySurface? = null
     private var current: Uri? = null
     private var currentDisplayName: String? = null
     private data class Crumb(val uri: Uri, val name: String)
     private val trail = mutableListOf<Crumb>()
     private var iconDp = 56
-    private val icons by lazy { CustomIconStore(filesDir) }
-    private val iconTheme by lazy { IconThemeManager(applicationContext) }
     private var currentListingComplete=true
     private val refreshArtwork=Runnable { if(windowView!=null) {iconCache.evictAll();render(currentEntries)} }
     private var registrySubscription:AutoCloseable?=null
@@ -88,6 +86,7 @@ class FloatingContainerService : Service() {
         override fun sizeOf(key: String, value: ResourceIconResolver.Icon) = (value.bitmap?.byteCount?.div(1024) ?: 1).coerceAtLeast(1)
     }
     private val pendingIcons = mutableListOf<Pair<View, () -> Unit>>()
+    private var visibleIconsScheduled = false
     private var renderGeneration = 0
     private var windowView: View? = null
     private var loadGeneration = 0
@@ -286,7 +285,10 @@ class FloatingContainerService : Service() {
         scroll = PullToRefreshScrollView(this).apply {
             isFillViewport = true
             updateHeaderTheme(theme.isDark)
-            viewTreeObserver.addOnScrollChangedListener { loadVisibleIcons() }
+            viewTreeObserver.addOnScrollChangedListener {
+                largeEntrySurface?.updateViewport(scrollY, height)
+                loadVisibleIcons()
+            }
             viewTreeObserver.addOnGlobalLayoutListener { loadVisibleIcons() }
             onGridLongPressAt = { event ->
                 val bounds = android.graphics.Rect()
@@ -871,11 +873,28 @@ class FloatingContainerService : Service() {
     private fun render(entries: List<ResourceEntry>,freshListing:Boolean=false) {
         if (launcherDrag != null) return // Keep the native drag source attached.
         currentEntries = entries
-        com.infinifolder.ResourceIconSidecars.observe(entries, current,complete=currentListingComplete,fresh=freshListing)
         val iconGeneration = ++renderGeneration
+        val iconIndex = java.util.concurrent.CompletableFuture<Unit>()
+        val parent = current
+        val complete = currentListingComplete
+        grid.postOnAnimation {
+            grid.post {
+                if (iconGeneration != renderGeneration || windowView == null) iconIndex.complete(Unit)
+                else com.infinifolder.ResourceArtworkCache.reads.execute {
+                    try {
+                        com.infinifolder.ResourceIconSidecars.observe(entries, parent, complete=complete, fresh=freshListing)
+                    } catch (error: Exception) {
+                        com.infinifolder.storage.DiagnosticLog.record("artwork.floating-index.failed", error=error)
+                    } finally {
+                        iconIndex.complete(Unit)
+                    }
+                }
+            }
+        }
         pendingIcons.clear()
         dragItems.clear()
         scroll.isRefreshing = false
+        largeEntrySurface = null
         grid.removeAllViews()
         val density = resources.displayMetrics.density
         val columns = FileViewGrid.columns((params.width / density).roundToInt(), iconDp)
@@ -889,15 +908,12 @@ class FloatingContainerService : Service() {
         else FileViewGrid.sortedEntries(entries, showHidden = false, sortKey, descending)
         val rows = if (selectionMode && hideUnsupportedSelectionFiles) visibleRows.filter(::isVisibleInFilteredSelection)
             else visibleRows
-        val iconRevision=iconResolver.revision()
-        val table = FileViewGrid.build(this, rows, columns) { entry ->
+        val makeCard: (ResourceEntry) -> View = { entry ->
             val card = FileEntryCard(this, entry, true, iconDp, ThemeManager.activeTheme.isDark)
-            val icon = card.attachIcon(FileIconView.create(this, entry, entry.metadata, true, iconDp,
-                icons, iconTheme, runtime.local, runtime.apps))
+            val icon = card.attachIcon(FileIconView.createDefault(this, entry, entry.metadata, true, iconDp))
             card.addLabels(entry.metadata.name, entry.metadata.isDirectory,
                 (cellWidth - 4 * density).roundToInt().coerceAtLeast(36), "")
             val pixelSize = (iconDp * density).roundToInt()
-            val cacheKey = "${entry.ref}:${entry.metadata.name}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:${iconRevision}:$pixelSize"
             fun applyArtwork(resolved: ResourceIconResolver.Icon) {
                 icon.removeViewAt(0)
                 icon.tag=resolved
@@ -915,18 +931,18 @@ class FloatingContainerService : Service() {
                 icon.addView(artwork, 0, android.widget.FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
                 card.nameView.setFileName(resolved.label, resolved.directory)
             }
-            val fresh=iconResolver.peekCached(entry,pixelSize)
-            val cached = fresh ?: if(entry.metadata.isDirectory)null else iconCache.get(cacheKey)
-            if (cached != null) applyArtwork(cached)
-            var authoritativeApplied = fresh!=null
-            if(fresh==null)pendingIcons.add(card.container to {
-                com.infinifolder.ResourceArtworkCache.reads.execute cacheRead@ {
+            var authoritativeApplied = false
+            pendingIcons.add(card.container to {
+                iconIndex.whenComplete { _, _ -> com.infinifolder.ResourceArtworkCache.reads.execute cacheRead@ {
                     if (iconGeneration != renderGeneration || windowView == null) return@cacheRead
+                    val iconRevision=iconResolver.revision()
+                    val cacheKey = "${entry.ref}:${entry.metadata.name}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:${iconRevision}:$pixelSize"
                     val saved=iconResolver.cached(entry, pixelSize)
-                    if(saved!=null) {
+                    val cached=saved ?: if(entry.metadata.isDirectory)null else iconCache.get(cacheKey)
+                    if(cached!=null) {
                         onMain {
                             if (!authoritativeApplied && iconGeneration == renderGeneration && windowView != null) {
-                                authoritativeApplied=true;applyArtwork(saved)
+                                authoritativeApplied=saved!=null;applyArtwork(cached)
                             }
                         }
                     }
@@ -953,7 +969,7 @@ class FloatingContainerService : Service() {
                             }
                         }
                     }
-                }
+                } }
             })
             val dragItem = DragItem(card.container, icon, entry)
             dragItems += dragItem
@@ -973,8 +989,19 @@ class FloatingContainerService : Service() {
             }
             card.container
         }
+        val table = if (rows.size > 48) VirtualizedEntrySurface(
+            this, rows, columns, ((iconDp + 48) * density).roundToInt(), makeCard,
+            onCardRemoved = { _, card ->
+                pendingIcons.removeAll { it.first === card }
+                dragItems.removeAll { it.card === card }
+            }
+        ).also { largeEntrySurface = it }
+        else FileViewGrid.build(this, rows, columns, card=makeCard)
         grid.addView(table)
-        grid.post { loadVisibleIcons() }
+        grid.post {
+            largeEntrySurface?.updateViewport(scroll.scrollY, scroll.height)
+            loadVisibleIcons()
+        }
         if (rows.isEmpty()) grid.addView(TextView(this).apply {
             text = "No files or folders were returned for this location."
             setTextColor(ThemeManager.activeTheme.textPrimary)
@@ -1257,11 +1284,19 @@ class FloatingContainerService : Service() {
     }
 
     private fun loadVisibleIcons() {
-        if (pendingIcons.isEmpty()) return
-        val visible = android.graphics.Rect()
-        val jobs = pendingIcons.filter { it.first.getGlobalVisibleRect(visible) }
-        pendingIcons.removeAll(jobs.toSet())
-        jobs.forEach { it.second() }
+        if (pendingIcons.isEmpty() || visibleIconsScheduled) return
+        visibleIconsScheduled = true
+        scroll.postOnAnimation {
+            scroll.post {
+                visibleIconsScheduled = false
+                if (windowView != null) {
+                    val visible = android.graphics.Rect()
+                    val jobs = pendingIcons.filter { it.first.getGlobalVisibleRect(visible) }
+                    pendingIcons.removeAll(jobs.toSet())
+                    jobs.forEach { it.second() }
+                }
+            }
+        }
     }
 
     private fun dismissWindow() {
