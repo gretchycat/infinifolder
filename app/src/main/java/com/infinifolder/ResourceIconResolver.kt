@@ -109,9 +109,15 @@ class ResourceIconResolver(context: Context) {
         val key="${linkKey(entry)}:${entry.metadata.name}:${entry.metadata.mimeType}:${registry.revision}:${io.github.gretchycat.infinistream.RuntimeCapabilities.installed().revision}"
         identities.get(key)?.takeIf {System.currentTimeMillis()<it.expires}?.let { return it.identity }
         val identity=identityResolver.resolve(entry.metadata.name,entry.metadata.mimeType) {
-            IconWork.bounded(lane="metadata:${entry.ref.providerId}") { FileMagicDetector.detectFromStream {
-                (runtime.provider.openRead(entry.ref) as? ProviderResult.Success)?.value ?: error("Cannot probe source")
-            } }?.mimeType
+            val extensionMime = MimeRegistry.guess(entry.metadata.name)
+            if (entry.metadata.sizeBytes == 0L && MimeRegistry.isTextBased(extensionMime)) extensionMime
+            else IconWork.bounded(lane="metadata:${entry.ref.providerId}") { FileMagicDetector.detectFromStream(
+                    fileNameHint = entry.metadata.name,
+                    expectedMimeType = extensionMime,
+                    resourceLength = entry.metadata.sizeBytes
+                ) {
+                    (runtime.provider.openRead(entry.ref) as? ProviderResult.Success)?.value ?: error("Cannot probe source")
+                } }?.mimeType
         }
         identities.put(key,IdentityCache(identity,System.currentTimeMillis()+30000));return identity
     }

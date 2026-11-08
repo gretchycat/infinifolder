@@ -22,3 +22,6 @@
 [submodule "libraries/libinfiniselect"]
 	path = libraries/libinfiniselect
 	url = https://github.com/gretchycat/libinfiniselect.git
+[submodule "libraries/libinfinimeta"]
+	path = libraries/libinfinimeta
+	url = https://github.com/gretchycat/libinfinimeta.git

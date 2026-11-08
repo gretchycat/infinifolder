@@ -146,12 +146,12 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
         return NetworkConnectionStatus.watchIo(target.key, target.path, work)
     }
     private fun <T> call(operation: String, ref: ResourceRef, action: (StorageProvider) -> ProviderResult<T>): ProviderResult<T> = StorageActivity.track(
-        if (operation in setOf("batch.begin", "replace", "replace-file", "write", "mkdir", "create", "rename", "delete", "seekable-write", "native-offset-write", "transfer-target", "metadata.apply"))
+        if (operation in setOf("batch.begin", "replace", "replace-file", "write", "mkdir", "create", "rename", "delete", "seekable-write", "native-offset-write", "transfer-target", "metadata.apply", "native-move", "server-copy"))
             StorageActivity.Kind.FILE_OPERATION else StorageActivity.Kind.LOADING
     ) {
         // Metadata-only helpers do not prove that a network round trip succeeded.
         val connectionRequest = if (ref.providerId in setOf("sftp", "ftp", "smb", "webdav") &&
-            operation in setOf("list", "stat", "read", "write", "mkdir", "create", "rename", "delete", "seekable", "seekable-write", "native-offset", "native-offset-write", "transfer-target", "replace", "replace-file")) {
+            operation in setOf("list", "stat", "read", "write", "mkdir", "create", "rename", "delete", "seekable", "seekable-write", "native-offset", "native-offset-write", "transfer-target", "replace", "replace-file", "native-move", "server-copy", "transfer.capabilities")) {
             Uri.parse(ref.documentId).authority?.takeIf { it.isNotBlank() }?.let {
                 NetworkConnectionStatus.begin(NetworkConnectionStatus.Key(ref.providerId, it))
             }
@@ -185,6 +185,33 @@ class RoutingStorageProvider(vararg providers: StorageProvider, private val uriR
     override fun backingResource(ref: ResourceRef): ResourceRef? = byId[ref.providerId]?.backingResource(ref)
     override fun recoverySource(ref: ResourceRef): ResourceRef? = byId[ref.providerId]?.recoverySource(ref)
     override fun deviceIdentity(ref: ResourceRef): String? = byId[ref.providerId]?.deviceIdentity(ref)
+    override fun transferCapabilities(request: StorageTransferRequest): ProviderResult<StorageTransferCapabilities> {
+        if (request.source.providerId != request.destinationParent.providerId)
+            return ProviderResult.Success(StorageTransferCapabilities())
+        return call("transfer.capabilities", request.source) { it.transferCapabilities(request) }
+    }
+    override fun nativeMove(request: StorageTransferRequest, isCancelled: () -> Boolean): ProviderResult<ResourceEntry> {
+        if (request.source.providerId != request.destinationParent.providerId)
+            return ProviderResult.Unsupported(ResourceCapability.MOVE)
+        return call("native-move", request.source) { backend ->
+            backend.nativeMove(request, isCancelled).also { result ->
+                if (result is ProviderResult.Success) {
+                    onResourceRemoved?.invoke(request.source)
+                    runCatching { onEntriesObserved?.invoke(request.destinationParent, listOf(normalized(result.value)), false) }
+                }
+            }
+        }
+    }
+    override fun serverSideCopyFile(request: StorageTransferRequest, isCancelled: () -> Boolean): ProviderResult<ResourceEntry> {
+        if (request.source.providerId != request.destinationParent.providerId)
+            return ProviderResult.Unsupported(ResourceCapability.COPY)
+        return call("server-copy", request.source) { backend ->
+            backend.serverSideCopyFile(request, isCancelled).also { result ->
+                if (result is ProviderResult.Success)
+                    runCatching { onEntriesObserved?.invoke(request.destinationParent, listOf(normalized(result.value)), false) }
+            }
+        }
+    }
     override fun capabilities(ref: ResourceRef): ProviderResult<ResourceCapabilities> = call("capabilities", ref) { it.capabilities(ref) }
     override fun fileSystemInfo(ref: ResourceRef): ProviderResult<FileSystemInfo> = call("filesystem", ref) { it.fileSystemInfo(ref) }
     override fun readTransferMetadata(ref: ResourceRef): ProviderResult<TransferMetadata> = call("metadata.read", ref) { it.readTransferMetadata(ref) }

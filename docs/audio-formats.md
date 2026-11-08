@@ -228,5 +228,7 @@ The synthesizer pipeline (`com.infinifolder.audio.synth`) provides full polyphon
 | --- | --- | --- | --- | --- |
 | **M3U / Extended M3U / M3U8** | `.m3u`, `.m3u8` | `audio/x-mpegurl` | `PlaylistParser` | `#EXTM3U` and `#EXTINF` metadata parser. Extracts track titles, durations, and URIs or relative filesystem paths. |
 | **PLS Playlist** | `.pls` | `audio/x-scpls` | `PlaylistParser` | INI-style `[playlist]` format. Parses `FileN`, `TitleN`, and `LengthN`. |
-| **XML Shareable Playlist** | `.xspf` | `application/xspf+xml` | `PlaylistParser` | XML `<playlist>` parser extracting `<track>` `<location>` and `<title>`. |
-| **Cue Sheet** | `.cue` | `application/x-cue` | `PlaylistParser` | CD digital audio cue sheets. Parses `FILE`, `TRACK AUDIO`, `TITLE`, and `INDEX 01` cue markers. |
+| **XML Shareable Playlist** | `.xspf` | `application/xspf+xml` | `PlaylistParser` | XML `<playlist>` parser extracting `<track>` `<location>` and `<title>`. Relative, escaped, and absolute URI locations are resolved against the playlist. |
+| **JSON Shareable Playlist** | `.jspf` | `application/jspf+json` | `PlaylistParser` | JSON playlist parser extracting each track's location, title, creator, album and millisecond duration. Relative locations resolve from the playlist's directory. |
+| **Cue Sheet** | `.cue` | `application/x-cue` | `PlaylistParser` | Parses audio tracks, file type, title, performer, and `INDEX 01`; raw `BINARY`/`MOTOROLA` CD-DA images use sector offsets and the streaming CD-DA decoder. `MOTOROLA` samples are big-endian. Data tracks are skipped. |
+| **cdrdao TOC** | `.toc` | `application/x-cdrdao-toc` | `PlaylistParser` | Parses `CD_DA` audio tracks with `FILE`/`AUDIOFILE` sources, raw-image start/length, title, and performer. Raw `.bin`/`.img` audio uses the streaming CD-DA decoder. CDDB `cddb.toc` metadata is not treated as a playlist. |

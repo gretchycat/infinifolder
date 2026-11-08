@@ -26,11 +26,13 @@ class ExternalAppPickerActivity : Activity() {
     private var scope: RadioGroup? = null
     private var dialog: AlertDialog? = null
     private var savedRemember = false
-    private var savedFileScope = false
+    private var savedScopeId: Int? = null
     private var showingAllApps = false
     private var launched = false
     private val sourceKey get() = intent.getStringExtra(ExternalAppChooser.SOURCE)
     private val fileName get() = intent.getStringExtra(ExternalAppChooser.NAME).orEmpty()
+    private val extension get() = ExternalAppDefaults.extensionOf(fileName)
+    private val genericBinaryTarget get() = MimeRegistry.isUnspecified(target.type)
     private val selectingEditor get() = intent.getBooleanExtra(ExternalAppChooser.SELECT_EDITOR, false)
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
 
@@ -53,7 +55,7 @@ class ExternalAppPickerActivity : Activity() {
         target = requested
         defaults = ExternalAppDefaults(this)
         savedRemember = state?.getBoolean("remember") ?: false
-        savedFileScope = state?.getBoolean("file_scope") ?: false
+        savedScopeId = state?.getInt("scope_id") ?: if (state?.getBoolean("file_scope") == true) SCOPE_FILE else null
         // A restored picker may show choices, but must not repeat its old target automatically.
         loadChoices(useDefault = state == null &&
             !intent.getBooleanExtra(ExternalAppChooser.FORCE_CHOOSER, false) && !selectingEditor)
@@ -106,12 +108,16 @@ class ExternalAppPickerActivity : Activity() {
         Thread({
             try {
                 val available = choices()
-                val preferred = if (useDefault) defaults.candidates(target.action!!, sourceKey, target.type)
+                val preferred = if (useDefault) defaults.candidates(target.action!!, sourceKey, target.type, fileName)
                     .firstNotNullOfOrNull { component -> available.firstOrNull { it.component == component }
                         ?: installedChoice(component, target.action!!) } else null
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     if (preferred != null) launch(preferred, available, rememberChoice = false)
+                    else if (useDefault && genericBinaryTarget && extension != null && available.none { it.internal == null }) {
+                        available.firstOrNull { it.internal != null }?.let { launch(it, available, rememberChoice = false) }
+                            ?: showChoices(available)
+                    }
                     else showChoices(available)
                 }
             } catch (error: Exception) {
@@ -165,9 +171,18 @@ class ExternalAppPickerActivity : Activity() {
             }
             scope = RadioGroup(builder.context).apply {
                 orientation = RadioGroup.VERTICAL
-                addView(RadioButton(context).apply { id = 1; text = "This file only"; isEnabled = sourceKey != null; setTextColor(colors.textPrimary) })
-                addView(RadioButton(context).apply { id = 2; text = "All files of this type"; setTextColor(colors.textPrimary) })
-                check(if (savedFileScope && sourceKey != null) 1 else 2)
+                addView(RadioButton(context).apply {
+                    id = SCOPE_FILE; text = "This file only"; isEnabled = sourceKey != null
+                    setTextColor(colors.textPrimary)
+                })
+                val extensionScope = genericBinaryTarget && extension != null
+                if (extensionScope) addView(RadioButton(context).apply {
+                    id = SCOPE_EXTENSION; text = "All .$extension files"; setTextColor(colors.textPrimary)
+                }) else addView(RadioButton(context).apply {
+                    id = SCOPE_TYPE; text = "All files of this type"; setTextColor(colors.textPrimary)
+                })
+                check(savedScopeId?.takeIf { id -> (0 until childCount).any { getChildAt(it).id == id } }
+                    ?: if (extensionScope) SCOPE_EXTENSION else SCOPE_TYPE)
                 visibility = if (savedRemember) View.VISIBLE else View.GONE
             }
             remember!!.setOnCheckedChangeListener { _, checked -> scope?.visibility = if (checked) View.VISIBLE else View.GONE }
@@ -178,7 +193,7 @@ class ExternalAppPickerActivity : Activity() {
             text = if (showingAllApps) "Show compatible apps" else "All apps…"
             setOnClickListener {
                 savedRemember = remember?.isChecked ?: savedRemember
-                savedFileScope = scope?.checkedRadioButtonId == 1
+                savedScopeId = scope?.checkedRadioButtonId
                 if (showingAllApps) {
                     showingAllApps = false
                     showChoices(choices())
@@ -217,7 +232,11 @@ class ExternalAppPickerActivity : Activity() {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(launch)
             if (rememberChoice) defaults.remember(target.action!!,
-                if (scope?.checkedRadioButtonId == 1) ExternalAppDefaults.FILE else ExternalAppDefaults.TYPE,
+                when (scope?.checkedRadioButtonId) {
+                    SCOPE_FILE -> ExternalAppDefaults.FILE
+                    SCOPE_EXTENSION -> ExternalAppDefaults.EXTENSION
+                    else -> ExternalAppDefaults.TYPE
+                },
                 sourceKey, target.type, fileName, choice.component)
             launched = true
             intent.removeExtra(ExternalAppChooser.TARGET)
@@ -230,9 +249,16 @@ class ExternalAppPickerActivity : Activity() {
     }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("remember", remember?.isChecked ?: savedRemember)
-        outState.putBoolean("file_scope", scope?.checkedRadioButtonId == 1)
+        outState.putInt("scope_id", scope?.checkedRadioButtonId ?: savedScopeId ?: SCOPE_TYPE)
+        outState.putBoolean("file_scope", scope?.checkedRadioButtonId == SCOPE_FILE)
         outState.putBoolean("launched", launched)
         super.onSaveInstanceState(outState)
     }
     override fun onDestroy() { dialog?.dismiss(); super.onDestroy() }
+
+    private companion object {
+        const val SCOPE_FILE = 1
+        const val SCOPE_EXTENSION = 2
+        const val SCOPE_TYPE = 3
+    }
 }

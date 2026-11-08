@@ -74,19 +74,28 @@ object AudioTranscoder {
 
     internal fun open(context: Context, track: AudioTrack, cancelled: () -> Boolean): PreparedAudio {
         if (cancelled() || Thread.currentThread().isInterrupted) throw InterruptedIOException("Cast source cancelled")
-        val direct = isDirectlyPlayableByCast(track.uri,track.fileName)
-        val input = AudioPlaybackInput.open(context,track.uri,track.fileName,metadataOnly = direct)
+        val rawHint = track.decoderExtension != null
+        val direct = !rawHint && isDirectlyPlayableByCast(track.uri,track.fileName)
+        val input = AudioPlaybackInput.open(context,track.uri,track.fileName,
+            requiresFile = rawHint, metadataOnly = direct)
         var wave: AudioWaveSource? = null
         var scratch: File? = null
+        var sourceSlice: File? = null
         try {
             if (direct) return PreparedAudio(window(input.resource,track,getMimeType(track.uri,track.fileName)),input)
             scratch = File.createTempFile("cast_pcm_", ".wav", context.cacheDir)
-            wave = input.openWaveSource(scratch,reportDiagnostics = false,cancelled = cancelled,
+            wave = if (rawHint) {
+                val staged = input.file ?: throw IOException("Raw image audio requires a staged file")
+                val sliced = slice(staged,track,context.cacheDir)
+                sourceSlice = sliced
+                AudioProcessing.openWaveSource(sliced,scratch,
+                    PcmOutputOptions(bitsPerSample = 16,duplicateMono = true),cancelled)
+            } else input.openWaveSource(scratch,reportDiagnostics = false,cancelled = cancelled,
                 outputOptions = PcmOutputOptions(bitsPerSample = 16,duplicateMono = true))
             // The former Cast conversion also preserved surround channels and source rate.
-            return PreparedAudio(wave.borrowedResource(),input,wave,scratch)
+            return PreparedAudio(wave.borrowedResource(),input,wave,scratch,sourceSlice)
         } catch (error: Throwable) {
-            try { wave?.close() } finally { try { input.close() } finally { scratch?.delete() } }
+            try { wave?.close() } finally { try { input.close() } finally { scratch?.delete(); sourceSlice?.delete() } }
             throw error
         }
     }
@@ -172,13 +181,14 @@ object AudioTranscoder {
     private fun openPcmTrack(context: Context, track: AudioTrack,
         cancelled: () -> Boolean = { Thread.currentThread().isInterrupted }): PreparedPcmTrack {
         val hasByteRange = track.startByte > 0 || track.lengthBytes > 0
-        val input = AudioPlaybackInput.open(context, track.uri, track.fileName, requiresFile = hasByteRange)
+        val needsFile = hasByteRange || track.decoderExtension != null
+        val input = AudioPlaybackInput.open(context, track.uri, track.fileName, requiresFile = needsFile)
         var slice: File? = null
         var scratch: File? = null
         var wave: AudioWaveSource? = null
         try {
             scratch = File.createTempFile("cast_pcm_", ".wav", context.cacheDir)
-            wave = if (hasByteRange) {
+            wave = if (needsFile) {
                 val staged = input.file ?: throw IOException("Byte-range audio input requires a staged file")
                 slice = slice(staged, track, context.cacheDir)
                 AudioProcessing.openWaveSource(slice, scratch, PcmOutputOptions(
@@ -340,8 +350,11 @@ object AudioTranscoder {
         val available = total - start
         val count = if (track.lengthBytes > 0) minOf(track.lengthBytes, available) else available
         if (count <= 0) throw IOException("Audio byte range is empty")
-        val extension = track.fileName.substringAfterLast('.', "").takeIf { it.isNotBlank() }?.let { ".$it" } ?: ".bin"
-        val output = File.createTempFile("cast_slice_", extension, directory)
+        val extension = track.decoderExtension?.trimStart('.')?.takeIf { it.isNotBlank() }
+            ?: track.fileName.substringAfterLast('.', "").takeIf { it.isNotBlank() }
+            ?: "bin"
+        val suffix = if (extension.startsWith('.')) extension else ".$extension"
+        val output = File.createTempFile("cast_slice_", suffix, directory)
         try {
             RandomAccessFile(source, "r").use { input ->
                 RandomAccessFile(output, "rw").use { target ->
@@ -363,9 +376,10 @@ object AudioTranscoder {
     }
 
     internal class PreparedAudio(val resource: SourceResource, private val input: AudioPlaybackInput,
-        private val wave: AudioWaveSource? = null, private val scratch: File? = null) : Closeable {
+        private val wave: AudioWaveSource? = null, private val scratch: File? = null,
+        private val sourceSlice: File? = null) : Closeable {
         override fun close() {
-            try { wave?.close() } finally { try { input.close() } finally { scratch?.delete() } }
+            try { wave?.close() } finally { try { input.close() } finally { scratch?.delete(); sourceSlice?.delete() } }
         }
     }
 

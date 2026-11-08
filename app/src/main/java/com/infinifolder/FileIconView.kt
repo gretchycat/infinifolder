@@ -34,16 +34,23 @@ object FileIconView {
         imagePreview: (() -> View)? = null
     ): View {
         // A visible card's worker supplies the authoritative result from ResourceIconResolver.
-        // Use only cached selected-theme artwork on the first frame. A cold theme load
-        // reserves the slot until its worker finishes instead of flashing built-in artwork.
+        // Put a complete local icon in the view immediately; selected-theme artwork and
+        // directory covers can then replace it asynchronously without an empty first frame.
         return IconImageView(context).apply {
             scaleType=ImageView.ScaleType.FIT_CENTER
             val size=((if(asGrid)iconSizeDp else 44)*context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
-            setImageBitmap(if(AppsUri.isRoot(entry.uri)) {
-                if(!theme.getActiveThemeId().isNullOrBlank())theme.peekPlaceIcon("installed_apps",size)
-                else FileTypeIcons.installedApplications(size)
-            } else if(!theme.getActiveThemeId().isNullOrBlank())theme.peekFileIcon(meta,size)
-                else if(meta.isDirectory)FileTypeIcons.folder(size) else FileTypeIcons.bitmap(meta,size))
+            val hasTheme=!theme.getActiveThemeId().isNullOrBlank()
+            val themed=when {
+                AppsUri.isRoot(entry.uri) && hasTheme -> theme.peekPlaceIcon("installed_apps",size)
+                hasTheme -> theme.peekFileIcon(meta,size)
+                else -> null
+            }
+            val immediateDefault=when {
+                AppsUri.isRoot(entry.uri) -> FileTypeIcons.installedApplications(size)
+                meta.isDirectory -> FileTypeIcons.folder(size)
+                else -> FileTypeIcons.bitmap(meta,size)
+            }
+            setImageBitmap(themed ?: immediateDefault)
             contentDescription="Loading file icon"
             layoutParams=FrameLayout.LayoutParams(-1,-1,Gravity.CENTER)
         }

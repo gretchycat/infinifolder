@@ -39,6 +39,8 @@ import java.util.Locale
 
 class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeListener, DebugDumpObserver, CastManager.Listener {
 
+    private val playlistLoadGeneration = java.util.concurrent.atomic.AtomicLong(0L)
+
     private lateinit var audioManager: AudioManager
 
     private lateinit var rootLayout: LinearLayout
@@ -232,6 +234,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     private fun handleIntent(intent: Intent?) {
         val targetUri = intent?.data ?: intent?.getStringExtra("uri")?.let { Uri.parse(it) } ?: return
+        val generation = playlistLoadGeneration.incrementAndGet()
         val displayName = intent?.getStringExtra("displayName") ?: targetUri.lastPathSegment ?: "Audio Track"
 
         val serviceIntent = Intent(this, AudioPlayerService::class.java).apply {
@@ -240,6 +243,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             putExtra("uri", targetUri.toString())
             putExtra("name", displayName)
+            putExtra("mimeType", intent?.getStringExtra("mimeType") ?: intent?.type)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent)
@@ -249,7 +253,8 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
         Thread {
             val tracks = mutableListOf<AudioTrack>()
-            val isDirectPlaylist = PlaylistExpander.isPlaylist(targetUri, displayName)
+            val playlistMime = intent?.getStringExtra("mimeType") ?: intent?.type
+            val isDirectPlaylist = PlaylistExpander.isPlaylist(this, targetUri, displayName, playlistMime)
 
             if (isDirectPlaylist) {
                 val playlistTracks = PlaylistExpander.expandPlaylist(this, targetUri)
@@ -267,6 +272,14 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                 }
             }
 
+            if (isDirectPlaylist) {
+                com.infinifolder.storage.DiagnosticLog.record("audio.playlist.queued",
+                    "format=${displayName.substringAfterLast('.', "").lowercase()} tracks=${tracks.size}")
+                if (tracks.isEmpty()) runOnUiThread {
+                    Toast.makeText(this, "No tracks found in this playlist", Toast.LENGTH_SHORT).show()
+                }
+            }
+
             if (tracks.none { AudioPlayerService.uriMatches(it.uri, targetUri) }) {
                 if (!isDirectPlaylist) {
                     tracks.add(0, AudioTrack(targetUri, displayName))
@@ -275,28 +288,36 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
             var startIndex = tracks.indexOfFirst { AudioPlayerService.uriMatches(it.uri, targetUri) }
             if (startIndex < 0) startIndex = 0
+            if (generation != playlistLoadGeneration.get()) return@Thread
 
             runOnUiThread {
-                val service = AudioPlayerService.currentService
-                val isSameTrack = AudioPlayerService.uriMatches(service?.currentTrack?.uri, targetUri)
-                if (service != null && isSameTrack) {
-                    service.updatePlaylistKeepCurrent(tracks, targetUri)
-                    updateUIFromService(service)
-                } else if (service != null) {
-                    service.setPlaylist(tracks, startIndex, startAtAlphabeticalBeginning = isDirectPlaylist)
-                } else {
-                    window.decorView.postDelayed({
-                        AudioPlayerService.currentService?.let { s ->
-                            val match = AudioPlayerService.uriMatches(s.currentTrack?.uri, targetUri)
-                            if (match) {
-                                s.updatePlaylistKeepCurrent(tracks, targetUri)
-                                updateUIFromService(s)
-                            } else {
-                                s.setPlaylist(tracks, startIndex, startAtAlphabeticalBeginning = isDirectPlaylist)
-                            }
+                if (generation != playlistLoadGeneration.get()) return@runOnUiThread
+                fun applyPlaylistWhenServiceReady(attempt: Int) {
+                    if (generation != playlistLoadGeneration.get() || isFinishing || isDestroyed) return
+                    val service = AudioPlayerService.currentService
+                    if (service == null) {
+                        if (attempt < 20) {
+                            window.decorView.postDelayed({ applyPlaylistWhenServiceReady(attempt + 1) }, 100)
+                        } else {
+                            com.infinifolder.storage.DiagnosticLog.record("audio.playlist.service_unavailable",
+                                "format=${displayName.substringAfterLast('.', "").lowercase()}")
                         }
-                    }, 200)
+                        return
+                    }
+                    val isSameTrack = AudioPlayerService.uriMatches(service.currentTrack?.uri, targetUri)
+                    // The service may still regard the playlist document itself as
+                    // current (for example when its URI had no useful extension and
+                    // only the Activity's content sniff identified XSPF). Replacing
+                    // the queue must discard that document, not preserve it as the
+                    // active item at the end of the expanded track list.
+                    if (isSameTrack && !isDirectPlaylist) {
+                        service.updatePlaylistKeepCurrent(tracks, targetUri)
+                        updateUIFromService(service)
+                    } else {
+                        service.setPlaylist(tracks, startIndex, preservePlaylistOrder = isDirectPlaylist)
+                    }
                 }
+                applyPlaylistWhenServiceReady(0)
             }
         }.start()
     }

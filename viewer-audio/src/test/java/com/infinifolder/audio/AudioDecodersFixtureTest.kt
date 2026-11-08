@@ -299,7 +299,7 @@ class AudioDecodersFixtureTest {
         val playlistDir = File(fixtureDir.parentFile, "playlists").let {
             if (it.exists()) it else fixtureDir
         }
-        for (name in listOf("c_major_piano.m3u", "c_major_piano.m3u8", "c_major_piano.pls", "c_major_piano.xspf", "c_major_piano.cue")) {
+        for (name in listOf("c_major_piano.m3u", "c_major_piano.m3u8", "c_major_piano.pls", "c_major_piano.xspf", "c_major_piano.jspf", "c_major_piano.cue")) {
             val content = File(playlistDir, name).readText()
             assertTrue("PlaylistParser should recognize $name", PlaylistParser.isPlaylist(name, content))
             val entries = PlaylistParser.parse(name, content)

@@ -8,6 +8,7 @@ dependencies {
         .sortedBy { it.name }.forEach { implementation(project(it.path)) }
 
     implementation(project(":storage-engine"))
+    implementation("io.github.gretchycat.libinfinimeta:meta-sega:0.1.0")
     implementation("io.github.gretchycat.libinfiniselect:select-android:0.1.0")
     implementation("io.github.gretchycat.libinfiniscribe:scribe-android:0.1.0")
     implementation("io.github.gretchycat.libinfiniscribe:scribe-mobi-android:0.1.0")

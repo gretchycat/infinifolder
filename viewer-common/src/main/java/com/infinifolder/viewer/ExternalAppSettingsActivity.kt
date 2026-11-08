@@ -38,7 +38,7 @@ class ExternalAppSettingsActivity : Activity() {
             setOnClickListener { click() }
         }) }
         text("Default viewers and apps", 22f)
-        text("These defaults apply only inside InfiniFolder. Supported files use the built-in viewer unless you save another choice. Open with… lists the built-in viewer first and lets you change the default. File-specific choices take priority over file-type choices.")
+        text("These defaults apply only inside InfiniFolder. Supported files use the built-in viewer unless you save another choice. Open with… lists the built-in viewer first and lets you change the default. File-specific choices take priority over extension and file-type choices.")
         text("Default editor: ${defaults.editor?.let(::label) ?: "Ask each time"}", 16f)
         button("Choose default editor…") {
             val target = Intent(Intent.ACTION_EDIT).setDataAndType(Uri.parse("content://$packageName.external-edit/"), "*/*")
@@ -51,7 +51,12 @@ class ExternalAppSettingsActivity : Activity() {
         if (rules.isEmpty()) text("No file or file-type defaults. Choose Open with… on a file and enable Remember in InfiniFolder.")
         rules.forEach { rule ->
             val role = if (rule.action == Intent.ACTION_EDIT) "Edit" else "Open"
-            val scope = if (rule.scope == ExternalAppDefaults.FILE) "This file: ${rule.name}" else "All files: ${rule.mime}"
+            val scope = when {
+                rule.scope == ExternalAppDefaults.FILE -> "This file: ${rule.name}"
+                rule.scope == ExternalAppDefaults.EXTENSION -> "Files ending in .${rule.key}"
+                com.infinifolder.mime.MimeRegistry.isUnspecified(rule.mime) -> "Extensionless generic files: ${rule.mime}"
+                else -> "All files: ${rule.mime}"
+            }
             text("$role · $scope\n${label(rule.component)}", 16f)
             button("Clear this default") { defaults.remove(rule); render() }
         }

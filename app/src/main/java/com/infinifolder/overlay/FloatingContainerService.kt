@@ -99,9 +99,15 @@ class FloatingContainerService : Service() {
     private val dragItems = mutableListOf<DragItem>()
     private var launcherDrag: LauncherDrag? = null
     private var systemDialogsRegistered = false
+    // Keep API 33 types out of the service's field signatures for API 26 devices.
+    private var floatingBackDispatcher: Any? = null
+    private var floatingBackCallback: Any? = null
     private var selectionMode = false
     private var selectionAllowMultiple = false
     private var selectionMimeTypes: List<String> = emptyList()
+    private var selectionExtensions: List<String> = emptyList()
+    private var hideUnsupportedSelectionFiles = false
+    private var selectionRestoreScrollY: Int? = null
     private var selectionReceiver: ResultReceiver? = null
     private val selectedEntries = linkedMapOf<String, ResourceEntry>()
     private var selectionDoneView: TextView? = null
@@ -133,6 +139,9 @@ class FloatingContainerService : Service() {
         selectionMode = intent?.getBooleanExtra(EXTRA_SELECTION_MODE, false) == true
         selectionAllowMultiple = intent?.getBooleanExtra(EXTRA_ALLOW_MULTIPLE, false) == true
         selectionMimeTypes = intent?.getStringArrayListExtra(EXTRA_SELECTION_MIME_TYPES).orEmpty()
+        selectionExtensions = intent?.getStringArrayListExtra(EXTRA_SELECTION_EXTENSIONS).orEmpty()
+        hideUnsupportedSelectionFiles = intent?.getBooleanExtra(EXTRA_HIDE_UNSUPPORTED, false) == true
+        selectionRestoreScrollY = intent?.getIntExtra(EXTRA_SELECTION_SCROLL_Y, 0)?.coerceAtLeast(0)
         selectedEntries.clear()
         selectionReceiver = if (android.os.Build.VERSION.SDK_INT >= 33) {
             intent?.getParcelableExtra(EXTRA_SELECTION_RECEIVER, ResultReceiver::class.java)
@@ -184,6 +193,16 @@ class FloatingContainerService : Service() {
                 super.onWindowFocusChanged(hasWindowFocus)
                 if (hasWindowFocus) receivedFocus = true
                 else if (receivedFocus) dismissWindow()
+            }
+
+            override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+                if (event.keyCode in setOf(
+                        android.view.KeyEvent.KEYCODE_BACK, android.view.KeyEvent.KEYCODE_ESCAPE
+                    )) {
+                    if (event.action == android.view.KeyEvent.ACTION_UP && !event.isCanceled) dismissWindow()
+                    return true
+                }
+                return super.dispatchKeyEvent(event)
             }
 
             override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -339,7 +358,39 @@ class FloatingContainerService : Service() {
             y = dp(64) }
         restoreWindowPlacement()
         windowView = root
+        root.isFocusable = true
+        root.isFocusableInTouchMode = true
         windows.addView(root, params)
+        root.requestFocus()
+        registerFloatingBackCallback(root)
+    }
+
+    /** Gesture Back uses the window dispatcher on Android 13+ instead of KEYCODE_BACK. */
+    private fun registerFloatingBackCallback(view: View) {
+        if (android.os.Build.VERSION.SDK_INT < 33) return
+        view.post {
+            if (windowView !== view) return@post
+            val dispatcher = view.findOnBackInvokedDispatcher() ?: return@post
+            val callback = android.window.OnBackInvokedCallback { dismissWindow() }
+            runCatching {
+                dispatcher.registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_OVERLAY, callback
+                )
+            }.onSuccess {
+                floatingBackDispatcher = dispatcher
+                floatingBackCallback = callback
+            }
+        }
+    }
+
+    private fun unregisterFloatingBackCallback() {
+        val dispatcher = floatingBackDispatcher as? android.window.OnBackInvokedDispatcher
+        val callback = floatingBackCallback as? android.window.OnBackInvokedCallback
+        floatingBackDispatcher = null
+        floatingBackCallback = null
+        if (android.os.Build.VERSION.SDK_INT >= 33 && dispatcher != null && callback != null) {
+            runCatching { dispatcher.unregisterOnBackInvokedCallback(callback) }
+        }
     }
 
     private fun addResizeHandle(left: Boolean) {
@@ -535,6 +586,7 @@ class FloatingContainerService : Service() {
                             listingReady = true
                             currentListingComplete=!result.isLoading
                             render(result.value,freshListing=true)
+                            restoreSelectionScrollPosition()
                         }
                     }.also {
                         com.infinifolder.ResourceIconSidecars.observe(result.value, uri,complete=!result.isLoading)
@@ -832,9 +884,11 @@ class FloatingContainerService : Service() {
         val sortByName = preferences.getBoolean("sort_name", true)
         val sortKey = preferences.getString("sort_key", if (sortByName) "name" else "modified") ?: "name"
         val descending = preferences.getBoolean("sort_descending", !sortByName)
-        val rows = if (selectionMode && current == com.infinifolder.storage.ContainerLinksProvider.ROOT)
+        val visibleRows = if (selectionMode && current == com.infinifolder.storage.ContainerLinksProvider.ROOT)
             entries.filterNot { it.metadata.isHidden }
         else FileViewGrid.sortedEntries(entries, showHidden = false, sortKey, descending)
+        val rows = if (selectionMode && hideUnsupportedSelectionFiles) visibleRows.filter(::isVisibleInFilteredSelection)
+            else visibleRows
         val iconRevision=iconResolver.revision()
         val table = FileViewGrid.build(this, rows, columns) { entry ->
             val card = FileEntryCard(this, entry, true, iconDp, ThemeManager.activeTheme.isDark)
@@ -1061,9 +1115,11 @@ class FloatingContainerService : Service() {
     }
 
     private fun selectEntry(entry: ResourceEntry) {
-        val mime = entry.metadata.mimeType.ifBlank { "application/octet-stream" }
-        if (selectionMimeTypes.isNotEmpty() && selectionMimeTypes.none { matchesMime(it, mime) }) {
-            Toast.makeText(this, "Choose a file matching ${selectionMimeTypes.joinToString()}", Toast.LENGTH_SHORT).show()
+        val mime = com.infinifolder.mime.MimeRegistry.effective(
+            entry.metadata.name, entry.metadata.mimeType.ifBlank { "application/octet-stream" })
+        if (!matchesSelectionFormat(entry, mime)) {
+            val accepted = (selectionMimeTypes + selectionExtensions.map { ".$it" }).distinct()
+            Toast.makeText(this, "Choose a supported file${accepted.takeIf { it.isNotEmpty() }?.let { " (${it.joinToString()})" }.orEmpty()}", Toast.LENGTH_SHORT).show()
             return
         }
         if (selectionAllowMultiple) {
@@ -1075,6 +1131,7 @@ class FloatingContainerService : Service() {
             putString(FileSelectionContract.EXTRA_RESULT_NAME, entry.metadata.name)
             putString(FileSelectionContract.EXTRA_RESULT_MIME, mime)
             entry.metadata.sizeBytes?.let { putLong(FileSelectionContract.EXTRA_RESULT_SIZE, it) }
+            addSelectionLocation(this)
         }
         finishSelection(FileSelectionContract.RESULT_SELECTED, result)
         removeWindow()
@@ -1108,6 +1165,7 @@ class FloatingContainerService : Service() {
             }))
             putLongArray(FileSelectionContract.EXTRA_RESULT_SIZES,
                 entries.map { it.metadata.sizeBytes ?: -1L }.toLongArray())
+            addSelectionLocation(this)
         }
         finishSelection(FileSelectionContract.RESULT_SELECTED, result)
         removeWindow()
@@ -1120,12 +1178,62 @@ class FloatingContainerService : Service() {
         return p == "*/*" || p == m || (p.endsWith("/*") && m.startsWith(p.substringBefore('/') + "/"))
     }
 
+    private fun addSelectionLocation(result: Bundle) {
+        current?.let { result.putString(FileSelectionContract.EXTRA_RESULT_DIRECTORY, it.toString()) }
+        if (::scroll.isInitialized) result.putInt(FileSelectionContract.EXTRA_RESULT_SCROLL_Y, scroll.scrollY)
+    }
+
+    private fun restoreSelectionScrollPosition() {
+        val target = selectionRestoreScrollY ?: return
+        if (!selectionMode) return
+        scroll.post {
+            scroll.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                override fun onGlobalLayout() {
+                    if (!scroll.isAttachedToWindow || scroll.height == 0) return
+                    scroll.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                    scroll.scrollTo(0, target)
+                    selectionRestoreScrollY = null
+                }
+            })
+        }
+    }
+
+    /** Directories and real containers remain visible so a filtered picker can browse inside them. */
+    private fun isVisibleInFilteredSelection(entry: ResourceEntry): Boolean {
+        if (entry.metadata.isDirectory) return true
+        val mime = com.infinifolder.mime.MimeRegistry.effective(
+            entry.metadata.name, entry.metadata.mimeType.ifBlank { "application/octet-stream" })
+        return isBrowsableSelectionContainer(entry) || matchesSelectionFormat(entry, mime)
+    }
+
+    private fun isBrowsableSelectionContainer(entry: ResourceEntry): Boolean =
+        ArchiveFormats.isDiscImage(entry.metadata.name, entry.metadata.mimeType) ||
+            ArchiveFormats.isDefaultBrowsableArchive(entry.metadata.name, entry.metadata.mimeType)
+
+    private fun matchesSelectionFormat(entry: ResourceEntry, mime: String): Boolean {
+        val hasMimeFilter = selectionMimeTypes.any { it.isNotBlank() && it != "*/*" }
+        val hasExtensionFilter = selectionExtensions.isNotEmpty()
+        if (!hasMimeFilter && !hasExtensionFilter) return true
+        val mimeMatch = selectionMimeTypes.any {
+            it.isNotBlank() && (it != "*/*" || !hasExtensionFilter) && matchesMime(it, mime)
+        }
+        val name = entry.metadata.name.substringAfterLast('/').lowercase(java.util.Locale.ROOT)
+        val extensionMatch = selectionExtensions.any { extension ->
+            val normalized = extension.trim().removePrefix(".").lowercase(java.util.Locale.ROOT)
+            normalized.isNotEmpty() && (name == normalized || name.endsWith(".$normalized"))
+        }
+        return mimeMatch || extensionMatch
+    }
+
     private fun finishSelection(code: Int, data: Bundle) {
         val receiver = selectionReceiver ?: return
         selectionReceiver = null
         selectionMode = false
         selectionAllowMultiple = false
         selectionMimeTypes = emptyList()
+        selectionExtensions = emptyList()
+        hideUnsupportedSelectionFiles = false
+        selectionRestoreScrollY = null
         selectedEntries.clear()
         receiver.send(code, data)
     }
@@ -1167,6 +1275,7 @@ class FloatingContainerService : Service() {
 
     private fun removeWindow() {
         val view = windowView ?: return
+        unregisterFloatingBackCallback()
         saveWindowPlacement()
         // Invalidate work before detaching: removal can deliver focus callbacks.
         windowView = null
@@ -1208,6 +1317,9 @@ class FloatingContainerService : Service() {
         const val EXTRA_ALLOW_MULTIPLE = "com.infinifolder.overlay.ALLOW_MULTIPLE"
         const val EXTRA_SELECTION_RECEIVER = "com.infinifolder.overlay.SELECTION_RECEIVER"
         const val EXTRA_SELECTION_MIME_TYPES = "com.infinifolder.overlay.SELECTION_MIME_TYPES"
+        const val EXTRA_SELECTION_EXTENSIONS = "com.infinifolder.overlay.SELECTION_EXTENSIONS"
+        const val EXTRA_HIDE_UNSUPPORTED = "com.infinifolder.overlay.HIDE_UNSUPPORTED"
+        const val EXTRA_SELECTION_SCROLL_Y = "com.infinifolder.overlay.SELECTION_SCROLL_Y"
         fun intent(context: android.content.Context, uri: Uri) = Intent(context, FloatingContainerService::class.java).setData(uri)
         fun intent(context: android.content.Context, uri: Uri, displayName: String?) = intent(context, uri)
             .putExtra(EXTRA_DISPLAY_NAME, displayName)

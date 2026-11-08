@@ -5,6 +5,18 @@ import io.github.gretchycat.infinistream.readBytes as readStreamBytes
 import io.github.gretchycat.infinistream.CancellationToken as StreamCancellationToken
 import io.github.gretchycat.infinistream.ProgressObserver as StreamProgressObserver
 import io.github.gretchycat.infinistream.StreamLimitExceededException
+import io.github.gretchycat.infinistream.Capability
+import io.github.gretchycat.infinistream.CapabilityResource
+import io.github.gretchycat.infinistream.ContentType
+import io.github.gretchycat.infinistream.Finiteness
+import io.github.gretchycat.infinistream.InputStreamSource
+import io.github.gretchycat.infinistream.MatchConfidence
+import io.github.gretchycat.infinistream.ProbeBudget
+import io.github.gretchycat.infinistream.Provenance
+import io.github.gretchycat.infinistream.SourceResource
+import io.github.gretchycat.infinistream.StreamMetadata
+import io.github.gretchycat.infinimeta.MetadataInspection
+import io.github.gretchycat.infinimeta.MetadataRegistry
 
 import com.infinifolder.theme.IconImageView
 import android.app.Activity
@@ -224,6 +236,8 @@ class MainActivity : Activity(), DebugDumpObserver {
     private val shortcutCache = LruCache<String, ShortcutInfo>(2048)
     /** Caches detected file magic results for ambiguous or extensionless entries. */
     private val ambiguousMagicCache = LruCache<String, com.infinifolder.storage.FileMagicResult>(1024)
+    /** Final identity after validating an extension candidate against the file's content. */
+    private val validatedMimeCache = LruCache<String, String>(1024)
     /** Holds entries copied to the clipboard in this session. */
     private var cutClipboardToken: String? = null
     private var copiedEntries: List<ResourceEntry>? = null
@@ -467,6 +481,8 @@ class MainActivity : Activity(), DebugDumpObserver {
     private var accessRequestGeneration = 0
     private var activePickerRerender: (() -> Unit)? = null
     private var activePropertiesIconRefresh: (() -> Unit)? = null
+    private val metadataRegistry by lazy { MetadataRegistry.discover() }
+    private val metadataInspectionCache = java.util.concurrent.ConcurrentHashMap<String, MetadataInspection>()
     private val externalStorageDocumentsAuthority = "com.android.externalstorage.documents"
 
     private data class HomeItem(
@@ -891,22 +907,42 @@ class MainActivity : Activity(), DebugDumpObserver {
                 } else null
                 recordExternalLinkVisit(uri, name, original.metadata.mimeType, original.metadata.isDirectory)
                 var mime = com.infinifolder.mime.MimeRegistry.effective(name, suppliedMime ?: original.metadata.mimeType)
-                val genericMime = mime in setOf("application/octet-stream", "application/binary", "text/plain",
+                val extensionMime = com.infinifolder.mime.MimeRegistry.guess(name)
+                val hasExtensionCandidate = !com.infinifolder.mime.MimeRegistry.isUnspecified(extensionMime)
+                val genericMime = com.infinifolder.mime.MimeRegistry.isUnspecified(mime) || mime in setOf("text/plain",
                     "application/x-archive", "application/x-compressed", "application/x-raw-disk-image")
-                val magic = if (!original.metadata.isDirectory && genericMime && FileMagicDetector.isAmbiguousOrUnknown(name, mime)) {
-                    if (localProvider.owns(uri)) FileMagicDetector.detect(localProvider.fileFor(uri), true)
-                    else FileMagicDetector.detectFromStream {
+                val shouldProbe = !original.metadata.isDirectory && (hasExtensionCandidate ||
+                    genericMime && FileMagicDetector.isAmbiguousOrUnknown(name, mime))
+                var sourceReadable = false
+                val magic = if (shouldProbe) {
+                    if (localProvider.owns(uri)) {
+                        val file = localProvider.fileFor(uri)
+                        sourceReadable = file.isFile && file.canRead()
+                        if (sourceReadable) FileMagicDetector.detect(file) else null
+                    } else FileMagicDetector.detectFromStream(
+                        fileNameHint = name,
+                        expectedMimeType = extensionMime,
+                        resourceLength = original.metadata.sizeBytes
+                    ) {
                         when (val result = provider.openRead(ref)) {
-                            is ProviderResult.Success -> result.value
+                            is ProviderResult.Success -> result.value.also { sourceReadable = true }
                             is ProviderResult.Failure -> throw java.io.IOException(result.message, result.cause)
                             else -> throw java.io.IOException("Cannot read this item")
                         }
                     }
                 } else null
-                if (magic != null) {
+                if (sourceReadable && hasExtensionCandidate) {
+                    mime = if (original.metadata.sizeBytes == 0L &&
+                        com.infinifolder.mime.MimeRegistry.isTextBased(extensionMime)) extensionMime
+                    else FileMagicDetector.validatedExtensionMime(name, extensionMime, magic)
+                } else if (sourceReadable && magic != null) {
                     ambiguousMagicCache.put(uri.toString(), magic)
                     mime = com.infinifolder.mime.MimeRegistry.effective(name, mime, magic.mimeType)
                 }
+                if (magic != null) ambiguousMagicCache.put(uri.toString(), magic)
+                val extensionIdentityMismatch = sourceReadable && hasExtensionCandidate &&
+                    com.infinifolder.mime.MimeRegistry.normalize(mime) != com.infinifolder.mime.MimeRegistry.normalize(extensionMime)
+                val extensionUnknownBinary = extensionIdentityMismatch && com.infinifolder.mime.MimeRegistry.isUnspecified(mime)
                 val entry = original.copy(metadata = original.metadata.copy(mimeType = mime))
                 val type = com.infinifolder.viewer.MediaTypeDetector.detect(name, mime)
                 val hasRawMetadata=!entry.metadata.isDirectory&&com.infinifolder.viewer.RawMediaConfigStore.hasSidecar(applicationContext,entry)
@@ -919,8 +955,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                             revealBrowserAfterExternalLaunch()
                             navigateToAbsoluteLocation(uri, itemRoute ?: listOf(ContainerLinksProvider.ROOT to "Virtual root", uri to name), name)
                         }
-                        ArchiveFormats.isDefaultBrowsableArchive(name, mime) ||
-                            (magic?.isArchiveOrDiscImage == true && !ArchiveFormats.isPackagedFormat(name, mime)) -> {
+                        (!extensionIdentityMismatch && ArchiveFormats.isDefaultBrowsableArchive(name, mime)) ||
+                            (magic?.isArchiveOrDiscImage == true &&
+                                !( !extensionIdentityMismatch && ArchiveFormats.isPackagedFormat(name, mime))) -> {
                             externalViewerLaunchPending = false
                             // A launched archive is a child of its real containing folder.
                             // Opaque content URIs without a discoverable parent start at the
@@ -940,12 +977,13 @@ class MainActivity : Activity(), DebugDumpObserver {
                             }
                             when {
                                 name.endsWith(".incomplete", true) || mime == "application/vnd.infinifolder.torrent-partial" -> { externalViewerLaunchPending = false; revealBrowserAfterExternalLaunch(); logExternalOpenRoute("incomplete-download"); resumeIncompleteDownload(ref) }
-                                (name.endsWith(".torrent", true) || mime == "application/x-bittorrent") && ref.providerId != "torrent" -> { externalViewerLaunchPending = false; revealBrowserAfterExternalLaunch(); logExternalOpenRoute("torrent"); openTorrentFile(entry) }
-                                name.endsWith(".wsz", true) || mime == "application/x-winamp-skin" -> { externalViewerLaunchPending = false; revealBrowserAfterExternalLaunch(); logExternalOpenRoute("winamp-skin"); importWinampSkin(uri, applyToAudio = true) }
-                                com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null || AppsUri.isAppUri(uri) -> { logExternalOpenRoute("link"); open(entry, confirmCommands = true) }
+                                mime == "application/x-bittorrent" && ref.providerId != "torrent" -> { externalViewerLaunchPending = false; revealBrowserAfterExternalLaunch(); logExternalOpenRoute("torrent"); openTorrentFile(entry) }
+                                mime == "application/x-winamp-skin" -> { externalViewerLaunchPending = false; revealBrowserAfterExternalLaunch(); logExternalOpenRoute("winamp-skin"); importWinampSkin(uri, applyToAudio = true) }
+                                (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null && !extensionIdentityMismatch) || AppsUri.isAppUri(uri) -> { logExternalOpenRoute("link"); open(entry, confirmCommands = true) }
                                 com.infinifolder.viewer.ExternalAppDefaults(this).openPreference(entry.ref, mime, name)
                                     ?.let { it.packageName != packageName } == true -> { logExternalOpenRoute("saved-viewer"); open(entry) }
                                 hasRawMetadata -> { logExternalOpenRoute("raw-metadata-hex"); openHexEditor(entry,loadMetadata=true) }
+                                extensionUnknownBinary -> { logExternalOpenRoute("hex"); openHexEditor(entry) }
                                 com.infinifolder.viewer.ViewerComponents.canView(entry) || com.infinifolder.viewer.ViewerCatalog.activity(type) != null -> {
                                     logExternalOpenRoute("internal-viewer:$type")
                                     if (!launchBuiltInViewer(entry, type)) revealBrowserAfterExternalLaunch()
@@ -5760,29 +5798,16 @@ class MainActivity : Activity(), DebugDumpObserver {
         return frame
     }
     private fun resolveMimeType(fileUri: Uri, file: java.io.File, metadataMime: String): String {
-        val pkgMime = com.infinifolder.archive.ArchiveFormats.packageMimeType(file.name)
-        if (pkgMime != null) return pkgMime
         val fromResolver = try { contentResolver.getType(fileUri) } catch (_: Exception) { null }
-        if (!fromResolver.isNullOrEmpty() && fromResolver != "application/octet-stream") {
-            return fromResolver
+        if (file.isFile && file.canRead()) {
+            val extensionMime = com.infinifolder.mime.MimeRegistry.guess(file.name)
+            val magic = com.infinifolder.storage.FileMagicDetector.detect(file)
+            if (file.length() == 0L && com.infinifolder.mime.MimeRegistry.isTextBased(extensionMime)) return extensionMime
+            return com.infinifolder.storage.FileMagicDetector.validatedExtensionMime(file.name, extensionMime, magic)
         }
-        val ext = file.extension.lowercase()
-        val fromMap = android.webkit.MimeTypeMap.getSingleton()?.getMimeTypeFromExtension(ext)
-        if (!fromMap.isNullOrEmpty() && fromMap != "application/octet-stream") {
-            return fromMap
-        }
-        if (metadataMime.isNotEmpty() && metadataMime != "application/octet-stream") {
-            return metadataMime
-        }
-        val guessed = com.infinifolder.archive.ArchiveMimeTypes.guessMimeType(file.name, false)
-        if (guessed.isNotEmpty() && guessed != "application/octet-stream" && !com.infinifolder.storage.FileMagicDetector.isAmbiguousOrUnknown(file.name, guessed)) {
-            return guessed
-        }
-        val magic = com.infinifolder.storage.FileMagicDetector.detect(file, peekCompressedPayload = true)
-        if (magic != null) {
-            return magic.mimeType
-        }
-        return guessed.ifEmpty { "application/octet-stream" }
+        if (!fromResolver.isNullOrEmpty() && fromResolver != "application/octet-stream") return fromResolver
+        if (metadataMime.isNotEmpty() && metadataMime != "application/octet-stream") return metadataMime
+        return com.infinifolder.mime.MimeRegistry.guess(file.name)
     }
 
     private fun launchApp(packageName: String) {
@@ -5903,12 +5928,15 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun open(entry: ResourceEntry, externalOnly: Boolean = false, confirmCommands: Boolean = false,
-        forceExternalChooser: Boolean = false, skipRawMetadata: Boolean = false, skipMagic:Boolean=false) {
+        forceExternalChooser: Boolean = false, skipRawMetadata: Boolean = false, skipMagic:Boolean=false,
+        validatedMimeOverride: String? = null, skipCddbRoute: Boolean = false) {
         if (!entry.metadata.isDirectory && entry.metadata.name.endsWith(".incomplete", true) && !externalOnly) {
             resumeIncompleteDownload(entry.ref)
             return
         }
-        if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null) {
+        val isIfLink = entry.metadata.name.endsWith(ShortcutInfo.SHORTCUT_EXTENSION, ignoreCase = true)
+        val validatedIfLink = com.infinifolder.mime.MimeRegistry.normalize(validatedMimeOverride) == ShortcutInfo.SHORTCUT_MIME
+        if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null && (!isIfLink || validatedIfLink)) {
             val sourceLocation = current
             val cachedTermuxLink = shortcutCache.get(entry.uri.toString())?.targetUri
                 ?.let { runCatching { TermuxCommandLink.owns(Uri.parse(it)) }.getOrDefault(false) } == true
@@ -5992,11 +6020,13 @@ class MainActivity : Activity(), DebugDumpObserver {
             } else resolveLink.run()
             return
         }
-        if (!externalOnly && !entry.metadata.isDirectory && entry.metadata.name.endsWith(".wsz", ignoreCase = true)) {
+        if (!externalOnly && !entry.metadata.isDirectory && entry.metadata.name.endsWith(".wsz", ignoreCase = true) &&
+            com.infinifolder.mime.MimeRegistry.normalize(validatedMimeOverride) == "application/x-winamp-skin") {
             importWinampSkin(entry.uri, applyToAudio = true)
             return
         }
-        if (!externalOnly && entry.ref.providerId != "torrent" && entry.metadata.name.endsWith(".torrent", ignoreCase = true)) {
+        if (!externalOnly && entry.ref.providerId != "torrent" && entry.metadata.name.endsWith(".torrent", ignoreCase = true) &&
+            com.infinifolder.mime.MimeRegistry.normalize(validatedMimeOverride) == "application/x-bittorrent") {
             openTorrentFile(entry)
             return
         }
@@ -6007,8 +6037,99 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             return
         }
+        val extension = entry.metadata.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        val extensionMime = com.infinifolder.mime.MimeRegistry.guess(entry.metadata.name)
+        val statedMime = com.infinifolder.mime.MimeRegistry.normalize(entry.metadata.mimeType)
+        val extensionOnlyCandidate = !com.infinifolder.mime.MimeRegistry.isUnspecified(extensionMime)
+        val identityCacheKey = "${entry.uri}|${entry.metadata.name}|${entry.metadata.sizeBytes}|${entry.metadata.modifiedAtMillis}"
+        val hasStableIdentity = entry.metadata.sizeBytes != null || entry.metadata.modifiedAtMillis != null
+        val validatedMime = validatedMimeOverride ?: if (hasStableIdentity) validatedMimeCache.get(identityCacheKey) else null
+        val extensionIdentityMismatch = extensionOnlyCandidate && validatedMime != null &&
+            com.infinifolder.mime.MimeRegistry.normalize(validatedMime) != com.infinifolder.mime.MimeRegistry.normalize(extensionMime)
+        val extensionValidationFailed = extensionIdentityMismatch && validatedMime != null &&
+            com.infinifolder.mime.MimeRegistry.isUnspecified(validatedMime)
         val cachedMagic = ambiguousMagicCache.get(entry.uri.toString())
-        val effectiveMime = com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType, cachedMagic?.mimeType)
+
+        // Extension associations are candidates. Confirm them from bounded content
+        // bytes before they affect the viewer or external-app choice. This also
+        // recognizes text masquerading as binary document extensions and keeps
+        // unrecognized binary data generic.
+        val needsExtensionCheck = extensionOnlyCandidate && validatedMime == null
+        val needsGenericCheck = !extensionOnlyCandidate && cachedMagic == null &&
+            FileMagicDetector.isAmbiguousOrUnknown(entry.metadata.name, entry.metadata.mimeType)
+        if (!skipMagic && !entry.metadata.isDirectory && (needsExtensionCheck || needsGenericCheck)) {
+            val loadingToken = beginEntryActionLoading("Checking file type…") ?: return
+            val generation = ++browserNavigationGeneration
+            io.execute {
+                var sourceReadable = false
+                val detected = runCatching {
+                    if (localProvider.owns(entry.uri)) {
+                        val file = localProvider.fileFor(entry.uri)
+                        if (!file.isFile || !file.canRead()) return@runCatching null
+                        sourceReadable = true
+                        FileMagicDetector.detect(file)
+                    } else {
+                        when (val result = provider.openRead(entry.ref)) {
+                            is ProviderResult.Success -> {
+                                sourceReadable = true
+                                FileMagicDetector.detectFromStream(
+                                    fileNameHint = entry.metadata.name,
+                                    expectedMimeType = extensionMime,
+                                    resourceLength = entry.metadata.sizeBytes
+                                ) { result.value }
+                            }
+                            else -> null
+                        }
+                    }
+                }.getOrNull()
+                val resolvedMime = if (!sourceReadable) null else when {
+                    extensionOnlyCandidate && entry.metadata.sizeBytes == 0L &&
+                        com.infinifolder.mime.MimeRegistry.isTextBased(extensionMime) -> extensionMime
+                    extensionOnlyCandidate -> FileMagicDetector.validatedExtensionMime(entry.metadata.name, extensionMime, detected)
+                    else -> detected?.mimeType ?: "application/octet-stream"
+                }
+                if (sourceReadable && resolvedMime != null) {
+                    if (hasStableIdentity) validatedMimeCache.put(identityCacheKey, resolvedMime)
+                    if (detected != null) ambiguousMagicCache.put(entry.uri.toString(), detected)
+                }
+                runOnUiThread {
+                    finishEntryActionLoading(loadingToken)
+                    if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
+                    val nextEntry = if (resolvedMime != null)
+                        entry.copy(metadata = entry.metadata.copy(mimeType = resolvedMime)) else entry
+                    open(nextEntry, externalOnly, confirmCommands, forceExternalChooser,
+                        skipRawMetadata = skipRawMetadata, skipMagic = true, validatedMimeOverride = resolvedMime)
+                }
+            }
+            return
+        }
+        if (validatedMime != null && statedMime != com.infinifolder.mime.MimeRegistry.normalize(validatedMime)) {
+            open(entry.copy(metadata = entry.metadata.copy(mimeType = validatedMime)), externalOnly,
+                confirmCommands, forceExternalChooser, skipRawMetadata = skipRawMetadata, skipMagic = true,
+                validatedMimeOverride = validatedMime)
+            return
+        }
+        val effectiveMime = validatedMime ?: com.infinifolder.mime.MimeRegistry.effective(
+            entry.metadata.name, entry.metadata.mimeType, cachedMagic?.mimeType)
+        if (!externalOnly && !forceExternalChooser && !skipCddbRoute && extension == "toc" &&
+            effectiveMime.startsWith("text/")) {
+            val generation = ++browserNavigationGeneration
+            io.execute {
+                val companion = com.infinifolder.viewer.PlaylistExpander.matchingCddbPlaylist(this, entry.uri)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
+                    if (companion != null) {
+                        if (!launchBuiltInViewer(companion, com.infinifolder.viewer.MediaType.AUDIO, forceType = true))
+                            open(entry, externalOnly, confirmCommands, forceExternalChooser,
+                                skipRawMetadata = skipRawMetadata, skipMagic = true,
+                                validatedMimeOverride = effectiveMime, skipCddbRoute = true)
+                    } else open(entry, externalOnly, confirmCommands, forceExternalChooser,
+                        skipRawMetadata = skipRawMetadata, skipMagic = true,
+                        validatedMimeOverride = effectiveMime, skipCddbRoute = true)
+                }
+            }
+            return
+        }
         val appDefaults = com.infinifolder.viewer.ExternalAppDefaults(this)
         val preferredOpen = if (entry.metadata.isDirectory || externalOnly) null else appDefaults.openPreference(entry.ref, effectiveMime, entry.metadata.name)
         val hasExternalDefault = preferredOpen?.let { it.packageName != packageName } == true
@@ -6021,45 +6142,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 runOnUiThread {
                     if(isFinishing||isDestroyed||generation!=browserNavigationGeneration)return@runOnUiThread
                     if(hasMetadata)openHexEditor(entry,loadMetadata=true)
-                    else open(entry,externalOnly,confirmCommands,forceExternalChooser,skipRawMetadata=true,skipMagic=skipMagic)
-                }
-            }
-            return
-        }
-        // Some files use the legacy Word extension for plain text. Keep normal
-        // Word documents on Scribe, but let a bounded content probe route actual
-        // text content to the text viewer.
-        val extension = entry.metadata.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
-        if (!externalOnly && !hasExternalDefault && !skipMagic && cachedMagic == null &&
-            !entry.metadata.isDirectory && effectiveMime == "application/msword" && extension in setOf("doc", "dot")) {
-            val loadingToken = beginEntryActionLoading("Checking document content…") ?: return
-            val generation = ++browserNavigationGeneration
-            io.execute {
-                val detected = runCatching {
-                    if (localProvider.owns(entry.uri)) FileMagicDetector.detect(localProvider.fileFor(entry.uri))
-                    else FileMagicDetector.detectFromStream {
-                        when (val result = provider.openRead(entry.ref)) {
-                            is ProviderResult.Success -> result.value
-                            is ProviderResult.Failure -> throw java.io.IOException(result.message, result.cause)
-                            else -> throw java.io.IOException("Cannot read document content")
-                        }
-                    }
-                }.getOrNull()
-                val textMime = detected?.mimeType?.lowercase(Locale.ROOT)?.substringBefore(';')?.let {
-                    it.startsWith("text/") || it in setOf("application/json", "application/xml", "application/yaml",
-                        "application/x-yaml", "application/toml", "application/rtf", "image/x-ansi")
-                } == true
-                runOnUiThread {
-                    finishEntryActionLoading(loadingToken)
-                    if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
-                    if (textMime && detected != null) {
-                        ambiguousMagicCache.put(entry.uri.toString(), detected)
-                        open(entry.copy(metadata = entry.metadata.copy(mimeType = detected.mimeType)),
-                            externalOnly, confirmCommands, forceExternalChooser, skipRawMetadata = true, skipMagic = true)
-                    } else {
-                        open(entry, externalOnly, confirmCommands, forceExternalChooser,
-                            skipRawMetadata = true, skipMagic = true)
-                    }
+                    else open(entry,externalOnly,confirmCommands,forceExternalChooser,skipRawMetadata=true,
+                        skipMagic=skipMagic, validatedMimeOverride=validatedMime)
                 }
             }
             return
@@ -6074,34 +6158,17 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             return
         }
-        val isPkg = !AppsUri.isAppUri(entry.uri) && ArchiveFormats.isPackagedFormat(entry.metadata.name, effectiveMime)
-        val isPlaylist = !AppsUri.isAppUri(entry.uri) && (
+        if (!externalOnly && !hasExternalDefault && extensionValidationFailed) {
+            openHexEditor(entry.copy(metadata = entry.metadata.copy(mimeType = "application/octet-stream")))
+            return
+        }
+        val isPkg = !AppsUri.isAppUri(entry.uri) && !extensionIdentityMismatch && ArchiveFormats.isPackagedFormat(entry.metadata.name, effectiveMime)
+        val isPlaylist = !extensionIdentityMismatch && !AppsUri.isAppUri(entry.uri) && (
             ArchiveFormats.isPlaylist(entry.metadata.name, effectiveMime) ||
             com.infinifolder.viewer.PlaylistExpander.isPlaylist(entry.uri, entry.metadata.name)
         )
-        if(!externalOnly&&!hasExternalDefault&&!skipMagic&&!entry.metadata.isDirectory&&!isPkg&&!isPlaylist&&
-            cachedMagic==null&&FileMagicDetector.isAmbiguousOrUnknown(entry.metadata.name,entry.metadata.mimeType)){
-            val loadingToken=beginEntryActionLoading("Checking file type…")?:return
-            val generation=++browserNavigationGeneration
-            io.execute {
-                val magic=runCatching {
-                    if(localProvider.owns(entry.uri))FileMagicDetector.detect(localProvider.fileFor(entry.uri),peekCompressedPayload=true)
-                    else FileMagicDetector.detectFromStream {
-                        (provider.openRead(entry.ref) as? ProviderResult.Success)?.value?:throw java.io.IOException("Cannot open stream")
-                    }
-                }.getOrNull()
-                if(magic!=null)ambiguousMagicCache.put(entry.uri.toString(),magic)
-                val resolved=if(magic!=null)entry.copy(metadata=entry.metadata.copy(mimeType=magic.mimeType))else entry
-                runOnUiThread {
-                    finishEntryActionLoading(loadingToken)
-                    if(isFinishing||isDestroyed||generation!=browserNavigationGeneration)return@runOnUiThread
-                    open(resolved,externalOnly,confirmCommands,forceExternalChooser,skipRawMetadata=true,skipMagic=true)
-                }
-            }
-            return
-        }
         val isArchiveOrDisc = !AppsUri.isAppUri(entry.uri) && !isPlaylist && (
-            ArchiveFormats.isArchive(entry.metadata.name, effectiveMime) ||
+            (!extensionIdentityMismatch && ArchiveFormats.isArchive(entry.metadata.name, effectiveMime)) ||
             (cachedMagic != null && (cachedMagic.isArchiveOrDiscImage || ArchiveFormats.isDiscImage(entry.metadata.name, cachedMagic.mimeType)))
         )
         val specificViewer=com.infinifolder.viewer.ViewerComponents.resolve(
@@ -6114,20 +6181,26 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         if (!externalOnly && !hasExternalDefault) {
             val mediaType = com.infinifolder.viewer.MediaTypeDetector.detect(entry.metadata.name, effectiveMime)
-            if (com.infinifolder.viewer.ViewerComponents.canView(entry) || (mediaType != com.infinifolder.viewer.MediaType.UNSUPPORTED && mediaType != com.infinifolder.viewer.MediaType.ARCHIVE_OR_CONTAINER)) {
+            if (specificViewer || (mediaType != com.infinifolder.viewer.MediaType.UNSUPPORTED && mediaType != com.infinifolder.viewer.MediaType.ARCHIVE_OR_CONTAINER)) {
                 if (launchBuiltInViewer(entry.copy(metadata = entry.metadata.copy(mimeType = effectiveMime)), mediaType)) {
                     return
                 }
             }
         }
         if(!externalOnly&&!hasExternalDefault&&com.infinifolder.viewer.MediaTypeDetector.isGenericBinary(entry.metadata.name,effectiveMime)){
-            openHexEditor(entry)
+            if (extension.isNotBlank() && !preferInternal) {
+                runCatching {
+                    startViewerActivity(com.infinifolder.viewer.ExternalAppChooser.forResource(this,
+                        entry.copy(metadata = entry.metadata.copy(mimeType = effectiveMime)), current,
+                        forceChooser = false))
+                }.onFailure { openHexEditor(entry) }
+            } else openHexEditor(entry)
             return
         }
-        val pkgMime = ArchiveFormats.packageMimeType(entry.metadata.name)
+        val pkgMime = if (extensionIdentityMismatch) null else ArchiveFormats.packageMimeType(entry.metadata.name)
         val externalMime = pkgMime
             ?: cachedMagic?.mimeType?.takeIf { it.isNotEmpty() }
-            ?: entry.metadata.mimeType
+            ?: effectiveMime
         if (provider.refForUri(entry.uri) != null) {
             com.infinifolder.storage.DiagnosticLog.record("browser.open.external",
                 "mime=$effectiveMime explicit=$externalOnly savedDefault=$hasExternalDefault chooser=$forceExternalChooser")
@@ -9107,8 +9180,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         val linkEntry = rootContainerLinks.firstOrNull { "root_link_${it.first.uri}" == node.key }?.first
         val entry = linkEntry ?: node.iconEntry ?: uri?.let { target -> provider.refForUri(target)?.let { ResourceEntry(it, metadata, target) } }
         val themeRevision = iconThemeManager.revision()
-        val hasTheme = !iconThemeManager.getActiveThemeId().isNullOrBlank()
         val image = IconImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+        val immediateDefault = if (placeId == "installed_apps" || (uri != null && AppsUri.isRoot(uri)))
+            FileTypeIcons.installedApplications(size) else FileTypeIcons.folder(size)
         val request = Any()
         val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
         image.tag = request
@@ -9123,10 +9197,12 @@ class MainActivity : Activity(), DebugDumpObserver {
         fun applyIcon(icon: ResourceIconResolver.Icon, authoritative: Boolean) {
             if (!currentRequest() || image.tag !== request || (!authoritative && authoritativeApplied)) return
             if (authoritative) authoritativeApplied = true
-            image.setImageBitmap(icon.bitmap)
+            image.setImageBitmap(icon.bitmap ?: immediateDefault)
             image.contentDescription = "${node.name}: ${icon.source}"
             placeholder.text = icon.fallback
-            placeholder.visibility = if (icon.bitmap != null) View.GONE else View.VISIBLE
+            // The fallback bitmap is always present, even while a selected-theme icon
+            // or directory cover is still being resolved.
+            placeholder.visibility = View.GONE
         }
         // Cached artwork is immediately usable, including while a file-list load is in flight.
         val cached = if (providerAuthority == null && locationUri == null) entry?.let { resourceIconResolver.peekCached(it, size) }
@@ -9138,10 +9214,8 @@ class MainActivity : Activity(), DebugDumpObserver {
                 uri != null && AppsUri.isRoot(uri) -> iconThemeManager.peekPlaceIcon("installed_apps", size)
                 else -> iconThemeManager.peekFileIcon(entry?.let(resourceIconResolver::directoryIconMetadata) ?: metadata, size)
             }
-            image.setImageBitmap(hot)
-            // A cold selected theme reserves the slot until its worker can decode it.
-            // Do not flash platform emoji and leave them there after navigation.
-            placeholder.visibility = if (hot != null || hasTheme) View.GONE else View.VISIBLE
+            image.setImageBitmap(hot ?: immediateDefault)
+            placeholder.visibility = View.GONE
         }
         ResourceArtworkCache.reads.execute {
             if (!currentRequest()) return@execute
@@ -11235,7 +11309,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             setPadding(dp(20), dp(14), dp(20), dp(8))
         }
 
-        fun propertyRow(label: String, valueView: View) {
+        fun propertyRow(label: String, valueView: View): LinearLayout {
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(0, dp(4), 0, dp(6))
@@ -11248,6 +11322,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             row.addView(lbl)
             row.addView(valueView)
             layout.addView(row)
+            return row
         }
 
         fun textValue(initialText: String): TextView = TextView(context).apply {
@@ -11416,31 +11491,56 @@ class MainActivity : Activity(), DebugDumpObserver {
         val typeView = textValue(typeDesc)
         propertyRow("Type", typeView)
 
+        val detectedMetadataValue = textValue("")
+        val detectedMetadataRow = propertyRow("Detected metadata", detectedMetadataValue).apply { visibility = View.GONE }
+
         var propertiesDialogRef: android.app.AlertDialog? = null
 
-        if (isFile && !isPackagedFormat) {
+        if (isFile && !isShortcut) {
             io.execute {
-                val magic = if (localProvider.owns(currentEntry.uri)) {
-                    val file = localProvider.fileFor(currentEntry.uri)
-                    com.infinifolder.storage.FileMagicDetector.detect(file, peekCompressedPayload = true)
-                } else {
-                    try {
-                        com.infinifolder.storage.FileMagicDetector.detectFromStream {
-                            (provider.openRead(currentEntry.ref) as? ProviderResult.Success)?.value
-                                ?: throw java.io.IOException("Cannot open stream")
+                val expectedMime = com.infinifolder.mime.MimeRegistry.guess(currentEntry.metadata.name)
+                var sourceReadable = false
+                val magic = runCatching {
+                    if (localProvider.owns(currentEntry.uri)) {
+                        val file = localProvider.fileFor(currentEntry.uri)
+                        if (!file.isFile || !file.canRead()) return@runCatching null
+                        sourceReadable = true
+                        com.infinifolder.storage.FileMagicDetector.detect(file)
+                    } else when (val opened = provider.openRead(currentEntry.ref)) {
+                        is ProviderResult.Success -> {
+                            sourceReadable = true
+                            com.infinifolder.storage.FileMagicDetector.detectFromStream(
+                                fileNameHint = currentEntry.metadata.name,
+                                expectedMimeType = expectedMime,
+                                resourceLength = currentEntry.metadata.sizeBytes
+                            ) { opened.value }
                         }
-                    } catch (_: Throwable) { null }
-                }
-                if (magic != null) {
-                    ambiguousMagicCache.put(currentEntry.uri.toString(), magic)
+                        else -> null
+                    }
+                }.getOrNull()
+                val resolvedMime = if (!sourceReadable) null else if (currentEntry.metadata.sizeBytes == 0L &&
+                    com.infinifolder.mime.MimeRegistry.isTextBased(expectedMime)) expectedMime
+                else com.infinifolder.storage.FileMagicDetector.validatedExtensionMime(currentEntry.metadata.name, expectedMime, magic)
+                if (resolvedMime != null) {
+                    val cacheKey = "${currentEntry.uri}|${currentEntry.metadata.name}|${currentEntry.metadata.sizeBytes}|${currentEntry.metadata.modifiedAtMillis}"
+                    if (currentEntry.metadata.sizeBytes != null || currentEntry.metadata.modifiedAtMillis != null)
+                        validatedMimeCache.put(cacheKey, resolvedMime)
+                    if (magic != null) ambiguousMagicCache.put(currentEntry.uri.toString(), magic)
                     runOnUiThread {
                         if (!isFinishing && !isDestroyed) {
-                            typeView.text = "${magic.description} (${magic.mimeType})"
+                            typeView.text = when {
+                                magic == null -> "Binary data ($resolvedMime)"
+                                ArchiveFormats.isPackagedFormat(currentEntry.metadata.name, resolvedMime) && magic.mimeType == "application/zip" ->
+                                    "Package ($resolvedMime)"
+                                else -> "${magic.description} ($resolvedMime)"
+                            }
                             val dlg = propertiesDialogRef
-                            val isArcOrDisc = magic.isArchiveOrDiscImage ||
-                                ArchiveFormats.isArchive(currentEntry.metadata.name, magic.mimeType) ||
-                                ArchiveFormats.isDiscImage(currentEntry.metadata.name, magic.mimeType)
-                            if (dlg != null && dlg.isShowing && isArcOrDisc && !isPackagedFormat && !inArchive) {
+                            val isArcOrDisc = magic?.let {
+                                it.isArchiveOrDiscImage || ArchiveFormats.isArchive(currentEntry.metadata.name, resolvedMime) ||
+                                    ArchiveFormats.isDiscImage(currentEntry.metadata.name, resolvedMime)
+                            } == true
+                            if (dlg != null && dlg.isShowing && isArcOrDisc &&
+                                !ArchiveFormats.isPackagedFormat(currentEntry.metadata.name, resolvedMime) && !inArchive) {
                                 dlg.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)?.apply {
                                     text = "Mount / Browse"
                                     visibility = View.VISIBLE
@@ -11891,6 +11991,60 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
 
         dialog.show()
+
+        if (isFile && !isShortcut) {
+            val metadataEntry = currentEntry
+            val metadataCacheKey = "${metadataEntry.uri}|${metadataEntry.metadata.sizeBytes}|${metadataEntry.metadata.modifiedAtMillis}"
+            io.execute {
+                val inspection = metadataInspectionCache[metadataCacheKey] ?: runCatching {
+                    val entryMetadata = metadataEntry.metadata
+                    val streamMetadata = StreamMetadata(
+                        content = ContentType(mimeType = entryMetadata.mimeType),
+                        name = entryMetadata.name,
+                        length = entryMetadata.sizeBytes,
+                        finiteness = if (entryMetadata.sizeBytes != null) Finiteness.FINITE else Finiteness.UNKNOWN,
+                        capabilities = setOf(Capability.READ) + if (entryMetadata.sizeBytes != null) setOf(Capability.KNOWN_LENGTH) else emptySet(),
+                        provenance = Provenance(source = metadataEntry.uri.toString())
+                    )
+                    val source = object : SourceResource {
+                        override val metadata = streamMetadata
+                        override fun open(): io.github.gretchycat.infinistream.ByteSource = when (val result = provider.openRead(metadataEntry.ref)) {
+                            is ProviderResult.Success -> InputStreamSource(result.value, streamMetadata)
+                            is ProviderResult.Failure -> throw java.io.IOException(result.message, result.cause)
+                            is ProviderResult.Unsupported -> throw java.io.IOException("This storage provider does not support reading this item")
+                        }
+                    }
+                    val resource = CapabilityResource(streamMetadata, metadataEntry.uri.toString(), source)
+                    metadataRegistry.inspect(resource, probeBudget = ProbeBudget(maxBytes = 64 * 1024, maxNanos = 1_000_000_000),
+                        metadataBytes = 1024 * 1024, metadataNanos = 1_000_000_000)
+                }.getOrNull()?.also {
+                    metadataInspectionCache[metadataCacheKey] = it
+                    if (metadataInspectionCache.size > 128) metadataInspectionCache.clear()
+                }
+                if (inspection != null && !isCancelled) runOnUiThread {
+                    if (dialog.isShowing && !isFinishing && !isDestroyed) {
+                        val details = buildList {
+                            inspection.metadata.forEach { finding ->
+                                val record = finding.record
+                                val heading = record.title?.takeIf(String::isNotBlank) ?: finding.match.handlerName
+                                add(if (finding.match.confidence == MatchConfidence.CANDIDATE) "Possible: $heading" else heading)
+                                record.fields.forEach { (label, value) -> add("$label: $value") }
+                                record.warnings.forEach { add("Note: $it") }
+                            }
+                            if (inspection.metadata.isEmpty()) inspection.formats.forEach { match ->
+                                add("${if (match.confidence == MatchConfidence.CANDIDATE) "Possible: " else ""}${match.handlerName}")
+                                match.reason?.let(::add)
+                            }
+                            inspection.failures.forEach { add("${it.handlerId}: ${it.message}") }
+                        }
+                        if (details.isNotEmpty()) {
+                            detectedMetadataValue.text = details.distinct().joinToString("\n")
+                            detectedMetadataRow.visibility = View.VISIBLE
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun showGroupedMenuDialog(

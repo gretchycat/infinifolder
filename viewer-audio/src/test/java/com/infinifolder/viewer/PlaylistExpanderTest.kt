@@ -61,7 +61,79 @@ class PlaylistExpanderTest {
         assertTrue("c_major_piano.xspf must exist", xspfFile.exists())
         val xspfTracks = PlaylistExpander.expandPlaylist(dummyContext(), TestUri("file://${xspfFile.absolutePath}"))
         assertEquals(6, xspfTracks.size)
-        assertTrue(File(xspfTracks[0].uri.path ?: "").exists())
+        assertEquals(listOf("wav", "flac", "mp3", "alac", "mp2", "mod"),
+            xspfTracks.map { it.fileName.substringAfterLast('.') })
+        assertEquals(listOf(
+            "C Major Piano Chord (WAV)", "C Major Piano Chord (FLAC)", "C Major Piano Chord (MP3)",
+            "C Major Piano Chord (ALAC)", "C Major Piano Chord (MP2)", "C Major Piano Chord (MOD)"
+        ), xspfTracks.map { it.title })
+        for (track in xspfTracks) {
+            val file = File(track.uri.path ?: "")
+            assertTrue("XSPF reference should resolve to an existing audio fixture: ${track.uri}", file.isFile && file.length() > 0)
+        }
+    }
+
+    @Test
+    fun testJspfExpansionAndAudioViewerRouting() {
+        val jspfFile = File(playlistsDir, "c_major_piano.jspf")
+        assertTrue("c_major_piano.jspf must exist", jspfFile.exists())
+        val content = jspfFile.readText()
+        val jspfEntries = com.infinifolder.audio.playlist.PlaylistParser.parse(jspfFile.name, content)
+        assertEquals(6, jspfEntries.size)
+        assertEquals("InfiniFolder", jspfEntries.first().performer)
+        assertEquals("Playlist Parser Fixtures", jspfEntries.first().album)
+        assertEquals(2000L, jspfEntries.first().durationMillis)
+        val tracks = PlaylistExpander.expandPlaylist(dummyContext(), TestUri("file://${jspfFile.absolutePath}"))
+        assertEquals(6, tracks.size)
+        assertEquals("InfiniFolder", tracks.first().artist)
+        assertEquals("C Major Piano Chord Suite", tracks.first().album)
+        assertEquals(2000L, tracks.first().durationMs)
+        assertTrue("Every JSPF reference should resolve", tracks.all {
+            File(it.uri.path ?: "").let { file -> file.isFile && file.length() > 0 }
+        })
+
+        val audioViewer = AudioViewerCapabilityProvider().handlers().single() as LibraryViewerComponent
+        assertTrue("The audio viewer must inherit playlist formats from Sound",
+            audioViewer.describe().formats.any { "xspf" in it.extensions } &&
+                audioViewer.describe().formats.any { "jspf" in it.extensions })
+        assertEquals(MediaType.AUDIO, MediaTypeDetector.detect("c_major_piano.xspf", "application/xspf+xml"))
+    }
+
+    @Test
+    fun testCueAndCdrdaoTocExpandRawCdTracksWithDecoderHint() {
+        for (name in listOf("c_major_piano.cue", "c_major_piano.toc")) {
+            val playlist = File(playlistsDir, name)
+            val tracks = PlaylistExpander.expandPlaylist(dummyContext(), TestUri("file://${playlist.absolutePath}"))
+            assertEquals("$name should expand its two audio tracks", 2, tracks.size)
+            assertEquals(listOf("cdda", "cdda"), tracks.map { it.decoderExtension })
+            assertEquals(listOf(0L, 38L * 2352L), tracks.map { it.startByte })
+            assertEquals(38L * 2352L, tracks.first().lengthBytes)
+            assertTrue(tracks.all { File(it.uri.path ?: "").isFile })
+            val raw = File(tracks.first().uri.path!!).readBytes()
+            val pcm = com.infinifolder.audio.decoder.UniversalAudioDecoder.decode(
+                raw.copyOfRange(tracks.first().startByte.toInt(),
+                    (tracks.first().startByte + tracks.first().lengthBytes).toInt()),
+                tracks.first().decoderExtension)
+            assertNotNull("Raw CD-DA bytes from $name should reach the CD-DA decoder", pcm)
+        }
+        assertEquals(MediaType.AUDIO, MediaTypeDetector.detect("c_major_piano.toc", "application/x-cdrdao-toc"))
+    }
+
+    @Test
+    fun testXspfAbsoluteAndEncodedFileLocationsResolveAsUris() {
+        val folder = tempFolder.newFolder("xspf paths with spaces")
+        val playlist = File(folder, "list.xspf").apply { writeText("<playlist/>") }
+        val target = File(folder, "track one.wav").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+        val playlistUri = TestUri("file://${playlist.absolutePath}")
+        val absolute = PlaylistExpander.resolveEntryUri(dummyContext(), playlistUri, target.toURI().toString())
+        assertEquals(target.toURI().normalize(), java.net.URI(absolute.toString()).normalize())
+
+        val encodedRelative = PlaylistExpander.resolveEntryUri(dummyContext(), playlistUri, "track%20one.wav")
+        assertEquals(target.toURI().normalize(), java.net.URI(encodedRelative.toString()).normalize())
+
+        val contentBase = TestUri("content://provider/Music/list.xspf")
+        val contentTrack = PlaylistExpander.resolveEntryUri(dummyContext(), contentBase, "track%20one.wav")
+        assertEquals("content://provider/Music/track%20one.wav", contentTrack.toString())
     }
 
     @Test

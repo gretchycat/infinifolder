@@ -1389,6 +1389,7 @@ Version=2
     (playlists_dir / "c_major_piano.pls").write_text(pls_content, encoding="utf-8")
 
     xspf_content = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE playlist PUBLIC "-//Xiph.Org//DTD XSPF 1.0//EN" "http://xspf.org/DTD/xspf-1_0.dtd">
 <playlist version="1" xmlns="http://xspf.org/ns/0/">
   <title>InfiniFolder Audio Fixtures</title>
   <trackList>

@@ -34,23 +34,37 @@ class ExternalAppDefaults(context: Context) {
     }
     fun remember(action: String, scope: String, sourceKey: String?, mime: String?, name: String, component: ComponentName) {
         require(action == Intent.ACTION_VIEW || action == Intent.ACTION_EDIT)
-        require(scope == FILE || scope == TYPE)
+        require(scope in setOf(FILE, EXTENSION, TYPE))
         val normalized = MimeRegistry.normalize(mime)
-        val key = if (scope == FILE) requireNotNull(sourceKey) else normalized
+        val key = when (scope) {
+            FILE -> requireNotNull(sourceKey)
+            EXTENSION -> requireNotNull(extensionOf(name)) { "An extension default requires a filename extension" }
+            else -> normalized
+        }
         synchronized(lock) {
             write(rules().filterNot { it.action == action &&
                 ((it.scope == scope && it.key == key) ||
-                    (scope == TYPE && it.scope == FILE && it.key == sourceKey)) } +
+                    (scope != FILE && it.scope == FILE && it.key == sourceKey)) } +
                 Rule(action, scope, key, normalized, name, component))
         }
     }
     fun remove(rule: Rule) = synchronized(lock) { write(rules().filterNot { it == rule }) }
-    fun candidates(action: String, sourceKey: String?, mime: String?): List<ComponentName> {
+    fun candidates(action: String, sourceKey: String?, mime: String?, name: String = ""): List<ComponentName> {
         val normalized = MimeRegistry.normalize(mime)
+        val extension = extensionOf(name)
+        val genericMime = MimeRegistry.isUnspecified(normalized)
         val saved = rules().filter { it.action == action }
-        return (saved.firstOrNull { it.scope == FILE && it.key == sourceKey }?.component?.let(::listOf).orEmpty() +
-            saved.firstOrNull { it.scope == TYPE && it.key == normalized }?.component?.let(::listOf).orEmpty() +
-            if (action == Intent.ACTION_EDIT) listOfNotNull(editor) else emptyList()).distinct()
+        val fileDefault = saved.firstOrNull { it.scope == FILE && it.key == sourceKey }?.component?.let(::listOf).orEmpty()
+        val extensionDefault = extension?.let { ext ->
+            saved.firstOrNull { it.scope == EXTENSION && it.key == ext }?.component?.let(::listOf)
+        }.orEmpty()
+        // A generic binary default is too broad: otherwise one unknown-format
+        // file's choice silently becomes the default for every unknown extension.
+        val typeDefault = if (!genericMime || extension == null)
+            saved.firstOrNull { it.scope == TYPE && it.key == normalized }?.component?.let(::listOf).orEmpty()
+        else emptyList()
+        val editorDefault = if (action == Intent.ACTION_EDIT) listOfNotNull(editor) else emptyList()
+        return (fileDefault + extensionDefault + typeDefault + editorDefault).distinct()
     }
     /** External choices bypass the built-in route; saved internal choices stay on it. */
     fun hasOpenPreference(ref: ResourceRef, mime: String?): Boolean =
@@ -60,7 +74,7 @@ class ExternalAppDefaults(context: Context) {
 
     /** A stale/incompatible saved app must not suppress an available built-in viewer. */
     fun openPreference(ref: ResourceRef, mime: String?, name: String = "document"): ComponentName? {
-        val saved = candidates(Intent.ACTION_VIEW, sourceKey(ref), mime)
+        val saved = candidates(Intent.ACTION_VIEW, sourceKey(ref), mime, name)
         if (saved.isEmpty()) return null
         val internal by lazy {
             ViewerComponents.registry.query(io.github.gretchycat.infinistream.Operations.VIEW)
@@ -78,7 +92,13 @@ class ExternalAppDefaults(context: Context) {
         set(value) { prefs.edit().apply { if (value == null) remove("editor") else putString("editor", value.flattenToString()) }.apply() }
     companion object {
         const val FILE = "file"
+        const val EXTENSION = "extension"
         const val TYPE = "type"
+        fun extensionOf(name: String): String? {
+            val base = name.substringAfterLast('/').substringAfterLast('\\')
+            val dot = base.lastIndexOf('.')
+            return if (dot > 0 && dot < base.lastIndex) base.substring(dot + 1).lowercase(java.util.Locale.ROOT) else null
+        }
         private val lock = Any()
         fun sourceKey(ref: ResourceRef): String = digest(ref.providerId + "\u0000" + ref.documentId)
         fun uriKey(uri: String): String = digest("uri\u0000$uri")

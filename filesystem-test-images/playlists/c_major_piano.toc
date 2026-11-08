@@ -1,0 +1,9 @@
+CD_DA
+TRACK AUDIO
+FILE "../audio/c_major_piano.bin" 0 00:00:38
+TITLE "C Major Attack"
+PERFORMER "InfiniFolder"
+TRACK AUDIO
+FILE "../audio/c_major_piano.bin" 00:00:38
+TITLE "C Major Sustain & Decay"
+PERFORMER "InfiniFolder"

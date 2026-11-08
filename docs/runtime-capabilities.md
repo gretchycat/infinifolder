@@ -1,6 +1,6 @@
 # Runtime capability discovery audit
 
-Updated 2026-11-04. This change adds installed-handler discovery across all seven
+Updated 2026-11-07. This change adds installed-handler discovery across all seven
 libraries and the viewer components. It preserves existing decoders, public entry
 points, MIME overrides, icon precedence, source safety and user settings.
 
@@ -85,6 +85,12 @@ also participate in persistent rendered-icon keys. Source revision, theme and us
 registry keys remain separate. Availability refresh is explicit after configuration
 changes; opening a decoder still validates the actual source.
 
+## Format-module detection and metadata conformance
+
+The shared [Stream capability contract](../libraries/libinfinistream/CAPABILITIES.md#format-module-validation-and-metadata-requirements) now requires each new format module to confirm content with bounded magic bytes or its actual structural parser. Extension/MIME matches remain candidates until content is checked. New handlers also expose bounded `MetadataCapabilityHandler.extractMetadata` results with source-derived fields and explicit partial/unavailable warnings; they must not fill unsupported fields with guesses. The conformance tests use real fixture inputs and include negative extension-only content. Existing decoder and viewer APIs remain the execution path.
+
+`libinfinimeta` supplies generic source facts for every detected candidate and merges typed parser output when available. Format-specific metadata extraction is not yet migrated across all legacy handlers. The per-library test suites remain responsible for their existing parser metadata (for example, Canvas dimensions/EXIF, Sound stream properties/tags, Scribe text/document facts, and Vault entry structure); the common registry contract is the required path for newly added modules and incremental migrations.
+
 ## Processing is a series of streams and typed stages
 
 ```mermaid
@@ -168,7 +174,7 @@ own Android Activity/manifest and declared dependencies.
 
 ## Verification
 
-The final gate passes **1,071 cases, 0 failures/errors/skips** across 157 suites.
+The full gate run on 2026-11-04 passed **1,071 cases, 0 failures/errors/skips** across 157 suites.
 The migration-baseline comparison reports **0 regressions and 0 missing cases**;
 all 30 previously repaired baseline failures remain passing. Eighteen new capability
 cases exercise real transformations, PCM, XML, tables, pixel parsing, nested ZIPs,
@@ -199,6 +205,20 @@ This validates classpath registration/packaging, not Android UI execution. The
 [validation record](validation/runtime-capabilities-2026-11-04.json) contains commands,
 intermediate failures, final results, per-module totals, new case names, library
 commit pins and APK SHA-256 values.
+
+### Focused follow-up — 2026-11-07
+
+These suites and build were rerun after the text-by-content and playlist changes.
+They are focused follow-up results and do not replace the full cross-library gate
+above.
+
+| Command | Result |
+| --- | --- |
+| `cd libraries/libinfiniscribe && gradle :scribe-core:test --no-daemon --console=plain` | Passed, including unknown-extension, extensionless, CP437, BOM Unicode and binary-rejection probes |
+| `cd infiniscribe && gradle assembleDebug --no-daemon --console=plain` | Passed; standalone APK and runtime-derived intent catalog generated |
+| `cd libraries/libinfinisound && gradle :audio-api:test --no-daemon --console=plain` | Passed, including playlist capability and metadata tests |
+| `gradle :viewer-audio:testDebugUnitTest --no-daemon --console=plain` | Passed, including six-track XSPF/JSPF expansion and viewer routing |
+| `cd libraries/libinfinimeta && gradle :meta-core:test :meta-sega:test --no-daemon --console=plain` | Passed, including parser metadata preservation and Sega ROM/disc fixtures |
 
 ### Failures found during the gate
 

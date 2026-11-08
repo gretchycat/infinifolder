@@ -47,7 +47,9 @@ data class AudioTrack(
     val channels: Int? = null,
     val isBitrateRelevant: Boolean = true,
     val fileName: String = title,
-    val isUnreadable: Boolean = false
+    val isUnreadable: Boolean = false,
+    /** Explicit decoder hint for raw audio carried in CUE/cdrdao images. */
+    val decoderExtension: String? = null
 )
 
 internal data class CastPlaylistSelection(val playlistIndex: Int, val track: AudioTrack)
@@ -262,11 +264,17 @@ class AudioPlayerService : Service() {
             ACTION_LOAD -> {
                 val uriStr = intent.getStringExtra("uri")
                 val name = intent.getStringExtra("name") ?: "Audio Track"
+                val mimeType = intent.getStringExtra("mimeType") ?: intent.type
                 uriStr?.let {
                     val uri = Uri.parse(it)
-                    val cur = currentTrack
-                    if (cur == null || !uriMatches(cur.uri, uri)) {
-                        setPlaylist(listOf(AudioTrack(uri, name)), 0)
+                    // Activity expands playlist references into the queue. Do not first
+                    // treat the playlist document itself as an audio track; that races
+                    // queue initialization and sends XML/JSON bytes to the audio decoder.
+                    if (!PlaylistExpander.isPlaylist(uri, name, mimeType)) {
+                        val cur = currentTrack
+                        if (cur == null || !uriMatches(cur.uri, uri)) {
+                            setPlaylist(listOf(AudioTrack(uri, name)), 0)
+                        }
                     }
                 }
             }
@@ -297,7 +305,7 @@ class AudioPlayerService : Service() {
     private fun sameTrack(a: AudioTrack, b: AudioTrack): Boolean =
         uriMatches(a.uri, b.uri) && a.startByte == b.startByte && a.lengthBytes == b.lengthBytes
 
-    fun setPlaylist(tracks: List<AudioTrack>, startIndex: Int = 0, startAtAlphabeticalBeginning: Boolean = false) {
+    fun setPlaylist(tracks: List<AudioTrack>, startIndex: Int = 0, preservePlaylistOrder: Boolean = false) {
         invalidateGapless()
         resetCastFailures()
         val targetTrack = tracks.getOrNull(startIndex)
@@ -319,8 +327,13 @@ class AudioPlayerService : Service() {
                 playlist.add(0, initial)
                 currentIndex = 0
             } else if (!isShuffleEnabled) {
-                sortPlaylistLocked()
-                if (playlist.isNotEmpty() && (startAtAlphabeticalBeginning || selectedPlaylistFile)) currentIndex = 0
+                // Explicit playlists carry their own ordering. Keep XSPF/JSPF/M3U
+                // sequence intact; ordinary directory queues retain filename sort.
+                if (preservePlaylistOrder || selectedPlaylistFile) {
+                    if (playlist.isNotEmpty()) currentIndex = effectiveIndex.coerceIn(0, playlist.lastIndex)
+                } else {
+                    sortPlaylistLocked()
+                }
             }
         }
         notifyPlaylistUpdated()
@@ -788,7 +801,8 @@ class AudioPlayerService : Service() {
             if (loadCounter.get() != thisLoadId) return@Thread
             val loadStarted = android.os.SystemClock.elapsedRealtime()
             cacheFailure = null
-            val source = try { AudioPlaybackInput.open(this, track.uri, track.fileName, track.startByte > 0 || track.lengthBytes > 0) } catch (e: Exception) {
+            val needsLocalRange = track.startByte > 0 || track.lengthBytes > 0 || track.decoderExtension != null
+            val source = try { AudioPlaybackInput.open(this, track.uri, track.fileName, needsLocalRange) } catch (e: Exception) {
                 if (com.infinifolder.storage.DiskCache.capacityError(e) != null) cacheFailure = e to track.uri
                 null
             }
@@ -796,8 +810,9 @@ class AudioPlayerService : Service() {
             cleanupStagedFile()
             stagedSource = source
             val rawStagedFile = source?.file
-            val stagedFile = if (rawStagedFile != null && rawStagedFile.exists() && (track.startByte > 0L || track.lengthBytes > 0L)) {
-                sliceTrackFile(rawStagedFile, track.startByte, track.lengthBytes)
+            val stagedFile = if (rawStagedFile != null && rawStagedFile.exists() &&
+                (track.startByte > 0L || track.lengthBytes > 0L || track.decoderExtension != null)) {
+                sliceTrackFile(rawStagedFile, track.startByte, track.lengthBytes, track.decoderExtension)
             } else {
                 rawStagedFile
             }
@@ -1135,10 +1150,11 @@ class AudioPlayerService : Service() {
         var player: MediaPlayer? = null
         var complete = false
         try {
-            source = AudioPlaybackInput.open(this, track.uri, track.fileName, track.startByte > 0 || track.lengthBytes > 0)
+            val needsLocalRange = track.startByte > 0 || track.lengthBytes > 0 || track.decoderExtension != null
+            source = AudioPlaybackInput.open(this, track.uri, track.fileName, needsLocalRange)
             if (Thread.currentThread().isInterrupted) return null
-            stagedFile = if (track.startByte > 0 || track.lengthBytes > 0)
-                sliceTrackFile(source.file ?: throw java.io.IOException("CUE source needs a file"), track.startByte, track.lengthBytes) else source.file
+            stagedFile = if (track.startByte > 0 || track.lengthBytes > 0 || track.decoderExtension != null)
+                sliceTrackFile(source.file ?: throw java.io.IOException("CUE source needs a file"), track.startByte, track.lengthBytes, track.decoderExtension) else source.file
             val file = stagedFile
             val p = MediaPlayer()
             player = p
@@ -1501,8 +1517,8 @@ class AudioPlayerService : Service() {
         }
     }
 
-    private fun sliceTrackFile(file: File, startByte: Long, lengthBytes: Long): File {
-        val ext = file.extension.ifEmpty { "bin" }
+    private fun sliceTrackFile(file: File, startByte: Long, lengthBytes: Long, extensionOverride: String? = null): File {
+        val ext = extensionOverride?.trimStart('.')?.takeIf { it.isNotBlank() } ?: file.extension.ifEmpty { "bin" }
         val sliceFile = File.createTempFile("audio_slice_", ".$ext", cacheDir)
         val totalLen = file.length()
         val validStart = startByte.coerceIn(0L, totalLen)
@@ -1676,7 +1692,7 @@ class AudioPlayerService : Service() {
         if (Thread.currentThread().isInterrupted) return null
         return AudioPlaybackInput.open(this, track.uri, track.fileName, metadataOnly = true).use { input ->
             val tags = AudioProcessing.readTags(input.resource)
-            val segmented = track.startByte > 0 || track.lengthBytes > 0
+            val segmented = track.startByte > 0 || track.lengthBytes > 0 || track.decoderExtension != null
             val duration = if (track.durationMs > 0 || segmented) track.durationMs
                 else tags.duration?.toLongOrNull()?.coerceAtLeast(0) ?: 0L
             // Optional format details must not discard successfully read tags/timing.
@@ -1690,9 +1706,12 @@ class AudioPlayerService : Service() {
                 title = if (segmented) track.title else tags.title?.takeIf { it.isNotBlank() } ?: track.title,
                 artist = tags.artist?.takeIf { it.isNotBlank() } ?: track.artist,
                 album = tags.album?.takeIf { it.isNotBlank() } ?: track.album,
-                durationMs = if (segmented && duration <= 0 && track.lengthBytes > 0 &&
-                    track.fileName.substringAfterLast('.', "").lowercase() in setOf("bin", "cdda"))
-                    track.lengthBytes / 2352L * 1000L / 75L else duration,
+                durationMs = if (segmented && duration <= 0 &&
+                    (track.decoderExtension?.startsWith("cdda") == true || track.fileName.substringAfterLast('.', "").lowercase() in setOf("bin", "cdda"))) {
+                    val bytes = track.lengthBytes.takeIf { it > 0 }
+                        ?: input.metadata.length?.minus(track.startByte)?.coerceAtLeast(0) ?: 0L
+                    bytes / 2352L * 1000L / 75L
+                } else duration,
                 bitrateKbps = format?.bitrateKbps?.takeIf { format.isBitrateRelevant && it > 0 } ?: track.bitrateKbps,
                 sampleRateHz = format?.sampleRate?.takeIf { format.isSampleRateRelevant && it > 0 } ?: track.sampleRateHz,
                 channels = format?.channels?.takeIf { it > 0 } ?: track.channels,

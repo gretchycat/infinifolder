@@ -1,0 +1,50 @@
+{
+  "playlist": {
+    "title": "InfiniFolder Audio Fixtures",
+    "creator": "InfiniFolder",
+    "track": [
+      {
+        "location": "../audio/c_major_piano.wav",
+        "title": "C Major Piano Chord (WAV)",
+        "creator": "InfiniFolder",
+        "album": "Playlist Parser Fixtures",
+        "duration": 2000
+      },
+      {
+        "location": "../audio/c_major_piano.flac",
+        "title": "C Major Piano Chord (FLAC)",
+        "creator": "InfiniFolder",
+        "album": "Playlist Parser Fixtures",
+        "duration": 2000
+      },
+      {
+        "location": "../audio/c_major_piano.mp3",
+        "title": "C Major Piano Chord (MP3)",
+        "creator": "InfiniFolder",
+        "album": "Playlist Parser Fixtures",
+        "duration": 2000
+      },
+      {
+        "location": "../audio/c_major_piano.alac",
+        "title": "C Major Piano Chord (ALAC)",
+        "creator": "InfiniFolder",
+        "album": "Playlist Parser Fixtures",
+        "duration": 2000
+      },
+      {
+        "location": "../audio/c_major_piano.mp2",
+        "title": "C Major Piano Chord (MP2)",
+        "creator": "InfiniFolder",
+        "album": "Playlist Parser Fixtures",
+        "duration": 2000
+      },
+      {
+        "location": "../audio/c_major_piano.mod",
+        "title": "C Major Piano Chord (MOD)",
+        "creator": "InfiniFolder",
+        "album": "Playlist Parser Fixtures",
+        "duration": 2000
+      }
+    ]
+  }
+}

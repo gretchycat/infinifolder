@@ -50,6 +50,12 @@ class FileSelectionActivity : Activity() {
             .putExtra(FloatingContainerService.EXTRA_ALLOW_MULTIPLE,
                 intent.getBooleanExtra(FileSelectionContract.EXTRA_ALLOW_MULTIPLE, false))
             .putStringArrayListExtra(FloatingContainerService.EXTRA_SELECTION_MIME_TYPES, ArrayList(mimeTypes))
+            .putStringArrayListExtra(FloatingContainerService.EXTRA_SELECTION_EXTENSIONS,
+                ArrayList(intent.getStringArrayListExtra(FileSelectionContract.EXTRA_SUPPORTED_EXTENSIONS).orEmpty()))
+            .putExtra(FloatingContainerService.EXTRA_HIDE_UNSUPPORTED,
+                intent.getBooleanExtra(FileSelectionContract.EXTRA_HIDE_UNSUPPORTED, false))
+            .putExtra(FloatingContainerService.EXTRA_SELECTION_SCROLL_Y,
+                intent.getIntExtra(FileSelectionContract.EXTRA_INITIAL_SCROLL_Y, 0).coerceAtLeast(0))
             .putExtra(FloatingContainerService.EXTRA_SELECTION_RECEIVER, receiver)
         runCatching { startService(start) }.onFailure { error ->
             receiver.send(FileSelectionContract.RESULT_FALLBACK, Bundle().apply {
@@ -93,6 +99,11 @@ class FileSelectionActivity : Activity() {
             putExtra(FileSelectionContract.EXTRA_RESULT_NAME, name)
             putExtra(FileSelectionContract.EXTRA_RESULT_MIME, mime)
             putExtra(FileSelectionContract.EXTRA_RESULT_SIZE, sizes.firstOrNull() ?: -1L)
+            data.getString(FileSelectionContract.EXTRA_RESULT_DIRECTORY)?.let {
+                putExtra(FileSelectionContract.EXTRA_RESULT_DIRECTORY, it)
+            }
+            putExtra(FileSelectionContract.EXTRA_RESULT_SCROLL_Y,
+                data.getInt(FileSelectionContract.EXTRA_RESULT_SCROLL_Y, 0).coerceAtLeast(0))
             putStringArrayListExtra(FileSelectionContract.EXTRA_RESULT_URIS, ArrayList(relays.map(Uri::toString)))
             putStringArrayListExtra(FileSelectionContract.EXTRA_RESULT_NAMES, ArrayList(names))
             putStringArrayListExtra(FileSelectionContract.EXTRA_RESULT_MIMES, ArrayList(mimes))

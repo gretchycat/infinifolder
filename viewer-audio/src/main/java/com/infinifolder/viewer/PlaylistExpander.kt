@@ -7,6 +7,8 @@ import com.infinifolder.archive.ArchiveUri
 import com.infinifolder.model.ResourceEntry
 import com.infinifolder.playlist.PlaylistParser
 import java.io.File
+import java.net.URI
+import java.net.URLDecoder
 
 object PlaylistExpander {
 
@@ -17,10 +19,59 @@ object PlaylistExpander {
     }
 
     fun isPlaylist(uri: Uri, name: String? = null, mimeType: String? = null): Boolean {
-        val checkName = name ?: if (ArchiveUri.isArchiveUri(uri)) ArchiveUri.getEntryPath(uri).substringAfterLast('/')
-            else uri.lastPathSegment ?: ""
-        return isPlaylist(checkName, mimeType ?: "")
+        // A display name may be a user-defined shortcut title without an extension.
+        // Keep it as a useful clue, but never let it hide the URI's actual file name.
+        val uriName = if (ArchiveUri.isArchiveUri(uri)) {
+            ArchiveUri.getEntryPath(uri).substringAfterLast('/')
+        } else {
+            uri.lastPathSegment.orEmpty()
+        }
+        val uriPathName = uri.path?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+        return sequenceOf(name, uriName, uriPathName)
+            .filterNotNull()
+            .distinct()
+            .any { isPlaylist(it, mimeType.orEmpty()) }
     }
+
+    /** Content sniffing is a bounded fallback for providers that omit a filename or MIME. */
+    fun isPlaylist(context: Context, uri: Uri, name: String? = null, mimeType: String? = null): Boolean {
+        if (isPlaylist(uri, name, mimeType)) return true
+        val candidateName = name ?: uri.lastPathSegment.orEmpty()
+        return runCatching {
+            val prefix = MediaSourceAdapter.readText(context, uri, maxBytes = 64 * 1024).first
+            PlaylistParser.isPlaylist(candidateName, prefix)
+        }.getOrDefault(false)
+    }
+
+    /** Resolve a CDDB metadata record to its matching playable sibling playlist, when unique. */
+    fun matchingCddbPlaylist(context: Context, uri: Uri): ResourceEntry? = runCatching {
+        val record = com.infinifolder.audio.cddb.CddbManager.parseXmcd(
+            MediaSourceAdapter.readText(context, uri, maxBytes = 64 * 1024).first
+        ) ?: return null
+        if (record.discId.isBlank()) return null
+        val parent = MediaSourceAdapter.getParentDirectory(context, uri) ?: return null
+        val siblings = MediaSourceAdapter.listFolder(context, parent)
+        val matches = siblings.asSequence()
+            .filter { !it.metadata.isDirectory && it.uri != uri &&
+                it.metadata.name.substringAfterLast('.', "").equals("cue", ignoreCase = true) }
+            .mapNotNull { candidate ->
+                val text = runCatching {
+                    MediaSourceAdapter.readText(context, candidate.uri, maxBytes = 256 * 1024).first
+                }.getOrNull() ?: return@mapNotNull null
+                val tracks = PlaylistParser.parse(candidate.metadata.name, text)
+                val matchingTrack = tracks.firstOrNull {
+                    it.discId.equals(record.discId, ignoreCase = true) && it.pathOrUri.isNotBlank()
+                } ?: return@mapNotNull null
+                val source = resolveEntryUri(context, candidate.uri, matchingTrack.pathOrUri)
+                if (!isSourceAvailable(context, source)) return@mapNotNull null
+                candidate
+            }
+            .take(2)
+            .toList()
+        matches.singleOrNull()
+    }.onFailure {
+        com.infinifolder.storage.DiagnosticLog.record("audio.cddb.companion.resolve.failed", error = it)
+    }.getOrNull()
 
     fun resolveRelativePath(baseDir: String, relative: String): String {
         val isAbsolute = baseDir.startsWith('/')
@@ -35,10 +86,28 @@ object PlaylistExpander {
         return (if (isAbsolute) "/" else "") + segments.joinToString("/")
     }
 
+    private fun decodeUriPath(value: String): String = runCatching {
+        URLDecoder.decode(value.replace("+", "%2B"), Charsets.UTF_8.name())
+    }.getOrDefault(value)
+
+    private fun entryFileName(reference: String): String {
+        val path = runCatching { URI(reference).path }.getOrNull()
+            ?: reference.substringBefore('?').substringBefore('#')
+        return decodeUriPath(path.substringAfterLast('/').substringAfterLast('\\'))
+    }
+
+    private fun fileUri(file: File): String = file.toURI().toString().replaceFirst("file:/", "file:///")
+
     fun resolveEntryUri(context: Context?, playlistUri: Uri, pathOrUri: String): Uri {
-        if (pathOrUri.contains("://")) {
-            return uriFactory(pathOrUri)
+        val reference = pathOrUri.trim()
+        if (reference.isEmpty()) return uriFactory(playlistUri.toString())
+        val parsedReference = runCatching { URI(reference.replace(" ", "%20")) }.getOrNull()
+        if (parsedReference?.isAbsolute == true) return uriFactory(parsedReference.toASCIIString())
+        if (reference.startsWith("//")) {
+            val resolved = runCatching { URI(playlistUri.toString().replace(" ", "%20")).resolve(reference.replace(" ", "%20")).toString() }.getOrNull()
+            if (resolved != null) return uriFactory(resolved)
         }
+        val pathOrUri = reference
 
         if (ArchiveUri.isArchiveUri(playlistUri)) {
             val entry = ArchiveUri.getEntryPath(playlistUri)
@@ -49,29 +118,30 @@ object PlaylistExpander {
         }
 
         if (pathOrUri.startsWith('/') && File(pathOrUri).exists()) {
-            return uriFactory("file://$pathOrUri")
+            return uriFactory(fileUri(File(pathOrUri)))
         }
 
         if (playlistUri.scheme == "file") {
             val localFile = playlistUri.path?.let { File(it) }
             if (localFile != null) {
                 val parent = localFile.parentFile ?: File(".")
-                val target = File(parent, pathOrUri).canonicalFile
-                if (target.exists()) return uriFactory("file://${target.absolutePath}")
+                val localReference = decodeUriPath(pathOrUri)
+                val target = File(parent, localReference).canonicalFile
+                if (target.exists()) return uriFactory(fileUri(target))
 
-                val sibling = File(parent, File(pathOrUri).name).canonicalFile
-                if (sibling.exists()) return uriFactory("file://${sibling.absolutePath}")
+                val sibling = File(parent, File(localReference).name).canonicalFile
+                if (sibling.exists()) return uriFactory(fileUri(sibling))
 
                 val parentParent = parent.parentFile
                 if (parentParent != null) {
-                    val audioSibling = File(parentParent, "audio/${File(pathOrUri).name}").canonicalFile
-                    if (audioSibling.exists()) return uriFactory("file://${audioSibling.absolutePath}")
+                    val audioSibling = File(parentParent, "audio/${File(localReference).name}").canonicalFile
+                    if (audioSibling.exists()) return uriFactory(fileUri(audioSibling))
                 }
 
-                val audioSub = File(parent, "audio/${File(pathOrUri).name}").canonicalFile
-                if (audioSub.exists()) return uriFactory("file://${audioSub.absolutePath}")
+                val audioSub = File(parent, "audio/${File(localReference).name}").canonicalFile
+                if (audioSub.exists()) return uriFactory(fileUri(audioSub))
 
-                return uriFactory("file://${target.absolutePath}")
+                return uriFactory(fileUri(target))
             }
         }
 
@@ -79,24 +149,33 @@ object PlaylistExpander {
             try {
                 val authority = playlistUri.authority
                 val isTree = (try { android.provider.DocumentsContract.isTreeUri(playlistUri) } catch (_: Throwable) { false }) ||
-                    playlistUri.pathSegments.contains("tree")
+                    playlistUri.pathSegments.firstOrNull() == "tree"
+                val isDocument = playlistUri.pathSegments.firstOrNull() == "document" ||
+                    playlistUri.pathSegments.getOrNull(2) == "document" ||
+                    (context != null && runCatching {
+                        android.provider.DocumentsContract.isDocumentUri(context, playlistUri)
+                    }.getOrDefault(false))
                 val docId = try {
-                    if (playlistUri.pathSegments.firstOrNull() == "document" || playlistUri.pathSegments.getOrNull(2) == "document") {
-                        android.provider.DocumentsContract.getDocumentId(playlistUri)
-                    } else if (isTree) {
-                        android.provider.DocumentsContract.getTreeDocumentId(playlistUri)
-                    } else null
-                } catch (_: Throwable) { null } ?: playlistUri.lastPathSegment
+                    when {
+                        isDocument -> android.provider.DocumentsContract.getDocumentId(playlistUri)
+                        isTree -> android.provider.DocumentsContract.getTreeDocumentId(playlistUri)
+                        else -> null
+                    }
+                } catch (_: Throwable) { null }
 
-                if (docId != null) {
+                // A content:// URI is not necessarily a SAF document. Do not invent
+                // DocumentsContract URIs for ordinary providers (FileProvider, app
+                // providers, etc.); those must resolve relative to their own URI below.
+                if (docId != null && (isTree || isDocument)) {
                     val colonIdx = docId.indexOf(':')
                     val prefix = if (colonIdx >= 0) docId.substring(0, colonIdx + 1) else ""
                     val docPath = if (colonIdx >= 0) docId.substring(colonIdx + 1) else docId
                     val parentDocPath = docPath.substringBeforeLast('/', "")
-                    val targetName = pathOrUri.substringAfterLast('/').substringAfterLast('\\')
+                    val decodedReference = decodeUriPath(pathOrUri)
+                    val targetName = decodedReference.substringAfterLast('/').substringAfterLast('\\')
 
                     val candidatePaths = listOfNotNull(
-                        resolveRelativePath(parentDocPath, pathOrUri),
+                        resolveRelativePath(parentDocPath, decodedReference),
                         resolveRelativePath(parentDocPath, targetName),
                         if (parentDocPath.contains('/')) resolveRelativePath(parentDocPath.substringBeforeLast('/', ""), "audio/$targetName") else null,
                         resolveRelativePath(parentDocPath, "audio/$targetName")
@@ -132,43 +211,47 @@ object PlaylistExpander {
                             android.provider.DocumentsContract.buildDocumentUri(authority, primaryDocId)
                         } else null
                     } catch (_: Throwable) { null }
-                    if (primarySafUri != null) return primarySafUri
+                    // Preserve a best-effort URI only for callers without a Context.
+                    // With a Context, a failed open means the provider rejected this
+                    // sibling; do not fabricate a queue item that points nowhere.
+                    if (primarySafUri != null && context == null) return primarySafUri
                 }
+                if (isTree || isDocument) return Uri.EMPTY
             } catch (_: Throwable) {}
 
             val localFile = context?.let { runCatching { MediaSourceAdapter.resolveLocalFile(it, playlistUri) }.getOrNull() }
             if (localFile != null) {
                 val parent = localFile.parentFile ?: File(".")
-                val target = File(parent, pathOrUri).canonicalFile
-                if (target.exists()) return uriFactory("file://${target.absolutePath}")
+                val localReference = decodeUriPath(pathOrUri)
+                val target = File(parent, localReference).canonicalFile
+                if (target.exists()) return uriFactory(fileUri(target))
 
-                val sibling = File(parent, File(pathOrUri).name).canonicalFile
-                if (sibling.exists()) return uriFactory("file://${sibling.absolutePath}")
+                val sibling = File(parent, File(localReference).name).canonicalFile
+                if (sibling.exists()) return uriFactory(fileUri(sibling))
 
                 val parentParent = parent.parentFile
                 if (parentParent != null) {
-                    val audioSibling = File(parentParent, "audio/${File(pathOrUri).name}").canonicalFile
-                    if (audioSibling.exists()) return uriFactory("file://${audioSibling.absolutePath}")
+                    val audioSibling = File(parentParent, "audio/${File(localReference).name}").canonicalFile
+                    if (audioSibling.exists()) return uriFactory(fileUri(audioSibling))
                 }
 
-                val audioSub = File(parent, "audio/${File(pathOrUri).name}").canonicalFile
-                if (audioSub.exists()) return uriFactory("file://${audioSub.absolutePath}")
+                val audioSub = File(parent, "audio/${File(localReference).name}").canonicalFile
+                if (audioSub.exists()) return uriFactory(fileUri(audioSub))
 
-                return uriFactory("file://${target.absolutePath}")
+                return uriFactory(fileUri(target))
             }
         }
 
-        // For non-local URIs, normalize path relative to parent
+        // Resolve against the playlist URI itself so ordinary content:// providers,
+        // HTTP locations, and non-DocumentsProvider references keep their authority.
+        val resolved = runCatching {
+            URI(playlistUri.toString().replace(" ", "%20")).resolve(reference.replace(" ", "%20")).toString()
+        }.getOrNull()
+        if (resolved != null) return uriFactory(resolved)
         val uriPath = playlistUri.path ?: ""
         val parentPath = uriPath.substringBeforeLast('/', "")
-        val resolved = resolveRelativePath(parentPath, pathOrUri)
-        return try {
-            playlistUri.buildUpon().path(resolved).build()
-        } catch (_: Throwable) {
-            val sourceStr = playlistUri.toString()
-            val baseStr = sourceStr.substringBeforeLast('/')
-            uriFactory("$baseStr/$pathOrUri")
-        }
+        return runCatching { playlistUri.buildUpon().encodedPath(resolveRelativePath(parentPath, reference)).build() }
+            .getOrElse { uriFactory("${playlistUri.toString().substringBeforeLast('/')}/$reference") }
     }
 
     fun expandPlaylist(
@@ -181,9 +264,12 @@ object PlaylistExpander {
         visited.add(uriKey)
 
         val tracks = mutableListOf<AudioTrack>()
+        var hasMoreText = false
+        var playlistName = "playlist.m3u"
         try {
             val name = if (ArchiveUri.isArchiveUri(playlistUri)) ArchiveUri.getEntryPath(playlistUri).substringAfterLast('/')
                 else playlistUri.lastPathSegment ?: "playlist.m3u"
+            playlistName = name
             val localFile = if (playlistUri.scheme == "file") {
                 playlistUri.path?.let { File(it) }
             } else {
@@ -193,32 +279,50 @@ object PlaylistExpander {
             val text = if (localFile != null && localFile.canRead()) {
                 localFile.readText(Charsets.UTF_8)
             } else {
-                if (context != null) MediaSourceAdapter.readText(context, playlistUri).first else ""
+                if (context != null) MediaSourceAdapter.readText(context, playlistUri).let { (content, truncated) ->
+                    hasMoreText = truncated
+                    content
+                } else ""
             }
             val entries = PlaylistParser.parse(name, text)
+            var missingSources = 0
+            if (entries.isEmpty()) {
+                com.infinifolder.storage.DiagnosticLog.record("audio.playlist.empty",
+                    "format=${name.substringAfterLast('.', "").lowercase()} chars=${text.length} truncated=$hasMoreText")
+            }
 
             for (entry in entries) {
                 val itemUri = resolveEntryUri(context, playlistUri, entry.pathOrUri)
-                val itemName = entry.pathOrUri.substringAfterLast('/').substringAfterLast('\\')
+                if (itemUri == Uri.EMPTY || !isSourceAvailable(context, itemUri)) {
+                    missingSources++
+                    continue
+                }
+                val itemName = entryFileName(entry.pathOrUri)
                 if (isPlaylist(itemUri, itemName)) {
                     // Recursive expansion for nested playlists
                     val nestedTracks = expandPlaylist(context, itemUri, visited)
                     tracks.addAll(nestedTracks)
                 } else {
                     val title = entry.title.ifBlank { itemName }
-                    val durationMs = if (entry.durationSeconds > 0) entry.durationSeconds * 1000L else 0L
+                    val durationMs = entry.durationMillis ?: if (entry.durationSeconds > 0) entry.durationSeconds * 1000L else 0L
                     tracks.add(
                         AudioTrack(
                             uri = itemUri,
                             title = title,
                             fileName = itemName,
                             artist = entry.performer.ifBlank { null },
+                            album = entry.album.ifBlank { null },
                             durationMs = durationMs,
                             startByte = entry.startByte,
-                            lengthBytes = entry.lengthBytes
+                            lengthBytes = entry.lengthBytes,
+                            decoderExtension = entry.decoderExtension
                         )
                     )
                 }
+            }
+            if (missingSources > 0) {
+                com.infinifolder.storage.DiagnosticLog.record("audio.playlist.sources_missing",
+                    "format=${name.substringAfterLast('.', "").lowercase()} missing=$missingSources parsed=${entries.size}")
             }
 
             // CDDB enrichment for CUE sheets / CD albums
@@ -240,10 +344,23 @@ object PlaylistExpander {
                 }
             }
         } catch (e: Exception) {
-            println("PlaylistExpander exception on $playlistUri: $e")
+            com.infinifolder.storage.DiagnosticLog.record("audio.playlist.expand.failed",
+                "format=${playlistName.substringAfterLast('.', "").lowercase()} truncated=$hasMoreText", e)
         }
 
         return tracks
+    }
+
+    private fun isSourceAvailable(context: Context?, uri: Uri): Boolean {
+        if (context == null) return true
+        return when (uri.scheme?.lowercase()) {
+            "file" -> uri.path?.let { File(it).isFile && File(it).canRead() } == true
+            "content" -> runCatching {
+                MediaSourceAdapter.openStream(context, uri).use { }
+                true
+            }.getOrDefault(false)
+            else -> true
+        }
     }
 
     fun expandResourceEntries(

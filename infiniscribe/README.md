@@ -29,3 +29,11 @@ this host app. The build exports that same runtime capability catalog into
 Android `VIEW`, `EDIT`, and single-item `SEND` intent filters, including each
 handler's MIME types and extensions. Registering another format handler under
 an existing Scribe viewer presentation updates those filters on the next build.
+Unknown extensions are eligible in the InfiniFolder-backed picker through the
+opaque MIME candidate. Before opening, InfiniScribe checks a bounded content
+prefix for readable text and rejects binary-looking input, so plain text does not
+need a registered extension while video and image types remain filtered by MIME.
+
+When InfiniScribe opens its file selector, returning from a document reopens
+the selector at the same directory and scroll position. Back closes the
+floating selector; Back from a document returns to the selector.

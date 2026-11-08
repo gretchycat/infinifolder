@@ -93,6 +93,8 @@ file-css.svg,bases/code.svg,file_type,.css,.css,.css,text/css,text/code viewer/e
 file-csv.svg,bases/document.svg,file_type,.csv,.csv,.csv,text/csv,delimited spreadsheet viewer/editor,registered association/route,Scribe,extension,"Document, ebook, or readable text format."
 file-cts.svg,bases/code.svg,file_type,.cts,.cts,.cts,text/typescript,text/code viewer/editor,registered association/route,Scribe,source_type,"Source code, markup, or structured configuration format."
 file-cue.svg,bases/audio.svg,file_type,.cue,.cue,.cue,application/x-cue,playlist parse/browse/playback routing,registered association/route,Vault/Sound,extension,"Audio cue, music score, or instrument patch format."
+file-jspf.svg,bases/audio.svg,file_type,.jspf,.jspf,.jspf,application/jspf+json,playlist parse/browse/playback routing,registered association/route,Vault/Sound,mime_type,"Audio interchange, cue sheet, or playlist MIME type."
+file-toc.svg,bases/audio.svg,file_type,.toc,.toc,.toc,application/x-cdrdao-toc,playlist parse/browse/playback routing,registered association/route,Vault/Sound,mime_type,"Audio interchange, cue sheet, or playlist MIME type."
 file-cur.svg,bases/image.svg,file_type,.cur,.cur,.cur,image/x-win-bitmap,MIME identity/icon; external open fallback,registered association/route,Store/host,mime_type,MIME media family image.
 file-cxx.svg,bases/code.svg,file_type,.cxx,.cxx,.cxx,text/x-c++src,text/code viewer/editor,registered association/route,Scribe,extension,"Source code, markup, or structured configuration format."
 file-dart.svg,bases/code.svg,file_type,.dart,.dart,.dart,application/vnd.dart,text/code viewer/editor,registered association/route,Scribe,extension,"Source code, markup, or structured configuration format."
