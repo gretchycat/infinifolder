@@ -189,6 +189,18 @@ def main():
                 extensions=editable_extensions, action='EDIT')
         if mimes:
             add_filter(activity, mimes=mimes, browsable=False, action='SEND')
+    elif args.host == 'viewer' and args.viewer == 'audio':
+        # The separate media player accepts direct file shares as well as JSPF,
+        # XSPF and other playlists. Generic binary MIME is restricted to known
+        # audio/playlist suffixes so unrelated opaque files do not list Media.
+        share_mimes = mimes | {'audio/*'}
+        add_filter(activity, mimes=share_mimes, browsable=False, action='SEND')
+        add_filter(activity, mimes=share_mimes, browsable=False, action='SEND_MULTIPLE')
+        if extensions:
+            add_filter(activity, schemes={'content', 'file'}, mimes={'application/octet-stream'},
+                extensions=extensions, browsable=False, action='SEND')
+            add_filter(activity, schemes={'content', 'file'}, mimes={'application/octet-stream'},
+                extensions=extensions, browsable=False, action='SEND_MULTIPLE')
     elif editable_mimes:
         add_filter(activity, mimes=editable_mimes, action='EDIT')
         add_filter(activity, schemes={'content', 'file'}, extensions=editable_extensions,

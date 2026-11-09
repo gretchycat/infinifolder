@@ -33,6 +33,20 @@ multiple-selection preference, and optional initial directory. Returned Android
 Activity results use ordinary URI grants, `OpenableColumns.DISPLAY_NAME`,
 `ContentResolver.getType`, and `ClipData` for multi-selection.
 
+Clients may request `MultipleSelectionDelivery.JSPF` and optional
+`SelectionMetadataFormat.XML`. A multi-item result then includes a JSPF content
+URI whose track locations point at the selected, grantable item URIs, plus a
+companion XML content URI containing each item's URI, display name, MIME type,
+and known byte length. `InfiniSelect.readResult()` normalizes the result for
+viewer code. A single selected item remains a regular content URI.
+
+The audio client enables `allowRecursiveAudioDirectories`: long-pressing a
+directory in InfiniFolder scans its descendants through the storage provider,
+skips symbolic links, and returns supported audio files through the same JSPF
+handoff. The standalone media app is built with
+`gradle :viewer-host:assembleDebug -Pviewer=audio` and registers its supported
+audio and playlist handlers for Android share intents.
+
 Build the library independently with:
 
 ```sh

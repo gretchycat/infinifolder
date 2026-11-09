@@ -12,10 +12,11 @@ usage() {
 Usage: ./build.sh [--only TARGET] [--open-apks|--no-open]
 
 Targets:
-  all            InfiniFolder, viewer host, InfiniScribe, and InfiniKey if present (default)
+  all            InfiniFolder, viewer host, InfiniScribe, InfiniMedia, and InfiniKey if present (default)
   infinifolder   InfiniFolder and its viewer host
   viewer-host    The standalone viewer host
   infiniscribe   InfiniScribe
+  infinimedia    InfiniMedia
   infinikey      InfiniKey from the neighboring ../infinikey-ime checkout
 
 --open-apks opens each built APK with xdg-open, pausing between APKs when interactive.
@@ -51,7 +52,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$target" in
-    all|infinifolder|viewer-host|infiniscribe|infinikey) ;;
+    all|infinifolder|viewer-host|infiniscribe|infinimedia|infinikey) ;;
     *) echo "Unknown build target: $target" >&2; usage >&2; exit 2 ;;
 esac
 
@@ -101,12 +102,14 @@ key_project="$repo_dir/../infinikey-ime"
 build_folder=false
 build_viewer_host=false
 build_scribe=false
+build_media=false
 build_key=false
 case "$target" in
     all)
         build_folder=true
         build_viewer_host=true
         build_scribe=true
+        build_media=true
         build_key=true
         ;;
     infinifolder)
@@ -115,6 +118,7 @@ case "$target" in
         ;;
     viewer-host) build_viewer_host=true ;;
     infiniscribe) build_scribe=true ;;
+    infinimedia) build_media=true ;;
     infinikey) build_key=true ;;
 esac
 
@@ -139,6 +143,12 @@ if [ "$build_scribe" = true ]; then
     echo "Building InfiniScribe..."
     run_gradle -p "$repo_dir/infiniscribe" assembleDebug
     append_apk "$repo_dir/infiniscribe/build/outputs/apk/debug/InfiniScribe-debug.apk"
+fi
+
+if [ "$build_media" = true ]; then
+    echo "Building InfiniMedia..."
+    run_gradle -p "$repo_dir/infinimedia" :viewer-host:clean :viewer-host:assembleDebug
+    append_apk "$repo_dir/infinimedia/build/viewer-host/outputs/apk/debug/viewer-host-debug.apk"
 fi
 
 if [ "$build_key" = true ]; then

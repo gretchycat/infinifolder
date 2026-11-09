@@ -79,6 +79,11 @@ class ResourceIconResolver(context: Context) {
         NetworkIconTargets.forget(uris)
     }
     private fun linkKey(entry: ResourceEntry) = "${entry.uri}:${entry.metadata.modifiedAtMillis}:${entry.metadata.sizeBytes}"
+    private fun identityCacheKey(entry:ResourceEntry) =
+        "${linkKey(entry)}:${entry.metadata.name}:${entry.metadata.mimeType}:${registry.revision}:${io.github.gretchycat.infinistream.RuntimeCapabilities.installed().revision}"
+    private fun rememberIdentity(entry:ResourceEntry,identity:IconIdentity) {
+        identities.put(identityCacheKey(entry),IdentityCache(identity,System.currentTimeMillis()+30000))
+    }
     fun peekShortcut(entry: ResourceEntry): ShortcutInfo? = linkInfo.get(linkKey(entry))
     /** Worker-only metadata access shared by listing and pinned-link presentation. */
     fun shortcutInfo(entry: ResourceEntry): ShortcutInfo? = (peekShortcut(entry)
@@ -93,7 +98,7 @@ class ResourceIconResolver(context: Context) {
         } else ""
         val audioCover=if(AudioIconFormats.isAudio(MimeRegistry.effective(entry.metadata.name,entry.metadata.mimeType)))
             AudioArtworkResolver.coverRevision(entry) else ""
-        return "icons-v11:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
+        return "icons-v13:${entry.uri}:${entry.metadata.name}:${entry.metadata.mimeType}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$iconRevision:" +
             "${sidecar?.uri}:${sidecar?.metadata?.modifiedAtMillis}:${sidecar?.metadata?.sizeBytes}:$covers:$audioCover:${com.infinifolder.viewer.RawMediaConfigStore.revision(entry)}"
     }
     fun cached(entry: ResourceEntry, size: Int): Icon? {
@@ -106,7 +111,7 @@ class ResourceIconResolver(context: Context) {
             ?.takeIf {System.currentTimeMillis()<it.expires && !it.icon.pending}?.icon
     }
     fun identity(entry: ResourceEntry): IconIdentity {
-        val key="${linkKey(entry)}:${entry.metadata.name}:${entry.metadata.mimeType}:${registry.revision}:${io.github.gretchycat.infinistream.RuntimeCapabilities.installed().revision}"
+        val key=identityCacheKey(entry)
         identities.get(key)?.takeIf {System.currentTimeMillis()<it.expires}?.let { return it.identity }
         val probeStarted = android.os.SystemClock.uptimeMillis()
         DiagnosticLog.record("artwork.identity.start",
@@ -131,7 +136,7 @@ class ResourceIconResolver(context: Context) {
         }
         identities.put(key,IdentityCache(identity,System.currentTimeMillis()+30000))
         DiagnosticLog.record("artwork.identity.complete",
-            "name=${entry.metadata.name} provider=${entry.ref.providerId} detected=${identity.mimeType} magic=${identity.magicMime} elapsedMs=${android.os.SystemClock.uptimeMillis() - probeStarted}")
+            "name=${entry.metadata.name} provider=${entry.ref.providerId} candidates=${registry.candidates(entry.metadata.name).sorted()} associated=${identity.associated} ambiguous=${identity.ambiguous} detected=${identity.mimeType} magic=${identity.magicMime} elapsedMs=${android.os.SystemClock.uptimeMillis() - probeStarted}")
         return identity
     }
     fun resolve(entry: ResourceEntry, size: Int, deferCacheWrite: Boolean = false): Icon {
@@ -224,42 +229,71 @@ class ResourceIconResolver(context: Context) {
                 ?:FileTypeIcons.bitmap(entry.metadata.copy(mimeType="audio/pcm"),size),source="raw-audio-metadata",mimeType="audio/pcm")
         }
         val id=identity(entry)
-        val meta=entry.metadata.copy(mimeType=id.mimeType)
-        val record=registry.mime(id.mimeType)
+        var resolvedIdentity=id
+        var parserValidatedImage:Bitmap?=null
+        // The lightweight signature probe can be inconclusive for some providers or
+        // uncommon image variants. A successful Canvas decode is itself a format
+        // validation; use that result and its bitmap rather than briefly relabeling a
+        // valid image as generic binary. A failed decode leaves the strict identity
+        // result untouched.
+        if(MimeRegistry.isUnspecified(id.mimeType)) {
+            val imageCandidate=registry.candidates(entry.metadata.name).singleOrNull()?.let(MimeRegistry::normalize)
+                ?.takeIf { it.startsWith("image/") || it in ImageFormats.animationMimeTypes }
+            val extension=imageCandidate?.let { registry.rendererExtension(it,entry.metadata.name) }
+            if(imageCandidate!=null && extension!=null) {
+                parserValidatedImage=IconWork.bounded(2500,lane="thumbnail:${entry.ref.providerId}") {
+                    decoder.decode(entry.uri,size,extension,imageCandidate)
+                }
+                if(parserValidatedImage!=null) {
+                    resolvedIdentity=id.copy(mimeType=imageCandidate,associated=true,magicMime=imageCandidate)
+                    rememberIdentity(entry,resolvedIdentity)
+                    DiagnosticLog.record("artwork.identity.image-parser-validated",
+                        "name=${entry.metadata.name} candidate=$imageCandidate extension=$extension")
+                }
+            }
+        }
+        val meta=entry.metadata.copy(mimeType=resolvedIdentity.mimeType)
+        val storedRecord=registry.mime(resolvedIdentity.mimeType)
+        // User MIME presentation settings must not turn an image into a type
+        // glyph. Once identity validation says this is a renderable image or
+        // animation, always prefer its actual content thumbnail; a failed
+        // render still falls through to the effective MIME icon below.
+        val record=if(resolvedIdentity.mimeType.startsWith("image/") || resolvedIdentity.mimeType in ImageFormats.animationMimeTypes)
+            storedRecord.copy(isImage=true,overrideImageIcon=false) else storedRecord
         var artworkPending=false
-        if(AudioIconFormats.isAudio(id.mimeType) && !ArchiveFormats.isPlaylist(meta.name,id.mimeType)) {
+        if(AudioIconFormats.isAudio(resolvedIdentity.mimeType) && !ArchiveFormats.isPlaylist(meta.name,resolvedIdentity.mimeType)) {
             val audio=audioArtwork.resolve(entry.copy(metadata=meta),size)
             artworkPending=audio.pending
             retryPending(entry,audio.pending)
             audio.artwork?.let {
-                return base.copy(bitmap=it.bitmap,source=it.source,mimeType=id.mimeType,pending=artworkPending)
+                return base.copy(bitmap=it.bitmap,source=it.source,mimeType=resolvedIdentity.mimeType,pending=artworkPending)
             }
         }
-        val genericArchive=ArchiveFormats.isDefaultBrowsableArchive("",id.mimeType)
+        val genericArchive=ArchiveFormats.isDefaultBrowsableArchive("",resolvedIdentity.mimeType)
         for(step in IconPolicy.steps(record,genericArchive)) {
             if(Thread.currentThread().isInterrupted)break
             val bitmap:Bitmap?=when(step) {
-                IconPolicy.Step.THUMBNAIL -> com.infinifolder.preview.LibraryThumbnails.render(appContext.contentResolver,
+                IconPolicy.Step.THUMBNAIL -> parserValidatedImage ?: com.infinifolder.preview.LibraryThumbnails.render(appContext.contentResolver,
                     com.infinifolder.storage.ProviderStreams.resource(runtime.provider,entry.ref,meta),size)
-                    ?: if(id.mimeType in BookArtworkResolver.MIME_TYPES)
+                    ?: if(resolvedIdentity.mimeType in BookArtworkResolver.MIME_TYPES)
                     bookArtwork.resolve(entry.copy(metadata=meta),size)
                 else IconWork.bounded(2000,lane="thumbnail:${entry.ref.providerId}") {
-                    if(id.mimeType=="application/vnd.android.package-archive")resolveApkIcon(entry,size)
+                    if(resolvedIdentity.mimeType=="application/vnd.android.package-archive")resolveApkIcon(entry,size)
                     else if(ImageFormats.hasDosTextPreview(meta))decoder.decodeTextPreview(entry.uri,size,true)
-                    else decoder.decode(entry.uri,size,registry.rendererExtension(id.mimeType,entry.metadata.name),id.mimeType)
+                    else decoder.decode(entry.uri,size,registry.rendererExtension(resolvedIdentity.mimeType,entry.metadata.name),resolvedIdentity.mimeType)
                 }
-                IconPolicy.Step.MIME_OVERRIDE -> overrideBitmap(record.overrideIcon,id.mimeType,size)
-                IconPolicy.Step.THEME_MIME -> if(AudioIconFormats.isAudio(id.mimeType))theme.resolveAudioIcon(meta,size,record.iconName)
-                    else theme.resolveMimeSpecific(id.mimeType,size,record.iconName,meta.name)
+                IconPolicy.Step.MIME_OVERRIDE -> overrideBitmap(record.overrideIcon,resolvedIdentity.mimeType,size)
+                IconPolicy.Step.THEME_MIME -> if(AudioIconFormats.isAudio(resolvedIdentity.mimeType))theme.resolveAudioIcon(meta,size,record.iconName)
+                    else theme.resolveMimeSpecific(resolvedIdentity.mimeType,size,record.iconName,meta.name)
                 IconPolicy.Step.ARCHIVE_FOLDER -> if(archives.inspect(entry.copy(metadata=meta)).browsable)
-                    theme.resolveLogicalIcon("folder-archive",size) ?: FileTypeIcons.bitmap(meta,size,id.mimeType) else null
-                IconPolicy.Step.GENERATED_TYPE -> FileTypeIcons.bitmap(meta,size,id.mimeType)
-                IconPolicy.Step.THEME_CATEGORY -> theme.resolveMimeDefaults(id.mimeType,size) ?: theme.resolveMimeCategory(id.mimeType,size)
-                IconPolicy.Step.GENERIC -> FileTypeIcons.bitmap(meta,size,id.mimeType)
+                    theme.resolveLogicalIcon("folder-archive",size) ?: FileTypeIcons.bitmap(meta,size,resolvedIdentity.mimeType) else null
+                IconPolicy.Step.GENERATED_TYPE -> FileTypeIcons.bitmap(meta,size,resolvedIdentity.mimeType)
+                IconPolicy.Step.THEME_CATEGORY -> theme.resolveMimeDefaults(resolvedIdentity.mimeType,size) ?: theme.resolveMimeCategory(resolvedIdentity.mimeType,size)
+                IconPolicy.Step.GENERIC -> FileTypeIcons.bitmap(meta,size,resolvedIdentity.mimeType)
             }
-            if(bitmap!=null && IconBitmapUsability.visible(bitmap))return base.copy(bitmap=bitmap,source=step.name.lowercase(),mimeType=id.mimeType,pending=artworkPending)
+            if(bitmap!=null && IconBitmapUsability.visible(bitmap))return base.copy(bitmap=bitmap,source=step.name.lowercase(),mimeType=resolvedIdentity.mimeType,pending=artworkPending)
         }
-        return base.copy(mimeType=id.mimeType,pending=artworkPending)
+        return base.copy(mimeType=resolvedIdentity.mimeType,pending=artworkPending)
     }
     /** Shared folder/device baseline. Bounded Android root metadata only, no directory listing. Worker-only. */
     fun directoryTheme(entry:ResourceEntry,size:Int):Icon {

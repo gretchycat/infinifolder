@@ -54,6 +54,8 @@ class FileSelectionActivity : Activity() {
                 ArrayList(intent.getStringArrayListExtra(FileSelectionContract.EXTRA_SUPPORTED_EXTENSIONS).orEmpty()))
             .putExtra(FloatingContainerService.EXTRA_HIDE_UNSUPPORTED,
                 intent.getBooleanExtra(FileSelectionContract.EXTRA_HIDE_UNSUPPORTED, false))
+            .putExtra(FloatingContainerService.EXTRA_ALLOW_RECURSIVE_AUDIO_DIRECTORIES,
+                intent.getBooleanExtra(FileSelectionContract.EXTRA_ALLOW_RECURSIVE_AUDIO_DIRECTORIES, false))
             .putExtra(FloatingContainerService.EXTRA_SELECTION_SCROLL_Y,
                 intent.getIntExtra(FileSelectionContract.EXTRA_INITIAL_SCROLL_Y, 0).coerceAtLeast(0))
             .putExtra(FloatingContainerService.EXTRA_SELECTION_RECEIVER, receiver)

@@ -6020,9 +6020,16 @@ class MainActivity : Activity(), DebugDumpObserver {
             resumeIncompleteDownload(entry.ref)
             return
         }
-        val isIfLink = entry.metadata.name.endsWith(ShortcutInfo.SHORTCUT_EXTENSION, ignoreCase = true)
-        val validatedIfLink = com.infinifolder.mime.MimeRegistry.normalize(validatedMimeOverride) == ShortcutInfo.SHORTCUT_MIME
-        if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null && (!isIfLink || validatedIfLink)) {
+        val extension = entry.metadata.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        val extensionMime = com.infinifolder.mime.MimeRegistry.guess(entry.metadata.name)
+        val identityCacheKey = "${entry.uri}|${entry.metadata.name}|${entry.metadata.sizeBytes}|${entry.metadata.modifiedAtMillis}"
+        val hasStableIdentity = entry.metadata.sizeBytes != null || entry.metadata.modifiedAtMillis != null
+        val validatedMime = validatedMimeOverride ?: if (hasStableIdentity) validatedMimeCache.get(identityCacheKey) else null
+        // `.iflink` files contain JSON, so the generic magic detector correctly calls
+        // their bytes JSON. The extension plus ShortcutInfo parsing in LinkResolver is
+        // the format check; requiring the detected MIME to remain the shortcut MIME
+        // sends valid links to the JSON editor instead of following them.
+        if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null) {
             val sourceLocation = current
             val cachedTermuxLink = shortcutCache.get(entry.uri.toString())?.targetUri
                 ?.let { runCatching { TermuxCommandLink.owns(Uri.parse(it)) }.getOrDefault(false) } == true
@@ -6123,13 +6130,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             return
         }
-        val extension = entry.metadata.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
-        val extensionMime = com.infinifolder.mime.MimeRegistry.guess(entry.metadata.name)
         val statedMime = com.infinifolder.mime.MimeRegistry.normalize(entry.metadata.mimeType)
         val extensionOnlyCandidate = !com.infinifolder.mime.MimeRegistry.isUnspecified(extensionMime)
-        val identityCacheKey = "${entry.uri}|${entry.metadata.name}|${entry.metadata.sizeBytes}|${entry.metadata.modifiedAtMillis}"
-        val hasStableIdentity = entry.metadata.sizeBytes != null || entry.metadata.modifiedAtMillis != null
-        val validatedMime = validatedMimeOverride ?: if (hasStableIdentity) validatedMimeCache.get(identityCacheKey) else null
         val extensionIdentityMismatch = extensionOnlyCandidate && validatedMime != null &&
             com.infinifolder.mime.MimeRegistry.normalize(validatedMime) != com.infinifolder.mime.MimeRegistry.normalize(extensionMime)
         val extensionValidationFailed = extensionIdentityMismatch && validatedMime != null &&

@@ -103,6 +103,7 @@ class FloatingContainerService : Service() {
     private var floatingBackCallback: Any? = null
     private var selectionMode = false
     private var selectionAllowMultiple = false
+    private var selectionRecursiveAudioDirectories = false
     private var selectionMimeTypes: List<String> = emptyList()
     private var selectionExtensions: List<String> = emptyList()
     private var hideUnsupportedSelectionFiles = false
@@ -137,6 +138,7 @@ class FloatingContainerService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         selectionMode = intent?.getBooleanExtra(EXTRA_SELECTION_MODE, false) == true
         selectionAllowMultiple = intent?.getBooleanExtra(EXTRA_ALLOW_MULTIPLE, false) == true
+        selectionRecursiveAudioDirectories = intent?.getBooleanExtra(EXTRA_ALLOW_RECURSIVE_AUDIO_DIRECTORIES, false) == true
         selectionMimeTypes = intent?.getStringArrayListExtra(EXTRA_SELECTION_MIME_TYPES).orEmpty()
         selectionExtensions = intent?.getStringArrayListExtra(EXTRA_SELECTION_EXTENSIONS).orEmpty()
         hideUnsupportedSelectionFiles = intent?.getBooleanExtra(EXTRA_HIDE_UNSUPPORTED, false) == true
@@ -299,7 +301,9 @@ class FloatingContainerService : Service() {
                         bounds.contains((event.rawX - origin[0]).toInt(), (event.rawY - origin[1]).toInt())
                 }?.let { item ->
                     if (selectionMode) {
-                        if (selectionAllowMultiple && !item.entry.metadata.isDirectory &&
+                        if (selectionAllowMultiple && item.entry.metadata.isDirectory && selectionRecursiveAudioDirectories) {
+                            createRecursiveAudioPlaylist(item.entry)
+                        } else if (selectionAllowMultiple && !item.entry.metadata.isDirectory &&
                             com.infinifolder.storage.LinkResolver.kind(item.entry.metadata) == null) {
                             toggleSelection(item.entry, item.card)
                         }
@@ -710,15 +714,14 @@ class FloatingContainerService : Service() {
         }
     }
 
-    /** Reuse the full browser's persisted, already-filtered Virtual root presentation.
-     * The small fallback covers a first-run selector before MainActivity has rendered
-     * the root once. */
+    /** Preserve the full browser's ordering, then merge in the current virtual-root
+     * destinations so newly added shortcuts also appear in a filtered selector. */
     private fun selectionRootEntries(): List<ResourceEntry> {
         val prefs = getSharedPreferences("browser", MODE_PRIVATE)
         val savedRoot = prefs.getString("floating_selector_virtual_root_v1", null)
-        if (savedRoot != null) runCatching {
+        val savedEntries = if (savedRoot != null) runCatching {
             val rows = org.json.JSONArray(savedRoot)
-            val sharedEntries = buildList {
+            buildList {
                 for (index in 0 until rows.length()) {
                     val row = rows.getJSONObject(index)
                     val uri = Uri.parse(row.getString("uri"))
@@ -737,13 +740,13 @@ class FloatingContainerService : Service() {
                         ref, ResourceMetadata(name, "vnd.android.document/directory", null, null, true), uri))
                 }
             }
-            return sharedEntries
         }.onFailure { error ->
             com.infinifolder.storage.DiagnosticLog.record("floating.selector.root-snapshot.invalid", error = error)
-        }
+        }.getOrNull() else null
 
-        // Bootstrap only: once the full browser has rendered Virtual root, its exact
-        // visible item order and destinations are persisted above and reused here.
+        // Build a live root list as well as reading the saved presentation. The snapshot
+        // preserves the browser's order, while the live list contributes shortcuts added
+        // since the last full-browser render (for example, new virtual locations).
         val result = mutableListOf<ResourceEntry>()
         val seen = mutableSetOf<String>()
         val hidden = prefs.getStringSet("hidden_virtual_root_locations_v1", emptySet()).orEmpty()
@@ -828,7 +831,28 @@ class FloatingContainerService : Service() {
         if (visible("application_public"))
             result += location("application_public", "Application public", "Storage exposed by installed apps")
         if (visible("installed_apps")) addRoot(com.infinifolder.apps.AppsUri.ROOT_URI, "Installed Applications")
-        return result
+
+        val snapshot = savedEntries ?: return result
+        val liveByUri = result.associateBy { it.uri.normalizeScheme().toString() }
+        val merged = ArrayList<ResourceEntry>(snapshot.size + result.size)
+        val included = HashSet<String>(snapshot.size + result.size)
+        snapshot.forEach { saved ->
+            val locationKey = BrowserLocations.find(saved.uri)?.key
+            if (locationKey != null && locationKey in hidden) return@forEach
+            val key = saved.uri.normalizeScheme().toString()
+            if (included.add(key)) {
+                // Prefer the freshly resolved provider reference, retaining the name
+                // from the browser snapshot when it carries a user-facing label.
+                val current = liveByUri[key]
+                merged += if (current != null && saved.metadata.name.isNotBlank()) {
+                    current.copy(metadata = current.metadata.copy(name = saved.metadata.name))
+                } else current ?: saved
+            }
+        }
+        result.forEach { current ->
+            if (included.add(current.uri.normalizeScheme().toString())) merged += current
+        }
+        return merged
     }
 
     /** This is the same AppDocumentSources discovery used by the full browser's Application public page. */
@@ -906,7 +930,11 @@ class FloatingContainerService : Service() {
         val visibleRows = if (selectionMode && current == com.infinifolder.storage.ContainerLinksProvider.ROOT)
             entries.filterNot { it.metadata.isHidden }
         else FileViewGrid.sortedEntries(entries, showHidden = false, sortKey, descending)
-        val rows = if (selectionMode && hideUnsupportedSelectionFiles) visibleRows.filter(::isVisibleInFilteredSelection)
+        // Virtual-root entries are navigation shortcuts (storage, network,
+        // applications, and other providers), not candidate media files. Keep
+        // every shortcut visible so a filtered viewer can still reach its sources.
+        val rows = if (selectionMode && hideUnsupportedSelectionFiles && current != com.infinifolder.storage.ContainerLinksProvider.ROOT)
+            visibleRows.filter(::isVisibleInFilteredSelection)
             else visibleRows
         val makeCard: (ResourceEntry) -> View = { entry ->
             val card = FileEntryCard(this, entry, true, iconDp, ThemeManager.activeTheme.isDark)
@@ -982,7 +1010,9 @@ class FloatingContainerService : Service() {
             }
             card.container.setOnLongClickListener {
                 if (selectionMode) {
-                    if (selectionAllowMultiple && !entry.metadata.isDirectory &&
+                    if (selectionAllowMultiple && entry.metadata.isDirectory && selectionRecursiveAudioDirectories) {
+                        createRecursiveAudioPlaylist(entry)
+                    } else if (selectionAllowMultiple && !entry.metadata.isDirectory &&
                         com.infinifolder.storage.LinkResolver.kind(entry.metadata) == null) toggleSelection(entry, card.container)
                     true
                 } else startLauncherDrag(dragItem)
@@ -1080,6 +1110,63 @@ class FloatingContainerService : Service() {
         drag.observer?.send(HomeShortcutDragActivity.DRAG_ENDED, Bundle.EMPTY)
     }
 
+    /** Navigate to a synthetic browser location referenced by a shortcut. */
+    private fun navigateSelectionLocation(uri: Uri, name: String): Boolean {
+        val location = BrowserLocations.find(uri) ?: return false
+        when (location.key) {
+            "application_public" -> show(uri, name)
+            "partial_downloads" -> show(com.infinifolder.storage.PartialDownloadsProvider.ROOT, name)
+            "external_link_history" -> show(com.infinifolder.storage.RecentExternalLinksProvider.ROOT, name)
+            "installed_apps" -> show(com.infinifolder.apps.AppsUri.ROOT_URI, name)
+            "virtual-root" -> show(com.infinifolder.storage.ContainerLinksProvider.ROOT, name)
+            "internal_shared" -> if (runtime.local.hasAccess()) show(runtime.local.rootUri, name)
+                else fallbackSelection("This location needs access through InfiniFolder's full browser")
+            "pin_board" -> if (runtime.local.hasAccess()) {
+                val pinBoardUri = runtime.local.uriFor(java.io.File(runtime.local.store.root, PinBoardDirectory.RELATIVE_PATH))
+                show(pinBoardUri, name)
+            } else fallbackSelection("This location needs access through InfiniFolder's full browser")
+            else -> return false
+        }
+        return true
+    }
+
+    /** Resolve links off the UI thread; SFTP and document providers may perform I/O in resolve(). */
+    private fun activateSelectionLink(entry: ResourceEntry) {
+        val generation = loadGeneration
+        Thread {
+            val resolved = com.infinifolder.storage.LinkResolver.resolve(runtime.provider, entry)
+            onMain {
+                if (!selectionMode || windowView == null || generation != loadGeneration) return@onMain
+                when (resolved) {
+                    is ProviderResult.Success -> {
+                        val target = resolved.value
+                        val targetName = target.name?.takeIf { it.isNotBlank() } ?: entry.metadata.name
+                        if (navigateSelectionLocation(target.uri, targetName)) return@onMain
+                        val targetEntry = target.entry
+                        val namedTarget = targetEntry?.let { actual ->
+                            actual.copy(metadata = actual.metadata.copy(name = targetName))
+                        }
+                        when {
+                            namedTarget == null -> Toast.makeText(this, "This link does not resolve to a readable file", Toast.LENGTH_SHORT).show()
+                            namedTarget.metadata.isDirectory -> show(namedTarget.uri, targetName)
+                            !com.infinifolder.apps.AppsUri.isAppUri(target.uri) &&
+                                !ArchiveFormats.isPackagedFormat(namedTarget.metadata.name, namedTarget.metadata.mimeType) &&
+                                (ArchiveFormats.isArchive(namedTarget.metadata.name, namedTarget.metadata.mimeType) ||
+                                    ArchiveFormats.isDiscImage(namedTarget.metadata.name, namedTarget.metadata.mimeType)) -> {
+                                val mounted = ArchiveUri.toArchiveUri(namedTarget.uri)
+                                if (runtime.provider.refForUri(mounted) != null) show(mounted, targetName)
+                                else selectEntry(namedTarget)
+                            }
+                            else -> selectEntry(namedTarget)
+                        }
+                    }
+                    is ProviderResult.Failure -> Toast.makeText(this, resolved.message, Toast.LENGTH_SHORT).show()
+                    is ProviderResult.Unsupported -> Toast.makeText(this, "This link cannot be opened", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }.apply { name = "FloatingSelectionLinkResolve"; priority = Thread.NORM_PRIORITY }.start()
+    }
+
     private fun activate(entry: ResourceEntry) {
         if (selectionMode) {
             val location = BrowserLocations.find(entry.uri)
@@ -1100,32 +1187,7 @@ class FloatingContainerService : Service() {
                 }
             } else if (entry.metadata.isDirectory) show(entry.uri, entry.metadata.name)
             else if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null) {
-                when (val resolved = com.infinifolder.storage.LinkResolver.resolve(runtime.provider, entry)) {
-                    is ProviderResult.Success -> {
-                        val target = resolved.value
-                        val targetEntry = target.entry
-                        val namedTarget = targetEntry?.let { actual ->
-                            actual.copy(metadata = actual.metadata.copy(
-                                name = target.name?.takeIf { it.isNotBlank() } ?: actual.metadata.name
-                            ))
-                        }
-                        when {
-                            namedTarget == null -> Toast.makeText(this, "This link does not resolve to a readable file", Toast.LENGTH_SHORT).show()
-                            namedTarget.metadata.isDirectory -> show(namedTarget.uri, target.name)
-                            !com.infinifolder.apps.AppsUri.isAppUri(target.uri) &&
-                                !ArchiveFormats.isPackagedFormat(namedTarget.metadata.name, namedTarget.metadata.mimeType) &&
-                                (ArchiveFormats.isArchive(namedTarget.metadata.name, namedTarget.metadata.mimeType) ||
-                                    ArchiveFormats.isDiscImage(namedTarget.metadata.name, namedTarget.metadata.mimeType)) -> {
-                                val mounted = ArchiveUri.toArchiveUri(namedTarget.uri)
-                                if (runtime.provider.refForUri(mounted) != null) show(mounted, target.name)
-                                else selectEntry(namedTarget)
-                            }
-                            else -> selectEntry(namedTarget)
-                        }
-                    }
-                    is ProviderResult.Failure -> Toast.makeText(this, resolved.message, Toast.LENGTH_SHORT).show()
-                    is ProviderResult.Unsupported -> Toast.makeText(this, "This link cannot be opened", Toast.LENGTH_SHORT).show()
-                }
+                activateSelectionLink(entry)
             } else selectEntry(entry)
             return
         }
@@ -1178,12 +1240,11 @@ class FloatingContainerService : Service() {
         normalActionView?.visibility = if (selectionMode) View.GONE else View.VISIBLE
     }
 
-    private fun completeMultipleSelection() {
-        if (selectedEntries.isEmpty()) {
+    private fun completeMultipleSelection(entries: List<ResourceEntry> = selectedEntries.values.toList()) {
+        if (entries.isEmpty()) {
             Toast.makeText(this, "Select at least one file", Toast.LENGTH_SHORT).show()
             return
         }
-        val entries = selectedEntries.values.toList()
         val result = Bundle().apply {
             putStringArrayList(FileSelectionContract.EXTRA_RESULT_URIS, ArrayList(entries.map { it.uri.toString() }))
             putStringArrayList(FileSelectionContract.EXTRA_RESULT_NAMES, ArrayList(entries.map { it.metadata.name }))
@@ -1197,6 +1258,61 @@ class FloatingContainerService : Service() {
         finishSelection(FileSelectionContract.RESULT_SELECTED, result)
         removeWindow()
         stopSelf()
+    }
+
+    /** Long-pressing a folder in an audio multi-select request creates a recursive playlist. */
+    private fun createRecursiveAudioPlaylist(root: ResourceEntry) {
+        if (!selectionMode || !selectionAllowMultiple || !selectionRecursiveAudioDirectories) return
+        Toast.makeText(this, "Collecting audio from ${root.metadata.name}…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val found = linkedMapOf<String, ResourceEntry>()
+            val visited = hashSetOf<com.infinifolder.model.ResourceRef>()
+            val queue = ArrayDeque<Pair<ResourceEntry, Int>>()
+            queue.add(root to 0)
+            var foldersRead = 0
+            var foldersFailed = 0
+            var truncated = false
+            while (queue.isNotEmpty() && selectionMode && !Thread.currentThread().isInterrupted) {
+                val (folder, depth) = queue.removeFirst()
+                if (depth > 128 || !visited.add(folder.ref)) { truncated = true; continue }
+                if (++foldersRead > 50_000) { truncated = true; break }
+                when (val result = runtime.provider.list(folder.ref)) {
+                    is ProviderResult.Success -> {
+                        if (result.isLoading) foldersFailed++
+                        for (entry in result.value) {
+                            if (found.size >= 50_000) { truncated = true; break }
+                            if (entry.metadata.isDirectory && !entry.metadata.isSymbolicLink && !entry.metadata.isBrokenLink) {
+                                queue.add(entry to depth + 1)
+                            } else if (!entry.metadata.isDirectory && !entry.metadata.isSymbolicLink &&
+                                com.infinifolder.storage.LinkResolver.kind(entry.metadata) == null &&
+                                !ArchiveFormats.isPlaylist(entry.metadata.name, entry.metadata.mimeType)) {
+                                val mime = com.infinifolder.mime.MimeRegistry.effective(
+                                    entry.metadata.name, entry.metadata.mimeType.ifBlank { "application/octet-stream" })
+                                if (matchesSelectionFormat(entry, mime)) found.putIfAbsent(entry.uri.toString(), entry)
+                            }
+                        }
+                    }
+                    is ProviderResult.Failure -> foldersFailed++
+                    is ProviderResult.Unsupported -> foldersFailed++
+                }
+                if (truncated) break
+            }
+            onMain {
+                if (!selectionMode || selectionReceiver == null) return@onMain
+                if (found.isEmpty()) {
+                    Toast.makeText(this, "No supported audio files were found", Toast.LENGTH_LONG).show()
+                    return@onMain
+                }
+                if (foldersFailed > 0 || truncated) {
+                    val detail = buildList {
+                        if (foldersFailed > 0) add("$foldersFailed folders could not be fully read")
+                        if (truncated) add("scan limit reached")
+                    }.joinToString("; ")
+                    Toast.makeText(this, "Using ${found.size} files; $detail", Toast.LENGTH_LONG).show()
+                }
+                completeMultipleSelection(found.values.toList())
+            }
+        }.apply { name = "InfiniSelectAudioFolderScan"; priority = Thread.NORM_PRIORITY }.start()
     }
 
     private fun matchesMime(pattern: String, mime: String): Boolean {
@@ -1257,6 +1373,7 @@ class FloatingContainerService : Service() {
         selectionReceiver = null
         selectionMode = false
         selectionAllowMultiple = false
+        selectionRecursiveAudioDirectories = false
         selectionMimeTypes = emptyList()
         selectionExtensions = emptyList()
         hideUnsupportedSelectionFiles = false
@@ -1350,6 +1467,7 @@ class FloatingContainerService : Service() {
         const val EXTRA_DISPLAY_NAME = "com.infinifolder.overlay.DISPLAY_NAME"
         const val EXTRA_SELECTION_MODE = "com.infinifolder.overlay.SELECTION_MODE"
         const val EXTRA_ALLOW_MULTIPLE = "com.infinifolder.overlay.ALLOW_MULTIPLE"
+        const val EXTRA_ALLOW_RECURSIVE_AUDIO_DIRECTORIES = "com.infinifolder.overlay.ALLOW_RECURSIVE_AUDIO_DIRECTORIES"
         const val EXTRA_SELECTION_RECEIVER = "com.infinifolder.overlay.SELECTION_RECEIVER"
         const val EXTRA_SELECTION_MIME_TYPES = "com.infinifolder.overlay.SELECTION_MIME_TYPES"
         const val EXTRA_SELECTION_EXTENSIONS = "com.infinifolder.overlay.SELECTION_EXTENSIONS"

@@ -18,6 +18,7 @@ dependencies {
     implementation("androidx.customview:customview:1.1.0")
     api("androidx.core:core:1.15.0")
     api("io.github.gretchycat.libinfinisound:audio-processing:0.2.0")
+    implementation("io.github.gretchycat.libinfiniselect:select-android:0.1.0")
     api(project(":viewer-common"))
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

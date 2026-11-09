@@ -33,7 +33,7 @@ Kotlin Android application `com.infinifolder`: minSdk 26, compileSdk 36, targetS
 bash build.sh
 ```
 
-The script configures native AAPT2 on Termux, assembles the debug APK and invokes `xdg-open` after success. A failed Gradle invocation gets one retry after stopping daemons, using `--no-daemon`; a second failure stops the script. Output: `app/build/outputs/apk/debug/app-debug.apk`. Elsewhere use `gradle :app:assembleDebug`; on ARM Termux the native AAPT2 override may be required. Independent applications are documented in [viewer modules](docs/viewer-modules.md).
+The script configures native AAPT2 on Termux, builds the selected debug APKs and invokes `xdg-open` after success. Use `bash build.sh --only infinimedia` to build and open only InfiniMedia; `--no-open` skips the installer handoff. A failed Gradle invocation gets one retry after stopping daemons, using `--no-daemon`; a second failure stops the script. Elsewhere use `gradle :app:assembleDebug`; on ARM Termux the native AAPT2 override may be required. Independent applications are documented in [viewer modules](docs/viewer-modules.md).
 
 ### Audio library checkout
 

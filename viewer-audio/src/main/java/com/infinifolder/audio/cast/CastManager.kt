@@ -29,7 +29,7 @@ object CastManager {
     private var castContext: CastContext? = null
     private var service: AudioPlayerService? = null
     private var server: CastMediaServer? = null
-    private var remote: RemoteMediaClient? = null
+    @Volatile private var remote: RemoteMediaClient? = null
     @Volatile var isCasting = false
         private set
     @Volatile var isRemotePlaying = false
@@ -40,6 +40,8 @@ object CastManager {
         private set
     @Volatile var deviceName: String? = null
         private set
+    /** A connected receiver can be ready before there is a track to send. */
+    val hasConnectedSession: Boolean get() = remote != null
     private var lastLoadedKey: String? = null
     private var completedKey: String? = null
     private var pendingLoad = false
@@ -189,7 +191,13 @@ object CastManager {
             player.startCastMetadataScan()
             updateListeners()
         } else {
-            val track = player.currentTrack ?: return
+            val track = player.currentTrack
+            if (track == null) {
+                isCasting = false
+                isRemotePlaying = false
+                updateListeners()
+                return
+            }
             val wasPlaying = player.isPlaying
             val position = player.currentPosition.toLong()
             resumeAfterFailure = wasPlaying
@@ -527,7 +535,9 @@ object CastManager {
     }
     fun onTrackChanged(track: AudioTrack?) {
         if (track == null) return
-        main.post { if (isCasting) load(track, 0, true, initial = false) }
+        main.post {
+            if (remote != null) load(track, 0, true, initial = !isCasting)
+        }
     }
     fun play() { main.post { remote?.play() } }
     fun pause() { main.post { remote?.pause() } }

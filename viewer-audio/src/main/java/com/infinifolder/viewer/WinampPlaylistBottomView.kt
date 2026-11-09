@@ -9,6 +9,7 @@ import android.graphics.Rect
 import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
+import android.view.MotionEvent
 import com.infinifolder.theme.ThemeManager
 import java.util.Locale
 
@@ -30,6 +31,9 @@ class WinampPlaylistBottomView @JvmOverloads constructor(
 
     var totalDurationMs: Long = 0L
     var currentTrackDurationMs: Long = 0L
+    var onAddToPlaylist: (() -> Unit)? = null
+    var onRemoveFromPlaylist: (() -> Unit)? = null
+    private var pressedControl = 0
 
     private var pixelScaledBitmap: Bitmap? = null
     private var pixelScaledCanvas: Canvas? = null
@@ -54,6 +58,46 @@ class WinampPlaylistBottomView @JvmOverloads constructor(
 
     private val srcRect = Rect()
     private val dstRect = Rect()
+
+    init {
+        isClickable = true
+        isFocusable = true
+        contentDescription = "Playlist controls. Add and remove buttons are on the left."
+        setOnTouchListener { _, event ->
+            val nativeX = if (width > 0) event.x * NATIVE_WIDTH / width else -1f
+            val control = when {
+                nativeX in 0f..42f -> 1 // The + button in PLEDIT.BMP.
+                nativeX in 43f..84f -> 2 // The − button in PLEDIT.BMP.
+                else -> 0
+            }
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    if (control == 0) false else { pressedControl = control; true }
+                }
+                MotionEvent.ACTION_UP -> {
+                    val pressed = pressedControl
+                    pressedControl = 0
+                    if (pressed == 0) return@setOnTouchListener false
+                    if (pressed == control) {
+                        if (control == 1) onAddToPlaylist?.invoke()
+                        else onRemoveFromPlaylist?.invoke()
+                    }
+                    performClick()
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    pressedControl = 0
+                    true
+                }
+                else -> pressedControl != 0
+            }
+        }
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
 
     private fun formatMinSec(ms: Long): String {
         val totalSecs = (ms / 1000).coerceAtLeast(0)

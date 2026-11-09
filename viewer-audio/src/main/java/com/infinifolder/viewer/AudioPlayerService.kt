@@ -155,6 +155,7 @@ class AudioPlayerService : Service() {
 
     val playlist = mutableListOf<AudioTrack>()
     private val originalPlaylist = mutableListOf<AudioTrack>()
+    private var hasManualPlaylistOrder = false
     var currentIndex: Int = -1
         private set
     var isShuffleEnabled: Boolean = false
@@ -321,6 +322,7 @@ class AudioPlayerService : Service() {
         synchronized(playlist) {
             originalPlaylist.clear(); originalPlaylist.addAll(expanded)
             playlist.clear(); playlist.addAll(expanded)
+            hasManualPlaylistOrder = false
             currentIndex = if (playlist.isEmpty()) -1 else effectiveIndex
             if (isShuffleEnabled && currentIndex >= 0) {
                 val initial = playlist.removeAt(currentIndex)
@@ -394,8 +396,9 @@ class AudioPlayerService : Service() {
             val empty = playlist.isEmpty()
             playlist.addAll(tracks)
             originalPlaylist.addAll(tracks)
-            if (!isShuffleEnabled) sortPlaylistLocked()
-            else if (empty) playlist.shuffle()
+            // Enqueue is an append operation: preserve the active queue's order and
+            // place the submitted batch after its current end. Initial playlist loads
+            // still apply sorting/shuffle policy in setPlaylist().
             if (empty) currentIndex = 0
             empty
         }
@@ -405,6 +408,64 @@ class AudioPlayerService : Service() {
             loadAndPlayCurrent()
         } else if (isPlaying) startBackgroundMetadataScanner(forceRestart = true)
         if (!wasEmpty) scheduleGapless()
+    }
+
+    /** Remove one visible queue entry without disturbing the active track unless it was selected. */
+    fun removePlaylistItem(index: Int): Boolean {
+        invalidateGapless()
+        val removedCurrent: Boolean
+        val isEmpty: Boolean
+        synchronized(playlist) {
+            if (index !in playlist.indices) return false
+            val removed = playlist.removeAt(index)
+            val originalIndex = originalPlaylist.indexOfFirst { sameTrack(it, removed) }
+            if (originalIndex >= 0) originalPlaylist.removeAt(originalIndex)
+            removedCurrent = index == currentIndex
+            if (playlist.isEmpty()) {
+                currentIndex = -1
+            } else if (index < currentIndex) {
+                currentIndex--
+            } else if (removedCurrent) {
+                currentIndex = index.coerceAtMost(playlist.lastIndex)
+            }
+            isEmpty = playlist.isEmpty()
+        }
+        if (isEmpty) {
+            notifyPlaylistUpdated()
+            stopPlayback()
+        } else if (removedCurrent) {
+            loadAndPlayCurrent()
+        } else {
+            notifyPlaylistUpdated()
+            if (isPlaying) startBackgroundMetadataScanner(forceRestart = true)
+            scheduleGapless()
+        }
+        return true
+    }
+
+    /** Move a queue entry to its dropped position without restarting the active track. */
+    fun movePlaylistItem(fromIndex: Int, toIndex: Int): Boolean {
+        if (fromIndex == toIndex) return false
+        if (!synchronized(playlist) { fromIndex in playlist.indices && toIndex in playlist.indices }) return false
+        invalidateGapless()
+        synchronized(playlist) {
+            if (fromIndex !in playlist.indices || toIndex !in playlist.indices) return false
+            val oldCurrent = currentIndex
+            val moved = playlist.removeAt(fromIndex)
+            playlist.add(toIndex, moved)
+            currentIndex = when {
+                oldCurrent == fromIndex -> toIndex
+                fromIndex < oldCurrent && toIndex >= oldCurrent -> oldCurrent - 1
+                fromIndex > oldCurrent && toIndex <= oldCurrent -> oldCurrent + 1
+                else -> oldCurrent
+            }
+            originalPlaylist.clear()
+            originalPlaylist.addAll(playlist)
+            hasManualPlaylistOrder = true
+        }
+        notifyPlaylistUpdated()
+        scheduleGapless()
+        return true
     }
 
     private fun loadPlaybackPrefs() {
@@ -431,6 +492,12 @@ class AudioPlayerService : Service() {
                 playlist.shuffle()
                 if (selected != null) { playlist.add(0, selected); currentIndex = 0 }
                 else currentIndex = if (playlist.isEmpty()) -1 else 0
+            } else if (hasManualPlaylistOrder) {
+                val active = playlist.getOrNull(currentIndex)
+                playlist.clear()
+                playlist.addAll(originalPlaylist)
+                currentIndex = active?.let { selected -> playlist.indexOfFirst { sameTrack(it, selected) } }
+                    ?.takeIf { it >= 0 } ?: if (playlist.isEmpty()) -1 else 0
             } else sortPlaylistLocked()
         }
         notifyPlaylistUpdated()
@@ -772,7 +839,7 @@ class AudioPlayerService : Service() {
         val track = currentTrack ?: return
         analysisSource = null
         notifyAudioSession(0)
-        if (com.infinifolder.audio.cast.CastManager.isCasting) {
+        if (com.infinifolder.audio.cast.CastManager.isCasting || com.infinifolder.audio.cast.CastManager.hasConnectedSession) {
             loadCounter.incrementAndGet()
             isLoading = false
             notifyTrackChanged(track)

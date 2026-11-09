@@ -3,6 +3,7 @@ package com.infinifolder.viewer
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
+import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -14,17 +15,22 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.view.Choreographer
+import android.view.DragEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
@@ -35,7 +41,14 @@ import com.infinifolder.theme.AppThemeId
 import com.infinifolder.theme.ThemeChangeListener
 import com.infinifolder.theme.ThemeColors
 import com.infinifolder.theme.ThemeManager
+import io.github.gretchycat.infiniselect.InfiniSelect
+import io.github.gretchycat.infiniselect.MultipleSelectionDelivery
+import io.github.gretchycat.infiniselect.OpenRequest
+import io.github.gretchycat.infiniselect.SelectionMetadataFormat
+import io.github.gretchycat.infinistream.Operations
 import java.util.Locale
+
+private const val REQUEST_OPEN_AUDIO = 29163
 
 class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeListener, DebugDumpObserver, CastManager.Listener {
 
@@ -51,6 +64,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     private lateinit var themeBtn: TextView
     private lateinit var soundFontBtn: TextView
     private lateinit var playlistBtn: TextView
+    private lateinit var addToPlaylistBtn: TextView
     private lateinit var castBtn: TextView
     private lateinit var openExtBtn: TextView
 
@@ -113,6 +127,9 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     private lateinit var dockedSpeedBtn: Button
     private lateinit var dockedDiagnosticsBtn: Button
     private var dockedCastBtn: Button? = null
+    private var dockedAddToPlaylistBtn: Button? = null
+    private var dockedRemoveFromPlaylistBtn: Button? = null
+    private var selectedPlaylistIndex = -1
     private lateinit var dockedPlaylistHeader: TextView
     private lateinit var dockedPlaylistFooter: TextView
     private lateinit var dockedPlaylistItems: LinearLayout
@@ -234,7 +251,10 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     }
 
     private fun handleIntent(intent: Intent?) {
-        val targetUri = intent?.data ?: intent?.getStringExtra("uri")?.let { Uri.parse(it) } ?: return
+        val targetUri = intent?.data ?: intent?.getStringExtra("uri")?.let { Uri.parse(it) }
+        if (targetUri == null) {
+            return
+        }
         val generation = playlistLoadGeneration.incrementAndGet()
         val displayName = intent?.getStringExtra("displayName") ?: targetUri.lastPathSegment ?: "Audio Track"
 
@@ -319,6 +339,112 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                     }
                 }
                 applyPlaylistWhenServiceReady(0)
+            }
+        }.start()
+    }
+
+    private fun openAudioSelection() {
+        if (isFinishing || isDestroyed) return
+        val formats = runCatching { ViewerComponents.registry.supportedFormats(Operations.VIEW).map { it.format } }
+            .getOrDefault(emptyList())
+        val mimes = (listOf("audio/*") + formats.flatMap { it.mimeTypes })
+            .filter { it.isNotBlank() && it != "*/*" }.distinct().sorted()
+        val extensions = formats.flatMap { it.extensions }
+            .map { it.removePrefix(".").lowercase(Locale.ROOT) }.filter(String::isNotBlank).distinct().sorted()
+        InfiniSelect.open(this, OpenRequest(
+            clientId = "infinimedia",
+            displayName = "InfiniMedia",
+            mimeTypes = mimes.ifEmpty { listOf("audio/*") },
+            allowMultiple = true,
+            supportedExtensions = extensions,
+            hideUnsupported = extensions.isNotEmpty(),
+            multipleSelectionDelivery = MultipleSelectionDelivery.JSPF,
+            metadataFormat = SelectionMetadataFormat.XML,
+            allowRecursiveAudioDirectories = true,
+        ), REQUEST_OPEN_AUDIO)
+    }
+
+    private fun showMediaCategoryDialog() {
+        val categories = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(4), dp(20), dp(4))
+        }
+        val audio = android.widget.CheckBox(this).apply {
+            text = "Audio"
+            isChecked = true
+        }
+        val video = android.widget.CheckBox(this).apply {
+            text = "Video (coming later)"
+            isEnabled = false
+        }
+        val image = android.widget.CheckBox(this).apply {
+            text = "Image (coming later)"
+            isEnabled = false
+        }
+        categories.addView(audio)
+        categories.addView(video)
+        categories.addView(image)
+        ThemeManager.createDialogBuilder(this)
+            .setTitle("Add media to playlist")
+            .setView(categories)
+            .setPositiveButton("Choose files") { _, _ ->
+                if (audio.isChecked) openAudioSelection()
+                else Toast.makeText(this, "Select a supported media type", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Add the chooser result to the existing queue; it never replaces the active playlist. */
+    private fun enqueueSelection(data: Intent) {
+        val selection = runCatching { InfiniSelect.readResult(this, data) }.getOrNull()
+        val items = selection?.items.orEmpty()
+        if (items.isEmpty() && selection?.playlistUri == null) {
+            Toast.makeText(this, "No media files were selected", Toast.LENGTH_SHORT).show()
+            return
+        }
+        Thread {
+            val tracks = mutableListOf<AudioTrack>()
+            val selectedPlaylist = selection?.playlistUri
+            if (selectedPlaylist != null) {
+                // A playlist file's order is authored content. Keep its track order
+                // intact when appending it to the current queue.
+                tracks += PlaylistExpander.expandPlaylist(this, selectedPlaylist)
+            } else {
+                // Explicit multi-selects are presented in alphabetical order, so keep
+                // that order as one contiguous batch at the end of the current queue.
+                for (item in items.sortedBy { it.name.lowercase(java.util.Locale.ROOT) }) {
+                    if (PlaylistExpander.isPlaylist(this, item.uri, item.name, item.mimeType)) {
+                        tracks += PlaylistExpander.expandPlaylist(this, item.uri)
+                    } else {
+                        tracks += AudioTrack(uri = item.uri, title = item.name, fileName = item.name)
+                    }
+                }
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (tracks.isEmpty()) {
+                    Toast.makeText(this, "No playable audio was found", Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                val serviceIntent = Intent(this, AudioPlayerService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent)
+                else startService(serviceIntent)
+                fun addWhenReady(attempt: Int) {
+                    if (isFinishing || isDestroyed) return
+                    val service = AudioPlayerService.currentService
+                    if (service == null) {
+                        if (attempt < 20) window.decorView.postDelayed({ addWhenReady(attempt + 1) }, 100)
+                        else Toast.makeText(this, "The media queue could not be started", Toast.LENGTH_SHORT).show()
+                        return
+                    }
+                    service.enqueueAll(tracks)
+                    if (selectedPlaylistIndex !in service.playlist.indices) selectedPlaylistIndex = service.currentIndex
+                    Toast.makeText(this, "Added ${tracks.size} ${if (tracks.size == 1) "track" else "tracks"}", Toast.LENGTH_SHORT).show()
+                    updateDockedPlaylist()
+                    refreshPlaylistDialog()
+                }
+                addWhenReady(0)
             }
         }.start()
     }
@@ -459,6 +585,19 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             setOnClickListener { showPlaylistDialog() }
         }
         topBar.addView(playlistBtn, LinearLayout.LayoutParams(dp(38), dp(38)))
+
+        addToPlaylistBtn = TextView(this).apply {
+            text = "+"
+            textSize = 25f
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Add to playlist"
+            if (selectableRes != 0) setBackgroundResource(selectableRes)
+            setOnClickListener { showMediaCategoryDialog() }
+        }
+        topBar.addView(addToPlaylistBtn, LinearLayout.LayoutParams(dp(38), dp(38)))
 
         castBtn = TextView(this).apply {
             text = "📡"
@@ -1168,6 +1307,31 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             setOnClickListener { showCastDialog() }
         }
         toolRow.addView(dockedCastBtn, LinearLayout.LayoutParams(-2, dp(32)))
+
+        dockedAddToPlaylistBtn = Button(this).apply {
+            formatCompactButton(this, "+ Add", textSizeSp = 11f, padH = 8, padV = 3)
+            contentDescription = "Add to playlist"
+            setOnClickListener { showMediaCategoryDialog() }
+        }
+        toolRow.addView(dockedAddToPlaylistBtn, LinearLayout.LayoutParams(-2, dp(32)).apply {
+            marginStart = dp(6)
+        })
+
+        dockedRemoveFromPlaylistBtn = Button(this).apply {
+            formatCompactButton(this, "− Remove", textSizeSp = 11f, padH = 8, padV = 3)
+            contentDescription = "Remove selected track from playlist"
+            isEnabled = false
+            setOnClickListener {
+                val service = AudioPlayerService.currentService ?: return@setOnClickListener
+                if (service.removePlaylistItem(selectedPlaylistIndex)) {
+                    selectedPlaylistIndex = service.currentIndex
+                    updateDockedPlaylist()
+                }
+            }
+        }
+        toolRow.addView(dockedRemoveFromPlaylistBtn, LinearLayout.LayoutParams(-2, dp(32)).apply {
+            marginStart = dp(6)
+        })
         dockedCenterCol.addView(dockedToolScroll)
 
         // The ScrollView belongs strictly to JUST the playlist items
@@ -1205,6 +1369,8 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         // 4. Authentic Playlist Window Bottom Bar (275x38 scaled to full width)
         dockedBottomBarView = WinampPlaylistBottomView(this).apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2)
+            onAddToPlaylist = { showMediaCategoryDialog() }
+            onRemoveFromPlaylist = { removeSelectedPlaylistItem() }
         }
         dockedSubWindow.addView(dockedBottomBarView)
     }
@@ -1236,7 +1402,10 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         detailsBody.addView(detailsScroll, LinearLayout.LayoutParams(0, -1, 1f))
         detailsBody.addView(WinampPlaylistBorderView(this, isLeft = false), LinearLayout.LayoutParams(-2, -1))
         detailsWindow.addView(detailsBody, LinearLayout.LayoutParams(-1, 0, 1f))
-        detailsBottom = WinampPlaylistBottomView(this)
+        detailsBottom = WinampPlaylistBottomView(this).apply {
+            onAddToPlaylist = { showMediaCategoryDialog() }
+            onRemoveFromPlaylist = { removeSelectedPlaylistItem() }
+        }
         detailsWindow.addView(detailsBottom, LinearLayout.LayoutParams(-1, -2))
     }
 
@@ -1270,12 +1439,14 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         }
     }
 
-    private fun updateDockedPlaylist() {
+    private fun updateDockedPlaylist(forceRebuild: Boolean = false) {
         if (!::dockedPlaylistItems.isInitialized) return
         val service = AudioPlayerService.currentService ?: return
         val theme = ThemeManager.getAudioPlayerTheme(this)
         val list = synchronized(service.playlist) { ArrayList(service.playlist) }
         val curIdx = service.currentIndex
+        if (selectedPlaylistIndex !in list.indices) selectedPlaylistIndex = curIdx.takeIf { it in list.indices } ?: -1
+        dockedRemoveFromPlaylistBtn?.isEnabled = selectedPlaylistIndex in list.indices
         val currentTrack = list.getOrNull(curIdx)
         val currentTrackKey = currentTrack?.let {
             "$curIdx:${it.uri}:${it.startByte}:${it.lengthBytes}"
@@ -1287,7 +1458,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             if (track.durationMs > 0L) totalMs += track.durationMs
         }
 
-        if (dockedPlaylistItems.childCount == list.size) {
+        if (!forceRebuild && dockedPlaylistItems.childCount == list.size) {
             for ((index, track) in list.withIndex()) {
                 val row = dockedPlaylistItems.getChildAt(index) as? LinearLayout ?: continue
                 val isCurrent = (index == curIdx)
@@ -1318,13 +1489,41 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
                     setPadding(dp(8), dp(4), dp(8), dp(4))
+                    contentDescription = "${track.title}. Hold and move to reorder; hold and release for track options."
                     isClickable = true
                     isFocusable = true
                     setBackgroundColor(if (isCurrent) theme.selectionBackground else Color.TRANSPARENT)
                     setOnClickListener {
+                        selectedPlaylistIndex = index
                         service.jumpTo(index)
+                        updateDockedPlaylist()
+                    }
+                    setOnDragListener { _, event ->
+                        val isCurrentRow = index == (AudioPlayerService.currentService?.currentIndex ?: -1)
+                        val restingColor = if (isCurrentRow) theme.selectionBackground else Color.TRANSPARENT
+                        when (event.action) {
+                            DragEvent.ACTION_DRAG_STARTED -> event.localState is Int
+                            DragEvent.ACTION_DRAG_ENTERED -> {
+                                setBackgroundColor(theme.selectionBackground)
+                                true
+                            }
+                            DragEvent.ACTION_DRAG_LOCATION -> true
+                            DragEvent.ACTION_DRAG_EXITED,
+                            DragEvent.ACTION_DRAG_ENDED -> {
+                                setBackgroundColor(restingColor)
+                                true
+                            }
+                            DragEvent.ACTION_DROP -> {
+                                setBackgroundColor(restingColor)
+                                val from = event.localState as? Int
+                                if (from != null) reorderPlaylistItem(from, index)
+                                true
+                            }
+                            else -> false
+                        }
                     }
                 }
+                installPlaylistGesture(row, index)
 
                 val numText = TextView(this).apply {
                     text = String.format("%2d. ", index + 1)
@@ -1446,6 +1645,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         themeBtn.setTextColor(barText)
         soundFontBtn.setTextColor(barText)
         playlistBtn.setTextColor(barText)
+        addToPlaylistBtn.setTextColor(barText)
         castBtn.setTextColor(barText)
         openExtBtn.setTextColor(barSubText)
 
@@ -1577,6 +1777,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         themeBtn.setTextColor(theme.textPrimary)
         soundFontBtn.setTextColor(theme.textPrimary)
         playlistBtn.setTextColor(theme.textPrimary)
+        addToPlaylistBtn.setTextColor(theme.textPrimary)
         openExtBtn.setTextColor(theme.textSecondary)
 
         if (isWinamp) {
@@ -1673,7 +1874,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                 intArrayOf(theme.toolbarBorder, theme.toolbarBackground)).apply {
                 setStroke(dp(1).coerceAtLeast(1), theme.cardStroke)
             }
-            listOf(backBtn, headerText, themeBtn, soundFontBtn, playlistBtn, castBtn, openExtBtn).forEach {
+            listOf(backBtn, headerText, themeBtn, soundFontBtn, playlistBtn, addToPlaylistBtn, castBtn, openExtBtn).forEach {
                 it.setTextColor(theme.textPrimary)
             }
             headerText.setOnClickListener { showPlaylistDialog() }
@@ -1817,6 +2018,12 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     @Deprecated("Activity result API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_OPEN_AUDIO) {
+            if (resultCode == Activity.RESULT_OK && data != null) {
+                enqueueSelection(data)
+            }
+            return
+        }
         if (requestCode == 29161 && resultCode == Activity.RESULT_OK) data?.data?.let { importAudioSkin(it) }
         if (requestCode == 29162 && resultCode == Activity.RESULT_OK) data?.data?.let { importMidiSoundFont(it) }
     }
@@ -2186,14 +2393,35 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     private fun showPlaylistDialog() {
         val service = AudioPlayerService.currentService ?: return
+        if (selectedPlaylistIndex !in service.playlist.indices) selectedPlaylistIndex = service.currentIndex
         val adapter = android.widget.ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, mutableListOf())
         playlistDialogAdapter = adapter
         val dialog = ThemeManager.createDialogBuilder(this)
             .setTitle("Playlist")
-            .setAdapter(adapter) { _, which -> service.jumpTo(which) }
-            .setPositiveButton("Close", null)
+            .setAdapter(adapter) { _, which ->
+                selectedPlaylistIndex = which
+                service.jumpTo(which)
+                updateDockedPlaylist()
+            }
+            .setPositiveButton("Add to playlist") { _, _ -> showMediaCategoryDialog() }
+            .setNeutralButton("Remove selected") { _, _ ->
+                if (service.removePlaylistItem(selectedPlaylistIndex)) {
+                    selectedPlaylistIndex = service.currentIndex
+                    updateDockedPlaylist()
+                }
+            }
+            .setNegativeButton("Close", null)
             .create()
         playlistDialog = dialog
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.isEnabled =
+                selectedPlaylistIndex in service.playlist.indices
+            val listView = dialog.listView
+            listView.setOnItemLongClickListener { _, row, position, _ ->
+                showPlaylistItemMenu(row, position)
+                true
+            }
+        }
         dialog.setOnDismissListener {
             if (playlistDialog === dialog) {
                 playlistDialog = null
@@ -2202,6 +2430,116 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         }
         refreshPlaylistDialog()
         dialog.show()
+    }
+
+    private fun removeSelectedPlaylistItem() {
+        val service = AudioPlayerService.currentService ?: return
+        if (selectedPlaylistIndex !in service.playlist.indices) {
+            Toast.makeText(this, "Select a playlist track to remove", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (service.removePlaylistItem(selectedPlaylistIndex)) {
+            selectedPlaylistIndex = service.currentIndex
+            updateDockedPlaylist()
+            refreshPlaylistDialog()
+        }
+    }
+
+    private fun reorderPlaylistItem(from: Int, to: Int) {
+        val service = AudioPlayerService.currentService ?: return
+        if (!service.movePlaylistItem(from, to)) return
+        selectedPlaylistIndex = to
+        updateDockedPlaylist(forceRebuild = true)
+        refreshPlaylistDialog()
+    }
+
+    /** Hold and release opens the row menu; hold and move starts an Android drag. */
+    private fun installPlaylistGesture(row: View, position: Int) {
+        val handler = Handler(Looper.getMainLooper())
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        val longPressTimeout = ViewConfiguration.getLongPressTimeout().toLong()
+        var downX = 0f
+        var downY = 0f
+        var tracking = false
+        var cancelled = false
+        var longPressed = false
+        var dragStarted = false
+        val longPress = Runnable {
+            if (tracking && !cancelled) {
+                longPressed = true
+                row.parent?.requestDisallowInterceptTouchEvent(true)
+            }
+        }
+
+        row.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    tracking = true
+                    cancelled = false
+                    longPressed = false
+                    dragStarted = false
+                    downX = event.x
+                    downY = event.y
+                    handler.removeCallbacks(longPress)
+                    handler.postDelayed(longPress, longPressTimeout)
+                    false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (!tracking) return@setOnTouchListener false
+                    val dx = event.x - downX
+                    val dy = event.y - downY
+                    val moved = dx * dx + dy * dy > touchSlop * touchSlop
+                    if (moved && longPressed && !dragStarted) {
+                        val dragData = ClipData.newPlainText("playlist-position", position.toString())
+                        dragStarted = row.startDragAndDrop(
+                            dragData, View.DragShadowBuilder(row), position, 0
+                        )
+                        cancelled = true
+                    } else if (moved && !longPressed) {
+                        cancelled = true
+                        handler.removeCallbacks(longPress)
+                    }
+                    dragStarted
+                }
+                MotionEvent.ACTION_UP -> {
+                    handler.removeCallbacks(longPress)
+                    val wasLongGesture = tracking && longPressed
+                    val showMenu = wasLongGesture && !cancelled
+                    val wasDragging = dragStarted
+                    tracking = false
+                    row.parent?.requestDisallowInterceptTouchEvent(false)
+                    if (wasLongGesture && !wasDragging) {
+                        if (showMenu) showPlaylistItemMenu(row, position)
+                        true
+                    } else wasDragging
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    handler.removeCallbacks(longPress)
+                    tracking = false
+                    cancelled = true
+                    row.parent?.requestDisallowInterceptTouchEvent(false)
+                    dragStarted
+                }
+                else -> dragStarted
+            }
+        }
+    }
+
+    private fun showPlaylistItemMenu(anchor: View, index: Int) {
+        val service = AudioPlayerService.currentService ?: return
+        if (!synchronized(service.playlist) { index in service.playlist.indices }) return
+        selectedPlaylistIndex = index
+        PopupMenu(this, anchor).apply {
+            menu.add("Remove from playlist").setOnMenuItemClickListener {
+                if (service.removePlaylistItem(index)) {
+                    selectedPlaylistIndex = service.currentIndex
+                    updateDockedPlaylist(forceRebuild = true)
+                    refreshPlaylistDialog()
+                }
+                true
+            }
+            show()
+        }
     }
 
     private fun refreshPlaylistDialog() {
@@ -2216,6 +2554,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             "$mark${index + 1}. $title  $duration"
         }
         dialog.setTitle("Playlist (${list.size} tracks)")
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.isEnabled = selectedPlaylistIndex in list.indices
         adapter.clear()
         adapter.addAll(titles)
     }
@@ -2242,6 +2581,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     override fun onTrackChanged(track: AudioTrack?, index: Int, total: Int) {
         runOnUiThread {
+            selectedPlaylistIndex = index.takeIf { it in 0 until total } ?: -1
             updateTrackView(track)
             updateControlsAppearance()
             updateTimeDisplay()
@@ -2373,9 +2713,18 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     private fun updateCastButtonState() {
         val casting = CastManager.isCasting
-        if (::castBtn.isInitialized) castBtn.text = if (casting) "📻" else "📡"
+        val connected = CastManager.hasConnectedSession
+        if (::castBtn.isInitialized) castBtn.text = when {
+            casting -> "📻"
+            connected -> "📡✓"
+            else -> "📡"
+        }
         dockedCastBtn?.let {
-            it.text = if (casting) "📻 ${CastManager.deviceName?.take(10) ?: "Casting"}" else "📡 Cast"
+            it.text = when {
+                casting -> "📻 ${CastManager.deviceName?.take(10) ?: "Casting"}"
+                connected -> "📡 ${CastManager.deviceName?.take(10) ?: "Ready"}"
+                else -> "📡 Cast"
+            }
             it.includeFontPadding = false
             it.isAllCaps = false
         }
