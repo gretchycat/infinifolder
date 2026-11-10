@@ -17,11 +17,13 @@ internal class PlaylistMetadataWork {
             if (key(track) !in priority) continue
             if (!attempted.add(key(track))) continue
             if (track.isUnreadable) continue
+            if (track.mediaKind != PlaylistMediaKind.AUDIO) continue
             return track
         }
         for (track in ordered) {
             if (key(track) in priority || !attempted.add(key(track))) continue
             if (track.isUnreadable) continue
+            if (track.mediaKind != PlaylistMediaKind.AUDIO) continue
             return track
         }
         return null

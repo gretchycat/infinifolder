@@ -134,7 +134,11 @@ internal class WmpPlayerLayout(context: Context, private val content: Content) :
         content.visualizer.visibility = GONE
         content.title.textSize = 20f
         content.artist.textSize = 14f
-        content.art.background = glass(theme.toolbarBorder, theme.surface, 10)
+        content.art.background = GradientDrawable().apply {
+            cornerRadius = dp(10).toFloat()
+            setColor(Color.BLACK)
+            setStroke(dp(1).coerceAtLeast(1), theme.cardStroke)
+        }
         content.art.setPadding(dp(3), dp(3), dp(3), dp(3))
         content.artwork.scaleType = ImageView.ScaleType.FIT_CENTER
         content.controls.setPadding(0, dp(4), 0, dp(4))

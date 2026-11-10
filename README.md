@@ -12,7 +12,7 @@ An Android file browser with interchangeable storage providers, browsable archiv
 - Grid/list browsing, navigation tree, breadcrumbs, persistent pinned targets, hold-to-drag files/selected sets and hover navigation. Same-device drops move; different/unknown devices copy. Drops onto pinned containers default to copy; empty pin-board space creates one link per drop. Two-finger rectangle selection leaves one finger available for scrolling.
 - Shared nested File/Edit/View/Select/Settings menus; wildcard/regex selection; name/MIME/size/date sorting in either direction; supported new-document/archive templates.
 - MIME-driven icons, application-package opening and explicit Browse for packaged containers such as APK/LOVE. Native links and .iflink shortcuts share resolution protections.
-- Independent image, text, Markdown, HTML, PDF, CSV, EPUB/document, font, hex/raw-media, audio and video viewers, with editing where supported. External editing uses durable working copies, source fingerprints and explicit conflict choices.
+- InfiniFolder bundles image, hex/raw-media and video viewers. Text, Markdown, HTML, PDF, CSV, EPUB/document and font viewing is handled by the separate InfiniScribe application; audio playback is handled by InfiniMedia. InfiniFolder forwards supported resources to the matching companion app when installed, or uses the user's external-app choice.
 - Image animation includes IFF color cycling, indexed FLI/FLC, PNG-based MNG/APNG and platform GIF/WebP playback, with shared thumbnail decoding. Format subsets and device checks are documented in [image animation](docs/image-animation.md).
 - Unidentified binary data opens in the hex explorer; valid raw-media sidecars restore PIC/WAVE configuration. Known formats retain their viewer/container routes. See [hex and raw-media behavior](docs/hex-editor.md).
 - Capability-aware transfers, cancellation, per-file/overall progress, remembered optional copy verification, foreground execution and background completion notifications. Successful progress dialogs dismiss automatically; warnings/errors remain reviewable.
@@ -33,7 +33,7 @@ Kotlin Android application `com.infinifolder`: minSdk 26, compileSdk 36, targetS
 bash build.sh
 ```
 
-The script configures native AAPT2 on Termux, builds the selected debug APKs and invokes `xdg-open` after success. Use `bash build.sh --only infinimedia` to build and open only InfiniMedia; `--no-open` skips the installer handoff. A failed Gradle invocation gets one retry after stopping daemons, using `--no-daemon`; a second failure stops the script. Elsewhere use `gradle :app:assembleDebug`; on ARM Termux the native AAPT2 override may be required. Independent applications are documented in [viewer modules](docs/viewer-modules.md).
+The script configures native AAPT2 on Termux, builds distinct app APKs (InfiniFolder, InfiniScribe, and InfiniMedia), copies them into `packages/` with app and ABI names, and invokes `xdg-open` after success. Use `bash build.sh --only infinimedia` to build and open only InfiniMedia. The combined development viewer host is available only through `--only viewer-host`; it is not part of InfiniFolder or the default product build. `--no-open` skips the installer handoff. A failed Gradle invocation gets one retry after stopping daemons, using `--no-daemon`; a second failure stops the script. Elsewhere use `gradle :app:assembleDebug`; on ARM Termux the native AAPT2 override may be required. Independent applications are documented in [viewer modules](docs/viewer-modules.md).
 
 ### Audio library checkout
 

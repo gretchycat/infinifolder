@@ -33,6 +33,7 @@ class WinampPlaylistBottomView @JvmOverloads constructor(
     var currentTrackDurationMs: Long = 0L
     var onAddToPlaylist: (() -> Unit)? = null
     var onRemoveFromPlaylist: (() -> Unit)? = null
+    var onSelectPlaylistItem: (() -> Unit)? = null
     var onMorePlaylistActions: (() -> Unit)? = null
     private var pressedControl = 0
 
@@ -63,14 +64,15 @@ class WinampPlaylistBottomView @JvmOverloads constructor(
     init {
         isClickable = true
         isFocusable = true
-        contentDescription = "Playlist controls. Add, remove, and playlist actions are on the left."
-        tooltipText = "Add, remove, or manage playlist"
+        contentDescription = "Playlist controls: Add, remove, select the playing item, or open miscellaneous actions."
+        tooltipText = "Add, remove, select, or manage playlist"
         setOnTouchListener { _, event ->
             val nativeX = if (width > 0) event.x * NATIVE_WIDTH / width else -1f
             val control = when {
-                nativeX in 0f..42f -> 1 // The + button in PLEDIT.BMP.
-                nativeX in 43f..84f -> 2 // The − button in PLEDIT.BMP.
-                nativeX in 85f..126f -> 3 // The remaining left-side controls.
+                nativeX in 6f..38f -> 1 // ADD in the PLEDIT.BMP control strip.
+                nativeX in 39f..68f -> 2 // REM.
+                nativeX in 69f..97f -> 3 // SEL.
+                nativeX in 98f..126f -> 4 // MISC.
                 else -> 0
             }
             when (event.actionMasked) {
@@ -84,7 +86,8 @@ class WinampPlaylistBottomView @JvmOverloads constructor(
                     if (pressed == control) {
                         if (control == 1) onAddToPlaylist?.invoke()
                         else if (control == 2) onRemoveFromPlaylist?.invoke()
-                        else onMorePlaylistActions?.invoke()
+                        else if (control == 3) onSelectPlaylistItem?.invoke()
+                        else if (control == 4) onMorePlaylistActions?.invoke()
                     }
                     performClick()
                     true

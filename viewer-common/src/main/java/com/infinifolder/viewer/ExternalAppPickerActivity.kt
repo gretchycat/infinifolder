@@ -51,7 +51,10 @@ class ExternalAppPickerActivity : Activity() {
         ThemeManager.init(applicationContext)
         @Suppress("DEPRECATION")
         val requested = intent.getParcelableExtra<Intent>(ExternalAppChooser.TARGET)
-        if (requested == null || requested.action !in setOf(Intent.ACTION_VIEW, Intent.ACTION_EDIT)) { finish(); return }
+        if (requested == null || requested.action !in setOf(
+                Intent.ACTION_VIEW, Intent.ACTION_EDIT, Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) {
+            finish(); return
+        }
         target = requested
         defaults = ExternalAppDefaults(this)
         savedRemember = state?.getBoolean("remember") ?: false
@@ -61,7 +64,13 @@ class ExternalAppPickerActivity : Activity() {
             !intent.getBooleanExtra(ExternalAppChooser.FORCE_CHOOSER, false) && !selectingEditor)
     }
     private fun choices(): List<Choice> {
-        val actions = if (target.action == Intent.ACTION_EDIT) listOf(Intent.ACTION_EDIT, Intent.ACTION_VIEW) else listOf(Intent.ACTION_VIEW)
+        val actions = when (target.action) {
+            Intent.ACTION_EDIT -> listOf(Intent.ACTION_EDIT, Intent.ACTION_VIEW)
+            Intent.ACTION_VIEW -> listOf(Intent.ACTION_VIEW)
+            Intent.ACTION_SEND -> listOf(Intent.ACTION_SEND)
+            Intent.ACTION_SEND_MULTIPLE -> listOf(Intent.ACTION_SEND_MULTIPLE)
+            else -> emptyList()
+        }
         val external = actions.flatMap { action ->
             val query = Intent(target).setAction(action).setComponent(null).setPackage(null)
             if (intent.getBooleanExtra(ExternalAppChooser.STAGE_EXTERNAL, false)) {
@@ -97,20 +106,15 @@ class ExternalAppPickerActivity : Activity() {
             .sortedWith(appOrder())
             .toList()
     }
-    private fun installedChoice(component: ComponentName, action: String): Choice? = runCatching {
-        val activity = packageManager.getActivityInfo(component, 0)
-        if (activity.packageName == packageName || !activity.exported || !activity.enabled ||
-            !activity.applicationInfo.enabled) return null
-        val info = ResolveInfo().apply { activityInfo = activity }
-        Choice(info, component, action, info.loadLabel(packageManager).toString())
-    }.getOrNull()
     private fun loadChoices(useDefault: Boolean) {
         Thread({
             try {
                 val available = choices()
-                val preferred = if (useDefault) defaults.candidates(target.action!!, sourceKey, target.type, fileName)
-                    .firstNotNullOfOrNull { component -> available.firstOrNull { it.component == component }
-                        ?: installedChoice(component, target.action!!) } else null
+                val preferredComponent = if (useDefault) defaults.candidates(target.action!!, sourceKey, target.type, fileName)
+                    .firstOrNull() else null
+                // A saved app only auto-launches while it still handles this intent.
+                // Keep stale rules stored, but ask the user to choose a replacement.
+                val preferred = preferredComponent?.let { component -> available.firstOrNull { it.component == component } }
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     if (preferred != null) launch(preferred, available, rememberChoice = false)
@@ -165,7 +169,8 @@ class ExternalAppPickerActivity : Activity() {
                 setOnItemClickListener { _, _, position, _ -> launch(available[position], available, remember?.isChecked == true) }
             }, LinearLayout.LayoutParams(-1, minOf(dp(300), resources.displayMetrics.heightPixels / 3)))
         }
-        if (!selectingEditor) {
+        val canRemember = target.action in setOf(Intent.ACTION_VIEW, Intent.ACTION_EDIT)
+        if (!selectingEditor && canRemember) {
             remember = CheckBox(builder.context).apply {
                 text = "Remember in InfiniFolder"; isChecked = savedRemember; setTextColor(colors.textPrimary)
             }
@@ -231,7 +236,7 @@ class ExternalAppPickerActivity : Activity() {
             } else Intent(target).setAction(choice.action).setComponent(choice.component).setPackage(null)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(launch)
-            if (rememberChoice) defaults.remember(target.action!!,
+            if (rememberChoice && target.action in setOf(Intent.ACTION_VIEW, Intent.ACTION_EDIT)) defaults.remember(target.action!!,
                 when (scope?.checkedRadioButtonId) {
                     SCOPE_FILE -> ExternalAppDefaults.FILE
                     SCOPE_EXTENSION -> ExternalAppDefaults.EXTENSION

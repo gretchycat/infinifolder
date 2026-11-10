@@ -3,8 +3,20 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val targetAbiFilters = providers.gradleProperty("targetAbi").orNull
+    ?.takeUnless { it.equals("all", ignoreCase = true) }
+    ?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)
+
 dependencies {
-    rootProject.subprojects.filter { it.name.startsWith("viewer-") && it.name !in setOf("viewer-host") }
+    // Audio playback and document/text viewing belong to their separate
+    // InfiniMedia and InfiniScribe applications. Keep only the viewer modules
+    // that InfiniFolder hosts itself, including image and video playback.
+    rootProject.subprojects.filter {
+        it.name.startsWith("viewer-") && it.name !in setOf(
+            "viewer-host", "viewer-audio", "viewer-text", "viewer-markdown", "viewer-html",
+            "viewer-csv", "viewer-epub", "viewer-font", "viewer-pdf"
+        )
+    }
         .sortedBy { it.name }.forEach { implementation(project(it.path)) }
 
     implementation(project(":storage-engine"))
@@ -32,6 +44,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "com.infinifolder.IconRepairInstrumentation"
+        targetAbiFilters?.let { filters -> ndk { abiFilters.addAll(filters) } }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -41,8 +54,7 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
-    // Sound and libVLC both provide the shared C++ runtime. Validate the packaged
-    // runtime with both native backends; never ship two copies at the same path.
+    // Native libraries can share the C++ runtime; package one copy at this path.
     packaging.jniLibs.pickFirsts += "**/libc++_shared.so"
     packaging.resources.merges += "META-INF/services/io.github.gretchycat.infinistream.CapabilityProvider"
     packaging {
@@ -55,6 +67,13 @@ android {
             excludes += "META-INF/NOTICE*"
         }
     }
+}
+
+android.sourceSets.getByName("main").assets.srcDir(
+    project(":viewer-common").layout.buildDirectory.dir("generated/default-icon-theme/assets")
+)
+tasks.named("preBuild").configure {
+    dependsOn(project(":viewer-common").tasks.named("prepareDefaultIconTheme"))
 }
 
 val generatedIntentManifest = layout.buildDirectory.file("generated/android-intents/AndroidManifest.xml")

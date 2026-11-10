@@ -15,7 +15,12 @@ import java.io.InterruptedIOException
 import java.security.MessageDigest
 
 /** Audio tag parsing belongs to Sound; source access stays behind the storage providers. */
-internal class AudioArtworkResolver(context:Context,private val runtime:StorageRuntime,private val decoder:ThumbnailDecoder) {
+internal class AudioArtworkResolver(
+    context:Context,
+    private val runtime:StorageRuntime,
+    private val decoder:ThumbnailDecoder,
+    private val onArtworkReady:(Uri)->Unit = {}
+) {
     private val app=context.applicationContext
     private val disk by lazy {DiskCache.get(app)}
     data class Artwork(val bitmap:Bitmap,val source:String)
@@ -25,15 +30,17 @@ internal class AudioArtworkResolver(context:Context,private val runtime:StorageR
     private val embedded=bitmapCache()
     private val covers=bitmapCache()
     private val folders=LruCache<String,Folder>(256)
+    private val pendingEmbedded=java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     fun clear() {embedded.evictAll();covers.evictAll();folders.evictAll()}
 
     fun resolve(entry:ResourceEntry,size:Int):Result {
-        embedded(entry,size)?.let {return Result(Artwork(it,"audio-embedded-art"))}
+        val embeddedResult=embedded(entry,size)
+        embeddedResult.bitmap?.let {return Result(Artwork(it,"audio-embedded-art"),embeddedResult.pending)}
         if(Thread.currentThread().isInterrupted)return Result()
-        val folder=folder(entry) ?: return Result()
+        val folder=folder(entry) ?: return Result(pending=embeddedResult.pending)
         for(candidate in folder.candidates) {
-            if(Thread.currentThread().isInterrupted)return Result(pending=folder.pending)
+            if(Thread.currentThread().isInterrupted)return Result(pending=folder.pending || embeddedResult.pending)
             val key="${candidate.ref}:${candidate.uri}:${candidate.metadata.sizeBytes}:" +
                 "${candidate.metadata.modifiedAtMillis ?: folder.observedAt}:$size"
             val saved=covers.get(key)?.takeIf {System.currentTimeMillis()<it.expires}
@@ -45,18 +52,39 @@ internal class AudioArtworkResolver(context:Context,private val runtime:StorageR
                 covers.put(key,Cached(decoded,System.currentTimeMillis()+if(decoded==null)30000 else 300000))
                 decoded
             }
-            if(bitmap!=null)return Result(Artwork(bitmap,"audio-directory-cover"),folder.pending)
+            if(bitmap!=null)return Result(Artwork(bitmap,"audio-directory-cover"),folder.pending || embeddedResult.pending)
         }
-        return Result(pending=folder.pending)
+        return Result(pending=folder.pending || embeddedResult.pending)
     }
 
-    private fun embedded(entry:ResourceEntry,size:Int):Bitmap? {
+    private data class EmbeddedResult(val bitmap:Bitmap?,val pending:Boolean)
+
+    /** Return cached art immediately; parse misses away from the listing worker. */
+    private fun embedded(entry:ResourceEntry,size:Int):EmbeddedResult {
         val key="${entry.ref}:${entry.uri}:${entry.metadata.name}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$size"
-        embedded.get(key)?.takeIf {System.currentTimeMillis()<it.expires}?.let {return it.bitmap}
+        embedded.get(key)?.takeIf {System.currentTimeMillis()<it.expires}?.let {return EmbeddedResult(it.bitmap,false)}
+        if(!pendingEmbedded.add(key))return EmbeddedResult(null,true)
+        try {
+            ResourceArtworkCache.sourceExecutor(entry).execute {
+                val bitmap=loadEmbedded(entry,size)
+                embedded.put(key,Cached(bitmap,System.currentTimeMillis()+if(bitmap==null || entry.metadata.modifiedAtMillis==null)30000 else 300000))
+                pendingEmbedded.remove(key)
+                onArtworkReady(entry.uri)
+            }
+        } catch(_:java.util.concurrent.RejectedExecutionException) {
+            pendingEmbedded.remove(key)
+            embedded.put(key,Cached(null,System.currentTimeMillis()+3000))
+            return EmbeddedResult(null,true)
+        }
+        return EmbeddedResult(null,true)
+    }
+
+    private fun loadEmbedded(entry:ResourceEntry,size:Int):Bitmap? {
+        val key="${entry.ref}:${entry.uri}:${entry.metadata.name}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$size"
         val started = android.os.SystemClock.uptimeMillis()
         DiagnosticLog.record("artwork.audio-embedded.start",
             "name=${entry.metadata.name} provider=${entry.ref.providerId} mime=${entry.metadata.mimeType} size=${entry.metadata.sizeBytes}")
-        val bitmap=IconWork.bounded(1500,lane="audio-tags:${entry.ref.providerId}") {
+        val bitmap=runCatching { IconWork.bounded(1500,lane="audio-tags:${entry.ref.providerId}") {
             val diskKey="embedded:$key:"+if(entry.metadata.modifiedAtMillis==null)System.currentTimeMillis()/30000 else "known"
             readDisk(diskKey,size)?.let {return@bounded it}
             // Native archive slices are fine. Never extract a whole compressed song for an icon.
@@ -75,8 +103,7 @@ internal class AudioArtworkResolver(context:Context,private val runtime:StorageR
                         ?.also {writeDisk(diskKey,it)}
                 }
             }
-        }
-        embedded.put(key,Cached(bitmap,System.currentTimeMillis()+if(bitmap==null || entry.metadata.modifiedAtMillis==null)30000 else 300000))
+        } }.getOrNull()
         DiagnosticLog.record("artwork.audio-embedded.complete",
             "name=${entry.metadata.name} provider=${entry.ref.providerId} found=${bitmap != null} elapsedMs=${android.os.SystemClock.uptimeMillis() - started}")
         return bitmap

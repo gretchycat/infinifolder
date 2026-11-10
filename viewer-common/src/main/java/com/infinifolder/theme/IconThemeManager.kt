@@ -245,16 +245,6 @@ class IconThemeManager(private val context: Context) {
         }
     }
 
-    /** Install the bundled desktop themes once, without replacing user-installed themes. Call off the UI thread. */
-    fun installBundledThemes(progressCallback: ((String) -> Unit)? = null) {
-        val bundled = listOf("Adwaita", "AdwaitaLegacy", "breeze", "breeze-dark", "Papirus")
-        val existing = listAvailableThemes().map { it.id.lowercase(Locale.ROOT) }.toSet()
-        for (id in bundled) {
-            if (id.lowercase(Locale.ROOT) in existing) continue
-            importThemeFromArchive({ context.assets.open("icon-themes/$id.zip") }, "$id.zip", progressCallback)
-        }
-    }
-
     /**
      * Imports an icon theme from a directory (e.g. extracted folder).
      */
@@ -660,9 +650,19 @@ class IconThemeManager(private val context: Context) {
 
     /** MP1/MP2/MP3 and other shared-MIME families can have extension-specific theme artwork. */
     fun resolveAudioIcon(meta:ResourceMetadata,size:Int,iconName:String):Bitmap? {
-        val defaults=com.infinifolder.mime.MimeRegistry.iconCandidates(meta.mimeType)
+        val mime=com.infinifolder.mime.MimeRegistry.effective(meta.name,meta.mimeType)
+        val defaults=com.infinifolder.mime.MimeRegistry.iconCandidates(mime)
         val custom=iconName.takeIf {it.isNotBlank() && it!=defaults.first()}
-        return (listOfNotNull(custom)+buildMimeIconCandidates(meta)).distinct()
+        // Extension art is only valid when the configured association agrees
+        // with the resolved MIME identity. This keeps a failed magic check from
+        // borrowing the filename's unrelated audio icon.
+        val extension=com.infinifolder.preview.AudioIconFormats.extension(meta.name,mime)
+        val extensionIcons=extension?.let { ext -> listOf(
+            "audio-$ext", "audio-x-$ext", "application-x-extension-$ext",
+            "application-x-$ext", "file-$ext"
+        ) }.orEmpty()
+        return (listOfNotNull(custom)+extensionIcons+defaults)
+            .distinct()
             .filterNot {it in setOf("audio-x-generic","application-octet-stream","unknown")}
             .firstNotNullOfOrNull {resolveLogicalIcon(it,size)}
     }

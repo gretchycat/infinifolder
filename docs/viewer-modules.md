@@ -4,9 +4,9 @@
 
 Status reviewed 2026-11-04. See [runtime discovery and build evidence](runtime-capabilities.md) and [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
 
-Each viewer is an Android library that depends on `:viewer-common` and `:storage-engine`, without depending on the browser or its Activity. Its manifest registers its viewer Activity/service. A separate application can include the library and launch it through `ViewerLaunch` with a resource entry.
+Each viewer is an Android library that depends on `:viewer-common` and `:storage-engine`, without depending on the browser or its Activity. Its manifest registers its viewer Activity/service. InfiniFolder packages image, hex/raw-media and video viewers. It excludes `:viewer-audio` and the Scribe-backed `:viewer-text`, `:viewer-markdown`, `:viewer-html`, `:viewer-pdf`, `:viewer-csv`, `:viewer-epub`, and `:viewer-font` modules; InfiniMedia and InfiniScribe host those viewers separately.
 
-The supplied `:viewer-host` provides a launcher document picker, Android VIEW/EDIT entry point for content URIs, recovery, and debug dump controls.
+The supplied `:viewer-host` provides a launcher document picker, Android VIEW/EDIT entry point for content URIs, recovery, and debug dump controls. The all-viewer variant is an optional integration/debug host and is not part of the InfiniFolder or default product APK builds.
 
 ## Build
 
@@ -14,7 +14,7 @@ The supplied `:viewer-host` provides a launcher document picker, Android VIEW/ED
 gradle :viewer-host:assembleDebug -Pviewer=pdf --offline
 ```
 
-Replace `pdf` with `image`, `text`, `markdown`, `html`, `csv`, `epub`, `font`, `hex`, `audio`, `video`, or `all` (default). The selected application's ID is `com.infinifolder.standalone.<kind>` and its APK is under `viewer-host/build/outputs/apk/debug/`. On ARM Termux use the configured native AAPT2 override if required, as for the main app.
+Replace `pdf` with `image`, `text`, `markdown`, `html`, `csv`, `epub`, `font`, `hex`, `audio`, `video`, or `all` (default). The optional combined host uses `com.infinifolder.standalone.all`; individual host IDs are `com.infinifolder.standalone.<kind>`, except audio, which is `com.infinimedia`. The InfiniMedia product is built independently with `gradle -p infinimedia :viewer-host:assembleDebug --offline`; its project defaults to `-Pviewer=audio`, packages only the audio viewer and uses the `com.infinimedia` application ID. Its APK is under `infinimedia/build/viewer-host/outputs/apk/debug/`. On ARM Termux use the configured native AAPT2 override if required, as for the main app.
 
 `hex` is now a standalone selector; the all-viewer host includes all eleven
 registered viewer modules. New viewer modules are linked by build discovery and

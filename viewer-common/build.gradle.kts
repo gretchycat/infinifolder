@@ -29,7 +29,6 @@ android {
     kotlinOptions { jvmTarget = "17" }
     testOptions { unitTests.isReturnDefaultValues = true }
     sourceSets.getByName("main") {
-        assets.srcDir(themeBuildRoot.map { it.dir("assets") })
         java.srcDir(themeBuildRoot.map { it.dir("kotlin") })
     }
 }

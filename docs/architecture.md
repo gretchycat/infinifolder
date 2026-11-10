@@ -5,7 +5,7 @@
 ## Library graph
 
 ```text
-InfiniFolder / viewer host (composition, Android UI)
+InfiniFolder / standalone app hosts (composition, Android UI)
   -> Store adapters -> Stream
   -> Vault adapters -> Store contracts + Stream
   -> Sound / Canvas / Video / Scribe -> Stream
@@ -15,7 +15,7 @@ Ordinary sources do not pass through Vault. Stream contracts describe optional p
 
 ## Build modules and ownership
 
-- `:app`: browser Activity, navigation, menus, Android integrations, operation foreground service.
+- `:app`: browser Activity, navigation, menus, Android integrations, operation foreground service. It does not package audio playback or Scribe document viewers (text, Markdown, HTML, PDF, CSV, EPUB, font); those resources are handed to separate InfiniMedia and InfiniScribe applications.
 - `:storage-engine`: host composition (`StorageRuntime`, `RoutingStorageProvider`) and external-edit orchestration. It exports the pinned Store/Vault libraries for compatibility.
 - `libinfinistream`: JVM sources/sinks, optional positional I/O, capabilities, metadata, probing and processor contracts.
 - `libinfinistore` / `store-android`: existing resource/provider, protocol, transfer, link, cache, publication/recovery and Android access implementations. It depends only on Stream within the family.
@@ -29,7 +29,7 @@ Ordinary sources do not pass through Vault. Stream contracts describe optional p
   available. The original Android platform adapter remains for compatibility. See [video boundaries/checks](video-formats.md).
 - `libinfinisound` (Git submodule and Gradle composite build): external `audio-api`, `audio-core` and Android `audio-processing` libraries for audio parsing, codec adapters, metadata and analysis, with playback/output owned by the audio viewer. See [audio library boundaries](audio-processing-library.md).
 - `:viewer-image`, `:viewer-text`, `:viewer-markdown`, `:viewer-html`, `:viewer-pdf`, `:viewer-csv`, `:viewer-epub`, `:viewer-font`, `:viewer-hex`, `:viewer-audio`, `:viewer-video`: independent Android libraries containing format-specific viewers and applicable editors.
-- `:viewer-host`: standalone application including all viewers or one selected with `-Pviewer=<kind>`. It does not depend on the browser application.
+- `:viewer-host`: standalone application including all viewers or one selected with `-Pviewer=<kind>`. It does not depend on the browser application. The separate `infinimedia/` Gradle root selects only `viewer-audio` (`-Pviewer=audio`) and packages it as `com.infinimedia`.
 
 Host storage composition follows `app/host → viewer modules → viewer-common → storage-engine`. Content viewers and extractors also link and invoke their appropriate content libraries directly; they never route decoding through the browser. Viewer sources do not reference MainActivity. `StorageRuntime` owns the provider graph and pools using application context. Browser destruction leaves active viewer connections available. This runtime is process-local; operation queues are not process-death durable.
 

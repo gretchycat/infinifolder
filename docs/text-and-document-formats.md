@@ -39,7 +39,9 @@ Updated 2026-11-02. This document tracks plain text, source code, markup, pagina
 
 ### 2. Markdown (`:viewer-markdown`)
 
-`MarkdownViewerActivity` and `MarkdownRenderer` provide rendered HTML preview and source editing with Save / Save As:
+`MarkdownViewerActivity` renders CommonMark with GFM tables, strikethrough, task-list
+items, and autolinks, alongside source editing with Save / Save As. Raw HTML is
+escaped and unsafe link/image URLs are sanitized before the HTML reaches WebView:
 
 - **Extensions & MIME**: `.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn` (`text/markdown`, `text/x-markdown`)
 - **Supported syntax**: Headings (`#`–`######`), bold/italic/strikethrough, inline code and fenced code blocks, blockquotes, ordered/unordered lists, task lists (`- [ ]` / `- [x]`), tables, horizontal rules, links, and images.
@@ -75,7 +77,11 @@ presentation, and loading cancels before worker cleanup releases them.
 
 ### 6. Delimited spreadsheets (`:viewer-csv`)
 
-`CsvViewerActivity` parses comma- and tab-delimited tables with RFC 4180 quoting, automatic delimiter detection, row numbering, column search/filtering, cell inspection/editing, and in-place saving:
+`CsvViewerActivity` parses comma- and tab-delimited tables with quoted fields and
+embedded newlines, quote-aware delimiter detection, row numbering, column
+search/filtering, cell inspection/editing, and in-place saving. Cell whitespace
+is preserved, and UTF-8 BOMs are removed from the first cell while retained in
+the original bytes used for guarded saves:
 
 - **Extensions & MIME**: `.csv`, `.tsv` (`text/csv`, `text/tab-separated-values`)
 

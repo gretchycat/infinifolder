@@ -16,7 +16,9 @@ internal fun castTrackKey(track: AudioTrack) = CastTrackKey(track.uri.toString()
 
 internal fun nextCastTrackIndex(tracks: List<AudioTrack>, current: Int, repeat: RepeatMode,
     failures: Set<CastTrackKey> = emptySet()): Int? {
-    val eligible = tracks.map { if (castTrackKey(it) in failures) it.copy(isUnreadable = true) else it }
+    val eligible = tracks.map {
+        if (castTrackKey(it) in failures || it.mediaKind != PlaylistMediaKind.AUDIO) it.copy(isUnreadable = true) else it
+    }
     return when (repeat) {
         RepeatMode.ONE -> current.takeIf { it in eligible.indices && !eligible[it].isUnreadable }
         RepeatMode.ALL -> nextReadableTrack(eligible, current, true)

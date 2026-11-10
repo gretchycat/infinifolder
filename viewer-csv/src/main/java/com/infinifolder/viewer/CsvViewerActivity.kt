@@ -384,7 +384,7 @@ class CsvViewerActivity : ViewerActivity() {
             try {
                 chunkReader?.close()
                 val reader = TableChunkReader(MediaSourceAdapter.openDocumentSource(this, targetUri), displayName,
-                    CancellationToken { isDestroyed || isFinishing })
+                    CancellationToken { isDestroyed || isFinishing }, preserveWhitespace = true)
                 chunkReader = reader
                 val chunk = reader.findRows(filter = query)
                 runOnUiThread {

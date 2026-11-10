@@ -132,42 +132,10 @@ object ThemeManager {
         val shared = context.getSharedPreferences("browser", Context.MODE_PRIVATE)
         smoothSkinScaling = shared.getBoolean("skin_smooth_scaling", false)
         iconShadowsEnabled = shared.getBoolean(PREF_ICON_SHADOWS, true)
-        ensureBundledSkinLoaded(context)
-        val savedThemeId = shared.getString(PREF_ACTIVE_THEME, AppThemeId.MODERN.name)
         val isDark = explicitDark ?: resolveIsDark(context)
-        activeTheme = when (savedThemeId) {
-            AppThemeId.WINAMP_CLASSIC.name -> {
-                skinArtwork = bundledSkinArtwork
-                bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
-            }
-            AppThemeId.WMP_GLASS.name -> ThemeColors.WMP_GLASS
-            AppThemeId.FOOBAR2000.name -> ThemeColors.FOOBAR2000
-            AppThemeId.CUSTOM_WSZ.name -> {
-                val skinPath = shared.getString(PREF_CUSTOM_SKIN_FILE, null)
-                val skinAsset = shared.getString(PREF_SKIN_ASSET_PATH, null)
-                if (skinPath != null && File(skinPath).exists()) {
-                    WinampSkinParser.parseSkin(context, Uri.fromFile(File(skinPath)), shared.getString("custom_skin_name", null))?.let { parsed ->
-                        skinArtwork = parsed.artwork
-                        parsed.themeColors
-                    } ?: run {
-                        skinArtwork = bundledSkinArtwork
-                        bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
-                    }
-                } else if (!skinAsset.isNullOrEmpty()) {
-                    loadBundledSkin(context, skinAsset)?.let { parsed ->
-                        skinArtwork = parsed.artwork
-                        parsed.themeColors
-                    } ?: run {
-                        skinArtwork = bundledSkinArtwork
-                        bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
-                    }
-                } else {
-                    skinArtwork = bundledSkinArtwork
-                    bundledSkinColors ?: ThemeColors.WINAMP_CLASSIC
-                }
-            }
-            else -> ThemeColors.modern(isDark)
-        }
+        // The file manager uses Android's light/dark palette. Legacy media-player
+        // skin preferences remain available to the standalone player only.
+        activeTheme = ThemeColors.modern(isDark)
     }
 
     fun ensureBundledSkinLoaded(context: Context) {

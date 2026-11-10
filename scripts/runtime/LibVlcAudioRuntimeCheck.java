@@ -1,8 +1,5 @@
 import com.infinifolder.audio.*;
 import com.infinifolder.audio.stream.*;
-import android.content.Context;
-import android.content.ContextWrapper;
-import android.content.res.AssetManager;
 import java.io.*;
 import java.nio.file.*;
 import java.security.*;
@@ -43,18 +40,6 @@ public class LibVlcAudioRuntimeCheck {
             if(stream.read(values,0,values.length)>0) throw new AssertionError("Invalid source produced PCM: "+input.getName());
         } catch(IOException expected) { return; }
         throw new AssertionError("Invalid source was accepted");
-    }
-    static final class FilesContext extends ContextWrapper {
-        final File directory;final AssetManager assets;
-        FilesContext(File apk,File directory) throws Exception {
-            super(null);this.directory=directory;directory.mkdirs();
-            assets=AssetManager.class.getDeclaredConstructor().newInstance();
-            int cookie=(Integer)AssetManager.class.getDeclaredMethod("addAssetPath",String.class).invoke(assets,apk.getAbsolutePath());
-            check(cookie!=0,"APK assets unavailable");
-        }
-        @Override public Context getApplicationContext() { return this; }
-        @Override public File getFilesDir() { return directory; }
-        @Override public AssetManager getAssets() { return assets; }
     }
     public static void main(String[] args) {
         try {
@@ -122,31 +107,8 @@ public class LibVlcAudioRuntimeCheck {
             try { AudioProcessing.INSTANCE.openPcm(file(new File(audio,"c_major_piano.wma")),DecoderPreference.PLATFORM_FIRST);throw new AssertionError("Cancellation ignored"); }
             catch(Exception expected) { check(expected instanceof InterruptedIOException,"Wrong cancellation result"); } finally { Thread.interrupted(); }
             System.out.println("PASS vlc-audio.cancellation");
-            // Run the actual bundled asset loader: streamed copy + checksum + native SF3 presets.
-            FilesContext context=new FilesContext(apk,new File(work,"font-state"));
-            File legacy=new File(context.getFilesDir(),"soundfonts/FluidR3_GM.sf2");
-            legacy.getParentFile().mkdirs();
-            try(RandomAccessFile old=new RandomAccessFile(legacy,"rw")){old.setLength(148398306L);}
-            AudioProcessing.INSTANCE.initialize(context);
-            Set<String> hashes=new HashSet<>();
-            for(String name:new String[]{"piano.mid","flute.mid","low-piano.mid","drums.mid"}) {
-                Decoded result=decode(file(new File(work,name)));
-                check(result.backend.equals("libVLC.FluidLite(FluidR3Mono_GM)"),"MIDI did not use the configured SoundFont");
-                hashes.add(result.hash);
-            }
-            check(hashes.size()==4,"MIDI program/percussion selection ignored");
-            System.out.println("PASS vlc-audio.fluidr3-programs-and-percussion");
-            File font=new File(context.getFilesDir(),"soundfonts/FluidR3Mono_GM.sf3");
-            check(font.length()==14540067L,"Incomplete cached SoundFont");
-            try(InputStream input=new FileInputStream(font)) {
-                MessageDigest digest=MessageDigest.getInstance("SHA-256");byte[] b=new byte[65536];int count;
-                while((count=input.read(b))>=0)digest.update(b,0,count);
-                check(hex(digest.digest()).equals("bac3363e097d182d2659db2e84a00f1c68d6c712181addc77c9f51da23a24897"),"SoundFont asset checksum");
-            }
-            check(!legacy.exists(),"Legacy 148 MB SF2 cache was not removed");
-            check(decode(file(new File(audio,"c_major_piano.mid"))).samples>0,"Bundled font reuse failed");
-            check(Arrays.stream(font.getParentFile().listFiles()).noneMatch(f->f.getName().endsWith(".partial")),"Partial SoundFont left behind");
-            System.out.println("PASS vlc-audio.bundled-sf3-checksum-reuse-and-legacy-cache-removal");
+            check(decode(file(new File(audio,"c_major_piano.mid"))).samples>0,"Portable MIDI synthesizer produced no audio");
+            System.out.println("PASS vlc-audio.portable-midi-without-bundled-soundfont");
             System.out.println("LIBVLC_AUDIO_COMPLETE controls="+controls.size());System.exit(0);
         } catch(Throwable error) { error.printStackTrace();System.exit(1); }
     }

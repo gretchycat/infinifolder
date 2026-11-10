@@ -80,7 +80,9 @@ internal class AudioPlaylistStore(context: Context) {
             .putNullable("directoryCoverUri", track.directoryCoverUri?.toString())
             .putNullable("directoryUri", track.directoryUri?.toString())
             .putNullable("directoryName", track.directoryName)
-            .put("directoryArtworkMetadataResolved", track.directoryArtworkMetadataResolved))
+            .put("directoryArtworkMetadataResolved", track.directoryArtworkMetadataResolved)
+            .put("mediaKind", track.mediaKind.name)
+            .putNullable("sourceMimeType", track.sourceMimeType))
     } }
 
     private fun readTracks(array: JSONArray?): List<AudioTrack> = buildList {
@@ -106,7 +108,10 @@ internal class AudioPlaylistStore(context: Context) {
                 directoryCoverUri = item.stringOrNull("directoryCoverUri")?.let(Uri::parse),
                 directoryUri = item.stringOrNull("directoryUri")?.let(Uri::parse),
                 directoryName = item.stringOrNull("directoryName"),
-                directoryArtworkMetadataResolved = item.optBoolean("directoryArtworkMetadataResolved", false)
+                directoryArtworkMetadataResolved = item.optBoolean("directoryArtworkMetadataResolved", false),
+                mediaKind = runCatching { PlaylistMediaKind.valueOf(item.optString("mediaKind", "AUDIO")) }
+                    .getOrDefault(PlaylistMediaKind.AUDIO),
+                sourceMimeType = item.stringOrNull("sourceMimeType")
             ))
         }
     }
@@ -129,7 +134,9 @@ internal object AudioPlaylistJspf {
             track.artist?.takeIf(String::isNotBlank)?.let { item.put("creator", it) }
             track.album?.takeIf(String::isNotBlank)?.let { item.put("album", it) }
             track.durationMs.takeIf { it > 0L }?.let { item.put("duration", it) }
-            val extension = JSONObject().put("mimeType", mimeForName(track.fileName))
+            val extension = JSONObject()
+                .put("mimeType", track.sourceMimeType ?: mimeForName(track.fileName))
+                .put("mediaKind", track.mediaKind.name.lowercase())
             track.startByte.takeIf { it > 0L }?.let { extension.put("startByte", it) }
             track.lengthBytes.takeIf { it >= 0L }?.let { extension.put("lengthBytes", it) }
             track.decoderExtension?.takeIf(String::isNotBlank)?.let { extension.put("decoderExtension", it) }
@@ -143,8 +150,9 @@ internal object AudioPlaylistJspf {
     }
 
     private fun mimeForName(name: String): String =
-        com.infinifolder.mime.MimeRegistry.guess(name).takeIf { it.startsWith("audio/", ignoreCase = true) }
-            ?: "application/octet-stream"
+        com.infinifolder.mime.MimeRegistry.guess(name).takeIf {
+            it.startsWith("audio/", true) || it.startsWith("image/", true) || it.startsWith("video/", true)
+        } ?: "application/octet-stream"
 }
 
 private fun JSONObject.putNullable(key: String, value: Any?): JSONObject {

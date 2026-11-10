@@ -7,6 +7,7 @@ import com.infinifolder.audio.playlist.PlaylistParser
 import com.infinifolder.audio.synth.*
 import com.infinifolder.audio.tracker.MidiSequencer
 import com.infinifolder.audio.tracker.TrackerEngine
+import com.infinifolder.audio.stream.MemoryAudioInput
 import com.infinifolder.mime.MimeRegistry
 import com.infinifolder.storage.FileMagicDetector
 import com.infinifolder.viewer.MediaType
@@ -292,6 +293,20 @@ class AudioDecodersFixtureTest {
         assertNotNull("UniversalAudioDecoder should decode .cdda", universal)
         assertEquals(44100, universal!!.sampleRate)
         assertEquals(2, universal.channels)
+    }
+
+    @Test
+    fun testCddaStreamingPlaybackSelection() {
+        val bytes = readFixture("c_major_piano.cdda")
+        val input = MemoryAudioInput(bytes, "sample.cdda")
+        assertTrue("Raw CD-DA must select the portable PCM path", StandardAudioDecoders.prefersPortablePlayback(input))
+        AudioFileProcessor().openPcm(input, DecoderPreference.PORTABLE_FIRST).use { stream ->
+            assertEquals("Portable.CDDA", stream.decoderName)
+            assertEquals(44100, stream.format.sampleRate)
+            assertEquals(2, stream.format.channels)
+            val samples = IntArray(512)
+            assertTrue("The streaming decoder should produce the first PCM block", stream.read(samples, 0, samples.size) > 0)
+        }
     }
 
     @Test

@@ -3,6 +3,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 val viewerKind = providers.gradleProperty("viewer").orElse("all").get()
+val targetAbiFilters = providers.gradleProperty("targetAbi").orNull
+    ?.takeUnless { it.equals("all", ignoreCase = true) }
+    ?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)
 // This module is also included by the independently buildable InfiniMedia app.
 // Resolve shared scripts and artwork from the repository containing this module,
 // not from whichever Gradle root happened to include it.
@@ -23,6 +26,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        targetAbiFilters?.let { filters -> ndk { abiFilters.addAll(filters) } }
         buildConfigField("String", "VIEWER_KIND", "\"$viewerKind\"")
         manifestPlaceholders["viewerName"] = if (viewerKind == "audio") "InfiniMedia"
             else "InfiniFolder " + viewerKind.replaceFirstChar { it.uppercase() } + " Viewer"

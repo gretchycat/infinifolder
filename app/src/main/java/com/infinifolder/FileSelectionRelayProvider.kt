@@ -13,8 +13,11 @@ import android.provider.OpenableColumns
 import com.infinifolder.model.ProviderResult
 import com.infinifolder.storage.SharedFileProvider
 import com.infinifolder.storage.StorageRuntime
+import java.io.EOFException
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.InputStream
+import java.io.InterruptedIOException
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.ArrayBlockingQueue
@@ -120,20 +123,13 @@ class FileSelectionRelayProvider : ContentProvider() {
         catch (error: IOException) { throw FileNotFoundException(error.message ?: "Cannot open read pipe") }
         try {
             workers.execute {
+                val output = ParcelFileDescriptor.AutoCloseOutputStream(writer)
                 try {
-                    val input = openSource(context, item.source)
-                    input.use { source ->
-                        ParcelFileDescriptor.AutoCloseOutputStream(writer).use { output ->
-                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                            while (true) {
-                                val count = source.read(buffer)
-                                if (count < 0) break
-                                output.write(buffer, 0, count)
-                            }
-                        }
-                    }
+                    copySourceWithReconnect(context, item, output)
+                    output.close()
                 } catch (error: Exception) {
                     runCatching { writer.closeWithError(error.message ?: "Source read failed") }
+                    runCatching { output.close() }
                 }
             }
         } catch (_: java.util.concurrent.RejectedExecutionException) {
@@ -157,6 +153,179 @@ class FileSelectionRelayProvider : ContentProvider() {
                 ?: throw IOException("The selected content provider returned no stream")
             "file" -> File(source.path ?: throw IOException("Selected file URI has no path")).inputStream()
             else -> throw IOException("No storage provider can read the selected source")
+        }
+    }
+
+    /**
+     * Network sources can lose an established read channel while a viewer is still
+     * consuming its content URI. Reopen the saved target URI and continue at the
+     * delivered byte offset so clients do not need to reload their playlist.
+     */
+    private fun copySourceWithReconnect(context: android.content.Context, item: Record,
+        output: java.io.OutputStream) {
+        val buffer = ByteArray(64 * 1024)
+        var copied = 0L
+        var retries = 0
+        while (true) {
+            if (Thread.currentThread().isInterrupted) throw InterruptedIOException("Selected-file relay cancelled")
+            val input = try {
+                if (retries == 0) openSourceAt(context, item.source, copied)
+                else reopenSource(context, item, copied)
+            } catch (error: Exception) {
+                if (!retrySource(context, item, copied, retries, error)) throw error
+                retries++
+                pauseBeforeRetry(retries)
+                continue
+            }
+
+            var sourceFailure: Exception? = null
+            var reachedEnd = false
+            var outputFailure: Exception? = null
+            try {
+                while (true) {
+                    if (Thread.currentThread().isInterrupted) throw InterruptedIOException("Selected-file relay cancelled")
+                    val count = try {
+                        input.read(buffer)
+                    } catch (error: Exception) {
+                        sourceFailure = error
+                        break
+                    }
+                    if (count < 0) {
+                        reachedEnd = true
+                        break
+                    }
+                    if (count == 0) continue
+                    try {
+                        output.write(buffer, 0, count)
+                    } catch (error: Exception) {
+                        // A closed consumer pipe must not trigger a network reconnect loop.
+                        outputFailure = error
+                        break
+                    }
+                    copied += count
+                }
+            } finally {
+                try {
+                    input.close()
+                } catch (closeError: Exception) {
+                    when {
+                        outputFailure != null -> outputFailure.addSuppressed(closeError)
+                        sourceFailure != null -> sourceFailure.addSuppressed(closeError)
+                        reachedEnd -> sourceFailure = closeError
+                    }
+                }
+            }
+
+            outputFailure?.let { throw it }
+            if (sourceFailure == null && reachedEnd) {
+                val expectedSize = item.size
+                if (expectedSize == null || copied == expectedSize) return
+                sourceFailure = if (copied < expectedSize) {
+                    EOFException("Selected source ended at $copied bytes; expected $expectedSize")
+                } else {
+                    IOException("Selected source changed size while it was being streamed")
+                }
+            }
+            val error = sourceFailure ?: IOException("Selected source stopped before end of file")
+            if (!retrySource(context, item, copied, retries, error)) throw error
+            retries++
+            pauseBeforeRetry(retries)
+        }
+    }
+
+    private fun reopenSource(context: android.content.Context, item: Record, offset: Long): InputStream {
+        val runtime = StorageRuntime.get(context)
+        val target = runtime.provider.refForUri(item.source)?.let {
+            com.infinifolder.storage.NetworkConnectionStatus.target(it)
+        }
+        return if (target == null) openSourceAt(context, item.source, offset)
+        else com.infinifolder.storage.NetworkConnectionStatus.reconnect(target.key) {
+            openSourceAt(context, item.source, offset)
+        }
+    }
+
+    /** Prefer a fresh positional handle for resume; sequential providers replay to the offset. */
+    private fun openSourceAt(context: android.content.Context, source: Uri, offset: Long): InputStream {
+        if (offset > 0L) {
+            val runtime = StorageRuntime.get(context)
+            val ref = runtime.provider.refForUri(source)
+            if (ref != null && !com.infinifolder.archive.ArchiveUri.isArchiveUri(source)) {
+                when (val result = com.infinifolder.storage.validateSeekableResult(
+                    runtime.provider.openSeekable(ref, false), false)) {
+                    is ProviderResult.Success -> {
+                        val device = result.value
+                        return object : InputStream() {
+                            private var position = offset
+                            private var closed = false
+
+                            override fun read(): Int {
+                                val one = ByteArray(1)
+                                val count = read(one, 0, 1)
+                                return if (count < 0) -1 else one[0].toInt() and 0xff
+                            }
+
+                            override fun read(bytes: ByteArray, off: Int, len: Int): Int {
+                                if (closed) throw IOException("Selected source is closed")
+                                if (len == 0) return 0
+                                val count = device.readAt(position, bytes, off, len)
+                                if (count <= 0) return -1
+                                position += count
+                                return count
+                            }
+
+                            override fun close() {
+                                if (!closed) {
+                                    closed = true
+                                    device.close()
+                                }
+                            }
+                        }
+                    }
+                    is ProviderResult.Failure -> throw IOException(result.message, result.cause)
+                    is ProviderResult.Unsupported -> Unit
+                }
+            }
+        }
+
+        val input = openSource(context, source)
+        if (offset == 0L) return input
+        try {
+            skipExactly(input, offset)
+            return input
+        } catch (error: Exception) {
+            runCatching { input.close() }.onFailure(error::addSuppressed)
+            throw error
+        }
+    }
+
+    private fun skipExactly(input: InputStream, count: Long) {
+        var remaining = count
+        val discard = ByteArray(32 * 1024)
+        while (remaining > 0L) {
+            if (Thread.currentThread().isInterrupted) throw InterruptedIOException("Selected-file relay cancelled")
+            val read = input.read(discard, 0, minOf(discard.size.toLong(), remaining).toInt())
+            if (read < 0) throw EOFException("Selected source ended before the reconnect offset")
+            remaining -= read
+        }
+    }
+
+    private fun retrySource(context: android.content.Context, item: Record, offset: Long,
+        retries: Int, error: Exception): Boolean {
+        if (retries >= MAX_SOURCE_RETRIES || !com.infinifolder.storage.NetworkConnectionStatus
+                .isTransportFailure(error, error.message.orEmpty())) return false
+        val providerId = runCatching { StorageRuntime.get(context).provider.refForUri(item.source)?.providerId }
+            .getOrNull() ?: item.source.scheme.orEmpty()
+        com.infinifolder.storage.DiagnosticLog.record("infiniselect.source.reconnect",
+            "provider=$providerId name=${item.name} attempt=${retries + 1}/$MAX_SOURCE_RETRIES resumedBytes=$offset", error)
+        return true
+    }
+
+    private fun pauseBeforeRetry(retries: Int) {
+        try {
+            Thread.sleep(RETRY_DELAY_MS * (1L shl (retries - 1).coerceIn(0, 2)))
+        } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw InterruptedIOException("Selected-file reconnect cancelled").apply { initCause(error) }
         }
     }
 
@@ -188,6 +357,8 @@ class FileSelectionRelayProvider : ContentProvider() {
         private const val TOKEN_TTL_MS = 24L * 60 * 60 * 1000
         private const val LAST_CLEANUP_KEY = "relay.last_cleanup"
         private const val CLEANUP_INTERVAL_MS = 5L * 60 * 1000
+        private const val MAX_SOURCE_RETRIES = 3
+        private const val RETRY_DELAY_MS = 400L
         private const val AUTHORITY_SUFFIX = ".selection"
         private val workers = ThreadPoolExecutor(
             2, 4, 30, TimeUnit.SECONDS, ArrayBlockingQueue(8),

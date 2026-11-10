@@ -21,14 +21,14 @@ dependencyResolutionManagement {
 
 rootProject.name = "InfiniMedia"
 
-listOf("storage-engine", "viewer-common", "viewer-audio", "viewer-host").forEach { name ->
+listOf("storage-engine", "viewer-common", "viewer-audio", "viewer-video", "viewer-host").forEach { name ->
     include(":$name")
     project(":$name").projectDir = file("../$name")
 }
 
 listOf(
     "libinfinistream", "libinfinimeta", "libinfinistore", "libinfinivault",
-    "libinfinicanvas", "libinfiniscribe", "libinfinisound", "libinfiniselect",
+    "libinfinicanvas", "libinfiniscribe", "libinfinisound", "libinfinivideo", "libinfiniselect",
 ).forEach { includeBuild("../libraries/$it") }
 
 if (System.getenv("ANDROID_HOME").isNullOrBlank() &&

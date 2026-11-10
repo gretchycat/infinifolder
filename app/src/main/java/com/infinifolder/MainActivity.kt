@@ -470,7 +470,6 @@ class MainActivity : Activity(), DebugDumpObserver {
     private val pickTreeRequest = 4101
     private val pickCustomIconRequest = 4103
     private val pickThemeArchiveRequest = 4104
-    private val pickWinampSkinRequest = 4105
     private var pendingTreeSourceKey: String? = null
     private var pendingTreeTarget: Uri? = null
     private var pendingTreeAuthority: String? = null
@@ -977,13 +976,24 @@ class MainActivity : Activity(), DebugDumpObserver {
                             } else {
                                 showHomeRoot()
                             }
+                            val openDefaults = com.infinifolder.viewer.ExternalAppDefaults(this@MainActivity)
+                            val savedOpenChoices = openDefaults.candidates(Intent.ACTION_VIEW,
+                                com.infinifolder.viewer.ExternalAppDefaults.sourceKey(ref), mime, name)
+                            val preferredOpen = openDefaults.openPreference(ref, mime, name)
+                            val staleOpenChoice = savedOpenChoices.isNotEmpty() && preferredOpen == null
                             when {
                                 name.endsWith(".incomplete", true) || mime == "application/vnd.infinifolder.torrent-partial" -> { externalViewerLaunchPending = false; revealBrowserAfterExternalLaunch(); logExternalOpenRoute("incomplete-download"); resumeIncompleteDownload(ref) }
                                 mime == "application/x-bittorrent" && ref.providerId != "torrent" -> { externalViewerLaunchPending = false; revealBrowserAfterExternalLaunch(); logExternalOpenRoute("torrent"); openTorrentFile(entry) }
-                                mime == "application/x-winamp-skin" -> { externalViewerLaunchPending = false; revealBrowserAfterExternalLaunch(); logExternalOpenRoute("winamp-skin"); importWinampSkin(uri, applyToAudio = true) }
                                 (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null && !extensionIdentityMismatch) || AppsUri.isAppUri(uri) -> { logExternalOpenRoute("link"); open(entry, confirmCommands = true) }
-                                com.infinifolder.viewer.ExternalAppDefaults(this).openPreference(entry.ref, mime, name)
-                                    ?.let { it.packageName != packageName } == true -> { logExternalOpenRoute("saved-viewer"); open(entry) }
+                                preferredOpen?.let { it.packageName != packageName } == true || staleOpenChoice ||
+                                    type == MediaType.AUDIO || type == MediaType.TEXT -> {
+                                    logExternalOpenRoute(when {
+                                        staleOpenChoice -> "stale-default-chooser"
+                                        type == MediaType.AUDIO || type == MediaType.TEXT -> "companion-viewer"
+                                        else -> "saved-viewer"
+                                    })
+                                    open(entry)
+                                }
                                 hasRawMetadata -> { logExternalOpenRoute("raw-metadata-hex"); openHexEditor(entry,loadMetadata=true) }
                                 extensionUnknownBinary -> { logExternalOpenRoute("hex"); openHexEditor(entry) }
                                 com.infinifolder.viewer.ViewerComponents.canView(entry) || com.infinifolder.viewer.ViewerCatalog.activity(type) != null -> {
@@ -1835,28 +1845,133 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun queueAllAudioInFolder(folderUri: Uri, startEntry: ResourceEntry? = null) {
         io.execute {
             val siblings = MediaSourceAdapter.listFolder(this@MainActivity, folderUri)
-            val audioTracks = com.infinifolder.viewer.PlaylistExpander.expandResourceEntries(this@MainActivity, siblings, queueMultimedia = false)
+            if (startEntry != null && ArchiveFormats.isPlaylist(startEntry.metadata.name, startEntry.metadata.mimeType)) {
+                runOnUiThread { open(startEntry) }
+                return@execute
+            }
+            val audioTracks = siblings.filter {
+                !it.metadata.isDirectory &&
+                    MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.AUDIO
+            }.sortedBy { it.metadata.name.lowercase(Locale.ROOT) }
             if (audioTracks.isEmpty()) {
                 runOnUiThread { Toast.makeText(this@MainActivity, "No audio files found in directory", Toast.LENGTH_SHORT).show() }
                 return@execute
             }
-            val target = startEntry?.let { entry ->
-                if (com.infinifolder.viewer.PlaylistExpander.isPlaylist(entry.uri, entry.metadata.name)) {
-                    val sub = com.infinifolder.viewer.PlaylistExpander.expandPlaylist(this@MainActivity, entry.uri)
-                    sub.firstOrNull() ?: audioTracks.first()
-                } else {
-                    audioTracks.firstOrNull { com.infinifolder.viewer.AudioPlayerService.uriMatches(it.uri, entry.uri) } ?: audioTracks.first()
+            runOnUiThread { launchMediaEntries(audioTracks, "Audio from ${startEntry?.metadata?.name ?: folderUri.lastPathSegment.orEmpty()}") }
+        }
+    }
+
+    /** Recursively queue playable files from an archive or browsable filesystem image. */
+    private fun playContainerAudioInMedia(entry: ResourceEntry, entryIsInsideArchive: Boolean) {
+        val loadingToken = beginEntryActionLoading("Finding audio in ${entry.metadata.name}…") ?: return
+        io.execute {
+            var firstFailure: Throwable? = null
+            val tracks = mutableListOf<Pair<String, ResourceEntry>>()
+            try {
+                val rootUri = when {
+                    entry.metadata.isDirectory -> entry.uri
+                    entryIsInsideArchive -> {
+                        val cached = archiveProvider.extractToCache(entry.uri, entry.metadata.name)
+                        ArchiveUri.toArchiveUri(Uri.fromFile(cached))
+                    }
+                    else -> ArchiveUri.toArchiveUri(entry.uri)
                 }
-            } ?: audioTracks.first()
-            runOnUiThread {
-                val intent = Intent(this@MainActivity, com.infinifolder.viewer.AudioPlayerActivity::class.java).apply {
-                    data = target.uri
-                    putExtra("uri", target.uri.toString())
-                    putExtra("displayName", target.title)
-                    putExtra("parentUri", folderUri.toString())
+                val pending = java.util.ArrayDeque<Pair<Uri, String>>()
+                val visited = mutableSetOf<String>()
+                pending.add(rootUri to "")
+                while (pending.isNotEmpty()) {
+                    val (folderUri, relativePath) = pending.removeFirst()
+                    if (!visited.add(folderUri.toString())) continue
+                    val unsortedChildren = try {
+                        MediaSourceAdapter.listFolder(this@MainActivity, folderUri)
+                    } catch (error: Throwable) {
+                        if (firstFailure == null) firstFailure = error
+                        continue
+                    }
+                    val children = unsortedChildren.sortedWith(Comparator { left, right ->
+                        val insensitive = left.metadata.name.compareTo(right.metadata.name, ignoreCase = true)
+                        if (insensitive != 0) insensitive else left.metadata.name.compareTo(right.metadata.name)
+                    })
+                    for (child in children) {
+                        val childPath = if (relativePath.isEmpty()) child.metadata.name else "$relativePath/${child.metadata.name}"
+                        if (child.metadata.isDirectory) {
+                            // Do not follow links: they can point outside the container or create cycles.
+                            if (!child.metadata.isSymbolicLink && !child.metadata.isBrokenLink && child.metadata.canRead) {
+                                pending.add(child.uri to childPath)
+                            }
+                        } else if (!child.metadata.isSymbolicLink && !child.metadata.isBrokenLink && child.metadata.canRead &&
+                            MediaTypeDetector.detect(child.metadata.name, child.metadata.mimeType) == MediaType.AUDIO) {
+                            tracks.add(childPath to child)
+                        }
+                    }
                 }
-                startActivity(intent)
+            } catch (error: Throwable) {
+                if (firstFailure == null) firstFailure = error
             }
+
+            val ordered = tracks.sortedWith(Comparator { left, right ->
+                val insensitive = left.first.compareTo(right.first, ignoreCase = true)
+                if (insensitive != 0) insensitive else left.first.compareTo(right.first)
+            }).map { it.second }
+            runOnUiThread {
+                finishEntryActionLoading(loadingToken)
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (ordered.isEmpty()) {
+                    val detail = firstFailure?.message?.takeIf { it.isNotBlank() }
+                    val message = if (detail == null) "No audio files found in ${entry.metadata.name}"
+                        else "Could not read audio from ${entry.metadata.name}: $detail"
+                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                } else {
+                    launchMediaEntriesInInfiniMedia(ordered, "Audio from ${entry.metadata.name}")
+                }
+            }
+        }
+    }
+
+    /** This explicit container action always opens InfiniMedia, independent of saved file defaults. */
+    private fun launchMediaEntriesInInfiniMedia(entries: List<ResourceEntry>, title: String) {
+        if (entries.isEmpty()) return
+        val component = CompanionViewerDefaults.installedMediaComponent(this) ?: run {
+            Toast.makeText(this, "InfiniMedia is not installed", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val requests = entries.map { entry ->
+            FileSelectionRelayProvider.RegistrationRequest(entry.uri, entry.metadata.name,
+                com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType),
+                entry.metadata.sizeBytes)
+        }
+        val uris = try {
+            FileSelectionRelayProvider.registerAll(this, requests)
+        } catch (error: Exception) {
+            Toast.makeText(this, "Could not prepare the media selection: ${error.message}", Toast.LENGTH_LONG).show()
+            return
+        }
+        val send = if (uris.size == 1) {
+            val entry = entries.single()
+            val mime = com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType)
+            Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uris.single(), mime.ifBlank { "audio/*" })
+                putExtra("displayName", entry.metadata.name)
+                putExtra("mimeType", mime)
+            }
+        } else {
+            Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                type = "audio/*"
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+                putExtra("displayName", title)
+            }
+        }.apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            clipData = ClipData.newRawUri(entries.first().metadata.name, uris.first()).apply {
+                uris.drop(1).forEach { addItem(ClipData.Item(it)) }
+            }
+            setComponent(component)
+        }
+        try {
+            uris.forEach { grantUriPermission(component.packageName, it, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            startViewerActivity(send)
+        } catch (error: Exception) {
+            Toast.makeText(this, "Could not open InfiniMedia: ${error.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1883,59 +1998,50 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
 
-    private fun queueAllMultimediaInFolder(folderUri: Uri, startEntry: ResourceEntry? = null) {
-        io.execute {
-            val siblings = MediaSourceAdapter.listFolder(this@MainActivity, folderUri)
-            val mediaTracks = com.infinifolder.viewer.PlaylistExpander.expandResourceEntries(this@MainActivity, siblings, queueMultimedia = true)
-            if (mediaTracks.isEmpty()) {
-                runOnUiThread { Toast.makeText(this@MainActivity, "No multimedia files found in directory", Toast.LENGTH_SHORT).show() }
-                return@execute
-            }
-            val target = startEntry?.let { entry ->
-                if (com.infinifolder.viewer.PlaylistExpander.isPlaylist(entry.uri, entry.metadata.name)) {
-                    val sub = com.infinifolder.viewer.PlaylistExpander.expandPlaylist(this@MainActivity, entry.uri)
-                    sub.firstOrNull() ?: mediaTracks.first()
-                } else {
-                    mediaTracks.firstOrNull { com.infinifolder.viewer.AudioPlayerService.uriMatches(it.uri, entry.uri) } ?: mediaTracks.first()
-                }
-            } ?: mediaTracks.first()
-            val targetType = MediaTypeDetector.detect(target.title, null)
-            runOnUiThread {
-                val targetActivity = if (targetType == MediaType.VIDEO) {
-                    com.infinifolder.viewer.VideoPlayerActivity::class.java
-                } else {
-                    com.infinifolder.viewer.AudioPlayerActivity::class.java
-                }
-                val intent = Intent(this@MainActivity, targetActivity).apply {
-                    data = target.uri
-                    putExtra("uri", target.uri.toString())
-                    putExtra("displayName", target.title)
-                    putExtra("parentUri", folderUri.toString())
-                    putExtra("queueMultimedia", true)
-                }
-                startActivity(intent)
+    /** Send read-granted media URIs to the installed media app. */
+    private fun launchMediaEntries(entries: List<ResourceEntry>, title: String) {
+        if (entries.isEmpty()) return
+        if (entries.size == 1) {
+            open(entries.single())
+            return
+        }
+        val requests = entries.map { entry ->
+            FileSelectionRelayProvider.RegistrationRequest(entry.uri, entry.metadata.name,
+                com.infinifolder.mime.MimeRegistry.effective(entry.metadata.name, entry.metadata.mimeType),
+                entry.metadata.sizeBytes)
+        }
+        val uris = try { FileSelectionRelayProvider.registerAll(this, requests) }
+        catch (error: Exception) {
+            Toast.makeText(this, "Could not prepare the media selection: ${error.message}", Toast.LENGTH_LONG).show()
+            return
+        }
+        val send = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "audio/*"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            clipData = android.content.ClipData.newRawUri(entries.first().metadata.name, uris.first()).apply {
+                uris.drop(1).forEach { addItem(android.content.ClipData.Item(it)) }
             }
         }
-    }
-
-    private fun enqueueAudio(entry: ResourceEntry) {
-        val s = com.infinifolder.viewer.AudioPlayerService.currentService
-        if (s != null) {
-            io.execute {
-                val tracks = if (com.infinifolder.viewer.PlaylistExpander.isPlaylist(entry.uri, entry.metadata.name)) {
-                    com.infinifolder.viewer.PlaylistExpander.expandPlaylist(this@MainActivity, entry.uri)
-                } else {
-                    listOf(com.infinifolder.viewer.AudioTrack(entry.uri, entry.metadata.name))
-                }
-                runOnUiThread {
-                    s.enqueueAll(tracks)
-                    val msg = if (tracks.size > 1) "Queued ${tracks.size} tracks from ${entry.metadata.name}" else "Queued: ${entry.metadata.name}"
-                    Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
-                }
-            }
-        } else {
-            launchBuiltInViewer(entry, com.infinifolder.viewer.MediaType.AUDIO,forceType=true)
+        val defaults = com.infinifolder.viewer.ExternalAppDefaults(this)
+        val first = entries.first()
+        val firstMime = com.infinifolder.mime.MimeRegistry.effective(first.metadata.name, first.metadata.mimeType)
+        val seeded = CompanionViewerDefaults.ensureForEntry(this, defaults, first.ref, first.metadata.name, firstMime)
+        val savedChoices = defaults.candidates(Intent.ACTION_VIEW,
+            com.infinifolder.viewer.ExternalAppDefaults.sourceKey(first.ref), firstMime, first.metadata.name)
+        val chosen = defaults.openPreference(first.ref, firstMime, first.metadata.name)
+        val component = if (savedChoices.isEmpty()) seeded else chosen
+        val canReceiveMultiple = component != null && runCatching {
+            packageManager.queryIntentActivities(Intent(send).setComponent(null).setPackage(component.packageName),
+                android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                .any { it.activityInfo.packageName == component.packageName && it.activityInfo.name == component.className }
+        }.getOrDefault(false)
+        if (canReceiveMultiple) {
+            uris.forEach { grantUriPermission(component!!.packageName, it, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            if (runCatching { startViewerActivity(Intent(send).setComponent(component)); true }.getOrDefault(false)) return
         }
+        startViewerActivity(com.infinifolder.viewer.ExternalAppChooser.create(this, send,
+            "Open $title", null, title, forceChooser = true))
     }
 
     private fun showCurrentDirectoryMenu(dirUri: Uri? = current) {
@@ -4063,10 +4169,6 @@ class MainActivity : Activity(), DebugDumpObserver {
     @Deprecated("Use Activity Result APIs when AndroidX lifecycle is introduced")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == pickWinampSkinRequest && resultCode == RESULT_OK) {
-            data?.data?.let(::importWinampSkin)
-            return
-        }
         if (requestCode == pickTreeRequest && resultCode == RESULT_OK) data?.data?.let { uri ->
             permissionQueryGeneration++ // Discard checks that started before this new grant.
             accessRequestGeneration++
@@ -5942,6 +6044,8 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun launchBuiltInViewer(entry: ResourceEntry, mediaType: com.infinifolder.viewer.MediaType, edit:Boolean=false,forceType:Boolean=false): Boolean {
+        // Playback and every Scribe-backed document viewer live in companion apps.
+        if (mediaType == MediaType.AUDIO || CompanionViewerDefaults.isScribeType(mediaType)) return false
         val intent = (if(forceType)null else com.infinifolder.viewer.ViewerLaunch.intentForResource(this,entry,current,edit))
             ?: com.infinifolder.viewer.ViewerLaunch.intent(this, entry, mediaType, current,edit) ?: return false
         return try {
@@ -6015,7 +6119,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun open(entry: ResourceEntry, externalOnly: Boolean = false, confirmCommands: Boolean = false,
         forceExternalChooser: Boolean = false, skipRawMetadata: Boolean = false, skipMagic:Boolean=false,
-        validatedMimeOverride: String? = null, skipCddbRoute: Boolean = false) {
+        validatedMimeOverride: String? = null) {
         if (!entry.metadata.isDirectory && entry.metadata.name.endsWith(".incomplete", true) && !externalOnly) {
             resumeIncompleteDownload(entry.ref)
             return
@@ -6113,11 +6217,6 @@ class MainActivity : Activity(), DebugDumpObserver {
             } else resolveLink.run()
             return
         }
-        if (!externalOnly && !entry.metadata.isDirectory && entry.metadata.name.endsWith(".wsz", ignoreCase = true) &&
-            com.infinifolder.mime.MimeRegistry.normalize(validatedMimeOverride) == "application/x-winamp-skin") {
-            importWinampSkin(entry.uri, applyToAudio = true)
-            return
-        }
         if (!externalOnly && entry.ref.providerId != "torrent" && entry.metadata.name.endsWith(".torrent", ignoreCase = true) &&
             com.infinifolder.mime.MimeRegistry.normalize(validatedMimeOverride) == "application/x-bittorrent") {
             openTorrentFile(entry)
@@ -6199,30 +6298,20 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         val effectiveMime = validatedMime ?: com.infinifolder.mime.MimeRegistry.effective(
             entry.metadata.name, entry.metadata.mimeType, cachedMagic?.mimeType)
-        if (!externalOnly && !forceExternalChooser && !skipCddbRoute && extension == "toc" &&
-            effectiveMime.startsWith("text/")) {
-            val generation = ++browserNavigationGeneration
-            io.execute {
-                val companion = com.infinifolder.viewer.PlaylistExpander.matchingCddbPlaylist(this, entry.uri)
-                runOnUiThread {
-                    if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
-                    if (companion != null) {
-                        if (!launchBuiltInViewer(companion, com.infinifolder.viewer.MediaType.AUDIO, forceType = true))
-                            open(entry, externalOnly, confirmCommands, forceExternalChooser,
-                                skipRawMetadata = skipRawMetadata, skipMagic = true,
-                                validatedMimeOverride = effectiveMime, skipCddbRoute = true)
-                    } else open(entry, externalOnly, confirmCommands, forceExternalChooser,
-                        skipRawMetadata = skipRawMetadata, skipMagic = true,
-                        validatedMimeOverride = effectiveMime, skipCddbRoute = true)
-                }
-            }
-            return
-        }
         val appDefaults = com.infinifolder.viewer.ExternalAppDefaults(this)
-        val preferredOpen = if (entry.metadata.isDirectory || externalOnly) null else appDefaults.openPreference(entry.ref, effectiveMime, entry.metadata.name)
+        if (!entry.metadata.isDirectory && !externalOnly && !forceExternalChooser) {
+            CompanionViewerDefaults.ensureForEntry(this, appDefaults, entry.ref, entry.metadata.name, effectiveMime)
+        }
+        val savedOpenChoices = if (entry.metadata.isDirectory || externalOnly) emptyList() else
+            appDefaults.candidates(Intent.ACTION_VIEW,
+                com.infinifolder.viewer.ExternalAppDefaults.sourceKey(entry.ref), effectiveMime, entry.metadata.name)
+        val preferredOpen = if (entry.metadata.isDirectory || externalOnly) null else
+            appDefaults.openPreference(entry.ref, effectiveMime, entry.metadata.name)
+        val hasSavedOpenChoice = savedOpenChoices.isNotEmpty()
+        val hasStaleOpenChoice = hasSavedOpenChoice && preferredOpen == null
         val hasExternalDefault = preferredOpen?.let { it.packageName != packageName } == true
         val preferInternal = preferredOpen?.packageName == packageName
-        if(!externalOnly&&!hasExternalDefault&&!skipRawMetadata&&!entry.metadata.isDirectory&&
+        if(!externalOnly&&!hasSavedOpenChoice&&!skipRawMetadata&&!entry.metadata.isDirectory&&
             com.infinifolder.viewer.RawMediaConfigStore.mightHave(entry)){
             val generation=++browserNavigationGeneration
             io.execute {
@@ -6236,7 +6325,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             return
         }
-        val termuxRule = if (!externalOnly && !hasExternalDefault && !preferInternal && !entry.metadata.isDirectory) TermuxAssociations(this).find(entry.metadata.name) else null
+        val termuxRule = if (!externalOnly && !hasSavedOpenChoice && !preferInternal && !entry.metadata.isDirectory) TermuxAssociations(this).find(entry.metadata.name) else null
         if (termuxRule != null && TermuxEditorAvailability.state(this, termuxRule.command) == TermuxEditorAvailability.State.AVAILABLE) {
             try {
                 startViewerActivity(Intent(this, TermuxEditActivity::class.java).setData(entry.uri))
@@ -6246,14 +6335,13 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             return
         }
-        if (!externalOnly && !hasExternalDefault && extensionValidationFailed) {
+        if (!externalOnly && !hasExternalDefault && !hasStaleOpenChoice && extensionValidationFailed) {
             openHexEditor(entry.copy(metadata = entry.metadata.copy(mimeType = "application/octet-stream")))
             return
         }
         val isPkg = !AppsUri.isAppUri(entry.uri) && !extensionIdentityMismatch && ArchiveFormats.isPackagedFormat(entry.metadata.name, effectiveMime)
         val isPlaylist = !extensionIdentityMismatch && !AppsUri.isAppUri(entry.uri) && (
-            ArchiveFormats.isPlaylist(entry.metadata.name, effectiveMime) ||
-            com.infinifolder.viewer.PlaylistExpander.isPlaylist(entry.uri, entry.metadata.name)
+            ArchiveFormats.isPlaylist(entry.metadata.name, effectiveMime)
         )
         val isArchiveOrDisc = !AppsUri.isAppUri(entry.uri) && !isPlaylist && (
             (!extensionIdentityMismatch && ArchiveFormats.isArchive(entry.metadata.name, effectiveMime)) ||
@@ -6262,12 +6350,12 @@ class MainActivity : Activity(), DebugDumpObserver {
         val specificViewer=com.infinifolder.viewer.ViewerComponents.resolve(
             entry.copy(metadata=entry.metadata.copy(mimeType=effectiveMime)))?.describe()?.attributes?.get("viewerKind")
             ?.let {it!="hex"}==true
-        if (isArchiveOrDisc && !specificViewer && !isPkg && !externalOnly && !hasExternalDefault) {
+        if (isArchiveOrDisc && !specificViewer && !isPkg && !externalOnly && !hasExternalDefault && !hasStaleOpenChoice) {
             if(ArchiveUri.isArchiveUri(entry.uri))browseNestedArchive(entry)
             else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
             return
         }
-        if (!externalOnly && !hasExternalDefault) {
+        if (!externalOnly && !hasExternalDefault && !hasStaleOpenChoice) {
             val mediaType = com.infinifolder.viewer.MediaTypeDetector.detect(entry.metadata.name, effectiveMime)
             if (specificViewer || (mediaType != com.infinifolder.viewer.MediaType.UNSUPPORTED && mediaType != com.infinifolder.viewer.MediaType.ARCHIVE_OR_CONTAINER)) {
                 if (launchBuiltInViewer(entry.copy(metadata = entry.metadata.copy(mimeType = effectiveMime)), mediaType)) {
@@ -6276,7 +6364,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         }
         if(!externalOnly&&!hasExternalDefault&&com.infinifolder.viewer.MediaTypeDetector.isGenericBinary(entry.metadata.name,effectiveMime)){
-            if (extension.isNotBlank() && !preferInternal) {
+            if (hasStaleOpenChoice || (extension.isNotBlank() && !preferInternal)) {
                 runCatching {
                     startViewerActivity(com.infinifolder.viewer.ExternalAppChooser.forResource(this,
                         entry.copy(metadata = entry.metadata.copy(mimeType = effectiveMime)), current,
@@ -9736,7 +9824,6 @@ class MainActivity : Activity(), DebugDumpObserver {
                     !com.infinifolder.theme.ThemeManager.iconShadowsEnabled)
             },
             action("MIME and URI icon registry…") {startActivity(Intent(this,com.infinifolder.preview.IconRegistryEditorActivity::class.java))},
-            action("Interface theme…") { showAppThemeDialog() },
             action("Light / dark / system…") { showThemeModeDialog() }
         ))
         return listOf(
@@ -10055,123 +10142,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             .show()
     }
 
-    private fun showAppThemeDialog() {
-        val themes = com.infinifolder.theme.ThemeManager.listPresetThemes(dark)
-        val activeTheme = com.infinifolder.theme.ThemeManager.activeTheme
-        val options = themes.map {
-            val mark = if (it.id == activeTheme.id) "● " else "○ "
-            "$mark${it.name}"
-        }.toMutableList()
-        options.add("📂 Import Winamp / XMMS Skin…")
-        options.add("Skin image scaling…")
-
-        dialogBuilder().setTitle("Interface Theme").setItems(options.toTypedArray()) { _, which ->
-            if (which < themes.size) {
-                val selected = themes[which]
-                lastAppliedThemeId = selected.id
-                lastAppliedTextPrimary = selected.textPrimary
-                dark = selected.isDark
-                com.infinifolder.theme.ThemeManager.setTheme(this, selected)
-                buildUi()
-                if (homeMode) showHomeRoot() else current?.let { load(it) }
-            } else if (which == themes.size) {
-                promptImportWszSkin()
-            } else {
-                showSkinScalingDialog()
-            }
-        }.show()
-    }
-
-    private fun showSkinScalingDialog() {
-        val manager = com.infinifolder.theme.ThemeManager
-        dialogBuilder().setTitle("Skin image scaling")
-            .setSingleChoiceItems(arrayOf("Integer scaling (crisp pixels)", "Smooth scaling"),
-                if (manager.smoothSkinScaling) 1 else 0) { dialog, which ->
-                manager.setSmoothSkinScaling(this, which == 1)
-                dialog.dismiss()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun promptImportWszSkin() {
-        val input = EditText(this).apply {
-            hint = "/sdcard/Download/classic.wsz"
-        }
-        val padding = dp(20)
-        val container = FrameLayout(this).apply {
-            setPadding(padding, padding / 2, padding, padding / 2)
-            addView(input)
-        }
-
-        dialogBuilder()
-            .setTitle("Import Winamp / XMMS Skin")
-            .setMessage("Enter the local path or URI of a skin archive (WSZ, ZIP, TAR, TAR.GZ or TAR.BZ2):")
-            .setView(container)
-            .setPositiveButton("Import") { _, _ ->
-                val path = input.text.toString().trim()
-                if (path.isNotEmpty()) {
-                    val skinUri = if (path.startsWith("/")) Uri.fromFile(java.io.File(path)) else Uri.parse(path)
-                    importWinampSkin(skinUri)
-                }
-            }
-            .setNeutralButton("Browse…") { _, _ ->
-                try {
-                    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                        addCategory(Intent.CATEGORY_OPENABLE)
-                        type = "*/*"
-                    }, pickWinampSkinRequest)
-                } catch (error: Exception) {
-                    Toast.makeText(this, "Cannot open file picker: ${error.message}", Toast.LENGTH_LONG).show()
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun importWinampSkin(uri: Uri, applyToAudio: Boolean = false) {
-        Toast.makeText(this, "Importing skin…", Toast.LENGTH_SHORT).show()
-        Thread {
-            val imported = com.infinifolder.theme.ThemeManager.importSkin(applicationContext, uri, audio = applyToAudio)
-            runOnUiThread {
-                if (!isDestroyed) Toast.makeText(this,
-                    if (imported != null) "Skin '${imported.name}' applied" else "Could not import skin from this file",
-                    Toast.LENGTH_LONG).show()
-            }
-        }.start()
-    }
-
-    private var bundledIconThemesReady = false
-    private var installingBundledIconThemes = false
-
     private fun showIconThemeDialog() {
-        if (!bundledIconThemesReady) {
-            if (installingBundledIconThemes) return
-            installingBundledIconThemes = true
-            val progress = ProgressDialog(this).apply {
-                setMessage("Preparing icon themes…")
-                setCancelable(false)
-                show()
-            }
-            imageIo.execute {
-                val result = runCatching { iconThemeManager.installBundledThemes() }
-                runOnUiThread {
-                    installingBundledIconThemes = false
-                    if (!isDestroyed) {
-                        progress.dismiss()
-                        bundledIconThemesReady = result.isSuccess
-                        if (result.isSuccess) showIconThemeDialog()
-                        else {
-                            Toast.makeText(this, "Could not prepare bundled themes: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
-                            // Imported and system themes remain usable even if a bundled theme fails.
-                            bundledIconThemesReady = true
-                            showIconThemeDialog()
-                        }
-                    }
-                }
-            }
-            return
-        }
         val textColor = setTextColorForTheme()
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -12241,6 +12212,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val inArchive = ArchiveUri.isArchiveUri(entry.uri)
         val isApp = AppsUri.isAppUri(entry.uri)
         val isCategory = AppsUri.isCategoryUri(entry.uri)
+        val infiniMediaInstalled = CompanionViewerDefaults.installedMediaComponent(this) != null
         val isFile = !entry.metadata.isDirectory && !isApp && !isCategory && !isShortcut
 
         val detectedMagic=archiveInfo.magicMime?.let {com.infinifolder.storage.FileMagicResult(it,"Detected content",archiveInfo.browsable)}
@@ -12249,10 +12221,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             ArchiveFormats.isPackagedFormat(entry.metadata.name, entry.metadata.mimeType) ||
             (detectedMagic != null && ArchiveFormats.isPackagedFormat(entry.metadata.name, detectedMagic.mimeType))
         )
-        val isPlaylist = !isApp && (
-            ArchiveFormats.isPlaylist(entry.metadata.name, detectedMagic?.mimeType ?: entry.metadata.mimeType) ||
-            com.infinifolder.viewer.PlaylistExpander.isPlaylist(entry.uri, entry.metadata.name)
-        )
+        val isPlaylist = !isApp && ArchiveFormats.isPlaylist(entry.metadata.name,
+            detectedMagic?.mimeType ?: entry.metadata.mimeType)
         val canExtractApp = if (isApp) {
             val pkg = AppsUri.getPackageName(entry.uri)
             pkg != null && appsProvider.canExtract(pkg)
@@ -12262,7 +12232,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
         val baseOpenGroup: List<String> = when {
             isFile && entry.metadata.name.endsWith(".wsz", ignoreCase = true) ->
-                listOf("Install and apply theme", "Open as archive", "Open with…")
+                listOf("Open as archive", "Open with…")
             isApp -> listOf("Launch")
             isCategory -> listOf("Browse folder")
             isShortcut -> {
@@ -12285,10 +12255,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             isPlaylist -> {
                 val audioCount = entries.count { !it.metadata.isDirectory && (MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.AUDIO || ArchiveFormats.isPlaylist(it.metadata.name)) }
-                val videoCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.VIDEO }
-                val list = mutableListOf("Open", "Browse", "Queue audio")
+                val list = mutableListOf("Open", "Browse")
                 if (audioCount > 1) list.add("Queue all audio ($audioCount)")
-                if (videoCount > 0) list.add("Queue all multimedia (${audioCount + videoCount})")
                 list.add("Open with…")
                 list
             }
@@ -12310,34 +12278,32 @@ class MainActivity : Activity(), DebugDumpObserver {
                             else if (mt == MediaType.VIDEO) v++
                         }
                     }
-                    if (a > 0) list.add("Queue all audio ($a)")
+                    if (a > 0 && !infiniMediaInstalled) list.add("Queue all audio ($a)")
                     if (v > 0) list.add("Play all video ($v)")
-                    if (a > 0 && v > 0) list.add("Queue all multimedia (${a + v})")
                 }
                 list
             }
             detectedMediaType == MediaType.AUDIO -> {
                 val audioCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.AUDIO }
-                val videoCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.VIDEO }
-                val list = mutableListOf("Open", "Queue audio")
+                val list = mutableListOf("Open")
                 if (audioCount > 1) list.add("Queue all audio ($audioCount)")
-                if (videoCount > 0) list.add("Queue all multimedia (${audioCount + videoCount})")
                 list.add("Open with…")
                 list
             }
             detectedMediaType == MediaType.VIDEO -> {
-                val audioCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.AUDIO }
                 val videoCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.VIDEO }
                 val list = mutableListOf("Open")
                 if (videoCount > 1) list.add("Play all video ($videoCount)")
-                if (audioCount > 0) list.add("Queue all multimedia (${audioCount + videoCount})")
                 list.add("Open with…")
                 list
             }
             else -> listOf("Open", "Open with…")
         }
 
+        val canPlayContainerInMedia = infiniMediaInstalled &&
+            (isArchive || (entry.metadata.isDirectory && !isApp && !isCategory))
         val openGroup = baseOpenGroup +
+            (if (canPlayContainerInMedia) listOf("Queue all audio in InfiniMedia") else emptyList()) +
             (if (!entry.metadata.isDirectory && !isApp && !isCategory && entry.metadata.canRead) listOf("Open in hex editor") else emptyList()) +
             (if (canShowDeleted) listOf("Show deleted files") else emptyList())
         val canCopyContents = !entry.metadata.isDirectory && !isApp && !isCategory &&
@@ -12451,12 +12417,6 @@ class MainActivity : Activity(), DebugDumpObserver {
                 queueAllVideoInFolder(folder, start)
                 return@showGroupedMenuDialog
             }
-            if (action.startsWith("Queue all multimedia")) {
-                val folder = if (entry.metadata.isDirectory) entry.uri else (current ?: entry.uri)
-                val start = if (entry.metadata.isDirectory) null else entry
-                queueAllMultimediaInFolder(folder, start)
-                return@showGroupedMenuDialog
-            }
             when (action) {
                 "Edit connection…" -> linkedConnection?.let { connection ->
                     when (connection.sourceTypeId) {
@@ -12469,7 +12429,6 @@ class MainActivity : Activity(), DebugDumpObserver {
                 "Pin to top" -> entryBrowseDestination(entry)?.let { pinContainer(entry, it) }
                 "Unpin" -> entryBrowseDestination(entry)?.let(::unpinContainer)
                 "Add to home screen" -> pinEntryToHome(entry)
-                "Queue audio" -> enqueueAudio(entry)
                 "Launch", "Launch target app" -> {
                     if (isShortcut) openShortcut(entry)
                     else {
@@ -12500,11 +12459,11 @@ class MainActivity : Activity(), DebugDumpObserver {
                     else showDestinationPicker(entry, false)
                 }
                 "Browse folder" -> navigate(entry.uri, displayName = entry.metadata.name)
-                "Install and apply theme" -> importWinampSkin(entry.uri, applyToAudio = true)
                 "Open as archive" -> if (ArchiveUri.isArchiveUri(entry.uri)) browseNestedArchive(entry)
                     else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
                 "Browse archive", "Browse" -> if(ArchiveUri.isArchiveUri(entry.uri))browseNestedArchive(entry)
                     else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
+                "Queue all audio in InfiniMedia" -> playContainerAudioInMedia(entry, inArchive)
                 "Open with…" -> open(entry, externalOnly = true, forceExternalChooser = true)
                 "Open in hex editor" -> openHexEditor(entry)
                 "Open" -> if (entry.metadata.isDirectory) navigate(entry.uri, displayName = entry.metadata.name) else open(entry)

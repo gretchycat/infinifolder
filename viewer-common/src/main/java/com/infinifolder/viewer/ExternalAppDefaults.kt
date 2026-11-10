@@ -72,21 +72,20 @@ class ExternalAppDefaults(context: Context) {
     fun hasInternalOpenPreference(ref: ResourceRef, mime: String?): Boolean =
         openPreference(ref, mime)?.packageName == ownPackage
 
-    /** A stale/incompatible saved app must not suppress an available built-in viewer. */
+    /** Resolve the most specific saved choice. A stale choice remains stored and asks the user. */
     fun openPreference(ref: ResourceRef, mime: String?, name: String = "document"): ComponentName? {
         val saved = candidates(Intent.ACTION_VIEW, sourceKey(ref), mime, name)
-        if (saved.isEmpty()) return null
-        val internal by lazy {
-            ViewerComponents.registry.query(io.github.gretchycat.infinistream.Operations.VIEW)
-                .mapNotNull { it.handler.service(ViewerComponent::class.java)?.activityClassName }.toSet()
-        }
-        return saved.firstOrNull { component ->
-            if (component.packageName == ownPackage) component.className in internal else runCatching {
-                val activity = packages.getActivityInfo(component, 0)
-                activity.exported && activity.enabled && activity.applicationInfo.enabled
-            }.getOrDefault(false)
-        }
+        val component = saved.firstOrNull() ?: return null
+        return component.takeIf { isAvailable(it) }
     }
+
+    fun isAvailable(component: ComponentName): Boolean = if (component.packageName == ownPackage) {
+        ViewerComponents.registry.query(io.github.gretchycat.infinistream.Operations.VIEW)
+            .any { it.handler.service(ViewerComponent::class.java)?.activityClassName == component.className }
+    } else runCatching {
+        val activity = packages.getActivityInfo(component, 0)
+        activity.exported && activity.enabled && activity.applicationInfo.enabled
+    }.getOrDefault(false)
     var editor: ComponentName?
         get() = prefs.getString("editor", null)?.let(ComponentName::unflattenFromString)
         set(value) { prefs.edit().apply { if (value == null) remove("editor") else putString("editor", value.flattenToString()) }.apply() }

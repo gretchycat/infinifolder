@@ -45,15 +45,32 @@ object MediaTypeDetector {
 
     fun detect(name: String, mimeType: String? = null): MediaType {
         val safeMime = com.infinifolder.mime.MimeRegistry.effective(name, mimeType)
+        val lowerName = name.lowercase(Locale.ROOT)
+        val ext = lowerName.substringAfterLast('.', "")
+        val lowerMime = safeMime.lowercase(Locale.ROOT).substringBefore(';').trim()
+
+        // DOS text art advertises an image MIME so icon generation can render
+        // it as a thumbnail. That image capability must not steal the actual
+        // open route from InfiniScribe's CP437 text viewer.
+        if (ImageFormats.hasDosTextPreview(
+                ResourceMetadata(name, safeMime, null, null, false))) {
+            return MediaType.TEXT
+        }
+
         val discovered=ViewerComponents.resolve(io.github.gretchycat.infinistream.CapabilityResource(
             io.github.gretchycat.infinistream.StreamMetadata(name=name,content=io.github.gretchycat.infinistream.ContentType(mimeType=safeMime))))
         discovered?.descriptor?.attributes?.get("mediaTypes")?.split(',')?.firstNotNullOfOrNull { value ->
             runCatching { MediaType.valueOf(value) }.getOrNull()
         }?.let { return it }
 
-        val lowerName = name.lowercase(Locale.ROOT)
-        val ext = lowerName.substringAfterLast('.', "")
-        val lowerMime = safeMime.lowercase(Locale.ROOT).substringBefore(';').trim()
+        // Preserve audio identity in file-manager builds that deliberately do
+        // not package the audio playback module. The MIME registry is the
+        // format hint source here; decoding remains InfiniMedia's job.
+        if (ArchiveFormats.isPlaylist(name, lowerMime) ||
+            com.infinifolder.preview.AudioIconFormats.isAudio(lowerMime) ||
+            com.infinifolder.preview.AudioIconFormats.isAudio(com.infinifolder.mime.MimeRegistry.guess(name))) {
+            return MediaType.AUDIO
+        }
 
         if (io.github.gretchycat.infiniscribe.FontFormats.supports("", lowerMime)) return MediaType.FONT
         val documentKind=io.github.gretchycat.infiniscribe.DocumentFormats.forMime(lowerMime)

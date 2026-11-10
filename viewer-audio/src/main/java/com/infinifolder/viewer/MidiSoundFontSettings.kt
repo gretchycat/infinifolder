@@ -10,6 +10,8 @@ import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 
 /** User-owned MIDI soundfont selection, copied into private storage so SAF grants may expire safely. */
 internal object MidiSoundFontSettings {
@@ -17,6 +19,10 @@ internal object MidiSoundFontSettings {
     private const val PATH_KEY = "midi_soundfont_path"
     private const val NAME_KEY = "midi_soundfont_name"
     private const val MAX_BYTES = 1024L * 1024L * 1024L
+    private val preloadExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "MidiSoundFontPreload").apply { isDaemon = true }
+    }
+    private val preloadGeneration = AtomicLong()
 
     fun selectedName(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(NAME_KEY, null)
@@ -29,6 +35,7 @@ internal object MidiSoundFontSettings {
         try {
             if (file.isFile && file.canRead() && hasSoundFontHeader(file)) {
                 AudioProcessing.setMidiSoundFont(file)
+                preloadSelectedFont(file.name)
             } else {
                 prefs.edit().remove(PATH_KEY).remove(NAME_KEY).apply()
             }
@@ -80,18 +87,38 @@ internal object MidiSoundFontSettings {
             prefs.edit().putString(PATH_KEY, destination.absolutePath).putString(NAME_KEY, displayName).apply()
             File(directory, if (extension == "sf2") "user-soundfont.sf3" else "user-soundfont.sf2").delete()
             AudioProcessing.setMidiSoundFont(destination)
+            preloadSelectedFont(destination.name)
             return displayName
         } finally {
             temporary.delete()
         }
     }
 
-    fun useBundled(context: Context) {
+    fun useBuiltInSynth(context: Context) {
+        preloadGeneration.incrementAndGet()
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .remove(PATH_KEY).remove(NAME_KEY).apply()
         File(context.filesDir, "soundfonts/user-soundfont.sf2").delete()
         File(context.filesDir, "soundfonts/user-soundfont.sf3").delete()
         AudioProcessing.initialize(context.applicationContext)
+    }
+
+    /** Load the selected bank off the UI thread; FluidLite retains it for the next MIDI voice. */
+    private fun preloadSelectedFont(fileName: String) {
+        val generation = preloadGeneration.incrementAndGet()
+        preloadExecutor.execute {
+            if (generation != preloadGeneration.get()) return@execute
+            val started = android.os.SystemClock.elapsedRealtime()
+            runCatching { AudioProcessing.preloadMidiSoundFont() }
+                .onSuccess { loaded ->
+                    com.infinifolder.storage.DiagnosticLog.record("audio.midi.soundfont.preload",
+                        "file=$fileName loaded=$loaded elapsedMs=${android.os.SystemClock.elapsedRealtime() - started}")
+                }
+                .onFailure { error ->
+                    com.infinifolder.storage.DiagnosticLog.record("audio.midi.soundfont.preload.failed",
+                        "file=$fileName elapsedMs=${android.os.SystemClock.elapsedRealtime() - started}", error)
+                }
+        }
     }
 
     private fun readFully(input: InputStream, buffer: ByteArray) {

@@ -151,35 +151,12 @@ class FreeDesktopThemeTest {
     }
 
     @Test
-    fun bundledDesktopThemesContainUsableFoldersAndMimeIcons() {
+    fun optionalDesktopThemesAreNotBundledInApplicationAssets() {
         val assets = File("../app/src/main/assets/icon-themes")
-        for (id in listOf("Adwaita", "AdwaitaLegacy", "breeze", "breeze-dark", "Papirus")) {
-            val archive = File(assets, "$id.zip")
-            assertTrue("Missing bundled theme: $id", archive.isFile)
-            java.util.zip.ZipFile(archive).use { zip ->
-                assertNotNull("Missing index: $id", zip.getEntry("$id/index.theme"))
-                val names = zip.entries().asSequence().map { it.name }.toList()
-                assertTrue("Missing folder icon: $id", names.any { it.endsWith("/folder.svg") || it.endsWith("/folder.png") })
-                assertTrue("Missing generic text icon: $id", names.any { it.endsWith("/text-x-generic.svg") || it.endsWith("/text-x-generic.png") })
-                val temp = createTempDir(prefix = "bundled-theme-")
-                try {
-                    for (entry in zip.entries().asSequence()) {
-                        if (entry.name == "$id/index.theme" || entry.name.endsWith("/folder.svg") ||
-                            entry.name.endsWith("/folder.png") || entry.name.endsWith("/text-x-generic.svg") ||
-                            entry.name.endsWith("/text-x-generic.png")) {
-                            val target = File(temp, entry.name)
-                            target.parentFile?.mkdirs()
-                            zip.getInputStream(entry).use { input -> target.outputStream().use { input.copyTo(it) } }
-                        }
-                    }
-                    val root = File(temp, id)
-                    val info = FreeDesktopThemeParser.parse(File(root, "index.theme"), root)!!
-                    val theme = FreeDesktopIconTheme(info)
-                    assertNotNull("Folder not resolvable for $id", theme.findIconFile("folder", 48))
-                    assertNotNull("Text icon not resolvable for $id", theme.findIconFile("text-x-generic", 48))
-                } finally { temp.deleteRecursively() }
-            }
-        }
+        assertTrue("The application source assets should contain no optional theme archives",
+            !assets.exists() || assets.listFiles().orEmpty().none { it.extension.equals("zip", true) })
+        assertFalse("Shared viewer code should not package file-manager theme archives",
+            File("src/main/assets/icon-themes").exists())
     }
 
 }

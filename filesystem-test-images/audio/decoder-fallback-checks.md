@@ -4,9 +4,9 @@ These are synthetic, deliberately named checks; they contain no owner recordings
 
 - `c_major_piano.wma` and `.ra` should play their actual encoded audio using the
   libVLC fallback where the other registered backends cannot decode them.
-- `90-fluidr3-piano.mid`, `91-fluidr3-flute.mid` and `92-fluidr3-drums.mid` select
-  piano, flute and channel-10 percussion. Confirm the instruments differ. First
-  MIDI use expands the bundled bz2 SoundFont to an internal verified cache.
+- `90-fluidr3-piano.mid`, `91-fluidr3-flute.mid` and `92-fluidr3-drums.mid` play
+  through the portable synthesizer by default. A user-imported SF2/SF3 bank
+  enables FluidLite GM programs and channel-10 percussion.
 - `95-unreadable.wma` and `96-unreadable.ra` are intentionally invalid. They must
   produce no replacement audio and must remain in the queue with `--` duration.
 - Open `97-skip-unreadable.m3u`: invalid entries should skip silently, and the

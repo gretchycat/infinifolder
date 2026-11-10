@@ -25,7 +25,7 @@ rootProject.name = "InfiniScribe"
 // application module. These paths are the workspace's reusable Android modules.
 val modules = listOf(
     "storage-engine",
-    "viewer-common", "viewer-text", "viewer-markdown", "viewer-html",
+    "viewer-common", "viewer-image", "viewer-text", "viewer-markdown", "viewer-html",
     "viewer-epub", "viewer-csv", "viewer-pdf", "viewer-font"
 )
 modules.forEach { name ->

@@ -33,6 +33,8 @@ class InfiniFolderApplication : Application() {
     fun initializeNormal() {
         if (normalInitialized) return
         com.infinifolder.ops.AppOperations.initialize(this)
+        Thread({ runCatching { CompanionViewerDefaults.initialize(applicationContext) } },
+            "CompanionViewerDefaults").apply { isDaemon = true; start() }
         TermuxAvailability.watch(this)
         normalInitialized = true
     }

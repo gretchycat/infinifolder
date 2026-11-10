@@ -6,9 +6,12 @@ workspace. It does not include or depend on the InfiniFolder application.
 
 The host accepts one document per launch through a `content://` or `file://`
 URI. For `content://` sources, the sending app must grant URI read access. The
-viewer is selected at runtime from the installed viewer and Scribe capability
-providers. Multiple-item intents are deliberately not treated as document
-queues; queueing belongs to media playback.
+viewer is selected at runtime from the installed viewer and Scribe/Canvas
+capability providers. The linked image viewer handles Canvas formats, including
+formats with supported embedded previews. General PostScript interpretation is
+not implemented; PostScript without a supported raster preview opens as source
+text when the content is readable. Multiple-item intents are deliberately not
+treated as document queues; queueing belongs to media playback.
 
 ## Build
 
@@ -23,7 +26,8 @@ The Android SDK must be configured in the environment or in the workspace's
 as Gradle projects/composite builds, so no InfiniFolder application project is
 needed. The debug APK is written to `build/outputs/apk/debug/`.
 
-Supported viewer formats are discovered from the registered Scribe handlers;
+Supported viewer formats are discovered from the registered Scribe, Canvas,
+and viewer-component handlers;
 formats and limitations come from those libraries rather than a second list in
 this host app. The build exports that same runtime capability catalog into
 Android `VIEW`, `EDIT`, and single-item `SEND` intent filters, including each

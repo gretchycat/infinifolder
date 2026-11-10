@@ -896,6 +896,7 @@ class ImageViewerActivity : ViewerActivity() {
                     }
                     if (!isEditMode && ViewerLaunch.requestsEdit(intent)) toggleEditMode()
                 } else {
+                    if (openAsTextIfSupported(uri)) return@runOnUiThread
                     if(preserveViewport)displayedRipMode?.let {
                         ripMode=it
                         ripModeToggle.isChecked=it==RipScriptDecoder.Mode.HIGH_RESOLUTION
@@ -905,6 +906,44 @@ class ImageViewerActivity : ViewerActivity() {
                 }
             }
         }.apply { start() }
+    }
+
+    /** Some image-family documents (notably PostScript without a raster preview) are readable source. */
+    private fun openAsTextIfSupported(uri: Uri): Boolean {
+        val sourceMetadata = StreamMetadata(
+            name = currentName,
+            content = io.github.gretchycat.infinistream.ContentType(mimeType = currentMime),
+            capabilities = setOf(io.github.gretchycat.infinistream.Capability.READ,
+                io.github.gretchycat.infinistream.Capability.REOPEN),
+            provenance = io.github.gretchycat.infinistream.Provenance(source = uri.toString())
+        )
+        val source = object : io.github.gretchycat.infinistream.SourceResource {
+            override val metadata = sourceMetadata
+            override fun open() = MediaSourceAdapter.openDocumentSource(this@ImageViewerActivity, uri)
+        }
+        val resource = io.github.gretchycat.infinistream.CapabilityResource(
+            sourceMetadata, uri.toString(), source = source
+        )
+        val textViewer = runCatching {
+            ViewerComponents.resolve(resource, mediaType = MediaType.TEXT)
+        }.getOrNull() ?: return false
+        return runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW).apply {
+                setClassName(this@ImageViewerActivity, textViewer.activityClassName)
+                setDataAndType(uri, "text/plain")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                putExtra("uri", uri.toString())
+                putExtra("extra_uri", uri.toString())
+                putExtra("displayName", currentName)
+                putExtra("extra_name", currentName)
+                putExtra("mimeType", "text/plain")
+                putExtra("extra_mime", "text/plain")
+                parentFolderUri?.let { putExtra("parentUri", it.toString()) }
+                clipData = android.content.ClipData.newRawUri(currentName, uri)
+            })
+            finish()
+            true
+        }.getOrDefault(false)
     }
 
     private fun updateAnimationPlayback(){

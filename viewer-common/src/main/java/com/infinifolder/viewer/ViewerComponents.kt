@@ -21,7 +21,8 @@ open class LibraryViewerComponent(
         val registry=content()
         resolvedDescription?.takeIf {it.first==registry.revision}?.let {return it.second}
         val result=descriptor.copy(formats=directFormats+registry.descriptors()
-            .filter {it.attributes["presentation"] in presentations && it.operations.any {op ->op in setOf(Operations.DECODE,Operations.VIEW,Operations.PLAY)}}.flatMap {it.formats})
+            .filter {it.attributes["presentation"] in presentations && it.attributes["contentValidation"]==null &&
+                it.operations.any {op ->op in setOf(Operations.DECODE,Operations.VIEW,Operations.PLAY)}}.flatMap {it.formats})
         resolvedDescription=registry.revision to result
         return result
     }
@@ -33,6 +34,7 @@ open class LibraryViewerComponent(
     override fun probe(context:CapabilityProbeContext):HandlerProbe {
         if(context.resource.source==null) {
             val matches=content().descriptors().filter {it.attributes["presentation"] in presentations &&
+                it.attributes["contentValidation"]==null &&
                 it.operations.any {op ->op in setOf(Operations.DECODE,Operations.VIEW,Operations.PLAY)} && it.formats.any {format->format.score(context.resource)>0}}
             if(matches.isEmpty() && directFormats.none {it.score(context.resource)>0})return HandlerProbe(MatchConfidence.NONE,emptySet())
             val canEdit=editable&&(presentations.any{it in setOf("text","html","markdown","image","hex")} || matches.any{it.id=="scribe.table" && Operations.EDIT in it.operations})
@@ -47,7 +49,9 @@ open class LibraryViewerComponent(
         if(best==null&&!direct)return HandlerProbe(MatchConfidence.NONE,emptySet())
         val canEdit=editable && (presentations.any {it in setOf("text","html","markdown","image","hex")} || delegated.any { it.descriptor.id=="scribe.table" && Operations.EDIT in it.operations })
         return HandlerProbe(best?.probe?.confidence?:MatchConfidence.CANDIDATE,if(canEdit)descriptor.operations else descriptor.operations-Operations.EDIT,
-            "Viewer delegates to a registered library handler",mapOf("contentHandler" to (best?.descriptor?.id?:"direct presentation")))
+            "Viewer delegates to a registered library handler",mapOf(
+                "contentHandler" to (best?.descriptor?.id?:"direct presentation"),
+                "contentFallback" to (best?.descriptor?.attributes?.containsKey("contentValidation") == true).toString()))
     }
 }
 
@@ -63,9 +67,32 @@ object ViewerComponents {
     fun resolve(resource:CapabilityResource,edit:Boolean=false,mediaType:MediaType?=null):ViewerComponent? {
         val key=ResolutionKey(resource.metadata,resource.uri,edit,mediaType)
         if(resource.source==null)synchronized(resolved) {resolved[key]?.takeIf {it.revision==registry.revision}?.let {return it.component}}
-        val result=registry.probe(resource,if(edit)Operations.EDIT else Operations.VIEW)
+        val mime=resource.metadata.content.mimeType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
+        val genericMime=mime in setOf("text/plain","application/octet-stream","application/binary","application/x-binary",
+            "binary/octet-stream","application/x-unknown","application/unknown","unknown/unknown")
+        val name=resource.metadata.name.orEmpty().lowercase()
+        val candidates=registry.probe(resource,if(edit)Operations.EDIT else Operations.VIEW)
             .filter {mediaType==null || mediaType.name in it.descriptor.attributes["mediaTypes"].orEmpty().split(',')}
-            .firstNotNullOfOrNull {it.handler.service(ViewerComponent::class.java)}
+            .mapNotNull { discovered -> discovered.handler.service(ViewerComponent::class.java)?.let { discovered to it } }
+        // A generic text sniff only proves that bytes are printable. It does not
+        // identify CSV, Markdown, HTML, or another extension-specific document.
+        // Keep such a result as a final fallback so it cannot steal those files.
+        val result=candidates.sortedWith(
+            compareBy<Pair<DiscoveredCapability,ViewerComponent>> { (discovered, _) ->
+                val fallback=discovered.probe?.metadata?.get("contentFallback")=="true"
+                val structurallyVerified=discovered.probe?.confidence in setOf(MatchConfidence.SIGNATURE,MatchConfidence.VERIFIED)
+                val hasExtension=name.substringAfterLast('.', "").isNotEmpty() &&
+                    discovered.descriptor.formats.any { format -> format.extensions.any { ext -> name.endsWith(".$ext") || name==ext } }
+                when {
+                    structurallyVerified && !fallback -> 0
+                    genericMime && hasExtension -> 1
+                    fallback -> 3
+                    else -> 2
+                }
+            }.thenByDescending { (discovered, _) -> discovered.descriptor.formats.maxOfOrNull { it.score(resource) } ?: 0 }
+                .thenByDescending { (discovered, _) -> discovered.descriptor.priority }
+                .thenBy { (discovered, _) -> discovered.descriptor.id }
+        ).firstOrNull()?.second
         if(resource.source==null)synchronized(resolved){resolved[key]=Resolution(registry.revision,result)}
         return result
     }

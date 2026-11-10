@@ -3,6 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val targetAbiFilters = providers.gradleProperty("targetAbi").orNull
+    ?.takeUnless { it.equals("all", ignoreCase = true) }
+    ?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)
+
 android {
     namespace = "com.infiniscribe"
     compileSdk = 36
@@ -12,6 +16,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        targetAbiFilters?.let { filters -> ndk { abiFilters.addAll(filters) } }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -27,6 +32,7 @@ android {
 
 dependencies {
     implementation(project(":viewer-common"))
+    implementation(project(":viewer-image"))
     implementation(project(":viewer-text"))
     implementation(project(":viewer-markdown"))
     implementation(project(":viewer-html"))

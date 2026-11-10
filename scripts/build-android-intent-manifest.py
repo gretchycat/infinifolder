@@ -169,6 +169,13 @@ def main():
             add_filter(activity, schemes={'content', 'file'}, extensions=extensions)
             add_filter(activity, mimes=GENERIC_MIMES, schemes={'content', 'file'}, extensions=extensions)
     elif extensions:
+        # Android requires the filter's MIME type to match an incoming typed
+        # Intent even when its URI path has a registered suffix. A path-only
+        # filter (or one constrained to application/octet-stream) therefore
+        # misses common content providers that report text/plain or
+        # application/json for a supported file. Keep the suffix constraint,
+        # but accept any MIME type for that known extension.
+        add_filter(activity, mimes={'*/*'}, schemes={'content', 'file'}, extensions=extensions)
         add_filter(activity, schemes={'content', 'file'}, extensions=extensions)
         add_filter(activity, mimes=GENERIC_MIMES, schemes={'content', 'file'}, extensions=extensions)
 

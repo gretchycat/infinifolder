@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check real libVLC PCM fallback and bundled FluidR3Mono SF3 from the final APK; no device output."""
+"""Check real libVLC PCM fallback and ensure no bundled MIDI bank ships in the APK."""
 from pathlib import Path
 import hashlib
 import os
@@ -40,8 +40,7 @@ with zipfile.ZipFile(apk) as archive:
             target = native / Path(name).name
             if target.exists(): target.chmod(0o644)
             target.write_bytes(archive.read(name)); target.chmod(0o444)
-    assert archive.getinfo('assets/soundfonts/FluidR3Mono_GM.sf3').compress_type == zipfile.ZIP_STORED
-    assert not any(name.startswith('assets/soundfonts/FluidR3_GM.sf2.part') for name in archive.namelist())
+    assert not any(name.startswith('assets/soundfonts/') for name in archive.namelist())
 # SMF format 0, 480 PPQN, program change + one quarter-note + end-of-track.
 for name, program, channel, note in [('piano', 0, 0, 60), ('flute', 73, 0, 60), ('low-piano', 0, 0, 36), ('drums', 0, 9, 36)]:
     events = bytes([0, 0xc0 | channel, program, 0, 0x90 | channel, note, 100,

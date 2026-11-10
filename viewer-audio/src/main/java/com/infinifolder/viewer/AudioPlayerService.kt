@@ -37,6 +37,9 @@ import java.util.concurrent.TimeUnit
 
 enum class RepeatMode { NONE, ALL, ONE }
 
+/** Media kind is persisted with the URI so a mixed playlist survives process death. */
+enum class PlaylistMediaKind { AUDIO, IMAGE, VIDEO }
+
 data class AudioTrack(
     val uri: Uri,
     val title: String,
@@ -62,7 +65,9 @@ data class AudioTrack(
     /** Directory cover independent of embedded per-track artwork. */
     val directoryArtwork: Bitmap? = null,
     /** True when recursive selection already checked the directory for a cover URI. */
-    val directoryArtworkMetadataResolved: Boolean = false
+    val directoryArtworkMetadataResolved: Boolean = false,
+    val mediaKind: PlaylistMediaKind = PlaylistMediaKind.AUDIO,
+    val sourceMimeType: String? = null
 )
 
 internal data class CastPlaylistSelection(val playlistIndex: Int, val track: AudioTrack)
@@ -316,7 +321,13 @@ class AudioPlayerService : Service() {
                     if (!PlaylistExpander.isPlaylist(uri, name, mimeType)) {
                         val cur = currentTrack
                         if (cur == null || !uriMatches(cur.uri, uri)) {
-                            setPlaylist(listOf(AudioTrack(uri, name)), 0)
+                            val kind = when (MediaTypeDetector.detect(name, mimeType)) {
+                                MediaType.IMAGE -> PlaylistMediaKind.IMAGE
+                                MediaType.VIDEO -> PlaylistMediaKind.VIDEO
+                                else -> PlaylistMediaKind.AUDIO
+                            }
+                            setPlaylist(listOf(AudioTrack(uri, name, fileName = name,
+                                mediaKind = kind, sourceMimeType = mimeType)), 0)
                         }
                     }
                 }
@@ -702,6 +713,7 @@ class AudioPlayerService : Service() {
     }
 
     fun play() {
+        if (currentTrack?.mediaKind != PlaylistMediaKind.AUDIO) return
         if (com.infinifolder.audio.cast.CastManager.isCasting) { com.infinifolder.audio.cast.CastManager.play(); return }
         if (mediaPlayer == null) {
             synchronized(playlist) { if (currentIndex in playlist.indices) loadAndPlayCurrent() }
@@ -978,23 +990,44 @@ class AudioPlayerService : Service() {
         currentTrackMetadataThread = null
         invalidateGapless()
         val track = currentTrack ?: return
+        val thisLoadId = loadCounter.incrementAndGet()
         val resumePosition = restoredPositionFor(track)
         restorePositionTrack = null
         restorePositionMs = null
         persistPlaylistState(positionMs = resumePosition ?: 0)
         analysisSource = null
         notifyAudioSession(0)
+        if (track.mediaKind != PlaylistMediaKind.AUDIO) {
+            stopProgressReporting()
+            synchronized(playerLock) {
+                runCatching { currentPcmSource?.close() }
+                currentPcmSource = null
+                runCatching { mediaPlayer?.stop(); mediaPlayer?.release() }
+                mediaPlayer = null
+                runCatching { currentStream?.close() }
+                currentStream = null
+                runCatching { currentPfd?.close() }
+                currentPfd = null
+            }
+            cleanupStagedFile()
+            abandonAudioFocus()
+            isLoading = false
+            notifyPlaybackState(isPlaying = false, isLoading = false)
+            notifyTrackChanged(track)
+            notifyProgress(0, track.durationMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+            updateNotification()
+            startBackgroundMetadataScanner(forceRestart = false)
+            return
+        }
         if (com.infinifolder.audio.cast.CastManager.isCasting || com.infinifolder.audio.cast.CastManager.hasConnectedSession) {
-            val castLoadId = loadCounter.incrementAndGet()
             isLoading = false
             notifyTrackChanged(track)
             com.infinifolder.audio.cast.CastManager.onTrackChanged(track)
-            startCurrentTrackMetadataEnrichment(track, castLoadId)
+            startCurrentTrackMetadataEnrichment(track, thisLoadId)
             notifyProgress(0, track.durationMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
             return
         }
         val castReturn = pendingCastReturn.also { pendingCastReturn = null }
-        val thisLoadId = loadCounter.incrementAndGet()
         isLoading = true
         notifyPlaybackState(isPlaying = false, isLoading = true)
         notifyTrackChanged(track)
@@ -1300,8 +1333,16 @@ class AudioPlayerService : Service() {
         }
     }
 
-    private fun readableGaplessNextIndex(): Int? = if (repeatMode == RepeatMode.ONE) null
-        else nextReadableTrack(playlist, currentIndex, repeatMode == RepeatMode.ALL)
+    private fun readableGaplessNextIndex(): Int? {
+        if (repeatMode == RepeatMode.ONE) return null
+        val next = nextReadableTrack(playlist, currentIndex, repeatMode == RepeatMode.ALL) ?: return null
+        // A visual item is a real queue stop. Do not let the linked MediaPlayer
+        // jump across it before the playlist listener can display it.
+        return next.takeIf { playlist.getOrNull(it)?.mediaKind == PlaylistMediaKind.AUDIO }
+    }
+
+    /** Called by the visual pane when its image dwell or video playback ends. */
+    fun onVisualItemCompleted() = onTrackCompleted()
 
     private fun scheduleGapless() {
         if (com.infinifolder.audio.cast.CastManager.isCasting) {
@@ -1507,17 +1548,21 @@ class AudioPlayerService : Service() {
 
     private fun readTrackTags(input: AudioPlaybackInput, includeArtwork: Boolean): AudioTags {
         val streamTags = AudioProcessing.readTags(input.resource, includeArtwork)
-        if (!includeArtwork || streamTags.artwork != null) return streamTags
+        if (!includeArtwork) return streamTags
+        // Stream readers sometimes return the embedded cover but omit textual tags,
+        // while Android's file-backed retriever can still supply title/artist/album.
+        // Merge field by field so one partially successful reader doesn't suppress
+        // useful metadata from the other access path.
         val file = input.file?.takeIf { it.isFile && it.canRead() } ?: return streamTags
         val fileTags = runCatching {
             AudioProcessing.metadata.readTags(AudioMetadataSource.LocalFile(file), includeArtwork = true)
         }.getOrNull() ?: return streamTags
         return streamTags.copy(
-            title = streamTags.title ?: fileTags.title,
-            artist = streamTags.artist ?: fileTags.artist,
-            album = streamTags.album ?: fileTags.album,
-            duration = streamTags.duration ?: fileTags.duration,
-            artwork = fileTags.artwork
+            title = streamTags.title?.takeIf(String::isNotBlank) ?: fileTags.title?.takeIf(String::isNotBlank),
+            artist = streamTags.artist?.takeIf(String::isNotBlank) ?: fileTags.artist?.takeIf(String::isNotBlank),
+            album = streamTags.album?.takeIf(String::isNotBlank) ?: fileTags.album?.takeIf(String::isNotBlank),
+            duration = streamTags.duration?.takeIf(String::isNotBlank) ?: fileTags.duration?.takeIf(String::isNotBlank),
+            artwork = streamTags.artwork ?: fileTags.artwork
         )
     }
 
@@ -1992,6 +2037,7 @@ class AudioPlayerService : Service() {
 
     /** Enrich the active track after playback starts so tags and artwork never delay the queue. */
     private fun startCurrentTrackMetadataEnrichment(track: AudioTrack, loadId: Long) {
+        if (track.mediaKind != PlaylistMediaKind.AUDIO) return
         currentTrackMetadataThread?.interrupt()
         val worker = Thread({
             var metadataReadCompleted = false

@@ -305,6 +305,16 @@ object PlaylistExpander {
                 } else {
                     val title = entry.title.ifBlank { itemName }
                     val durationMs = entry.durationMillis ?: if (entry.durationSeconds > 0) entry.durationSeconds * 1000L else 0L
+                    val declaredKind = entry.mediaKind?.uppercase()?.let {
+                        runCatching { PlaylistMediaKind.valueOf(it) }.getOrNull()
+                    }
+                    val mediaKind = if (entry.decoderExtension != null || entry.startByte > 0 || entry.lengthBytes >= 0) {
+                        PlaylistMediaKind.AUDIO
+                    } else declaredKind ?: when (MediaTypeDetector.detect(itemName, entry.mimeType)) {
+                        MediaType.IMAGE -> PlaylistMediaKind.IMAGE
+                        MediaType.VIDEO -> PlaylistMediaKind.VIDEO
+                        else -> PlaylistMediaKind.AUDIO
+                    }
                     tracks.add(
                         AudioTrack(
                             uri = itemUri,
@@ -319,7 +329,9 @@ object PlaylistExpander {
                             directoryUri = entry.directoryUri?.let(Uri::parse),
                             directoryName = entry.directoryName,
                             directoryCoverUri = entry.directoryCoverUri?.let(Uri::parse),
-                            directoryArtworkMetadataResolved = entry.directoryArtworkMetadataResolved
+                            directoryArtworkMetadataResolved = entry.directoryArtworkMetadataResolved,
+                            mediaKind = mediaKind,
+                            sourceMimeType = entry.mimeType
                         )
                     )
                 }

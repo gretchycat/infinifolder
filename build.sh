@@ -6,21 +6,25 @@ cd "$repo_dir"
 
 target="all"
 open_apks=true
+abi="auto"
 
 usage() {
     cat <<'USAGE'
-Usage: ./build.sh [--only TARGET] [--open-apks|--no-open]
+Usage: ./build.sh [--only TARGET] [--abi auto|all|ABI] [--open-apks|--no-open]
 
 Targets:
-  all            InfiniFolder, viewer host, InfiniScribe, InfiniMedia, and InfiniKey if present (default)
-  infinifolder   InfiniFolder and its viewer host
-  viewer-host    The standalone viewer host
+  all            InfiniFolder, InfiniScribe, InfiniMedia, and InfiniKey if present (default)
+  infinifolder   InfiniFolder only
+  viewer-host    Optional combined viewer host for integration/debugging
   infiniscribe   InfiniScribe
   infinimedia    InfiniMedia
   infinikey      InfiniKey from the neighboring ../infinikey-ime checkout
 
 --open-apks opens each built APK with xdg-open, pausing between APKs when interactive.
 --no-open skips the installer launch and only builds/lists the APKs.
+Built APKs are copied to ./packages/ with the app name and ABI in each filename.
+--abi auto targets this device's CPU architecture (default); --abi all builds universal APKs.
+Other Android ABIs can be selected explicitly, such as --abi x86_64.
 USAGE
 }
 
@@ -34,6 +38,11 @@ while [ "$#" -gt 0 ]; do
         --open-apks|--send-apks)
             open_apks=true
             shift
+            ;;
+        --abi)
+            [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+            abi="$2"
+            shift 2
             ;;
         --no-open|--no-send)
             open_apks=false
@@ -55,6 +64,24 @@ case "$target" in
     all|infinifolder|viewer-host|infiniscribe|infinimedia|infinikey) ;;
     *) echo "Unknown build target: $target" >&2; usage >&2; exit 2 ;;
 esac
+
+if [ "$abi" = "auto" ]; then
+    case "$(uname -m)" in
+        aarch64|arm64) abi="arm64-v8a" ;;
+        armv7l|armv8l) abi="armeabi-v7a" ;;
+        x86_64|amd64) abi="x86_64" ;;
+        i686|i386) abi="x86" ;;
+        *) abi="all" ;;
+    esac
+fi
+case "$abi" in
+    all|arm64-v8a|armeabi-v7a|x86_64|x86) ;;
+    *) echo "Unsupported Android ABI: $abi" >&2; exit 2 ;;
+esac
+gradle_abi_args=()
+if [ "$abi" != "all" ]; then
+    gradle_abi_args+=("-PtargetAbi=$abi")
+fi
 
 # Configure Android SDK location if not already defined.
 if [ -z "${ANDROID_HOME:-}" ]; then
@@ -78,18 +105,24 @@ if [ -x "/data/data/com.termux/files/usr/bin/aapt2" ]; then
 fi
 
 run_gradle() {
-    if ! gradle "$@"; then
+    if ! gradle "${gradle_abi_args[@]}" "$@"; then
         echo "Gradle failed; stopping daemons and retrying once without a persistent daemon." >&2
         gradle --stop || true
-        gradle --no-daemon "$@"
+        gradle --no-daemon "${gradle_abi_args[@]}" "$@"
     fi
 }
 
 apk_files=()
 append_apk() {
     local apk_path="$1"
+    local app_name="$2"
     if [ -f "$apk_path" ]; then
-        apk_files+=("$apk_path")
+        local package_path="$repo_dir/packages/${app_name}-${abi}.apk"
+        local temporary_path="${package_path}.tmp.$$"
+        mkdir -p "$repo_dir/packages"
+        cp -- "$apk_path" "$temporary_path"
+        mv -f -- "$temporary_path" "$package_path"
+        apk_files+=("$package_path")
     else
         echo "Expected APK was not produced: $apk_path" >&2
         return 1
@@ -107,14 +140,12 @@ build_key=false
 case "$target" in
     all)
         build_folder=true
-        build_viewer_host=true
         build_scribe=true
         build_media=true
         build_key=true
         ;;
     infinifolder)
         build_folder=true
-        build_viewer_host=true
         ;;
     viewer-host) build_viewer_host=true ;;
     infiniscribe) build_scribe=true ;;
@@ -128,7 +159,7 @@ if [ "$build_folder" = true ]; then
     # incrementally rewritten APK. Start this package fresh so stale payload
     # space does not survive an asset replacement/removal.
     run_gradle :app:clean :app:assembleDebug
-    append_apk "$repo_dir/app/build/outputs/apk/debug/app-debug.apk"
+    append_apk "$repo_dir/app/build/outputs/apk/debug/app-debug.apk" "InfiniFolder"
 fi
 
 if [ "$build_viewer_host" = true ]; then
@@ -136,19 +167,19 @@ if [ "$build_viewer_host" = true ]; then
     # As with InfiniFolder, removed uncompressed assets can leave large stale
     # holes in an incrementally rewritten APK.
     run_gradle :viewer-host:clean :viewer-host:assembleDebug
-    append_apk "$repo_dir/viewer-host/build/outputs/apk/debug/viewer-host-debug.apk"
+    append_apk "$repo_dir/viewer-host/build/outputs/apk/debug/viewer-host-debug.apk" "ViewerHost"
 fi
 
 if [ "$build_scribe" = true ]; then
     echo "Building InfiniScribe..."
-    run_gradle -p "$repo_dir/infiniscribe" assembleDebug
-    append_apk "$repo_dir/infiniscribe/build/outputs/apk/debug/InfiniScribe-debug.apk"
+    run_gradle -p "$repo_dir/infiniscribe" clean assembleDebug
+    append_apk "$repo_dir/infiniscribe/build/outputs/apk/debug/InfiniScribe-debug.apk" "InfiniScribe"
 fi
 
 if [ "$build_media" = true ]; then
     echo "Building InfiniMedia..."
-    run_gradle -p "$repo_dir/infinimedia" :viewer-host:clean :viewer-host:assembleDebug
-    append_apk "$repo_dir/infinimedia/build/viewer-host/outputs/apk/debug/viewer-host-debug.apk"
+    run_gradle -p "$repo_dir/infinimedia" -Pviewer=audio :viewer-host:clean :viewer-host:assembleDebug
+    append_apk "$repo_dir/infinimedia/build/viewer-host/outputs/apk/debug/viewer-host-debug.apk" "InfiniMedia"
 fi
 
 if [ "$build_key" = true ]; then
@@ -159,7 +190,7 @@ if [ "$build_key" = true ]; then
     echo "Building InfiniKey..."
     run_gradle -p "$key_project" assembleDebug
     while IFS= read -r -d '' apk_path; do
-        apk_files+=("$apk_path")
+        append_apk "$apk_path" "InfiniKey"
     done < <(find "$key_project" -type f -path '*/build/outputs/apk/debug/*.apk' -print0 | sort -z)
 fi
 
@@ -168,7 +199,7 @@ if [ "${#apk_files[@]}" -eq 0 ]; then
     exit 1
 fi
 
-printf '\nBuilt APKs:\n'
+printf '\nPackaged APKs in %s:\n' "$repo_dir/packages"
 printf '  %s\n' "${apk_files[@]}"
 
 if [ "$open_apks" = false ]; then

@@ -39,7 +39,7 @@ class ResourceIconResolver(context: Context) {
     private val decoder = ThumbnailDecoder(context.contentResolver) { uri ->
         runtime.provider.refForUri(uri)?.let { (runtime.provider.openRead(it) as? ProviderResult.Success)?.value }
     }
-    private val audioArtwork=AudioArtworkResolver(context,runtime,decoder)
+    private val audioArtwork=AudioArtworkResolver(context,runtime,decoder) { uri -> notifyChanged(uri) }
     private val bookArtwork=BookArtworkResolver(context,runtime)
     data class Icon(val bitmap: Bitmap?, val fallback: String, val label: String, val directory: Boolean,
         val program: Boolean = false, val source: String = "fallback", val mimeType: String = "", val pending: Boolean = false)

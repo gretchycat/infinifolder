@@ -2,12 +2,13 @@
 
 > [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
-The icon theme chooser prepares the bundled themes on first use, off the UI thread. Select **Icon theme…** in the file manager menu, choose a theme, and apply it. Imported themes can still be selected or installed from a ZIP or TAR archive. File previews and explicit custom icons take precedence where applicable.
+The icon theme chooser starts with InfiniFolder's bundled default icon artwork. Additional freedesktop themes can be imported from a ZIP or TAR archive or scanned from Termux/system locations. File previews and explicit custom icons take precedence where applicable.
 
 ## InfiniFolder Default
 
-The supplied artwork in `themes/default theme` is now bundled as **InfiniFolder
-Default**, alongside the existing desktop themes. Its source is a Freeicon SVG/CSV
+The supplied artwork in `themes/default theme` is bundled in InfiniFolder as
+**InfiniFolder Default**. Other freedesktop themes are not preloaded into the APK.
+Its source is a Freeicon SVG/CSV
 bundle; the app-ready archive follows the
 [freedesktop.org icon theme layout](https://specifications.freedesktop.org/icon-theme/latest/),
 with `index.theme`, a scalable directory and logical icon names. The 790 source
@@ -50,10 +51,10 @@ gradle :app:assembleDebug --offline --console=plain
 ```
 
 The theme source is used directly by the build. `:viewer-common:prepareDefaultIconTheme`
-reads `themes/default theme/svg`, `metadata.csv` and the packager, then writes the
-asset ZIP and Kotlin revision/extension map under `viewer-common/build/generated/`.
-Gradle tracks these inputs; editing source art invalidates the generated outputs.
-There is no checked-in asset copy to refresh. Python 3.9+ is required (override the
+generates Kotlin metadata and the app-ready ZIP under `viewer-common/build/generated/`;
+only the InfiniFolder application packages that ZIP. Viewer apps use the shared
+procedural defaults and do not carry a duplicate file-manager icon archive. Gradle
+tracks the source art and packager inputs. Python 3.9+ is required (override the
 executable with `-PiconThemePython=/path/to/python3`).
 
 The explicit packaging command above also creates `index.theme` and generated
@@ -79,12 +80,6 @@ The debug app build passes (`build/theme-source-integration/app-build.log`). No
 tests were added or run. Handset folder/archive display, theme switching and
 restart persistence on this revision remain unverified.
 
-## Other bundled desktop themes
-
-The bundled archives contain the desktop themes' places, MIME type and device icons needed by the file manager, rather than their complete desktop application and panel icon sets. Symbolic links in the original packages are stored as copies so that icons work in app-private storage. Missing icons fall back to inherited themes and ultimately the app's default icons.
-
-- GNOME Adwaita 50.0 and Adwaita Legacy 46.2: <https://download.gnome.org/sources/adwaita-icon-theme/50/> and <https://download.gnome.org/sources/adwaita-icon-theme-legacy/46/>. The packaged icon data and indexes come from the corresponding installed Termux packages.
-- KDE Breeze and Breeze Dark 6.30.0: <https://download.kde.org/stable/frameworks/6.30/>. The packaged icon data and indexes come from the installed Termux package.
-- Community Papirus 20260801: <https://github.com/PapirusDevelopmentTeam/papirus-icon-theme/releases/tag/20260801>. The bundled archive contains its 16- and 48-pixel places, MIME type and device icons. It inherits Breeze.
-
-Their license notices are in [licenses/icon-themes](licenses/icon-themes/). A Tela 2026-07-07 source archive was downloaded for compatibility investigation; Tela's source tree requires its installer to assemble a theme and is not included as a selectable theme.
+Additional icon themes remain importable at runtime. Their source licenses and
+provenance are kept in the repository, but optional theme archives are no longer
+packaged in InfiniFolder.
