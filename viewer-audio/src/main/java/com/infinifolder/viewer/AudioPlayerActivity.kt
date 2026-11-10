@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
@@ -47,12 +48,54 @@ import io.github.gretchycat.infiniselect.OpenRequest
 import io.github.gretchycat.infiniselect.SelectionMetadataFormat
 import io.github.gretchycat.infinistream.Operations
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 
 private const val REQUEST_OPEN_AUDIO = 29163
+private const val REQUEST_SAVE_PLAYLIST = 29164
+
+private sealed interface PlaylistDisplayRow {
+    data class DirectoryImage(val track: AudioTrack) : PlaylistDisplayRow
+    data class Track(val index: Int, val track: AudioTrack) : PlaylistDisplayRow
+}
+
+private data class DirectoryImageTag(val track: AudioTrack, val coverKey: String?)
 
 class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeListener, DebugDumpObserver, CastManager.Listener {
 
     private val playlistLoadGeneration = java.util.concurrent.atomic.AtomicLong(0L)
+    private val playlistUiLoadGeneration = java.util.concurrent.atomic.AtomicLong(0L)
+    private val playlistUiLoadHandler = Handler(Looper.getMainLooper())
+    @Volatile private var activePlaylistUiLoad = 0L
+    @Volatile private var playlistUiLoadStartedAt = 0L
+    @Volatile private var playlistUiLoadStage = ""
+    @Volatile private var playlistUiLastLoggedStage = ""
+    private var playlistUiExpectedTracks = -1
+    private var playlistUiExpectedRows = -1
+    private var playlistUiLayoutWaiter = 0L
+    private var playlistUiCompletionToast: String? = null
+    private val playlistUiElapsedTicker = object : Runnable {
+        override fun run() {
+            val loadId = activePlaylistUiLoad
+            if (loadId == 0L || !::dockedPlaylistLoadingMessage.isInitialized) return
+            val elapsed = ((android.os.SystemClock.elapsedRealtime() - playlistUiLoadStartedAt) / 1000L).coerceAtLeast(0L)
+            dockedPlaylistLoadingMessage.text = "${playlistUiLoadStage}\n${elapsed}s"
+            playlistUiLoadHandler.postDelayed(this, 1000L)
+        }
+    }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (CastManager.hasConnectedSession &&
+            (event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP ||
+                event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN)) {
+            if (event.action == android.view.KeyEvent.ACTION_DOWN) {
+                CastManager.adjustVolume(if (event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP) 1 else -1)
+            }
+            // Keep these keys from changing the handset volume while controlling a receiver.
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
 
     private lateinit var audioManager: AudioManager
 
@@ -118,6 +161,8 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     private lateinit var dockedLeftBorder: WinampPlaylistBorderView
     private lateinit var dockedRightBorder: WinampPlaylistBorderView
     private lateinit var dockedPlaylistScroll: ScrollView
+    private lateinit var dockedPlaylistLoadingOverlay: FrameLayout
+    private lateinit var dockedPlaylistLoadingMessage: TextView
     private lateinit var dockedBottomBarView: WinampPlaylistBottomView
     private lateinit var mainColumn: LinearLayout
     private lateinit var dockedAlbumArt: ImageView
@@ -129,7 +174,18 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     private var dockedCastBtn: Button? = null
     private var dockedAddToPlaylistBtn: Button? = null
     private var dockedRemoveFromPlaylistBtn: Button? = null
+    private var dockedSavePlaylistBtn: Button? = null
     private var selectedPlaylistIndex = -1
+    private var playlistSelectionPending = false
+    private val iconThemeManager by lazy { com.infinifolder.theme.IconThemeManager(applicationContext) }
+    private val directoryCoverCache = object : android.util.LruCache<String, Bitmap>(8 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = (value.byteCount / 1024).coerceAtLeast(1)
+    }
+    private val pendingDirectoryCovers = ConcurrentHashMap.newKeySet<String>()
+    private val failedDirectoryCovers = ConcurrentHashMap.newKeySet<String>()
+    private val directoryCoverExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "AudioDirectoryCoverLoader").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }
+    }
     private lateinit var dockedPlaylistHeader: TextView
     private lateinit var dockedPlaylistFooter: TextView
     private lateinit var dockedPlaylistItems: LinearLayout
@@ -218,6 +274,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     override fun onPause() {
         isPlayerResumed = false
+        AudioPlayerService.currentService?.prioritizeMetadataTracks(emptyList())
         stopProgressFrames()
         visualizerBridge?.detach()
         if (::visualizerView.isInitialized) visualizerView.updateData(FloatArray(16))
@@ -251,8 +308,14 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     }
 
     private fun handleIntent(intent: Intent?) {
+        retainPersistableReadGrants(intent)
         val targetUri = intent?.data ?: intent?.getStringExtra("uri")?.let { Uri.parse(it) }
         if (targetUri == null) {
+            val restoreIntent = Intent(this, AudioPlayerService::class.java).apply {
+                action = AudioPlayerService.ACTION_RESTORE
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(restoreIntent)
+            else startService(restoreIntent)
             return
         }
         val generation = playlistLoadGeneration.incrementAndGet()
@@ -345,6 +408,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
     private fun openAudioSelection() {
         if (isFinishing || isDestroyed) return
+        playlistSelectionPending = true
         val formats = runCatching { ViewerComponents.registry.supportedFormats(Operations.VIEW).map { it.format } }
             .getOrDefault(emptyList())
         val mimes = (listOf("audio/*") + formats.flatMap { it.mimeTypes })
@@ -361,7 +425,163 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             multipleSelectionDelivery = MultipleSelectionDelivery.JSPF,
             metadataFormat = SelectionMetadataFormat.XML,
             allowRecursiveAudioDirectories = true,
+            progressReceiver = object : android.os.ResultReceiver(Handler(Looper.getMainLooper())) {
+                override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
+                    if (!playlistSelectionPending) return
+                    val data = resultData ?: Bundle()
+                    val folders = data.getInt(io.github.gretchycat.infiniselect.FileSelectionContract.EXTRA_PROGRESS_FOLDERS)
+                    val tracks = data.getInt(io.github.gretchycat.infiniselect.FileSelectionContract.EXTRA_PROGRESS_TRACKS)
+                    when (resultCode) {
+                        io.github.gretchycat.infiniselect.FileSelectionContract.RESULT_LOADING_STARTED ->
+                            showPlaylistLoading("Scanning audio files…")
+                        io.github.gretchycat.infiniselect.FileSelectionContract.RESULT_LOADING_PROGRESS -> {
+                            val label = data.getString(io.github.gretchycat.infiniselect.FileSelectionContract.EXTRA_PROGRESS_LABEL)
+                            showPlaylistLoading(label?.takeIf { it.startsWith("Using ") }
+                                ?: "Scanning folders…  $folders folders · $tracks tracks")
+                        }
+                        io.github.gretchycat.infiniselect.FileSelectionContract.RESULT_LOADING_FAILED -> {
+                            com.infinifolder.storage.DiagnosticLog.record(
+                                "audio.playlist.selection.failed",
+                                "folders=$folders tracks=$tracks label=${data.getString(io.github.gretchycat.infiniselect.FileSelectionContract.EXTRA_PROGRESS_LABEL).orEmpty()}")
+                            hidePlaylistLoading()
+                            Toast.makeText(this@AudioPlayerActivity,
+                                data.getString(io.github.gretchycat.infiniselect.FileSelectionContract.EXTRA_PROGRESS_LABEL)
+                                    ?: "No supported audio files were found", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            },
         ), REQUEST_OPEN_AUDIO)
+    }
+
+    private fun showPlaylistLoading(message: String) {
+        if (!::dockedPlaylistLoadingOverlay.isInitialized || isFinishing || isDestroyed) return
+        dockedPlaylistLoadingMessage.text = message
+        dockedPlaylistLoadingOverlay.visibility = View.VISIBLE
+    }
+
+    private fun beginPlaylistUiLoad(message: String): Long {
+        val loadId = playlistUiLoadGeneration.incrementAndGet()
+        activePlaylistUiLoad = loadId
+        playlistUiLoadStartedAt = android.os.SystemClock.elapsedRealtime()
+        playlistUiLoadStage = ""
+        playlistUiLastLoggedStage = ""
+        playlistUiExpectedTracks = -1
+        playlistUiExpectedRows = -1
+        playlistUiLayoutWaiter = 0L
+        playlistUiCompletionToast = null
+        playlistUiLoadHandler.removeCallbacks(playlistUiElapsedTicker)
+        setPlaylistUiLoadStage(loadId, message, "phase=begin")
+        playlistUiLoadHandler.postDelayed(playlistUiElapsedTicker, 1000L)
+        return loadId
+    }
+
+    private fun setPlaylistUiLoadStage(loadId: Long, message: String, detail: String = "", logStage: Boolean = true) {
+        if (loadId == 0L || loadId != activePlaylistUiLoad) return
+        val elapsedMs = (android.os.SystemClock.elapsedRealtime() - playlistUiLoadStartedAt).coerceAtLeast(0L)
+        playlistUiLoadStage = message
+        if (logStage && playlistUiLastLoggedStage != message) {
+            playlistUiLastLoggedStage = message
+            com.infinifolder.storage.DiagnosticLog.record(
+                "audio.playlist.loading.stage",
+                "generation=$loadId elapsedMs=$elapsedMs stage=$message $detail")
+        }
+        runOnUiThread {
+            if (loadId != activePlaylistUiLoad || !::dockedPlaylistLoadingOverlay.isInitialized || isFinishing || isDestroyed) return@runOnUiThread
+            val elapsed = ((android.os.SystemClock.elapsedRealtime() - playlistUiLoadStartedAt) / 1000L).coerceAtLeast(0L)
+            dockedPlaylistLoadingMessage.text = "$message\n${elapsed}s"
+            dockedPlaylistLoadingOverlay.visibility = View.VISIBLE
+        }
+    }
+
+    private fun completePlaylistUiLoad(loadId: Long, outcome: String) {
+        if (loadId == 0L || loadId != activePlaylistUiLoad) return
+        val elapsedMs = (android.os.SystemClock.elapsedRealtime() - playlistUiLoadStartedAt).coerceAtLeast(0L)
+        com.infinifolder.storage.DiagnosticLog.record(
+            "audio.playlist.loading.$outcome",
+            "generation=$loadId elapsedMs=$elapsedMs tracks=$playlistUiExpectedTracks rows=$playlistUiExpectedRows")
+        val completionToast = playlistUiCompletionToast
+        activePlaylistUiLoad = 0L
+        playlistUiLoadStartedAt = 0L
+        playlistUiLoadStage = ""
+        playlistUiLastLoggedStage = ""
+        playlistUiCompletionToast = null
+        playlistUiLoadHandler.removeCallbacks(playlistUiElapsedTicker)
+        if (::dockedPlaylistLoadingOverlay.isInitialized) dockedPlaylistLoadingOverlay.visibility = View.GONE
+        if (!completionToast.isNullOrBlank() && !isFinishing && !isDestroyed) {
+            Toast.makeText(this, completionToast, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun hidePlaylistLoading() {
+        activePlaylistUiLoad = 0L
+        playlistUiLoadStartedAt = 0L
+        playlistUiLoadStage = ""
+        playlistUiLastLoggedStage = ""
+        playlistUiCompletionToast = null
+        playlistUiLoadHandler.removeCallbacks(playlistUiElapsedTicker)
+        if (::dockedPlaylistLoadingOverlay.isInitialized) dockedPlaylistLoadingOverlay.visibility = View.GONE
+    }
+
+    private fun retainPersistableReadGrants(source: Intent?) {
+        source ?: return
+        if (source.flags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION == 0) return
+        val flags = source.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        if (flags == 0) return
+        val uris = linkedSetOf<Uri>()
+        source.data?.let(uris::add)
+        source.clipData?.let { clip -> for (index in 0 until clip.itemCount) clip.getItemAt(index).uri?.let(uris::add) }
+        source.getStringArrayListExtra(io.github.gretchycat.infiniselect.FileSelectionContract.EXTRA_RESULT_URIS)
+            ?.mapNotNullTo(uris) { runCatching { Uri.parse(it) }.getOrNull() }
+        uris.forEach { uri -> runCatching { contentResolver.takePersistableUriPermission(uri, flags) } }
+    }
+
+    private fun savePlaylistExternally() {
+        val service = AudioPlayerService.currentService ?: return
+        val snapshot = synchronized(service.playlist) { service.playlist.toList() }
+        if (snapshot.isEmpty()) {
+            Toast.makeText(this, "The playlist is empty", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val nameInput = android.widget.EditText(this).apply {
+            setSingleLine(true)
+            setText("InfiniMedia Playlist.jspf")
+            setSelection(text.length)
+            hint = "Playlist filename"
+        }
+        ThemeManager.createDialogBuilder(this)
+            .setTitle("Save playlist")
+            .setMessage("Choose a filename and destination folder.")
+            .setView(nameInput)
+            .setPositiveButton("Choose location") { _, _ ->
+                val enteredName = nameInput.text.toString().trim().ifBlank { "InfiniMedia Playlist.jspf" }
+                val name = if (enteredName.endsWith(".jspf", ignoreCase = true)) enteredName else "$enteredName.jspf"
+                val bytes = runCatching { AudioPlaylistJspf.encode(snapshot, "InfiniMedia Playlist") }.getOrElse {
+                    Toast.makeText(this, "Could not create playlist: ${it.message ?: "encoding failed"}", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                val source = runCatching {
+                    InfiniSelect.createDocument(this, name, AudioPlaylistJspf.MIME_TYPE, bytes)
+                }.getOrElse {
+                    Toast.makeText(this, "Could not prepare playlist for saving: ${it.message ?: "failed"}", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                val request = runCatching { io.github.gretchycat.infiniselect.SaveRequest(
+                    clientId = "infinimedia",
+                    displayName = "InfiniMedia",
+                    fileName = name,
+                    mimeType = AudioPlaylistJspf.MIME_TYPE,
+                    sourceUri = source,
+                    sourceSizeBytes = bytes.size.toLong(),
+                ) }.getOrElse {
+                    Toast.makeText(this, it.message ?: "Invalid filename", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                runCatching { InfiniSelect.save(this, request, REQUEST_SAVE_PLAYLIST) }
+                    .onFailure { Toast.makeText(this, "Could not open a save location: ${it.message ?: "unavailable"}", Toast.LENGTH_LONG).show() }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun showMediaCategoryDialog() {
@@ -396,55 +616,145 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     }
 
     /** Add the chooser result to the existing queue; it never replaces the active playlist. */
-    private fun enqueueSelection(data: Intent) {
-        val selection = runCatching { InfiniSelect.readResult(this, data) }.getOrNull()
+    private fun enqueueSelection(data: Intent, loadId: Long) {
+        setPlaylistUiLoadStage(loadId, "Reading selected media…", "phase=read-selection")
+        val selectionStartedAt = android.os.SystemClock.elapsedRealtime()
+        val selectionResult = runCatching { InfiniSelect.readResult(this, data) }
+        val selection = selectionResult.getOrNull()
+        com.infinifolder.storage.DiagnosticLog.record(
+            "audio.playlist.selection.received",
+            "elapsedMs=${android.os.SystemClock.elapsedRealtime() - selectionStartedAt} items=${selection?.items?.size ?: 0} hasPlaylist=${selection?.playlistUri != null}",
+            selectionResult.exceptionOrNull())
         val items = selection?.items.orEmpty()
         if (items.isEmpty() && selection?.playlistUri == null) {
+            completePlaylistUiLoad(loadId, "empty")
             Toast.makeText(this, "No media files were selected", Toast.LENGTH_SHORT).show()
             return
         }
+        setPlaylistUiLoadStage(loadId, "Preparing ${items.size} selected item${if (items.size == 1) "" else "s"}…", "phase=prepare")
         Thread {
-            val tracks = mutableListOf<AudioTrack>()
-            val selectedPlaylist = selection?.playlistUri
-            if (selectedPlaylist != null) {
-                // A playlist file's order is authored content. Keep its track order
-                // intact when appending it to the current queue.
-                tracks += PlaylistExpander.expandPlaylist(this, selectedPlaylist)
-            } else {
-                // Explicit multi-selects are presented in alphabetical order, so keep
-                // that order as one contiguous batch at the end of the current queue.
-                for (item in items.sortedBy { it.name.lowercase(java.util.Locale.ROOT) }) {
-                    if (PlaylistExpander.isPlaylist(this, item.uri, item.name, item.mimeType)) {
-                        tracks += PlaylistExpander.expandPlaylist(this, item.uri)
+            try {
+                val preparationStartedAt = android.os.SystemClock.elapsedRealtime()
+                val tracks = mutableListOf<AudioTrack>()
+                val selectedPlaylist = selection?.playlistUri
+                val isGeneratedSelectionPlaylist = data.hasExtra(
+                    io.github.gretchycat.infiniselect.FileSelectionContract.EXTRA_RESULT_PLAYLIST_URI)
+                var sortElapsedMs = 0L
+                var playlistExpansionElapsedMs = 0L
+                var playlistItemsFound = 0
+                if (selectedPlaylist != null && !isGeneratedSelectionPlaylist) {
+                    // A playlist file's order is authored content. Keep its track order
+                    // intact when appending it to the current queue.
+                    setPlaylistUiLoadStage(loadId, "Reading playlist document…", "phase=expand-playlist")
+                    val expansionStartedAt = android.os.SystemClock.elapsedRealtime()
+                    playlistItemsFound = 1
+                    tracks += PlaylistExpander.expandPlaylist(this, selectedPlaylist)
+                    playlistExpansionElapsedMs = android.os.SystemClock.elapsedRealtime() - expansionStartedAt
+                    com.infinifolder.storage.DiagnosticLog.record(
+                        "audio.playlist.prepare.playlist-expanded",
+                        "source=selected-playlist tracks=${tracks.size} elapsedMs=$playlistExpansionElapsedMs")
+                } else {
+                    // Recursive selections stay grouped by their source directory, with
+                    // each album's files alphabetical inside the group. This keeps one
+                    // directory image row ahead of that album instead of interleaving
+                    // equally named track numbers from different albums.
+                    setPlaylistUiLoadStage(loadId, "Sorting ${items.size} selected items…", "phase=sort")
+                    val sortStartedAt = android.os.SystemClock.elapsedRealtime()
+                    val recursive = items.any { it.directoryUri != null && it.directoryArtworkMetadataResolved }
+                    val orderedItems = if (recursive) {
+                        items.sortedWith(compareBy<io.github.gretchycat.infiniselect.SelectionItem>(
+                            { it.directoryName.orEmpty().lowercase(Locale.ROOT) },
+                            { it.directoryUri?.toString().orEmpty() },
+                            { it.name.lowercase(Locale.ROOT) },
+                            { it.name },
+                        ))
                     } else {
-                        tracks += AudioTrack(uri = item.uri, title = item.name, fileName = item.name)
+                        items.sortedWith(compareBy({ it.name.lowercase(Locale.ROOT) }, { it.name }))
+                    }
+                    sortElapsedMs = android.os.SystemClock.elapsedRealtime() - sortStartedAt
+                    com.infinifolder.storage.DiagnosticLog.record(
+                        "audio.playlist.prepare.sorted",
+                        "items=${items.size} recursive=$recursive elapsedMs=$sortElapsedMs")
+
+                    for (item in orderedItems) {
+                        // Choose playlist handling from the filename extension only. The
+                        // post-enqueue metadata work validates the actual content; probing
+                        // each URI here can turn a multi-file selection into hundreds of
+                        // slow provider reads before playback starts.
+                        val itemIsPlaylist = PlaylistExpander.isPlaylist(item.name)
+                        if (itemIsPlaylist) {
+                            playlistItemsFound++
+                            val before = tracks.size
+                            val expansionStartedAt = android.os.SystemClock.elapsedRealtime()
+                            tracks += PlaylistExpander.expandPlaylist(this, item.uri)
+                            val expansionElapsedMs = android.os.SystemClock.elapsedRealtime() - expansionStartedAt
+                            playlistExpansionElapsedMs += expansionElapsedMs
+                            com.infinifolder.storage.DiagnosticLog.record(
+                                "audio.playlist.prepare.playlist-expanded",
+                                "name=${item.name} added=${tracks.size - before} elapsedMs=$expansionElapsedMs")
+                        } else {
+                            tracks += AudioTrack(uri = item.uri, title = item.name, fileName = item.name,
+                                directoryUri = item.directoryUri, directoryName = item.directoryName,
+                                directoryCoverUri = item.directoryCoverUri,
+                                directoryArtworkMetadataResolved = item.directoryArtworkMetadataResolved)
+                        }
                     }
                 }
-            }
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                if (tracks.isEmpty()) {
-                    Toast.makeText(this, "No playable audio was found", Toast.LENGTH_SHORT).show()
-                    return@runOnUiThread
-                }
-                val serviceIntent = Intent(this, AudioPlayerService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent)
-                else startService(serviceIntent)
-                fun addWhenReady(attempt: Int) {
-                    if (isFinishing || isDestroyed) return
-                    val service = AudioPlayerService.currentService
-                    if (service == null) {
-                        if (attempt < 20) window.decorView.postDelayed({ addWhenReady(attempt + 1) }, 100)
-                        else Toast.makeText(this, "The media queue could not be started", Toast.LENGTH_SHORT).show()
-                        return
+                com.infinifolder.storage.DiagnosticLog.record(
+                    "audio.playlist.selection.prepared",
+                    "items=${items.size} tracks=${tracks.size} playlistItems=$playlistItemsFound sortMs=$sortElapsedMs playlistExpansionMs=$playlistExpansionElapsedMs elapsedMs=${android.os.SystemClock.elapsedRealtime() - preparationStartedAt}")
+                if (loadId != activePlaylistUiLoad) return@Thread
+                setPlaylistUiLoadStage(loadId, "Sending ${tracks.size} tracks to the player…", "phase=prepared")
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || loadId != activePlaylistUiLoad) return@runOnUiThread
+                    if (tracks.isEmpty()) {
+                        completePlaylistUiLoad(loadId, "empty")
+                        Toast.makeText(this, "No playable audio was found", Toast.LENGTH_SHORT).show()
+                        return@runOnUiThread
                     }
-                    service.enqueueAll(tracks)
-                    if (selectedPlaylistIndex !in service.playlist.indices) selectedPlaylistIndex = service.currentIndex
-                    Toast.makeText(this, "Added ${tracks.size} ${if (tracks.size == 1) "track" else "tracks"}", Toast.LENGTH_SHORT).show()
-                    updateDockedPlaylist()
-                    refreshPlaylistDialog()
+                    try {
+                        val serviceIntent = Intent(this, AudioPlayerService::class.java)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent)
+                        else startService(serviceIntent)
+                        setPlaylistUiLoadStage(loadId, "Waiting for the media service…", "phase=service-start")
+                        fun addWhenReady(attempt: Int) {
+                            if (isFinishing || isDestroyed || loadId != activePlaylistUiLoad) return
+                            val service = AudioPlayerService.currentService
+                            if (service == null) {
+                                if (attempt < 20) {
+                                    if (attempt == 0 || attempt == 10) {
+                                        setPlaylistUiLoadStage(loadId, "Waiting for the media service…", "phase=service-wait attempt=$attempt")
+                                    }
+                                    window.decorView.postDelayed({ addWhenReady(attempt + 1) }, 100)
+                                } else {
+                                    completePlaylistUiLoad(loadId, "service-unavailable")
+                                    Toast.makeText(this, "The media queue could not be started", Toast.LENGTH_SHORT).show()
+                                }
+                                return
+                            }
+                            setPlaylistUiLoadStage(loadId, "Adding ${tracks.size} tracks to the playlist…", "phase=enqueue")
+                            service.enqueueAll(tracks)
+                            if (selectedPlaylistIndex !in service.playlist.indices) selectedPlaylistIndex = service.currentIndex
+                            val queued = synchronized(service.playlist) { ArrayList(service.playlist) }
+                            playlistUiExpectedTracks = queued.size
+                            playlistUiExpectedRows = playlistDisplayRows(queued).size
+                            playlistUiCompletionToast = "Added ${tracks.size} ${if (tracks.size == 1) "track" else "tracks"}"
+                            setPlaylistUiLoadStage(loadId, "Showing ${queued.size} tracks…", "phase=rows-queued expectedRows=$playlistUiExpectedRows")
+                        }
+                        addWhenReady(0)
+                    } catch (error: Exception) {
+                        com.infinifolder.storage.DiagnosticLog.record("audio.playlist.selection.enqueue-failed", error = error)
+                        completePlaylistUiLoad(loadId, "failed")
+                        Toast.makeText(this, "Could not add the selected media", Toast.LENGTH_LONG).show()
+                    }
                 }
-                addWhenReady(0)
+            } catch (error: Exception) {
+                com.infinifolder.storage.DiagnosticLog.record("audio.playlist.selection.prepare-failed", error = error)
+                runOnUiThread {
+                    if (loadId != activePlaylistUiLoad || isFinishing || isDestroyed) return@runOnUiThread
+                    completePlaylistUiLoad(loadId, "failed")
+                    Toast.makeText(this, "Could not prepare the selected media", Toast.LENGTH_LONG).show()
+                }
             }
         }.start()
     }
@@ -1332,12 +1642,22 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         toolRow.addView(dockedRemoveFromPlaylistBtn, LinearLayout.LayoutParams(-2, dp(32)).apply {
             marginStart = dp(6)
         })
+
+        dockedSavePlaylistBtn = Button(this).apply {
+            formatCompactButton(this, "💾 Save", textSizeSp = 11f, padH = 8, padV = 3)
+            contentDescription = "Save playlist as JSPF"
+            setOnClickListener { savePlaylistExternally() }
+        }
+        toolRow.addView(dockedSavePlaylistBtn, LinearLayout.LayoutParams(-2, dp(32)).apply {
+            marginStart = dp(6)
+        })
         dockedCenterCol.addView(dockedToolScroll)
 
         // The ScrollView belongs strictly to JUST the playlist items
         dockedPlaylistScroll = ScrollView(this).apply {
             isFillViewport = true
-            layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
+            layoutParams = FrameLayout.LayoutParams(-1, -1)
+            setOnScrollChangeListener { _, _, _, _, _ -> loadVisibleDirectoryImages() }
         }
 
         dockedPlaylistItems = LinearLayout(this).apply {
@@ -1345,7 +1665,38 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             setPadding(0, dp(2), 0, dp(2))
         }
         dockedPlaylistScroll.addView(dockedPlaylistItems)
-        dockedCenterCol.addView(dockedPlaylistScroll)
+        val playlistViewport = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
+        }
+        playlistViewport.addView(dockedPlaylistScroll)
+        dockedPlaylistLoadingOverlay = FrameLayout(this).apply {
+            visibility = View.GONE
+            isClickable = true
+            setBackgroundColor(0xB0000000.toInt())
+            contentDescription = "Loading tracks into playlist"
+        }
+        val loadingContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(20), dp(16), dp(20), dp(16))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(8).toFloat()
+                setColor(0xFF252525.toInt())
+            }
+            addView(ProgressBar(this@AudioPlayerActivity).apply { isIndeterminate = true },
+                LinearLayout.LayoutParams(dp(40), dp(40)).apply { gravity = Gravity.CENTER })
+            dockedPlaylistLoadingMessage = TextView(this@AudioPlayerActivity).apply {
+                text = "Scanning audio files…"
+                textSize = 13f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                setPadding(0, dp(10), 0, 0)
+            }
+            addView(dockedPlaylistLoadingMessage, LinearLayout.LayoutParams(-2, -2))
+        }
+        dockedPlaylistLoadingOverlay.addView(loadingContent, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        playlistViewport.addView(dockedPlaylistLoadingOverlay, FrameLayout.LayoutParams(-1, -1))
+        dockedCenterCol.addView(playlistViewport)
 
         // Static Playlist Total Blurb & Footer
         dockedPlaylistFooter = TextView(this).apply {
@@ -1371,6 +1722,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             layoutParams = LinearLayout.LayoutParams(-1, -2)
             onAddToPlaylist = { showMediaCategoryDialog() }
             onRemoveFromPlaylist = { removeSelectedPlaylistItem() }
+            onMorePlaylistActions = { showPlaylistActionsDialog() }
         }
         dockedSubWindow.addView(dockedBottomBarView)
     }
@@ -1405,6 +1757,7 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         detailsBottom = WinampPlaylistBottomView(this).apply {
             onAddToPlaylist = { showMediaCategoryDialog() }
             onRemoveFromPlaylist = { removeSelectedPlaylistItem() }
+            onMorePlaylistActions = { showPlaylistActionsDialog() }
         }
         detailsWindow.addView(detailsBottom, LinearLayout.LayoutParams(-1, -2))
     }
@@ -1442,11 +1795,18 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     private fun updateDockedPlaylist(forceRebuild: Boolean = false) {
         if (!::dockedPlaylistItems.isInitialized) return
         val service = AudioPlayerService.currentService ?: return
+        val loadId = activePlaylistUiLoad
+        val rowBuildStartedAt = android.os.SystemClock.elapsedRealtime()
         val theme = ThemeManager.getAudioPlayerTheme(this)
         val list = synchronized(service.playlist) { ArrayList(service.playlist) }
+        val displayRows = playlistDisplayRows(list)
+        if (loadId != 0L) {
+            setPlaylistUiLoadStage(loadId, "Building playlist rows (${list.size} tracks)…", "phase=build-rows rows=${displayRows.size}")
+        }
         val curIdx = service.currentIndex
         if (selectedPlaylistIndex !in list.indices) selectedPlaylistIndex = curIdx.takeIf { it in list.indices } ?: -1
         dockedRemoveFromPlaylistBtn?.isEnabled = selectedPlaylistIndex in list.indices
+        dockedSavePlaylistBtn?.isEnabled = list.isNotEmpty()
         val currentTrack = list.getOrNull(curIdx)
         val currentTrackKey = currentTrack?.let {
             "$curIdx:${it.uri}:${it.startByte}:${it.lengthBytes}"
@@ -1458,112 +1818,150 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             if (track.durationMs > 0L) totalMs += track.durationMs
         }
 
-        if (!forceRebuild && dockedPlaylistItems.childCount == list.size) {
-            for ((index, track) in list.withIndex()) {
-                val row = dockedPlaylistItems.getChildAt(index) as? LinearLayout ?: continue
-                val isCurrent = (index == curIdx)
-                row.setBackgroundColor(if (isCurrent) theme.selectionBackground else Color.TRANSPARENT)
-
-                val numText = row.getChildAt(0) as? TextView
-                numText?.setTextColor(if (isCurrent) theme.selectionText else theme.textSecondary)
-
-                val displayTitle = if (!track.artist.isNullOrBlank() && track.artist != "Unknown Artist") {
-                    "${track.artist} - ${track.title}"
-                } else {
-                    track.title
-                }
-                val titleText = row.getChildAt(1) as? TextView
-                titleText?.text = (if (isCurrent) "▶ " else "") + displayTitle
-                titleText?.setTextColor(if (isCurrent) theme.selectionText else theme.textPrimary)
-
-                val durText = row.getChildAt(2) as? TextView
-                durText?.text = if (track.durationMs > 0) formatTime(track.durationMs.toInt()) else "--"
-                durText?.setTextColor(if (isCurrent) theme.selectionText else theme.textSecondary)
+        val sameRowShape = dockedPlaylistItems.childCount == displayRows.size && displayRows.indices.all { rowIndex ->
+            val tag = dockedPlaylistItems.getChildAt(rowIndex)?.tag
+            when (val displayRow = displayRows[rowIndex]) {
+                is PlaylistDisplayRow.DirectoryImage -> tag == "directory-image"
+                is PlaylistDisplayRow.Track -> tag == displayRow.index
             }
-        } else {
-            dockedPlaylistItems.removeAllViews()
-            for ((index, track) in list.withIndex()) {
-                val isCurrent = (index == curIdx)
-
-                val row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(8), dp(4), dp(8), dp(4))
-                    contentDescription = "${track.title}. Hold and move to reorder; hold and release for track options."
-                    isClickable = true
-                    isFocusable = true
-                    setBackgroundColor(if (isCurrent) theme.selectionBackground else Color.TRANSPARENT)
-                    setOnClickListener {
-                        selectedPlaylistIndex = index
-                        service.jumpTo(index)
-                        updateDockedPlaylist()
+        }
+        if (!forceRebuild && sameRowShape) {
+            for ((rowIndex, displayRow) in displayRows.withIndex()) {
+                val row = dockedPlaylistItems.getChildAt(rowIndex) as? LinearLayout ?: continue
+                when (displayRow) {
+                    is PlaylistDisplayRow.DirectoryImage -> {
+                        row.setBackgroundColor(theme.alternateBackground)
+                        val image = row.getChildAt(0) as? ImageView
+                        if (image != null) bindDirectoryImage(image, displayRow.track, dp(40))
+                        (row.getChildAt(1) as? TextView)?.text = displayRow.track.directoryName.orEmpty()
                     }
-                    setOnDragListener { _, event ->
-                        val isCurrentRow = index == (AudioPlayerService.currentService?.currentIndex ?: -1)
-                        val restingColor = if (isCurrentRow) theme.selectionBackground else Color.TRANSPARENT
-                        when (event.action) {
-                            DragEvent.ACTION_DRAG_STARTED -> event.localState is Int
-                            DragEvent.ACTION_DRAG_ENTERED -> {
-                                setBackgroundColor(theme.selectionBackground)
-                                true
-                            }
-                            DragEvent.ACTION_DRAG_LOCATION -> true
-                            DragEvent.ACTION_DRAG_EXITED,
-                            DragEvent.ACTION_DRAG_ENDED -> {
-                                setBackgroundColor(restingColor)
-                                true
-                            }
-                            DragEvent.ACTION_DROP -> {
-                                setBackgroundColor(restingColor)
-                                val from = event.localState as? Int
-                                if (from != null) reorderPlaylistItem(from, index)
-                                true
-                            }
-                            else -> false
+                    is PlaylistDisplayRow.Track -> {
+                        val index = displayRow.index
+                        val track = displayRow.track
+                        val isCurrent = (index == curIdx)
+                        row.setBackgroundColor(if (isCurrent) theme.selectionBackground else Color.TRANSPARENT)
+                        (row.getChildAt(0) as? TextView)?.setTextColor(if (isCurrent) theme.selectionText else theme.textSecondary)
+                        val displayTitle = if (!track.artist.isNullOrBlank() && track.artist != "Unknown Artist") {
+                            "${track.artist} - ${track.title}"
+                        } else track.title
+                        (row.getChildAt(1) as? TextView)?.apply {
+                            text = (if (isCurrent) "▶ " else "") + displayTitle
+                            setTextColor(if (isCurrent) theme.selectionText else theme.textPrimary)
+                        }
+                        (row.getChildAt(2) as? TextView)?.apply {
+                            text = if (track.durationMs > 0) formatTime(track.durationMs.toInt()) else "--"
+                            setTextColor(if (isCurrent) theme.selectionText else theme.textSecondary)
                         }
                     }
                 }
-                installPlaylistGesture(row, index)
-
-                val numText = TextView(this).apply {
-                    text = String.format("%2d. ", index + 1)
-                    textSize = 11f
-                    typeface = Typeface.MONOSPACE
-                    setTextColor(if (isCurrent) theme.selectionText else theme.textSecondary)
+            }
+        } else {
+            dockedPlaylistItems.removeAllViews()
+            for (displayRow in displayRows) {
+                when (displayRow) {
+                    is PlaylistDisplayRow.DirectoryImage -> {
+                        val track = displayRow.track
+                        val row = LinearLayout(this).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            gravity = Gravity.CENTER_VERTICAL
+                            setPadding(dp(8), dp(4), dp(8), dp(4))
+                            contentDescription = "Directory image for ${track.directoryName.orEmpty()}. Tap to show it above."
+                            tag = "directory-image"
+                            isClickable = true
+                            isFocusable = true
+                            setBackgroundColor(theme.alternateBackground)
+                            setOnClickListener { showDirectoryImage(track) }
+                        }
+                        val image = ImageView(this).apply {
+                            scaleType = ImageView.ScaleType.CENTER_CROP
+                        }
+                        bindDirectoryImage(image, track, dp(40))
+                        row.addView(image, LinearLayout.LayoutParams(dp(40), dp(40)))
+                        row.addView(TextView(this).apply {
+                            text = track.directoryName.orEmpty()
+                            textSize = 12f
+                            typeface = Typeface.DEFAULT_BOLD
+                            setTextColor(theme.textPrimary)
+                            setPadding(dp(10), 0, 0, 0)
+                        }, LinearLayout.LayoutParams(0, -2, 1f))
+                        dockedPlaylistItems.addView(row)
+                    }
+                    is PlaylistDisplayRow.Track -> {
+                        val index = displayRow.index
+                        val track = displayRow.track
+                        val isCurrent = index == curIdx
+                        val row = LinearLayout(this).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            gravity = Gravity.CENTER_VERTICAL
+                            setPadding(dp(8), dp(4), dp(8), dp(4))
+                            contentDescription = "${track.title}. Hold and move to reorder; hold and release for track options."
+                            tag = index
+                            isClickable = true
+                            isFocusable = true
+                            setBackgroundColor(if (isCurrent) theme.selectionBackground else Color.TRANSPARENT)
+                            setOnClickListener {
+                                selectedPlaylistIndex = index
+                                service.jumpTo(index)
+                                updateDockedPlaylist()
+                            }
+                            setOnDragListener { _, event ->
+                                val isCurrentRow = index == (AudioPlayerService.currentService?.currentIndex ?: -1)
+                                val restingColor = if (isCurrentRow) theme.selectionBackground else Color.TRANSPARENT
+                                when (event.action) {
+                                    DragEvent.ACTION_DRAG_STARTED -> event.localState is Int
+                                    DragEvent.ACTION_DRAG_ENTERED -> { setBackgroundColor(theme.selectionBackground); true }
+                                    DragEvent.ACTION_DRAG_LOCATION -> true
+                                    DragEvent.ACTION_DRAG_EXITED, DragEvent.ACTION_DRAG_ENDED -> {
+                                        setBackgroundColor(restingColor); true
+                                    }
+                                    DragEvent.ACTION_DROP -> {
+                                        setBackgroundColor(restingColor)
+                                        val from = event.localState as? Int
+                                        if (from != null) reorderPlaylistItem(from, index)
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            }
+                        }
+                        installPlaylistGesture(row, index)
+                        row.addView(TextView(this).apply {
+                            text = String.format("%2d. ", index + 1)
+                            textSize = 11f
+                            typeface = Typeface.MONOSPACE
+                            setTextColor(if (isCurrent) theme.selectionText else theme.textSecondary)
+                        }, LinearLayout.LayoutParams(-2, -2))
+                        val displayTitle = if (!track.artist.isNullOrBlank() && track.artist != "Unknown Artist") {
+                            "${track.artist} - ${track.title}"
+                        } else track.title
+                        row.addView(TextView(this).apply {
+                            text = (if (isCurrent) "▶ " else "") + displayTitle
+                            textSize = 11f
+                            typeface = Typeface.MONOSPACE
+                            maxLines = 1
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                            setTextColor(if (isCurrent) theme.selectionText else theme.textPrimary)
+                        }, LinearLayout.LayoutParams(0, -2, 1f))
+                        row.addView(TextView(this).apply {
+                            text = if (track.durationMs > 0) formatTime(track.durationMs.toInt()) else "--"
+                            textSize = 10f
+                            typeface = Typeface.MONOSPACE
+                            gravity = Gravity.END
+                            setTextColor(if (isCurrent) theme.selectionText else theme.textSecondary)
+                        }, LinearLayout.LayoutParams(-2, -2))
+                        dockedPlaylistItems.addView(row)
+                    }
                 }
-                row.addView(numText, LinearLayout.LayoutParams(-2, -2))
-
-                val displayTitle = if (!track.artist.isNullOrBlank() && track.artist != "Unknown Artist") {
-                    "${track.artist} - ${track.title}"
-                } else {
-                    track.title
-                }
-
-                val titleText = TextView(this).apply {
-                    text = (if (isCurrent) "▶ " else "") + displayTitle
-                    textSize = 11f
-                    typeface = Typeface.MONOSPACE
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    setTextColor(if (isCurrent) theme.selectionText else theme.textPrimary)
-                }
-                row.addView(titleText, LinearLayout.LayoutParams(0, -2, 1f))
-
-                val durText = TextView(this).apply {
-                    text = if (track.durationMs > 0) formatTime(track.durationMs.toInt()) else "--"
-                    textSize = 10f
-                    typeface = Typeface.MONOSPACE
-                    gravity = Gravity.END
-                    setTextColor(if (isCurrent) theme.selectionText else theme.textSecondary)
-                }
-                row.addView(durText, LinearLayout.LayoutParams(-2, -2))
-
-                dockedPlaylistItems.addView(row)
             }
         }
 
         dockedPlaylistHeader.text = "PLAYLIST (${list.size} TRACKS)"
         dockedPlaylistFooter.text = "${list.size} tracks • Total: ${formatTime(totalMs)}"
+
+        // Add the folder rows immediately; resolve only cover URIs that are on screen.
+        // This keeps a large recursive selection from serially opening every album
+        // image before the playlist is usable.
+        dockedPlaylistScroll.post { loadVisibleDirectoryImages() }
 
         if (::dockedBottomBarView.isInitialized) {
             dockedBottomBarView.totalDurationMs = totalMs
@@ -1576,12 +1974,14 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
             lastAutoScrolledDockedTrack = currentTrackKey
             dockedPlaylistScroll.post {
                 val currentService = AudioPlayerService.currentService ?: return@post
-                if (currentService.currentIndex != curIdx || curIdx >= dockedPlaylistItems.childCount) return@post
+                if (currentService.currentIndex != curIdx) return@post
                 val activeTrack = synchronized(currentService.playlist) {
                     currentService.playlist.getOrNull(curIdx)
                 } ?: return@post
                 if ("$curIdx:${activeTrack.uri}:${activeTrack.startByte}:${activeTrack.lengthBytes}" != currentTrackKey) return@post
-                val row = dockedPlaylistItems.getChildAt(curIdx) ?: return@post
+                val rowIndex = displayRows.indexOfFirst { it is PlaylistDisplayRow.Track && it.index == curIdx }
+                if (rowIndex < 0) return@post
+                val row = dockedPlaylistItems.getChildAt(rowIndex) ?: return@post
                 val visibleTop = dockedPlaylistScroll.scrollY + dockedPlaylistScroll.paddingTop
                 val visibleBottom = dockedPlaylistScroll.scrollY + dockedPlaylistScroll.height - dockedPlaylistScroll.paddingBottom
                 val targetY = when {
@@ -1592,6 +1992,158 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
                 dockedPlaylistScroll.smoothScrollTo(0, targetY)
             }
         }
+
+        if (loadId != 0L && loadId == activePlaylistUiLoad) {
+            val elapsed = android.os.SystemClock.elapsedRealtime() - rowBuildStartedAt
+            com.infinifolder.storage.DiagnosticLog.record(
+                "audio.playlist.rows.built",
+                "generation=$loadId tracks=${list.size} rows=${displayRows.size} elapsedMs=$elapsed children=${dockedPlaylistItems.childCount}")
+            if (playlistUiExpectedTracks >= 0 && list.size >= playlistUiExpectedTracks &&
+                dockedPlaylistItems.childCount >= playlistUiExpectedRows) {
+                setPlaylistUiLoadStage(loadId, "Waiting for playlist display…", "phase=layout-wait rows=${dockedPlaylistItems.childCount}")
+                waitForPlaylistRowsToRender(loadId)
+            } else {
+                setPlaylistUiLoadStage(loadId, "Playlist rows ${dockedPlaylistItems.childCount} of $playlistUiExpectedRows…", "phase=rows-incomplete")
+            }
+        }
+    }
+
+    /** Keep the loading veil until the expected rows have passed through Android layout. */
+    private fun waitForPlaylistRowsToRender(loadId: Long) {
+        if (loadId == 0L || loadId != activePlaylistUiLoad || playlistUiLayoutWaiter == loadId ||
+            playlistUiExpectedRows < 0) return
+        playlistUiLayoutWaiter = loadId
+        val observer = dockedPlaylistItems.viewTreeObserver
+        if (!observer.isAlive) {
+            playlistUiLayoutWaiter = 0L
+            dockedPlaylistItems.postDelayed({ waitForPlaylistRowsToRender(loadId) }, 32L)
+            return
+        }
+        val listener = object : android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (!observer.isAlive) return true
+                if (loadId != activePlaylistUiLoad) {
+                    observer.removeOnPreDrawListener(this)
+                    if (playlistUiLayoutWaiter == loadId) playlistUiLayoutWaiter = 0L
+                    return true
+                }
+                val lastRow = dockedPlaylistItems.getChildAt(dockedPlaylistItems.childCount - 1)
+                val rowsReady = dockedPlaylistItems.isLaidOut && dockedPlaylistItems.height > 0 &&
+                    dockedPlaylistItems.childCount >= playlistUiExpectedRows && lastRow?.isLaidOut == true
+                if (rowsReady) {
+                    observer.removeOnPreDrawListener(this)
+                    playlistUiLayoutWaiter = 0L
+                    completePlaylistUiLoad(loadId, "ready")
+                }
+                return true
+            }
+        }
+        observer.addOnPreDrawListener(listener)
+        dockedPlaylistItems.requestLayout()
+        dockedPlaylistItems.invalidate()
+    }
+
+    private fun playlistDisplayRows(tracks: List<AudioTrack>): List<PlaylistDisplayRow> {
+        val rows = ArrayList<PlaylistDisplayRow>(tracks.size + 8)
+        var previousDirectory: String? = null
+        tracks.forEachIndexed { index, track ->
+            val identity = track.directoryUri?.toString()
+                ?: track.directoryName?.takeIf(String::isNotBlank)?.let { "$it:${track.directoryCoverUri}" }
+            if (identity != null && identity != previousDirectory) rows += PlaylistDisplayRow.DirectoryImage(track)
+            rows += PlaylistDisplayRow.Track(index, track)
+            previousDirectory = identity
+        }
+        return rows
+    }
+
+    private fun directoryEntryBitmap(track: AudioTrack, sizePx: Int): Bitmap? =
+        track.directoryArtwork ?: iconThemeManager.resolveFolderIcon(track.directoryName.orEmpty(), sizePx)
+            ?: iconThemeManager.resolveLogicalIcon("folder", sizePx)
+            ?: com.infinifolder.FileTypeIcons.folder(sizePx)
+
+    /** Show a folder icon immediately; image bytes are read only for visible rows. */
+    private fun bindDirectoryImage(image: ImageView, track: AudioTrack, sizePx: Int, forceLoad: Boolean = false) {
+        val coverUri = track.directoryCoverUri
+        val key = coverUri?.toString()
+        image.tag = DirectoryImageTag(track, key)
+        val cachedCover = key?.let(directoryCoverCache::get)
+        image.setImageBitmap(track.directoryArtwork ?: cachedCover ?: directoryEntryBitmap(track, sizePx))
+        if (coverUri == null || track.directoryArtwork != null || cachedCover != null) return
+        val cacheKey = key ?: return
+        if (cacheKey in failedDirectoryCovers) return
+        if (!forceLoad) return
+        if (!pendingDirectoryCovers.add(cacheKey)) return
+
+        runCatching {
+            directoryCoverExecutor.execute {
+                val bitmap = decodeDirectoryCover(coverUri)
+                pendingDirectoryCovers.remove(cacheKey)
+                if (bitmap != null) directoryCoverCache.put(cacheKey, bitmap)
+                else failedDirectoryCovers.add(cacheKey)
+                runOnUiThread {
+                    val tag = image.tag as? DirectoryImageTag
+                    if (bitmap != null && tag?.coverKey == cacheKey && !isFinishing && !isDestroyed) {
+                        image.setImageBitmap(bitmap)
+                    }
+                    // A row may have been rebuilt while the one-per-directory decode
+                    // was running. Refresh its current ImageView from the new cache.
+                    if (!isFinishing && !isDestroyed) updateDockedPlaylist()
+                }
+            }
+        }.onFailure { pendingDirectoryCovers.remove(cacheKey) }
+    }
+
+    private fun loadVisibleDirectoryImages() {
+        if (!::dockedPlaylistItems.isInitialized || !::dockedPlaylistScroll.isInitialized) return
+        val service = AudioPlayerService.currentService
+        val tracks = service?.let { player -> synchronized(player.playlist) { player.playlist.toList() } }.orEmpty()
+        val visibleTracks = LinkedHashMap<String, AudioTrack>()
+        fun remember(track: AudioTrack) {
+            visibleTracks["${track.uri}:${track.startByte}:${track.lengthBytes}"] = track
+        }
+        val visibleRect = Rect()
+        val top = dockedPlaylistScroll.scrollY
+        val bottom = top + dockedPlaylistScroll.height
+        var low = 0
+        var high = dockedPlaylistItems.childCount
+        while (low < high) {
+            val mid = (low + high) ushr 1
+            val row = dockedPlaylistItems.getChildAt(mid)
+            if (row.bottom <= top) low = mid + 1 else high = mid
+        }
+        for (index in low until dockedPlaylistItems.childCount) {
+            val row = dockedPlaylistItems.getChildAt(index) as? LinearLayout ?: continue
+            if (row.top >= bottom) break
+            if (!row.isShown || !row.getGlobalVisibleRect(visibleRect)) continue
+            when (val rowTag = row.tag) {
+                "directory-image" -> {
+                    val image = row.getChildAt(0) as? ImageView ?: continue
+                    val tag = image.tag as? DirectoryImageTag ?: continue
+                    remember(tag.track)
+                    bindDirectoryImage(image, tag.track, dp(40), forceLoad = true)
+                }
+                is Int -> tracks.getOrNull(rowTag)?.let(::remember)
+            }
+        }
+        service?.prioritizeMetadataTracks(visibleTracks.values.toList())
+    }
+
+    private fun decodeDirectoryCover(uri: Uri): Bitmap? {
+        fun open() = MediaSourceAdapter.openStream(applicationContext, uri)
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        runCatching { open().use { BitmapFactory.decodeStream(it, null, bounds) } }.getOrNull()
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / sample > 512 || bounds.outHeight / sample > 512) sample *= 2
+        val options = BitmapFactory.Options().apply { inSampleSize = sample }
+        val decoded = runCatching { open().use { BitmapFactory.decodeStream(it, null, options) } }.getOrNull()
+        return decoded?.takeIf { it.width > 0 && it.height > 0 }
+    }
+
+    private fun showDirectoryImage(track: AudioTrack) {
+        bindDirectoryImage(albumArtView, track, dp(256), forceLoad = true)
+        albumArtView.setBackgroundColor(Color.TRANSPARENT)
+        if (::dockedAlbumArt.isInitialized) bindDirectoryImage(dockedAlbumArt, track, dp(256), forceLoad = true)
     }
 
     private fun applyTheme(theme: ThemeColors) {
@@ -2019,8 +2571,27 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_OPEN_AUDIO) {
+            playlistSelectionPending = false
             if (resultCode == Activity.RESULT_OK && data != null) {
-                enqueueSelection(data)
+                retainPersistableReadGrants(data)
+                val loadId = beginPlaylistUiLoad("Reading selected media…")
+                // Give Android a frame to draw the status veil before parsing or
+                // expanding a potentially large multi-file selection.
+                dockedPlaylistLoadingOverlay.postOnAnimation {
+                    if (loadId == activePlaylistUiLoad) enqueueSelection(data, loadId)
+                }
+            } else hidePlaylistLoading()
+            return
+        }
+        if (requestCode == REQUEST_SAVE_PLAYLIST) {
+            if (resultCode == Activity.RESULT_OK && data?.getBooleanExtra(
+                    io.github.gretchycat.infiniselect.FileSelectionContract.EXTRA_SAVE_SUCCESS, false) == true) {
+                val savedName = data.getStringExtra(io.github.gretchycat.infiniselect.FileSelectionContract.EXTRA_SAVE_RESULT_NAME)
+                    ?: "playlist.jspf"
+                Toast.makeText(this, "Playlist saved as $savedName", Toast.LENGTH_LONG).show()
+            } else if (data?.hasExtra(io.github.gretchycat.infiniselect.FileSelectionContract.EXTRA_SAVE_ERROR) == true) {
+                Toast.makeText(this, "Could not save playlist: ${data.getStringExtra(
+                    io.github.gretchycat.infiniselect.FileSelectionContract.EXTRA_SAVE_ERROR)}", Toast.LENGTH_LONG).show()
             }
             return
         }
@@ -2194,8 +2765,10 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         val sub = listOfNotNull(track.artist, track.album).filter { it.isNotBlank() }.joinToString(" • ")
         trackArtistText.text = if (sub.isNotBlank()) sub else "Infinifolder Media"
 
-        if (track.artwork != null) {
-            albumArtView.setImageBitmap(track.artwork)
+        val activeArtwork = track.artwork ?: track.directoryArtwork
+            ?: if (!track.directoryName.isNullOrBlank()) directoryEntryBitmap(track, dp(256)) else null
+        if (activeArtwork != null) {
+            albumArtView.setImageBitmap(activeArtwork)
             albumArtView.setBackgroundColor(Color.TRANSPARENT)
         } else {
             albumArtView.setImageResource(android.R.drawable.ic_media_play)
@@ -2237,8 +2810,8 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
 
         if (track != null) {
             if (::dockedAlbumArt.isInitialized) {
-                if (track.artwork != null) {
-                    dockedAlbumArt.setImageBitmap(track.artwork)
+                if (activeArtwork != null) {
+                    dockedAlbumArt.setImageBitmap(activeArtwork)
                 } else {
                     dockedAlbumArt.setImageResource(android.R.drawable.ic_media_play)
                 }
@@ -2445,6 +3018,68 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
         }
     }
 
+    private fun showPlaylistActionsDialog() {
+        val service = AudioPlayerService.currentService ?: return
+        val items = arrayOf(
+            "Save playlist as JSPF",
+            "Shuffle: ${if (service.isShuffleEnabled) "On" else "Off"}",
+            "Repeat: ${service.repeatMode.name.lowercase().replaceFirstChar { it.uppercase() }}",
+            "Clear playlist",
+            "Select currently playing track",
+        )
+        ThemeManager.createDialogBuilder(this)
+            .setTitle("Playlist actions")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> savePlaylistExternally()
+                    1 -> {
+                        service.toggleShuffle()
+                        updateDockedPlaylist(forceRebuild = true)
+                        Toast.makeText(this, "Shuffle ${if (service.isShuffleEnabled) "on" else "off"}", Toast.LENGTH_SHORT).show()
+                    }
+                    2 -> {
+                        service.cycleRepeatMode()
+                        Toast.makeText(this, "Repeat ${service.repeatMode.name.lowercase()}", Toast.LENGTH_SHORT).show()
+                    }
+                    3 -> confirmClearPlaylist(service)
+                    4 -> {
+                        selectedPlaylistIndex = service.currentIndex
+                        updateDockedPlaylist()
+                        scrollToSelectedPlaylistItem()
+                    }
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun confirmClearPlaylist(service: AudioPlayerService) {
+        if (synchronized(service.playlist) { service.playlist.isEmpty() }) {
+            Toast.makeText(this, "The playlist is already empty", Toast.LENGTH_SHORT).show()
+            return
+        }
+        ThemeManager.createDialogBuilder(this)
+            .setTitle("Clear playlist?")
+            .setMessage("This stops playback and clears the saved working playlist.")
+            .setPositiveButton("Clear") { _, _ ->
+                service.clearPlaylist()
+                selectedPlaylistIndex = -1
+                updateDockedPlaylist(forceRebuild = true)
+                refreshPlaylistDialog()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun scrollToSelectedPlaylistItem() {
+        val selected = selectedPlaylistIndex
+        if (selected < 0) return
+        val rowIndex = (0 until dockedPlaylistItems.childCount).firstOrNull { index ->
+            (dockedPlaylistItems.getChildAt(index)?.tag as? Int) == selected
+        } ?: return
+        dockedPlaylistScroll.post { dockedPlaylistScroll.smoothScrollTo(0, dockedPlaylistItems.getChildAt(rowIndex).top) }
+    }
+
     private fun reorderPlaylistItem(from: Int, to: Int) {
         val service = AudioPlayerService.currentService ?: return
         if (!service.movePlaylistItem(from, to)) return
@@ -2639,8 +3274,20 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     override fun onPlaylistUpdated(playlist: List<AudioTrack>) {
         runOnUiThread {
             updateControlsAppearance()
-            updateDockedPlaylist()
-            refreshPlaylistDialog()
+            val loadId = activePlaylistUiLoad
+            if (loadId != 0L) {
+                setPlaylistUiLoadStage(loadId, "Updating playlist view (${playlist.size} tracks)…", "phase=playlist-changed")
+                // Allow the status overlay to be drawn before creating row views.
+                dockedPlaylistItems.postDelayed({
+                    if (loadId != activePlaylistUiLoad || isFinishing || isDestroyed) return@postDelayed
+                    updateDockedPlaylist()
+                    refreshPlaylistDialog()
+                    waitForPlaylistRowsToRender(loadId)
+                }, 80L)
+            } else {
+                updateDockedPlaylist()
+                refreshPlaylistDialog()
+            }
         }
     }
 
@@ -2780,6 +3427,12 @@ class AudioPlayerActivity : ViewerActivity(), AudioPlayerListener, ThemeChangeLi
     }
 
     override fun onDestroy() {
+        activePlaylistUiLoad = 0L
+        playlistUiLoadStartedAt = 0L
+        playlistUiLoadHandler.removeCallbacks(playlistUiElapsedTicker)
+        directoryCoverExecutor.shutdownNow()
+        pendingDirectoryCovers.clear()
+        failedDirectoryCovers.clear()
         super.onDestroy()
         stopProgressFrames()
         visualizerBridge?.detach()

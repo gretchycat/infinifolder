@@ -72,6 +72,10 @@
                 <action android:name="io.github.gretchycat.infiniselect.action.SELECT_FILE" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="io.github.gretchycat.infiniselect.action.SAVE_FILE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
         <provider
             android:name=".FileSelectionRelayProvider"

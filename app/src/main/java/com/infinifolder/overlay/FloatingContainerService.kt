@@ -72,6 +72,7 @@ class FloatingContainerService : Service() {
     private var currentDisplayName: String? = null
     private data class Crumb(val uri: Uri, val name: String)
     private val trail = mutableListOf<Crumb>()
+    private var breadcrumbGeneration = 0L
     private var iconDp = 56
     private var currentListingComplete=true
     private val refreshArtwork=Runnable { if(windowView!=null) {iconCache.evictAll();render(currentEntries)} }
@@ -103,12 +104,16 @@ class FloatingContainerService : Service() {
     private var floatingBackCallback: Any? = null
     private var selectionMode = false
     private var selectionAllowMultiple = false
+    private var selectionSaveMode = false
+    private var selectionSaveFileName: String? = null
     private var selectionRecursiveAudioDirectories = false
     private var selectionMimeTypes: List<String> = emptyList()
     private var selectionExtensions: List<String> = emptyList()
     private var hideUnsupportedSelectionFiles = false
     private var selectionRestoreScrollY: Int? = null
     private var selectionReceiver: ResultReceiver? = null
+    @Volatile private var selectionScanning = false
+    private data class SelectionParent(val uri: Uri, val name: String, val coverUri: Uri? = null)
     private val selectedEntries = linkedMapOf<String, ResourceEntry>()
     private var selectionDoneView: TextView? = null
     private var normalActionView: View? = null
@@ -136,8 +141,11 @@ class FloatingContainerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        selectionScanning = false
         selectionMode = intent?.getBooleanExtra(EXTRA_SELECTION_MODE, false) == true
         selectionAllowMultiple = intent?.getBooleanExtra(EXTRA_ALLOW_MULTIPLE, false) == true
+        selectionSaveMode = intent?.getBooleanExtra(EXTRA_SELECTION_SAVE_MODE, false) == true
+        selectionSaveFileName = intent?.getStringExtra(FileSelectionContract.EXTRA_SAVE_FILE_NAME)
         selectionRecursiveAudioDirectories = intent?.getBooleanExtra(EXTRA_ALLOW_RECURSIVE_AUDIO_DIRECTORIES, false) == true
         selectionMimeTypes = intent?.getStringArrayListExtra(EXTRA_SELECTION_MIME_TYPES).orEmpty()
         selectionExtensions = intent?.getStringArrayListExtra(EXTRA_SELECTION_EXTENSIONS).orEmpty()
@@ -278,7 +286,9 @@ class FloatingContainerService : Service() {
             visibility = View.GONE
             contentDescription = "Finish selecting files"
             tooltipText = "Finish selecting files"
-            setOnClickListener { completeMultipleSelection() }
+            setOnClickListener {
+                if (selectionSaveMode) completeSaveSelection() else completeMultipleSelection()
+            }
         }
         bar.addView(containerIcon); bar.addView(breadcrumbScroll); bar.addView(openFull); bar.addView(selectionDoneView)
         grid = LinearLayout(this).apply {
@@ -550,11 +560,20 @@ class FloatingContainerService : Service() {
         current = uri
         val headerName = displayName?.takeIf { it.isNotBlank() } ?: containerName(uri)
         currentDisplayName = headerName
-        if (resetRoot) trail.clear()
-        val previous = trail.indexOfLast { it.uri == uri }
-        if (previous >= 0) {
-            while (trail.size > previous + 1) trail.removeAt(trail.lastIndex)
-        } else trail.add(Crumb(uri, headerName))
+        val breadcrumbToken = ++breadcrumbGeneration
+        if (resetRoot) {
+            trail.clear()
+            if (selectionMode) {
+                trail.add(Crumb(com.infinifolder.storage.ContainerLinksProvider.ROOT, "Virtual root"))
+                if (uri != com.infinifolder.storage.ContainerLinksProvider.ROOT) trail.add(Crumb(uri, headerName))
+                resolveSelectionBreadcrumbs(uri, headerName, breadcrumbToken)
+            } else trail.add(Crumb(uri, headerName))
+        } else {
+            val previous = trail.indexOfLast { it.uri == uri }
+            if (previous >= 0) {
+                while (trail.size > previous + 1) trail.removeAt(trail.lastIndex)
+            } else trail.add(Crumb(uri, headerName))
+        }
         renderBreadcrumbs()
         renderGeneration++
         pendingIcons.clear()
@@ -621,6 +640,79 @@ class FloatingContainerService : Service() {
             }
         }.start()
     }
+
+    /** Add the physical/provider ancestors behind a remembered starting folder. */
+    private fun resolveSelectionBreadcrumbs(uri: Uri, displayName: String, token: Long) {
+        Thread({
+            val route = runCatching { buildSelectionBreadcrumbs(uri, displayName) }
+                .getOrDefault(listOf(Crumb(com.infinifolder.storage.ContainerLinksProvider.ROOT, "Virtual root"), Crumb(uri, displayName)))
+            onMain {
+                if (token != breadcrumbGeneration || !selectionMode || current != uri || windowView == null) return@onMain
+                trail.clear()
+                trail.addAll(route)
+                renderBreadcrumbs()
+            }
+        }, "InfiniSelectBreadcrumbs").start()
+    }
+
+    private fun buildSelectionBreadcrumbs(uri: Uri, displayName: String): List<Crumb> {
+        val rootUri = com.infinifolder.storage.ContainerLinksProvider.ROOT
+        val virtualRoot = Crumb(rootUri, "Virtual root")
+        if (uri == rootUri) return listOf(virtualRoot)
+        if (BrowserLocations.find(uri) != null) return listOf(virtualRoot, Crumb(uri, displayName))
+
+        val route = mutableListOf<Crumb>() // current folder toward the provider root
+        val visited = hashSetOf<String>()
+        var cursorUri = uri
+        var cursorName = displayName
+        var ref = runtime.provider.refForUri(uri)
+        var depth = 0
+        while (ref != null && depth++ < 128) {
+            val key = "${ref.providerId}:${ref.documentId}"
+            if (!visited.add(key)) break
+            route += Crumb(cursorUri, cursorName)
+
+            val parentRef = (runtime.provider.parent(ref) as? ProviderResult.Success)?.value
+            if (parentRef != null) {
+                // ResourceRef.documentId is opaque; stat the parent to obtain its
+                // navigable URI and user-facing name.
+                val parentEntry = (runtime.provider.stat(parentRef) as? ProviderResult.Success)?.value ?: break
+                ref = parentRef
+                cursorUri = parentEntry.uri
+                cursorName = parentEntry.metadata.name.ifBlank { cursorUri.lastPathSegment ?: "Storage" }
+                continue
+            }
+
+            // An archive's root is a child of the archive file, whose own parent
+            // chain leads back to a virtual-root storage location.
+            if (ArchiveUri.isArchiveUri(cursorUri) && ArchiveUri.getEntryPath(cursorUri).isEmpty()) {
+                val sourceUri = ArchiveUri.getSourceUri(cursorUri)
+                val sourceRef = sourceUri?.let(runtime.provider::refForUri)
+                if (sourceUri != null && sourceRef != null) {
+                    ref = sourceRef
+                    cursorUri = sourceUri
+                    cursorName = sourceUri.lastPathSegment ?: "Archive"
+                    continue
+                }
+            }
+            break
+        }
+        if (route.isEmpty()) return listOf(virtualRoot, Crumb(uri, displayName))
+
+        val roots = runCatching { selectionRootEntries() }.getOrDefault(emptyList())
+        val matchedRoot = roots.firstOrNull { root -> route.any { sameBreadcrumbUri(it.uri, root.uri) } }
+        val rootIndex = matchedRoot?.let { root -> route.indexOfLast { sameBreadcrumbUri(it.uri, root.uri) } } ?: -1
+        return if (matchedRoot != null && rootIndex >= 0) {
+            buildList {
+                add(virtualRoot)
+                add(Crumb(matchedRoot.uri, matchedRoot.metadata.name))
+                route.take(rootIndex).asReversed().forEach(::add)
+            }
+        } else listOf(virtualRoot) + route.asReversed()
+    }
+
+    private fun sameBreadcrumbUri(first: Uri, second: Uri): Boolean =
+        first.normalizeScheme().toString() == second.normalizeScheme().toString()
 
     private fun renderBreadcrumbs() {
         breadcrumbs.removeAllViews()
@@ -1235,12 +1327,34 @@ class FloatingContainerService : Service() {
     }
 
     private fun updateSelectionControls() {
-        selectionDoneView?.visibility = if (selectionMode && selectionAllowMultiple) View.VISIBLE else View.GONE
-        selectionDoneView?.text = "Open (${selectedEntries.size})"
+        selectionDoneView?.visibility = if (selectionMode && (selectionAllowMultiple || selectionSaveMode)) View.VISIBLE else View.GONE
+        selectionDoneView?.text = when {
+            selectionSaveMode -> "Save here"
+            else -> "Open (${selectedEntries.size})"
+        }
+        selectionDoneView?.contentDescription = if (selectionSaveMode) "Save in this directory" else "Finish selecting files"
         normalActionView?.visibility = if (selectionMode) View.GONE else View.VISIBLE
     }
 
-    private fun completeMultipleSelection(entries: List<ResourceEntry> = selectedEntries.values.toList()) {
+    private fun completeSaveSelection() {
+        val directory = current
+        if (directory == null) {
+            Toast.makeText(this, "Choose a directory to save into", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val result = Bundle().apply {
+            putString(FileSelectionContract.EXTRA_SAVE_DIRECTORY, directory.toString())
+            selectionSaveFileName?.let { putString(FileSelectionContract.EXTRA_SAVE_FILE_NAME, it) }
+        }
+        finishSelection(FileSelectionContract.RESULT_SELECTED, result)
+        removeWindow()
+        stopSelf()
+    }
+
+    private fun completeMultipleSelection(
+        entries: List<ResourceEntry> = selectedEntries.values.toList(),
+        parents: Map<String, SelectionParent> = emptyMap(),
+    ) {
         if (entries.isEmpty()) {
             Toast.makeText(this, "Select at least one file", Toast.LENGTH_SHORT).show()
             return
@@ -1253,8 +1367,15 @@ class FloatingContainerService : Service() {
             }))
             putLongArray(FileSelectionContract.EXTRA_RESULT_SIZES,
                 entries.map { it.metadata.sizeBytes ?: -1L }.toLongArray())
+            putStringArrayList(FileSelectionContract.EXTRA_ITEM_DIRECTORY_URIS,
+                ArrayList(entries.map { parents[it.uri.toString()]?.uri?.toString().orEmpty() }))
+            putStringArrayList(FileSelectionContract.EXTRA_ITEM_DIRECTORY_NAMES,
+                ArrayList(entries.map { parents[it.uri.toString()]?.name.orEmpty() }))
+            putStringArrayList(FileSelectionContract.EXTRA_ITEM_DIRECTORY_COVER_URIS,
+                ArrayList(entries.map { parents[it.uri.toString()]?.coverUri?.toString().orEmpty() }))
             addSelectionLocation(this)
         }
+        selectionScanning = false
         finishSelection(FileSelectionContract.RESULT_SELECTED, result)
         removeWindow()
         stopSelf()
@@ -1263,44 +1384,124 @@ class FloatingContainerService : Service() {
     /** Long-pressing a folder in an audio multi-select request creates a recursive playlist. */
     private fun createRecursiveAudioPlaylist(root: ResourceEntry) {
         if (!selectionMode || !selectionAllowMultiple || !selectionRecursiveAudioDirectories) return
-        Toast.makeText(this, "Collecting audio from ${root.metadata.name}…", Toast.LENGTH_SHORT).show()
+        selectionScanning = true
+        reportSelectionProgress(FileSelectionContract.RESULT_LOADING_STARTED, root.metadata.name, 0, 0)
+        removeWindow()
         Thread {
+            val scanStartedAt = android.os.SystemClock.elapsedRealtime()
             val found = linkedMapOf<String, ResourceEntry>()
+            val parents = linkedMapOf<String, SelectionParent>()
             val visited = hashSetOf<com.infinifolder.model.ResourceRef>()
             val queue = ArrayDeque<Pair<ResourceEntry, Int>>()
             queue.add(root to 0)
             var foldersRead = 0
             var foldersFailed = 0
             var truncated = false
-            while (queue.isNotEmpty() && selectionMode && !Thread.currentThread().isInterrupted) {
+            var lastProgressAt = System.currentTimeMillis()
+            while (queue.isNotEmpty() && selectionMode && selectionScanning && !Thread.currentThread().isInterrupted) {
                 val (folder, depth) = queue.removeFirst()
                 if (depth > 128 || !visited.add(folder.ref)) { truncated = true; continue }
                 if (++foldersRead > 50_000) { truncated = true; break }
-                when (val result = runtime.provider.list(folder.ref)) {
-                    is ProviderResult.Success -> {
-                        if (result.isLoading) foldersFailed++
-                        for (entry in result.value) {
-                            if (found.size >= 50_000) { truncated = true; break }
-                            if (entry.metadata.isDirectory && !entry.metadata.isSymbolicLink && !entry.metadata.isBrokenLink) {
-                                queue.add(entry to depth + 1)
-                            } else if (!entry.metadata.isDirectory && !entry.metadata.isSymbolicLink &&
-                                com.infinifolder.storage.LinkResolver.kind(entry.metadata) == null &&
-                                !ArchiveFormats.isPlaylist(entry.metadata.name, entry.metadata.mimeType)) {
-                                val mime = com.infinifolder.mime.MimeRegistry.effective(
-                                    entry.metadata.name, entry.metadata.mimeType.ifBlank { "application/octet-stream" })
-                                if (matchesSelectionFormat(entry, mime)) found.putIfAbsent(entry.uri.toString(), entry)
+                val folderEntries = linkedMapOf<String, ResourceEntry>()
+                var listAttempt = 0
+                var listingComplete = false
+                var listingFailed = false
+                while (selectionScanning && listAttempt < MAX_SELECTION_LIST_ATTEMPTS &&
+                    !Thread.currentThread().isInterrupted) {
+                    listAttempt++
+                    try {
+                        when (val result = runtime.provider.list(folder.ref)) {
+                            is ProviderResult.Success -> {
+                                if (!result.isLoading) {
+                                    // A completed result is authoritative; discard any
+                                    // stale rows accumulated from earlier partial polls.
+                                    folderEntries.clear()
+                                    result.value.forEach { folderEntries[it.uri.toString()] = it }
+                                    listingComplete = true
+                                    break
+                                } else {
+                                    result.value.forEach { folderEntries[it.uri.toString()] = it }
+                                }
+                            }
+                            is ProviderResult.Failure, is ProviderResult.Unsupported -> {
+                                listingFailed = true
+                                break
+                            }
+                        }
+                    } catch (error: Exception) {
+                        listingFailed = true
+                        com.infinifolder.storage.DiagnosticLog.record(
+                            "infiniselect.audio-folder.list-failed", "folder=${folder.metadata.name}", error)
+                        break
+                    }
+                    if (listAttempt < MAX_SELECTION_LIST_ATTEMPTS && selectionScanning) {
+                        try {
+                            Thread.sleep((100L * listAttempt).coerceAtMost(700L))
+                        } catch (_: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                            break
+                        }
+                    }
+                }
+                if (!listingComplete || listingFailed) foldersFailed++
+                val entries = folderEntries.values.toList()
+                if (entries.isNotEmpty()) {
+                    // Keep only a URI to the likely cover image. Do not open or
+                    // decode it during the directory scan.
+                    val directoryCoverUri = entries.asSequence()
+                                .filter { !it.metadata.isDirectory && !it.metadata.isSymbolicLink &&
+                                    !it.metadata.isBrokenLink && it.metadata.canRead }
+                                .filter { it.metadata.name.startsWith("cover.", ignoreCase = true) }
+                                .filter {
+                                    it.metadata.mimeType.startsWith("image/", ignoreCase = true) ||
+                                        com.infinifolder.mime.MimeRegistry.guess(it.metadata.name)
+                                            .startsWith("image/", ignoreCase = true)
+                                }
+                                .sortedWith(compareBy<ResourceEntry>({ it.metadata.name.lowercase(java.util.Locale.ROOT) },
+                                    { it.metadata.name }))
+                                .firstOrNull()?.uri
+                    for (entry in entries) {
+                        if (found.size >= 50_000) { truncated = true; break }
+                        if (entry.metadata.isDirectory && !entry.metadata.isSymbolicLink && !entry.metadata.isBrokenLink) {
+                            queue.add(entry to depth + 1)
+                        } else if (!entry.metadata.isDirectory && !entry.metadata.isSymbolicLink &&
+                            com.infinifolder.storage.LinkResolver.kind(entry.metadata) == null &&
+                            !ArchiveFormats.isPlaylist(entry.metadata.name, entry.metadata.mimeType)) {
+                            val mime = com.infinifolder.mime.MimeRegistry.effective(
+                                entry.metadata.name, entry.metadata.mimeType.ifBlank { "application/octet-stream" })
+                            if (matchesSelectionFormat(entry, mime)) {
+                                val key = entry.uri.toString()
+                                if (found.putIfAbsent(key, entry) == null) {
+                                    parents[key] = SelectionParent(folder.uri, folder.metadata.name, directoryCoverUri)
+                                }
                             }
                         }
                     }
-                    is ProviderResult.Failure -> foldersFailed++
-                    is ProviderResult.Unsupported -> foldersFailed++
+                }
+                if (listingFailed) {
+                    com.infinifolder.storage.DiagnosticLog.record(
+                        "infiniselect.audio-folder.list-incomplete", "folder=${folder.metadata.name} attempts=$listAttempt entries=${folderEntries.size}")
+                } else if (!listingComplete) {
+                    com.infinifolder.storage.DiagnosticLog.record(
+                        "infiniselect.audio-folder.list-still-loading", "folder=${folder.metadata.name} attempts=$listAttempt entries=${folderEntries.size}")
+                }
+                val now = System.currentTimeMillis()
+                if (foldersRead == 1 || foldersRead % 16 == 0 || now - lastProgressAt >= 500L) {
+                    reportSelectionProgress(FileSelectionContract.RESULT_LOADING_PROGRESS,
+                        root.metadata.name, foldersRead, found.size)
+                    lastProgressAt = now
                 }
                 if (truncated) break
             }
             onMain {
                 if (!selectionMode || selectionReceiver == null) return@onMain
                 if (found.isEmpty()) {
-                    Toast.makeText(this, "No supported audio files were found", Toast.LENGTH_LONG).show()
+                    reportSelectionProgress(FileSelectionContract.RESULT_LOADING_FAILED,
+                        "No supported audio files were found", foldersRead, 0)
+                    selectionScanning = false
+                    finishSelection(FileSelectionContract.RESULT_CANCELLED, Bundle())
+                    removeWindow()
+                    stopSelf()
                     return@onMain
                 }
                 if (foldersFailed > 0 || truncated) {
@@ -1308,11 +1509,24 @@ class FloatingContainerService : Service() {
                         if (foldersFailed > 0) add("$foldersFailed folders could not be fully read")
                         if (truncated) add("scan limit reached")
                     }.joinToString("; ")
-                    Toast.makeText(this, "Using ${found.size} files; $detail", Toast.LENGTH_LONG).show()
+                    reportSelectionProgress(FileSelectionContract.RESULT_LOADING_PROGRESS,
+                        "Using ${found.size} files; $detail", foldersRead, found.size)
                 }
-                completeMultipleSelection(found.values.toList())
+                completeMultipleSelection(found.values.toList(), parents)
+                val directoryCount = parents.values.asSequence().map { it.uri.toString() }.distinct().count()
+                com.infinifolder.storage.DiagnosticLog.record(
+                    "infiniselect.audio-folder.complete",
+                    "folders=$foldersRead directories=$directoryCount tracks=${found.size} partialFolders=$foldersFailed truncated=$truncated elapsedMs=${android.os.SystemClock.elapsedRealtime() - scanStartedAt}")
             }
         }.apply { name = "InfiniSelectAudioFolderScan"; priority = Thread.NORM_PRIORITY }.start()
+    }
+
+    private fun reportSelectionProgress(code: Int, label: String, folders: Int, tracks: Int) {
+        selectionReceiver?.send(code, Bundle().apply {
+            putString(FileSelectionContract.EXTRA_PROGRESS_LABEL, label)
+            putInt(FileSelectionContract.EXTRA_PROGRESS_FOLDERS, folders)
+            putInt(FileSelectionContract.EXTRA_PROGRESS_TRACKS, tracks)
+        })
     }
 
     private fun matchesMime(pattern: String, mime: String): Boolean {
@@ -1324,6 +1538,11 @@ class FloatingContainerService : Service() {
     private fun addSelectionLocation(result: Bundle) {
         current?.let { result.putString(FileSelectionContract.EXTRA_RESULT_DIRECTORY, it.toString()) }
         if (::scroll.isInitialized) result.putInt(FileSelectionContract.EXTRA_RESULT_SCROLL_Y, scroll.scrollY)
+    }
+
+    private fun cancelSelection() {
+        if (!selectionMode) return
+        finishSelection(FileSelectionContract.RESULT_CANCELLED, Bundle().apply { addSelectionLocation(this) })
     }
 
     private fun restoreSelectionScrollPosition() {
@@ -1371,8 +1590,12 @@ class FloatingContainerService : Service() {
     private fun finishSelection(code: Int, data: Bundle) {
         val receiver = selectionReceiver ?: return
         selectionReceiver = null
+        selectionScanning = false
+        selectionScanning = false
         selectionMode = false
         selectionAllowMultiple = false
+        selectionSaveMode = false
+        selectionSaveFileName = null
         selectionRecursiveAudioDirectories = false
         selectionMimeTypes = emptyList()
         selectionExtensions = emptyList()
@@ -1417,10 +1640,11 @@ class FloatingContainerService : Service() {
     }
 
     private fun dismissWindow() {
+        if (selectionScanning) return
         // Going to Home deliberately changes focus during a shortcut drag. Its
         // activity/native drag callbacks handle cancellation and final dismissal.
         if (windowView == null || launcherDrag != null) return
-        if (selectionMode) finishSelection(FileSelectionContract.RESULT_CANCELLED, Bundle.EMPTY)
+        cancelSelection()
         removeWindow()
         stopSelf()
     }
@@ -1442,7 +1666,7 @@ class FloatingContainerService : Service() {
     }
 
     override fun onDestroy() {
-        if (selectionMode) finishSelection(FileSelectionContract.RESULT_CANCELLED, Bundle.EMPTY)
+        cancelSelection()
         if (systemDialogsRegistered) {
             unregisterReceiver(systemDialogs)
             systemDialogsRegistered = false
@@ -1463,9 +1687,11 @@ class FloatingContainerService : Service() {
 
     companion object {
         private const val TOOLBAR_HEIGHT_DP = 39
+        private const val MAX_SELECTION_LIST_ATTEMPTS = 8
         const val EXTRA_URI = "com.infinifolder.overlay.URI"
         const val EXTRA_DISPLAY_NAME = "com.infinifolder.overlay.DISPLAY_NAME"
         const val EXTRA_SELECTION_MODE = "com.infinifolder.overlay.SELECTION_MODE"
+        const val EXTRA_SELECTION_SAVE_MODE = "com.infinifolder.overlay.SELECTION_SAVE_MODE"
         const val EXTRA_ALLOW_MULTIPLE = "com.infinifolder.overlay.ALLOW_MULTIPLE"
         const val EXTRA_ALLOW_RECURSIVE_AUDIO_DIRECTORIES = "com.infinifolder.overlay.ALLOW_RECURSIVE_AUDIO_DIRECTORIES"
         const val EXTRA_SELECTION_RECEIVER = "com.infinifolder.overlay.SELECTION_RECEIVER"

@@ -33,6 +33,11 @@ internal fun retainUnreadableState(previous: List<AudioTrack>, incoming: List<Au
             title = if (track.title == track.fileName) old.title else track.title,
             artist = track.artist ?: old.artist, album = track.album ?: old.album,
             artwork = track.artwork ?: old.artwork,
+            directoryCoverUri = track.directoryCoverUri ?: old.directoryCoverUri,
+            directoryUri = track.directoryUri ?: old.directoryUri,
+            directoryName = track.directoryName ?: old.directoryName,
+            directoryArtwork = track.directoryArtwork ?: old.directoryArtwork,
+            directoryArtworkMetadataResolved = track.directoryArtworkMetadataResolved || old.directoryArtworkMetadataResolved,
             bitrateKbps = track.bitrateKbps ?: old.bitrateKbps,
             sampleRateHz = track.sampleRateHz ?: old.sampleRateHz,
             channels = track.channels ?: old.channels

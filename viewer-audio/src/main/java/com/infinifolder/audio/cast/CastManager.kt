@@ -180,6 +180,11 @@ object CastManager {
     private fun connect(session: CastSession, resumed: Boolean) {
         attach(session)
         val player = service ?: return
+        com.infinifolder.storage.DiagnosticLog.record(
+            "cast.session.connected",
+            "device=${session.castDevice?.friendlyName.orEmpty()} resumed=$resumed " +
+                "remoteHasMedia=${remote?.hasMediaSession() == true} track=${player.currentTrack?.fileName.orEmpty()}"
+        )
         player.resetCastFailures()
         if (resumed && remote?.hasMediaSession() == true) {
             positionMs = remote?.approximateStreamPosition ?: 0L
@@ -382,6 +387,18 @@ object CastManager {
         val selections = player.continuousCastSelections()
         val candidates = selections.map { it.track }.ifEmpty { listOf(track) }
         val timelineIndexes = selections.map { it.playlistIndex }.ifEmpty { listOf(player.currentIndex) }
+        // Starting a cast session must not wait for every remaining playlist
+        // item to be decoded into the optional continuous PCM stream. Queue the
+        // current item immediately; the receiver can begin playback while the
+        // normal per-track queue handles subsequent items.
+        if (initial || candidates.size > 1) {
+            com.infinifolder.storage.DiagnosticLog.record(
+                "cast.load.strategy",
+                "mode=per-track initial=$initial queuedTracks=${candidates.size} file=${track.fileName}"
+            )
+            loadPerTrack(track, position, autoplay, initial, sequence, player, client, mediaServer)
+            return
+        }
         val task = mediaServer.prepareContinuous(candidates, { sequence != loadSequence || remote !== client }) { result ->
             main.post {
                 if (sequence != loadSequence || remote !== client) {
@@ -543,10 +560,32 @@ object CastManager {
     fun pause() { main.post { remote?.pause() } }
     fun togglePlayPause() { main.post { remote?.togglePlayback() } }
     fun seek(position: Long) { main.post { remote?.seek(seekPosition(position)) } }
+    /** Change the active receiver's volume for physical volume-key presses. */
+    fun adjustVolume(direction: Int) {
+        if (direction == 0) return
+        main.post {
+            val session = castContext?.sessionManager?.currentCastSession ?: return@post
+            runCatching {
+                val current = session.volume.coerceIn(0.0, 1.0)
+                val next = (current + if (direction > 0) RECEIVER_VOLUME_STEP else -RECEIVER_VOLUME_STEP)
+                    .coerceIn(0.0, 1.0)
+                if (direction > 0 && session.isMute) session.setMute(false)
+                session.volume = next
+                com.infinifolder.storage.DiagnosticLog.record(
+                    "cast.volume.changed", "volume=${"%.2f".format(java.util.Locale.ROOT, next)}"
+                )
+            }.onFailure { error ->
+                android.util.Log.w("CastManager", "Could not change Cast receiver volume", error)
+                com.infinifolder.storage.DiagnosticLog.record("cast.volume.change.failed", error = error)
+            }
+        }
+    }
     fun disconnect() { main.post { castContext?.sessionManager?.endCurrentSession(true) } }
     fun stopCasting() {
         suppressResume = true
         val stop = { remote?.stop(); castContext?.sessionManager?.endCurrentSession(true); Unit }
         if (Looper.myLooper() == Looper.getMainLooper()) stop() else main.post { stop() }
     }
+
+    private const val RECEIVER_VOLUME_STEP = 0.05
 }

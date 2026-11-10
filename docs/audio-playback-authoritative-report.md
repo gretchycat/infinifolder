@@ -1,6 +1,6 @@
 # Audio decoding and signal checks (JVM fixtures)
 
-Generated on 2026-11-08T04:10:04.980575443Z across **78** audio/playlist fixtures in `filesystem-test-images/audio/`.
+Generated on 2026-11-10T00:23:43.239032074Z across **78** audio/playlist fixtures in `filesystem-test-images/audio/`.
 
 This JVM fixture report uses Android stubs. It does not establish device playback or codec availability. Unsupported codecs must fail; generated substitute tones are forbidden. Earlier reports counted placeholder synthesis as successful decoding and overstated support.
 
@@ -37,7 +37,7 @@ This JVM fixture report uses Android stubs. It does not establish device playbac
 | `c_major_piano.awb` | 4584 B | `audio/amr-wb` | `UniversalAudioDecoder` | 0.00s | N/A | N/A | N/A | **FAIL** | Decoder returned null PCM data |
 | `c_major_piano.bin` | 263424 B | `application/octet-stream` | `UniversalAudioDecoder` | 0.00s | N/A | N/A | N/A | **FAIL** | Decoder returned null PCM data |
 | `c_major_piano.caf` | 268696 B | `audio/x-caf` | `CafDecoder` | 1.50s | 44100 Hz / 2 ch | 0.89 | -18.5 dB | **PASS** | None |
-| `c_major_piano.cdda` | 263424 B | `audio/x-cdda` | `CddaDecoder` | 1.49s | 44100 Hz / 2 ch | 0.89 | -18.4 dB | **PASS** | None |
+| `c_major_piano.cdda` | 263424 B | `audio/x-cdda` | `Portable.CDDA` | 1.49s | 44100 Hz / 2 ch | 0.89 | -18.4 dB | **PASS** | None |
 | `c_major_piano.dff` | 1056897 B | `audio/x-dff` | `AudiophileStreamDecoder` | 1.50s | 44100 Hz / 2 ch | 0.62 | -21.5 dB | **PASS** | None |
 | `c_major_piano.dro` | 151 B | `audio/x-dro` | `UniversalAudioDecoder` | 0.00s | N/A | N/A | N/A | **FAIL** | Decoder returned null PCM data |
 | `c_major_piano.dsf` | 1056860 B | `audio/x-dsf` | `AudiophileStreamDecoder` | 1.50s | 44100 Hz / 2 ch | 0.62 | -21.5 dB | **PASS** | None |

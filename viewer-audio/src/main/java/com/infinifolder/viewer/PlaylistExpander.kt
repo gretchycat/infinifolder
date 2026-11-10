@@ -315,7 +315,11 @@ object PlaylistExpander {
                             durationMs = durationMs,
                             startByte = entry.startByte,
                             lengthBytes = entry.lengthBytes,
-                            decoderExtension = entry.decoderExtension
+                            decoderExtension = entry.decoderExtension,
+                            directoryUri = entry.directoryUri?.let(Uri::parse),
+                            directoryName = entry.directoryName,
+                            directoryCoverUri = entry.directoryCoverUri?.let(Uri::parse),
+                            directoryArtworkMetadataResolved = entry.directoryArtworkMetadataResolved
                         )
                     )
                 }
@@ -353,12 +357,32 @@ object PlaylistExpander {
 
     private fun isSourceAvailable(context: Context?, uri: Uri): Boolean {
         if (context == null) return true
+        // InfiniFolder selection relays are emitted into a generated playlist
+        // only after the storage provider returned them. Avoid an extra provider
+        // IPC for every track; playback reports an expired relay on actual open.
+        if (uri.scheme.equals("content", ignoreCase = true) &&
+            uri.authority?.endsWith(".selection", ignoreCase = true) == true) return true
         return when (uri.scheme?.lowercase()) {
             "file" -> uri.path?.let { File(it).isFile && File(it).canRead() } == true
-            "content" -> runCatching {
-                MediaSourceAdapter.openStream(context, uri).use { }
-                true
-            }.getOrDefault(false)
+            "content" -> {
+                // Opening a stream just to check a playlist entry starts real content
+                // reads. InfiniFolder selection URIs are pipe-backed; probing a large
+                // generated JSPF this way can fill its bounded relay queue and make
+                // valid later tracks look missing. Ask the provider for lightweight
+                // metadata first, and only stream-probe providers that do not support
+                // queries.
+                val queryResult: Boolean? = try {
+                    context.contentResolver.query(uri,
+                        arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                        ?.use { cursor -> cursor.moveToFirst() }
+                } catch (_: Exception) { null }
+                if (queryResult == true) true
+                else if (queryResult == false) false
+                else runCatching {
+                    MediaSourceAdapter.openStream(context, uri).use { }
+                    true
+                }.getOrDefault(false)
+            }
             else -> true
         }
     }

@@ -33,6 +33,7 @@ class WinampPlaylistBottomView @JvmOverloads constructor(
     var currentTrackDurationMs: Long = 0L
     var onAddToPlaylist: (() -> Unit)? = null
     var onRemoveFromPlaylist: (() -> Unit)? = null
+    var onMorePlaylistActions: (() -> Unit)? = null
     private var pressedControl = 0
 
     private var pixelScaledBitmap: Bitmap? = null
@@ -62,12 +63,14 @@ class WinampPlaylistBottomView @JvmOverloads constructor(
     init {
         isClickable = true
         isFocusable = true
-        contentDescription = "Playlist controls. Add and remove buttons are on the left."
+        contentDescription = "Playlist controls. Add, remove, and playlist actions are on the left."
+        tooltipText = "Add, remove, or manage playlist"
         setOnTouchListener { _, event ->
             val nativeX = if (width > 0) event.x * NATIVE_WIDTH / width else -1f
             val control = when {
                 nativeX in 0f..42f -> 1 // The + button in PLEDIT.BMP.
                 nativeX in 43f..84f -> 2 // The − button in PLEDIT.BMP.
+                nativeX in 85f..126f -> 3 // The remaining left-side controls.
                 else -> 0
             }
             when (event.actionMasked) {
@@ -80,7 +83,8 @@ class WinampPlaylistBottomView @JvmOverloads constructor(
                     if (pressed == 0) return@setOnTouchListener false
                     if (pressed == control) {
                         if (control == 1) onAddToPlaylist?.invoke()
-                        else onRemoveFromPlaylist?.invoke()
+                        else if (control == 2) onRemoveFromPlaylist?.invoke()
+                        else onMorePlaylistActions?.invoke()
                     }
                     performClick()
                     true

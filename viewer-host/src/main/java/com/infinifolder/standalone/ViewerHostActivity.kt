@@ -116,7 +116,9 @@ class ViewerHostActivity : ViewerActivity() {
             }
         }
         source?.clipData?.let { playerIntent.clipData = it }
-        playerIntent.addFlags(source?.flags?.and(Intent.FLAG_GRANT_READ_URI_PERMISSION) ?: 0)
+        playerIntent.addFlags(source?.flags?.and(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+        ) ?: 0)
         startActivity(playerIntent)
     }
 

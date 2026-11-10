@@ -16,6 +16,12 @@ import java.nio.charset.Charset
  */
 object MediaSourceAdapter {
 
+    data class AudioDirectoryArtworkInfo(
+        val directoryUri: Uri?,
+        val directoryName: String?,
+        val coverUris: List<Uri>
+    )
+
     fun resolveLocalFile(context: Context, uri: Uri): File? {
         if (uri.scheme == "file") {
             return uri.path?.let { File(it) }?.takeIf { it.exists() }
@@ -143,6 +149,77 @@ object MediaSourceAdapter {
         val provider = com.infinifolder.storage.StorageRuntime.get(context).provider
         val ref = provider.refForUri(uri) ?: return null
         return (provider.parent(ref) as? ProviderResult.Success)?.value?.documentId?.let(Uri::parse)
+    }
+
+    /** Resolve the track's containing directory and any readable cover images through storage providers. */
+    fun getAudioDirectoryArtwork(context: Context, sourceUri: Uri): AudioDirectoryArtworkInfo? {
+        val provider = com.infinifolder.storage.StorageRuntime.get(context).provider
+        val source = provider.refForUri(sourceUri)
+        if (source != null) {
+            val parent = (provider.parent(source) as? ProviderResult.Success)?.value
+            if (parent != null) {
+                val directory = (provider.stat(parent) as? ProviderResult.Success)?.value
+                val listing = provider.list(parent) as? ProviderResult.Success
+                if (directory != null) {
+                    val covers = listing?.value.orEmpty().asSequence()
+                        .filter { !it.metadata.isDirectory && !it.metadata.isSymbolicLink && !it.metadata.isBrokenLink && it.metadata.canRead }
+                        .filter { it.metadata.name.startsWith("cover.", ignoreCase = true) }
+                        .filter {
+                            it.metadata.mimeType.startsWith("image/", ignoreCase = true) ||
+                                com.infinifolder.mime.MimeRegistry.guess(it.metadata.name).startsWith("image/", ignoreCase = true)
+                        }
+                        .sortedWith(Comparator { left, right ->
+                            val byCaseInsensitiveName = left.metadata.name.compareTo(right.metadata.name, ignoreCase = true)
+                            if (byCaseInsensitiveName != 0) byCaseInsensitiveName
+                            else left.metadata.name.compareTo(right.metadata.name)
+                        })
+                        .map { it.uri }
+                        .toList()
+                    return AudioDirectoryArtworkInfo(directory.uri, directory.metadata.name, covers)
+                }
+            }
+        }
+        return queryInfiniFolderDirectoryArtwork(context, sourceUri)
+    }
+
+    /** Ask InfiniFolder's shared-file provider for a sibling cover when this viewer cannot own its URI. */
+    fun queryInfiniFolderSiblingCover(context: Context, sourceUri: Uri): Uri? {
+        return queryInfiniFolderDirectoryArtwork(context, sourceUri)?.coverUris?.firstOrNull()
+    }
+
+    fun queryInfiniFolderDirectoryArtwork(context: Context, sourceUri: Uri): AudioDirectoryArtworkInfo? {
+        if (sourceUri.scheme != "content" || sourceUri.authority?.let {
+                it.endsWith(".files", ignoreCase = true) || it.endsWith(".selection", ignoreCase = true)
+            } != true) return null
+        return try {
+            context.contentResolver.query(sourceUri,
+                arrayOf(
+                    com.infinifolder.storage.SharedFileProvider.AUDIO_DIRECTORY_URI_COLUMN,
+                    com.infinifolder.storage.SharedFileProvider.AUDIO_DIRECTORY_NAME_COLUMN,
+                    com.infinifolder.storage.SharedFileProvider.AUDIO_COVER_URI_COLUMN
+                ), null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                fun value(columnName: String): String? {
+                    val index = cursor.getColumnIndex(columnName)
+                    return if (index < 0 || cursor.isNull(index)) null else cursor.getString(index)
+                }
+                val cover = value(com.infinifolder.storage.SharedFileProvider.AUDIO_COVER_URI_COLUMN)
+                    ?.let(Uri::parse)?.let(::listOf).orEmpty()
+                AudioDirectoryArtworkInfo(
+                    value(com.infinifolder.storage.SharedFileProvider.AUDIO_DIRECTORY_URI_COLUMN)?.let(Uri::parse),
+                    value(com.infinifolder.storage.SharedFileProvider.AUDIO_DIRECTORY_NAME_COLUMN),
+                    cover
+                )
+            }
+        } catch (_: SecurityException) {
+            null
+        } catch (_: IllegalArgumentException) {
+            null
+        } catch (_: java.io.FileNotFoundException) {
+            null
+        } catch (_: Exception) {
+            null
+        }
     }
 
     data class LoadedText(val text: String, val hasMore: Boolean, val revision: com.infinifolder.storage.ContentRevision?,
