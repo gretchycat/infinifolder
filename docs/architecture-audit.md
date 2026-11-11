@@ -1,5 +1,16 @@
 # InfiniSuite architecture audit and separation
 
+## Fresh-checkout and media-asset correction (2026-11-11)
+
+The initial isolated builds supplied SDK configuration and missed the startup failure reported from new checkouts with neither SDK variables nor local.properties. This was a verification gap. Scribe conditionally hid its Android modules when the SDK was absent, leading to misleading attempts to fetch unpublished Android coordinates from Maven. Its Android modules are now declared by default; SDK-free JVM builds explicitly use `-PportableOnly`. Every application's build.sh now discovers installed conventional SDK locations, forwards the SDK as a JVM property (required for existing Termux daemons), passes native aapt2 on Termux and defaults arm64 packaging. Explicit SDK settings and user Gradle arguments remain supported.
+
+The previous asset inventory focused on production source sets and missed repository-root duplicates. Infinimedia owns all four original Winamp archives and the optional SF3 bank. Seven byte-identical Folder copies total 29,870,265 bytes; the original archives/bank are retained in Media, with the bank's exact matching upstream license and provenance. This reduces checkout duplication; no APK size reduction is attributed to copies that were never packaged. The bank remains outside production assets, preserving current portable-synth and user-import behavior. See [byte comparison evidence](validation/media-asset-consolidation.json).
+
+A shared UI test previously searched parent directories for a skin and silently skipped its assertions when absent. Its real-asset coverage now belongs to Media and requires every packaged archive. UI retains synthetic parser tests without application asset dependencies. Media additionally verifies the optional SF3's byte count, header and SHA-256; this establishes preservation, not runtime synthesis or visual correctness.
+
+Follow-up app build results are recorded separately after executing the scripts in the user's new checkouts. Earlier checkpoints below describe their original test environments, rather than proving SDK discovery. Ubuntu testing and other platform ports remain deferred.
+
+
 Updated 2026-11-11. This report records implementation, repository organization,
 cleanup and executed Android verification. Other-platform ports and Ubuntu
 host-native test work are deferred at the owner's request. Compilation, unit

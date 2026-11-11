@@ -1,0 +1,52 @@
+{
+  "date": "2026-11-11",
+  "repository": "https://github.com/gretchycat/infinimedia",
+  "assets": [
+    {
+      "removed_folder_path": "Winamp/base-2.91.wsz",
+      "media_path": "modules/viewer-audio/src/main/assets/skins/base-2.91.wsz",
+      "size": 101121,
+      "sha256": "0166fb878cd41de07e1cc51067525ccd3f055b94dc3c227d61124fe528788f6f"
+    },
+    {
+      "removed_folder_path": "Winamp/Winamp3_Classified_v5.5.wsz",
+      "media_path": "modules/viewer-audio/src/main/assets/skins/Winamp3_Classified_v5.5.wsz",
+      "size": 253959,
+      "sha256": "da7ac7a7acd3bf76842c86644e23c88cff74cd7fc8826563285ca7c082a01067"
+    },
+    {
+      "removed_folder_path": "Winamp/Winamp5_Classified_v5.5.wsz",
+      "media_path": "modules/viewer-audio/src/main/assets/skins/Winamp5_Classified_v5.5.wsz",
+      "size": 178176,
+      "sha256": "ad749cb68339f443537ce1167e69f9b4b6a28ba3d9690d02b6426175f8772976"
+    },
+    {
+      "removed_folder_path": "Winamp/Bento_Classified.wsz",
+      "media_path": "modules/viewer-audio/src/main/assets/skins/Bento_Classified.wsz",
+      "size": 78699,
+      "sha256": "5a526d01240d8a4c642bda901a86726c4ede19327582b8b0be6189747542ab67"
+    },
+    {
+      "removed_folder_path": "themes/mediaplayer/Winamp5_Classified_v5.5.wsz",
+      "media_path": "modules/viewer-audio/src/main/assets/skins/Winamp5_Classified_v5.5.wsz",
+      "size": 178176,
+      "sha256": "ad749cb68339f443537ce1167e69f9b4b6a28ba3d9690d02b6426175f8772976"
+    },
+    {
+      "removed_folder_path": "FluidR3Mono_GM.sf3",
+      "media_path": "test-assets/soundfonts/FluidR3Mono_GM.sf3",
+      "size": 14540067,
+      "sha256": "bac3363e097d182d2659db2e84a00f1c68d6c712181addc77c9f51da23a24897"
+    },
+    {
+      "removed_folder_path": "filesystem-test-images/FluidR3Mono_GM.sf3",
+      "media_path": "test-assets/soundfonts/FluidR3Mono_GM.sf3",
+      "size": 14540067,
+      "sha256": "bac3363e097d182d2659db2e84a00f1c68d6c712181addc77c9f51da23a24897"
+    }
+  ],
+  "folder_worktree_bytes_removed": 29870265,
+  "apk_size_effect": "None expected: Folder copies were outside production source sets; Media already packaged the four skins. The SF3 remains outside production source sets.",
+  "sf3_upstream_commit": "3c7a69d42e218b2195f460f606eb69a960066836",
+  "sf3_upstream_git_blob": "08456e4f8b1cbd323934187bc923cb15a7b3efc4"
+}

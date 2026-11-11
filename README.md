@@ -52,8 +52,8 @@ paths are inside this checkout; the bootstrap rejects dependency symlinks and
 conflicting pins and refuses to overwrite changes when switching revisions.
 
 On Termux install its JDK, Python, clang, aapt2 and native dependencies documented
-by the individual libraries. Configure `android.aapt2FromMavenOverride` with the
-installed aapt2 executable's path. Native builds use the environment's toolchain
+by the individual libraries. The build script configures the installed native aapt2; direct Gradle calls need
+`android.aapt2FromMavenOverride` set to that executable. Native builds use the environment's toolchain
 prefix rather than a fixed device path. The current Termux JNI packaging supports
 arm64; standard desktop builds use the NDK.
 
@@ -91,3 +91,9 @@ in [the architecture report](docs/architecture-audit.md). Run the dependency
 bootstrap before building; individual libraries also have standalone build and
 test workflows. The icon theme is pinned within UI. No application submodule is
 included in this repository.
+
+## Build environment discovery
+
+`./build.sh` honors `ANDROID_HOME`, `ANDROID_SDK_ROOT` or this checkout's `local.properties`. With none configured, it discovers an installed SDK in `~/android-sdk`, `~/Android/Sdk` or `~/Library/Android/sdk`, and reports a clear error if absent. It does not install an SDK or write local configuration. On Termux it passes the installed native `aapt2` explicitly and defaults arm64 packaging to `arm64-v8a`; explicit Gradle arguments can override that default. Direct `./gradlew` invocation still requires SDK/tool configuration.
+
+Run `python3 scripts/test-android-build-env.py` for the build entry point's isolated regression checks.

@@ -32,7 +32,7 @@ player, playlist and bitmap chrome; this rule does not recolor skin artwork.
 
 ## Findings from project fixtures
 
-All four files in `Winamp/` contain classic bitmap skins, despite the Winamp3, Winamp5 and Bento names. They contain both palette text files, main/title-bar bitmap sheets, and generic-window bitmap sheets. Base has green-on-black text and blue selection; Classified v3 has pale green text; Classified v5 has white text on a blue background; Bento has blue-gray text on near-black.
+All four archives owned by [Infinimedia](https://github.com/gretchycat/infinimedia/tree/main/modules/viewer-audio/src/main/assets/skins) contain classic bitmap skins, despite the Winamp3, Winamp5 and Bento names. They contain both palette text files, main/title-bar bitmap sheets, and generic-window bitmap sheets. Base has green-on-black text and blue selection; Classified v3 has pale green text; Classified v5 has white text on a blue background; Bento has blue-gray text on near-black.
 
 Previously the importer ignored all bitmap sheets, SelectedBG and Font, always marked imports dark/monospace, and could report success for unrelated ZIP files by generating a fabricated fallback theme. Copy failures could apply a theme that was not durably saved. File-card colors were also hardcoded, masking imported text colors.
 
@@ -81,3 +81,9 @@ restart restoration and repeated theme switching remain unverified.
 The audio player has its own skin selection and persists its own imported archive, independently of the file manager interface theme. XMMS classic skin archives share the classic bitmap layout; ZIP, WSZ, TAR, gzip-compressed TAR and bzip2-compressed TAR are recognized by content. XMMS-specific extensions and unpacked skin directories are not supported.
 
 The audio visualizer is disabled until the playback subsystem provides reliable analysis data.
+
+## Repository ownership
+
+The four original skin archives live only in Infinimedia's `modules/viewer-audio/src/main/assets/skins`. Its `MediaAssetOwnershipTest` checks all four archives explicitly. The generic parser remains reusable in libinfiniui, whose tests use synthetic fixtures. Former Folder copies in `Winamp/` and `themes/mediaplayer/` were identical and were consolidated into Media.
+
+The optional `FluidR3Mono_GM.sf3` bank likewise belongs to Infinimedia, under `test-assets/soundfonts`, with the matching upstream license and provenance. The bank remains available for import/testing; current opt-in SoundFont playback behavior is preserved. See [asset comparison evidence](validation/media-asset-consolidation.json).

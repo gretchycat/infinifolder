@@ -15,7 +15,7 @@
     },
     "libinfiniscribe": {
       "url": "https://github.com/gretchycat/libinfiniscribe.git",
-      "commit": "f3a930c9accffd363c05370a2e520856eb760f48"
+      "commit": "60dd088497e8ea518b8b966b37dbada011db6d12"
     },
     "libinfiniselect": {
       "url": "https://github.com/gretchycat/libinfiniselect.git",
@@ -35,7 +35,7 @@
     },
     "libinfiniui": {
       "url": "https://github.com/gretchycat/libinfiniui.git",
-      "commit": "ecf508685c6bc02ca893d50a7219a6a99777a839"
+      "commit": "85da49ae243f0a0bdc702c4de102d30462445844"
     },
     "libinfinivault": {
       "url": "https://github.com/gretchycat/libinfinivault.git",

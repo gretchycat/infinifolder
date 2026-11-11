@@ -124,3 +124,9 @@ app_process descriptor smoke probe tests low-level Android primitives only.
 Other-platform ports and Ubuntu host-native test work are deferred at the owner's
 request. Hosted Actions compile Android APKs on Ubuntu; they do not install a
 local Ubuntu system or establish an Ubuntu application port.
+
+## Fresh-checkout build scripts
+
+Every application repository includes `build.sh` and `scripts/android-build-env.sh`. Run `./build.sh --max-workers=1 --console=plain` from the app checkout after installing the documented SDK and native packages. The script honors explicit SDK configuration, then discovers `~/android-sdk`, `~/Android/Sdk` or `~/Library/Android/sdk`. It reports a missing SDK before Gradle starts. On Termux it supplies the native aapt2 path and defaults to arm64 packaging. Direct Gradle invocation still requires explicit SDK/native-tool configuration. The scripts neither install SDKs nor write local.properties.
+
+The initial separation verification supplied local.properties and therefore missed the unset-SDK startup failure reported from new checkouts. The follow-up verification records that case separately; previous compilation results do not establish out-of-box discovery. SDK-free libinfiniscribe JVM builds use `-PportableOnly`; Android modules are otherwise always declared.
