@@ -21,6 +21,7 @@ internal object StorageDescriptor {
         opened: ProviderResult<com.infinifolder.archive.BlockDevice>? = null): ParcelFileDescriptor {
         require(mode in setOf("r", "w", "wt", "rw", "rwt")) { "Unsupported descriptor mode: $mode" }
         val writable = mode != "r"
+        val readable = mode in setOf("r", "rw", "rwt")
         when (val result = validateSeekableResult(opened ?: provider.openNativeSeekable(ref, writable), writable)) {
             is ProviderResult.Success -> {
                 val device = result.value
@@ -36,11 +37,16 @@ internal object StorageDescriptor {
                             throw FileNotFoundException("This source cannot truncate through a random-access handle")
                         device.truncate(0)
                     }
-                    val access = if (writable) ParcelFileDescriptor.MODE_READ_WRITE else ParcelFileDescriptor.MODE_READ_ONLY
+                    val access = when {
+                        readable && writable -> ParcelFileDescriptor.MODE_READ_WRITE
+                        writable -> ParcelFileDescriptor.MODE_WRITE_ONLY
+                        else -> ParcelFileDescriptor.MODE_READ_ONLY
+                    }
                     return context.getSystemService(StorageManager::class.java).openProxyFileDescriptor(access,
                         object : ProxyFileDescriptorCallback() {
                             override fun onGetSize(): Long = io { device.size }
                             override fun onRead(offset: Long, size: Int, data: ByteArray): Int = io {
+                                if (!readable) throw ErrnoException("read", OsConstants.EBADF)
                                 StorageProxyReads.read(device, offset, size, data)
                             }
                             override fun onWrite(offset: Long, size: Int, data: ByteArray): Int = io {
