@@ -16,3 +16,10 @@ __pycache__/
 /*.ZIP
 /*.bin
 /*.torrent
+/packages/
+/infinifolder-*.log
+/infinifolder-*.json
+/infinifolder-debug-*.png
+/infinifolder-crash-*.log
+/InfiniMedia Playlist.jspf
+/*-regenerated.iff
