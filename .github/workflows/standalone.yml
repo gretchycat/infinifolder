@@ -24,7 +24,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test build environment discovery
-        run: python3 scripts/test-android-build-env.py
+        run: |
+          python3 scripts/test-android-build-env.py
+          python3 scripts/test-inventory-repositories.py
       - uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         with:

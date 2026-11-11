@@ -38,8 +38,7 @@ checkout's untracked `local.properties`.
 ```sh
 git clone https://github.com/gretchycat/infinifolder.git
 cd infinifolder
-python3 scripts/fetch-dependencies.py
-./gradlew :app:assembleDebug :app:testDebugUnitTest :viewer-hex:testDebugUnitTest
+./build.sh --max-workers=1 --console=plain
 ```
 
 The APK is `app/build/outputs/apk/debug/app-debug.apk`. Add
@@ -97,3 +96,7 @@ included in this repository.
 `./build.sh` honors `ANDROID_HOME`, `ANDROID_SDK_ROOT` or this checkout's `local.properties`. With none configured, it discovers an installed SDK in `~/android-sdk`, `~/Android/Sdk` or `~/Library/Android/sdk`, and reports a clear error if absent. It does not install an SDK or write local configuration. On Termux it passes the installed native `aapt2` explicitly and defaults arm64 packaging to `arm64-v8a`; explicit Gradle arguments can override that default. Direct `./gradlew` invocation still requires SDK/tool configuration.
 
 Run `python3 scripts/test-android-build-env.py` for the build entry point's isolated regression checks.
+
+## Android verification checkpoint
+
+On 2026-11-11, implementation commit `18c2481` produced the debug APK and passed 143 tests (including 91 native storage cases) in the user's independent Termux checkout. The documented build.sh ran with SDK environment variables unset and no local.properties, plus a guard rejecting project/source roots outside that checkout. APK inspection found no document-editor/player application classes, Winamp archives or SF3 bank. The 11 build-environment regression checks also passed. Full matrix, source pins, packaged libraries and runtime limits are in the [fresh-checkout follow-up](docs/validation/fresh-checkout-build-repair.json).

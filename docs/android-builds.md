@@ -12,8 +12,8 @@ SDK platform 34/build tools 34.0.0; its build also generates keyboard assets.
 Set `ANDROID_HOME` or put your SDK path in that checkout's ignored
 `local.properties`. Never commit an SDK path or signing key.
 
-On Termux use its JDK, clang, aapt2 and documented native packages. Configure
-`android.aapt2FromMavenOverride` to your installed executable. Sound checks its
+On Termux use its JDK, clang, aapt2 and documented native packages. The build
+script supplies native aapt2; direct Gradle calls need `android.aapt2FromMavenOverride`. Sound checks its
 Termux native package manifest. Current Termux native packaging targets arm64.
 Gradle wrappers pin version 9.7.1 and the distribution checksum.
 
@@ -33,13 +33,12 @@ access; `--offline` is appropriate only after dependencies have been fetched.
 ```sh
 git clone https://github.com/gretchycat/infinifolder.git
 cd infinifolder
-python3 scripts/fetch-dependencies.py
-./gradlew :app:assembleDebug :app:testDebugUnitTest :viewer-hex:testDebugUnitTest -PtargetAbi=arm64-v8a --max-workers=1
+./build.sh --max-workers=1 --console=plain
 ```
 
-Shortcut: `./build.sh -PtargetAbi=arm64-v8a --max-workers=1`.
+Optional packaging override: `./build.sh -PtargetAbi=arm64-v8a --max-workers=1`.
 APK: `app/build/outputs/apk/debug/app-debug.apk`.
-On Termux, also run `./gradlew :storage-engine:testDebugUnitTest` for native
+On Termux, build.sh also runs `:storage-engine:testDebugUnitTest` for native
 filesystem/publication regression tests. Their JNI setup currently supports
 Termux; a Linux host-JVM harness is deferred. This does not prevent Android APK
 cross-compilation with the NDK on desktop hosts.
@@ -49,11 +48,10 @@ cross-compilation with the NDK on desktop hosts.
 ```sh
 git clone https://github.com/gretchycat/infiniscribe.git
 cd infiniscribe
-python3 scripts/fetch-dependencies.py
-./gradlew assembleDebug testDebugUnitTest -PtargetAbi=arm64-v8a --max-workers=1
+./build.sh --max-workers=1 --console=plain
 ```
 
-Shortcut: `./build.sh -PtargetAbi=arm64-v8a --max-workers=1`.
+Optional packaging override: `./build.sh -PtargetAbi=arm64-v8a --max-workers=1`.
 APK: `build/outputs/apk/debug/InfiniScribe-debug.apk`.
 
 ### Infinimedia
@@ -61,11 +59,10 @@ APK: `build/outputs/apk/debug/InfiniScribe-debug.apk`.
 ```sh
 git clone https://github.com/gretchycat/infinimedia.git
 cd infinimedia
-python3 scripts/fetch-dependencies.py
-./gradlew assembleDebug testDebugUnitTest -PtargetAbi=arm64-v8a --max-workers=1
+./build.sh --max-workers=1 --console=plain
 ```
 
-Shortcut: `./build.sh -PtargetAbi=arm64-v8a --max-workers=1`.
+Optional packaging override: `./build.sh -PtargetAbi=arm64-v8a --max-workers=1`.
 APK: `build/outputs/apk/debug/InfiniMedia-debug.apk`.
 
 ### Infinikey
@@ -73,10 +70,10 @@ APK: `build/outputs/apk/debug/InfiniMedia-debug.apk`.
 ```sh
 git clone https://github.com/gretchycat/infinikey-ime.git
 cd infinikey-ime
-./gradlew :app:assembleDebug :app:testDebugUnitTest --max-workers=1
+./build.sh --max-workers=1 --console=plain
 ```
 
-Shortcut: `./build.sh --max-workers=1`.
+The script runs the APK build and local unit tests.
 APK: `app/build/outputs/apk/debug/infinikey-ime-v<version>-debug.apk`.
 No suite library bootstrap is needed. Debug builds use normal Android debug
 signing; release signing is configured by the distributor.

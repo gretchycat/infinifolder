@@ -1,0 +1,377 @@
+{
+  "date": "2026-11-11",
+  "scope": "Standalone follow-up for the two changed library commits; unchanged libraries retain their earlier recorded verification.",
+  "libraries": [
+    {
+      "repository": "libinfiniscribe",
+      "commit": "60dd088497e8ea518b8b966b37dbada011db6d12",
+      "result": "passed",
+      "commands": [
+        "./gradlew -PportableOnly :scribe-core:test --max-workers=1 --console=plain"
+      ],
+      "counts": {
+        "tests": 144,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "suites": [
+        {
+          "module": "scribe-core",
+          "suite": "com.infinifolder.viewer.MarkdownRendererTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "scribe-core",
+          "suite": "io.github.gretchycat.infiniscribe.DelimitedTextTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "scribe-core",
+          "suite": "io.github.gretchycat.infiniscribe.DocumentChunksTest",
+          "tests": 21,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "scribe-core",
+          "suite": "io.github.gretchycat.infiniscribe.EpubDocumentsTest",
+          "tests": 21,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "scribe-core",
+          "suite": "io.github.gretchycat.infiniscribe.EpubXmlInputTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "scribe-core",
+          "suite": "io.github.gretchycat.infiniscribe.FontDocumentsTest",
+          "tests": 14,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "scribe-core",
+          "suite": "io.github.gretchycat.infiniscribe.HexDocumentTest",
+          "tests": 26,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "scribe-core",
+          "suite": "io.github.gretchycat.infiniscribe.PageRasterSizeTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "scribe-core",
+          "suite": "io.github.gretchycat.infiniscribe.PlainTextIdentificationTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "scribe-core",
+          "suite": "io.github.gretchycat.infiniscribe.RuntimePipelineDiscoveryTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "scribe-core",
+          "suite": "io.github.gretchycat.infiniscribe.SyntaxHighlightingTest",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "scribe-core",
+          "suite": "io.github.gretchycat.infiniscribe.TableDocumentsTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "scribe-core",
+          "suite": "io.github.gretchycat.infiniscribe.TextDocumentsTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "scribe-core",
+          "suite": "io.github.gretchycat.infiniscribe.TextStylesTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "module_selection_checks": [
+        {
+          "command": [
+            "./gradlew",
+            "projects",
+            "-Dandroid.home=",
+            "--max-workers=1",
+            "--console=plain"
+          ],
+          "sdk_environment_unset": true,
+          "local_properties_present": false,
+          "android_modules": [
+            "scribe-android",
+            "scribe-reparse-json-android",
+            "scribe-mobi-android"
+          ],
+          "result": "passed"
+        },
+        {
+          "command": [
+            "./gradlew",
+            "projects",
+            "-Dandroid.home=",
+            "--max-workers=1",
+            "--console=plain",
+            "-PportableOnly"
+          ],
+          "sdk_environment_unset": true,
+          "local_properties_present": false,
+          "android_modules": [],
+          "result": "passed"
+        }
+      ]
+    },
+    {
+      "repository": "libinfiniui",
+      "commit": "85da49ae243f0a0bdc702c4de102d30462445844",
+      "result": "passed",
+      "commands": [
+        "./gradlew :ui-android:assembleDebug :ui-android:testDebugUnitTest",
+        "./gradlew :ui-image:assembleDebug :ui-image:testDebugUnitTest :ui-android:testDebugUnitTest"
+      ],
+      "counts": {
+        "tests": 119,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "suites": [
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.preview.CustomIconStoreTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.preview.DirectoryIconResolverTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.preview.IconIdentityPolicyTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.preview.IconRegistryTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.preview.ImageFormatsTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.preview.UriIconRegistryTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.shortcut.PublicIconUrlsTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.shortcut.ShortcutFileTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.theme.FreeDesktopThemeTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.theme.ThemeManagerTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.viewer.DocumentSourceTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.viewer.FontViewerRoutingTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.viewer.ImageViewportGeometryTest",
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.viewer.MediaTypeDetectorTest",
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.viewer.MonkeyAudioAssociationTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.viewer.RuntimeViewerDiscoveryTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.viewer.ScrollWindowTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.viewer.SourceDocumentTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.viewer.StagedSourceTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.viewer.SyntaxLanguageSelectionTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.viewer.SyntaxRefreshSchedulerTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.viewer.TextWindowPresentationTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-android",
+          "suite": "com.infinifolder.viewer.ViewerCatalogTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "module": "ui-image",
+          "suite": "com.infinifolder.viewer.ImageInspectorFieldsTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "tool_configuration": "SDK discovery helper; -Dandroid.home and native aapt2 property passed explicitly. No dependency on application source."
+    }
+  ]
+}

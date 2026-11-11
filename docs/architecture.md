@@ -106,3 +106,7 @@ URI schemes remain behind Infinifolder's service.
 
 See [storage validation](storage-validation.md) for the required runtime cases and
 [the audit report](architecture-audit.md) for executed results and limitations.
+
+## Asset ownership
+
+Infinimedia owns all four original Winamp skin archives and the optional original SF3 bank. Skins live in its audio module's production assets. The bank lives in its `test-assets/soundfonts` with matching upstream license and provenance, outside APK source sets; current opt-in import behavior is preserved. The real archive/hash regression tests live in Media. The generic skin parser remains in shared UI with synthetic fixtures. Shared icon artwork remains in libinfiniui's pinned icon-theme submodule. Small generated codec fixtures remain with their owning processing libraries; storage integrity images remain with storage tests.

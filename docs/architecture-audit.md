@@ -8,7 +8,7 @@ The previous asset inventory focused on production source sets and missed reposi
 
 A shared UI test previously searched parent directories for a skin and silently skipped its assertions when absent. Its real-asset coverage now belongs to Media and requires every packaged archive. UI retains synthetic parser tests without application asset dependencies. Media additionally verifies the optional SF3's byte count, header and SHA-256; this establishes preservation, not runtime synthesis or visual correctness.
 
-Follow-up app build results are recorded separately after executing the scripts in the user's new checkouts. Earlier checkpoints below describe their original test environments, rather than proving SDK discovery. Ubuntu testing and other platform ports remain deferred.
+Follow-up app build results are recorded separately after executing the scripts in the user's new checkouts. The inventory tool now offers `--all-tracked`, with regression tests covering root/test assets and exclusion of untracked files. The [expanded inventory](validation/separation-tracked-inventory.json) covers all fifteen code repositories plus the pinned icon artwork repository. Its largest Folder files are storage regression disk images, which remain required fixtures. Duplicate extension aliases exercise format identification; Android TestUri fixtures support isolated JVM tests; wrapper/bootstrap copies support independent builds. Neither hash equality nor an uncommon extension alone justifies removing these files. Earlier checkpoints below describe their original test environments, rather than proving SDK discovery. Ubuntu testing and other platform ports remain deferred.
 
 
 Updated 2026-11-11. This report records implementation, repository organization,
@@ -16,6 +16,38 @@ cleanup and executed Android verification. Other-platform ports and Ubuntu
 host-native test work are deferred at the owner's request. Compilation, unit
 tests and limited Android descriptor probes are distinguished from device
 acceptance throughout.
+
+### Corrected checkout verification
+
+All four documented build scripts passed in the user's new checkouts with both SDK variables unset and no local.properties. Adjacent app checkouts existed on disk; the Gradle guard rejected project/settings/source roots outside each individual app checkout. Library pins were checked after each library-consuming build. The implementation commits below precede subsequent documentation-only commits.
+
+| Application | Tested implementation commit | Debug APK MiB | Passed tests |
+| --- | --- | ---: | ---: |
+| Folder | `18c2481` | 83.07 | 143 (91 native storage) |
+| Scribe | `9f0ee73` | 29.73 | 17 |
+| Media | `9f53814` | 69.32 | 76 |
+| Key | `c844925` | 8.47 | 23 |
+
+All 259 app tests passed without skips or failures. Each application's 11 build-environment regression checks passed; the expanded inventory tool's two fixture tests passed. APK class inspection rejected other app implementations; only Media packaged the four Winamp archives, and none packaged the optional SF3 bank. Media's APK is 500 bytes larger than the earlier checkpoint after adding attribution documentation; the other APK sizes are effectively unchanged. No APK reduction is attributed to removing assets outside production source sets. See [executed commands, pins, suites and APK contents](validation/fresh-checkout-build-repair.json).
+
+Scribe's standalone portable core passed 144 tests, and its default/portable module graphs were checked in a separate library checkout with no SDK configuration: the three Android modules are always visible by default and absent with `-PportableOnly`. Shared UI and its optional image module produced their standalone AARs and passed all 119 tests. See [library commands, suites and module-selection checks](validation/fresh-checkout-library-repair.json).
+
+These are compilation, JVM/native and package checks. Device appearance, audible SF3 playback, end-to-end storage selection/grants and lifecycle behavior still need device validation. No Ubuntu or other-platform testing was performed in this follow-up; roadmap/TODO work remains future work.
+
+### Follow-up GitHub changes
+
+The existing six repositories were updated and pushed; no repository was created or history rewritten in this correction.
+
+| Repository | Implementation commit | Subsequent documentation commit |
+| --- | --- | --- |
+| infinifolder | `18c2481` | This report's revision |
+| infiniscribe | `9f0ee73` | `a0d437c` |
+| infinimedia | `9f53814` | `764d632` |
+| infinikey-ime | `c844925` | `06cdb03` |
+| libinfiniscribe | `60dd088` | Included |
+| libinfiniui | `85da49a` | Included |
+
+README build examples now use build.sh; workflows run the script and build-environment checks. The Folder workflow also tests the expanded inventory tool. Hosted runs were skipped for this follow-up, respecting the deferred Ubuntu testing.
 
 ## Repository inventory
 
@@ -116,8 +148,8 @@ uncommon code was unused.
    removed. Folder's build script builds Folder only. Optional runtime probes now
    accept explicit APK/jar inputs instead of sibling application sources.
 3. **Repeated common/image UI and themes.** UI is the single owner of former
-   viewer-common; ui-image consolidates the identical image viewer. Theme ownership
-   moved to UI. Generic external-edit handling moved from storage-engine to UI,
+   viewer-common; ui-image consolidates the identical image viewer. Shared theme/icon infrastructure
+   moved to UI; actual Winamp archives and the optional SF3 bank belong to Media. Generic external-edit handling moved from storage-engine to UI,
    preserving archive freshness through an injected consistency hook.
 4. **Misplaced responsibilities.** Routing moved to Store; document ZIP expansion
    and tests moved from Vault to Scribe Office. Legacy MindNode Touch viewing moved
@@ -177,7 +209,7 @@ files in all fifteen code repositories, including native source/assets/notices.
 [The script](../scripts/inventory-repositories.py) accepts explicit repository
 paths. Tests, build outputs and untracked user files are excluded. Hash equality
 is not itself proof of unused code. No exact duplicate production source files
-remain within that scope.
+remain within that scope. The follow-up [all-tracked inventory](validation/separation-tracked-inventory.json) also covers root/test assets and the pinned icon repository. Its MIME/extension icon aliases and format-test aliases remain intentional.
 
 - Removed app copies of common/image UI, duplicate themes/gitlinks, obsolete
   parent paths and complete editor/player UI from Folder's build.
