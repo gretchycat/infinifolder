@@ -25,3 +25,9 @@
 [submodule "libraries/libinfinimeta"]
 	path = libraries/libinfinimeta
 	url = https://github.com/gretchycat/libinfinimeta.git
+[submodule "infiniscribe"]
+	path = infiniscribe
+	url = https://github.com/gretchycat/infiniscribe.git
+[submodule "themes/icon-theme"]
+	path = themes/icon-theme
+	url = https://github.com/gretchycat/infini-icon-theme.git

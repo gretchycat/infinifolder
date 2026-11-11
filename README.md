@@ -21,6 +21,10 @@ An Android file browser with interchangeable storage providers, browsable archiv
 - Shared 200 MiB disk cache, LRU eviction before capacity prompts, separate individual-file limit and six-hour idle expiry. Unfinished editor work is protected outside disposable cache.
 - Light/dark/system themes, configurable icons, previews and hidden-file display. Toolbar activity light: green reads, dim green load waits, red file work, amber verification. Tap for operation details.
 
+InfiniScribe is maintained in its [own repository](https://github.com/gretchycat/infiniscribe)
+and pinned here as a submodule. The shared icon artwork and generators live in
+[infini-icon-theme](https://github.com/gretchycat/infini-icon-theme).
+
 See [current confirmations and remaining work](docs/project-status.md) and the
 [runtime-discovery verification record](docs/runtime-capabilities.md).
 Implemented features and handset acceptance are tracked separately.
@@ -30,10 +34,11 @@ Implemented features and handset acceptance are tracked separately.
 Kotlin Android application `com.infinifolder`: minSdk 26, compileSdk 36, targetSdk 35. Install the matching Android SDK and project Gradle dependencies, then run:
 
 ```sh
+./get-dependencies.sh
 bash build.sh
 ```
 
-The script configures native AAPT2 on Termux, builds distinct app APKs (InfiniFolder, InfiniScribe, and InfiniMedia), copies them into `packages/` with app and ABI names, and invokes `xdg-open` after success. Use `bash build.sh --only infinimedia` to build and open only InfiniMedia. The combined development viewer host is available only through `--only viewer-host`; it is not part of InfiniFolder or the default product build. `--no-open` skips the installer handoff. A failed Gradle invocation gets one retry after stopping daemons, using `--no-daemon`; a second failure stops the script. Elsewhere use `gradle :app:assembleDebug`; on ARM Termux the native AAPT2 override may be required. Independent applications are documented in [viewer modules](docs/viewer-modules.md).
+`get-dependencies.sh` initializes the pinned libraries, standalone apps, and nested repositories. `build.sh` configures native AAPT2 on Termux, builds distinct app APKs (InfiniFolder, InfiniScribe, and InfiniMedia), copies them into `packages/` with app and ABI names, and invokes `xdg-open` after success. Use `bash build.sh --only infinimedia` to build and open only InfiniMedia. The combined development viewer host is available only through `--only viewer-host`; it is not part of InfiniFolder or the default product build. `--no-open` skips the installer handoff. A failed Gradle invocation gets one retry after stopping daemons, using `--no-daemon`; a second failure stops the script. Elsewhere use `gradle :app:assembleDebug`; on ARM Termux the native AAPT2 override may be required. Independent applications are documented in [viewer modules](docs/viewer-modules.md).
 
 ### Audio library checkout
 
