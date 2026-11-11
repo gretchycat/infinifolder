@@ -24,7 +24,7 @@ def collectThirdPartyNotices = tasks.register('collectThirdPartyNotices') {
                 new ZipFile(artifact.file).withCloseable { zip ->
                     zip.entries().each { entry ->
                         def name = entry.name.tokenize('/').last()?.toUpperCase(Locale.ROOT)
-                        if (!entry.directory && name && (name.startsWith('LICENSE') || name.startsWith('NOTICE') || name.startsWith('COPYING'))) {
+                        if (!entry.directory && name && !name.endsWith('.CLASS') && (name.startsWith('LICENSE') || name.startsWith('NOTICE') || name.startsWith('COPYING'))) {
                             def target = new File(artifactRoot, entry.name)
                             if (!target.canonicalFile.toPath().startsWith(artifactRoot.canonicalFile.toPath())) throw new GradleException('Unsafe notice path')
                             target.parentFile.mkdirs()
@@ -37,7 +37,7 @@ def collectThirdPartyNotices = tasks.register('collectThirdPartyNotices') {
                             def entry
                             while ((entry = nested.nextEntry) != null) {
                                 def name = entry.name.tokenize('/').last()?.toUpperCase(Locale.ROOT)
-                                if (!entry.directory && name && (name.startsWith('LICENSE') || name.startsWith('NOTICE') || name.startsWith('COPYING'))) {
+                                if (!entry.directory && name && !name.endsWith('.CLASS') && (name.startsWith('LICENSE') || name.startsWith('NOTICE') || name.startsWith('COPYING'))) {
                                     def target = new File(artifactRoot, 'classes/' + entry.name)
                                     if (!target.canonicalFile.toPath().startsWith(artifactRoot.canonicalFile.toPath())) throw new GradleException('Unsafe notice path')
                                     target.parentFile.mkdirs()
