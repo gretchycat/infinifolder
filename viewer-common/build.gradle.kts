@@ -5,15 +5,15 @@ plugins {
 
 // Resolve shared artwork relative to this library instead of the consuming
 // Gradle root so standalone viewer applications can include viewer-common.
-val themeSource = layout.projectDirectory.dir("../themes/default theme")
-val themeBuilder = layout.projectDirectory.file("../themes/icon/scripts/build_icon_theme.py")
+val themeSource = layout.projectDirectory.dir("../themes/icon-theme/default theme")
+val themeBuilder = layout.projectDirectory.file("../themes/icon-theme/icon/scripts/build_icon_theme.py")
 val themeBuildRoot = layout.buildDirectory.dir("generated/default-icon-theme")
 val prepareDefaultIconTheme by tasks.registering(Exec::class) {
-    description = "Package the default icon theme directly from themes/"
+    description = "Package the default icon theme directly from its submodule"
     inputs.dir(themeSource.dir("svg"))
     inputs.file(themeSource.file("metadata.csv"))
     inputs.file(themeBuilder)
-    inputs.file(layout.projectDirectory.file("../themes/icon/scripts/icon_style.py"))
+    inputs.file(layout.projectDirectory.file("../themes/icon-theme/icon/scripts/icon_style.py"))
     outputs.dir(themeBuildRoot)
     commandLine(providers.gradleProperty("iconThemePython").orElse("python3").get(),
         themeBuilder.asFile.absolutePath, "--no-layout",

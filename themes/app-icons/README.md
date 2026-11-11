@@ -22,5 +22,5 @@ Adaptive foreground art is scaled into the Android icon safe area. Legacy square
 and round PNGs use the full composition on the shared dark background.
 
 For launcher assets only, run `python3 scripts/build-app-icons.py`. For the
-freedesktop theme only, edit `themes/icon/bases/` as needed and run
-`python3 themes/icon/scripts/generate_icons.py`.
+freedesktop theme only, edit `themes/icon-theme/icon/bases/` as needed and run
+`python3 themes/icon-theme/icon/scripts/generate_icons.py`.

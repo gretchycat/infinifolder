@@ -6,7 +6,7 @@ The icon theme chooser starts with InfiniFolder's bundled default icon artwork. 
 
 ## InfiniFolder Default
 
-The supplied artwork in `themes/default theme` is bundled in InfiniFolder as
+The supplied artwork in `themes/icon-theme/default theme` is bundled in InfiniFolder as
 **InfiniFolder Default**. Other freedesktop themes are not preloaded into the APK.
 Its source is a Freeicon SVG/CSV
 bundle; the app-ready archive follows the
@@ -46,7 +46,7 @@ magnet and other supplied schemes can retain their own artwork.
 Regenerate only the app-ready package from the project root:
 
 ```sh
-python3 themes/icon/scripts/build_icon_theme.py
+python3 themes/icon-theme/icon/scripts/build_icon_theme.py
 gradle :app:assembleDebug --offline --console=plain
 ```
 
