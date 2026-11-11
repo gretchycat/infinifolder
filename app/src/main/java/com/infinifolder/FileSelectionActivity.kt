@@ -78,11 +78,37 @@ class FileSelectionActivity : Activity() {
         }
     }
 
+    private fun publicDirectory(value: String): String {
+        if (value.isBlank()) return ""
+        val uri = Uri.parse(value)
+        if (uri.scheme == "content" && uri.authority == StorageDocumentsProvider.AUTHORITY) return value
+        return StorageDocumentsProvider.reference(this, uri).toString()
+    }
+
+    private fun callerCanRead(source: Uri, uid: Int): Boolean {
+        if (source.scheme != "content") return false
+        val provider = source.authority?.let { packageManager.resolveContentProvider(it, 0) }
+        if (provider?.applicationInfo?.uid == uid) return true
+        if (checkUriPermission(source, -1, uid, Intent.FLAG_GRANT_READ_URI_PERMISSION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED) return true
+        // Newer Android versions can also validate provider-wide and provider-specific access.
+        return Build.VERSION.SDK_INT >= 35 && checkContentUriPermissionFull(source, -1, uid,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
     private fun saveInSelectedDirectory(data: Bundle) {
         val directory = data.getString(FileSelectionContract.EXTRA_SAVE_DIRECTORY)?.let(Uri::parse)
         val source = if (Build.VERSION.SDK_INT >= 33) {
             intent.getParcelableExtra(FileSelectionContract.EXTRA_SAVE_SOURCE_URI, Uri::class.java)
         } else @Suppress("DEPRECATION") (intent.getParcelableExtra(FileSelectionContract.EXTRA_SAVE_SOURCE_URI) as? Uri)
+        if (source != null) {
+            val caller = callingPackage ?: callingActivity?.packageName
+            val callerUid = caller?.let { runCatching { packageManager.getApplicationInfo(it, 0).uid }.getOrNull() }
+            if (callerUid == null || !callerCanRead(source, callerUid)) {
+                finishSave(false, error = "The caller must hold read access to the source document", directory = directory)
+                return
+            }
+        }
         val requestedName = intent.getStringExtra(FileSelectionContract.EXTRA_SAVE_FILE_NAME)
         val safeRequestedName = requestedName?.takeIf { it.isNotBlank() }
         val mime = intent.getStringExtra(FileSelectionContract.EXTRA_SAVE_MIME_TYPE) ?: "application/octet-stream"
@@ -172,9 +198,15 @@ class FileSelectionActivity : Activity() {
         val result = Intent().putExtra(FileSelectionContract.EXTRA_SAVE_SUCCESS, success)
         if (success) {
             result.putExtra(FileSelectionContract.EXTRA_SAVE_RESULT_NAME, name)
-            result.data = uri
+            uri?.let { source ->
+                val document = StorageDocumentsProvider.reference(this, source)
+                result.data = document
+                result.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                result.clipData = android.content.ClipData.newRawUri(name ?: "Saved document", document)
+            }
         } else result.putExtra(FileSelectionContract.EXTRA_SAVE_ERROR, error)
-        directory?.let { result.putExtra(FileSelectionContract.EXTRA_SAVE_DIRECTORY, it.toString()) }
+        directory?.let { result.putExtra(FileSelectionContract.EXTRA_SAVE_DIRECTORY, publicDirectory(it.toString())) }
         setResult(RESULT_OK, result)
         finish()
     }
@@ -240,8 +272,7 @@ class FileSelectionActivity : Activity() {
         // Selection results arrive through a ResultReceiver, not a conventional
         // Activity result callback. Use the requesting package supplied by the
         // picker library before the framework's optional caller fields.
-        val recipientPackage = intent.getStringExtra(FileSelectionContract.EXTRA_REQUESTING_PACKAGE)
-            ?: callingPackage ?: callingActivity?.packageName
+        val recipientPackage = callingPackage ?: callingActivity?.packageName
         recipientPackage?.let { recipient ->
             val grantFailure = runCatching {
                 relays.forEach { relay ->
@@ -283,7 +314,7 @@ class FileSelectionActivity : Activity() {
             putExtra(FileSelectionContract.EXTRA_RESULT_MIME, mime)
             putExtra(FileSelectionContract.EXTRA_RESULT_SIZE, sizes.firstOrNull() ?: -1L)
             data.getString(FileSelectionContract.EXTRA_RESULT_DIRECTORY)?.let {
-                putExtra(FileSelectionContract.EXTRA_RESULT_DIRECTORY, it)
+                putExtra(FileSelectionContract.EXTRA_RESULT_DIRECTORY, publicDirectory(it))
             }
             putExtra(FileSelectionContract.EXTRA_RESULT_SCROLL_Y,
                 data.getInt(FileSelectionContract.EXTRA_RESULT_SCROLL_Y, 0).coerceAtLeast(0))
@@ -292,7 +323,7 @@ class FileSelectionActivity : Activity() {
             putStringArrayListExtra(FileSelectionContract.EXTRA_RESULT_MIMES, ArrayList(mimes))
             putExtra(FileSelectionContract.EXTRA_RESULT_SIZES, sizes)
             putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_URIS,
-                ArrayList(relays.indices.map { directoryUris.getOrNull(it).orEmpty() }))
+                ArrayList(relays.indices.map { publicDirectory(directoryUris.getOrNull(it).orEmpty()) }))
             putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_NAMES,
                 ArrayList(relays.indices.map { directoryNames.getOrNull(it).orEmpty() }))
             putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_COVER_URIS,

@@ -5,13 +5,14 @@ Compiles disposable test-only native libraries; never edits project images or so
 Requires Termux clang, JDK, patchelf, python3 and e2fsprogs.
 """
 from pathlib import Path
+import os
 import shutil
 import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[4]
-native = root / 'storage-engine/src/main/cpp'
-java_home = Path('/data/data/com.termux/files/usr/lib/jvm/java-21-openjdk')
+native = root / 'libraries/libinfinivault/vault-android/src/main/cpp'
+java_home = Path(os.environ['JAVA_HOME'])
 
 def run(args, allowed=(0,)):
     result = subprocess.run([str(x) for x in args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)

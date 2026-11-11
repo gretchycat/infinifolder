@@ -1,6 +1,6 @@
 # InfiniFolder
 
-Runtime handler discovery: [interfaces, dependency audit, processing chains and verification](docs/runtime-capabilities.md). All seven libraries and viewer modules publish their own capability providers; linked library dependencies remain explicit.
+Runtime handler discovery: [interfaces, dependency audit, processing chains and verification](docs/runtime-capabilities.md). Libraries and linked viewer modules publish their own capability providers; linked library dependencies remain explicit.
 
 Architecture: [current ownership and interfaces](docs/architecture.md), with [ownership and tested migration checkpoints](docs/infinistream-migration.md). Existing working features and data-safety guarantees remain requirements at every stage.
 
@@ -12,7 +12,7 @@ An Android file browser with interchangeable storage providers, browsable archiv
 - Grid/list browsing, navigation tree, breadcrumbs, persistent pinned targets, hold-to-drag files/selected sets and hover navigation. Same-device drops move; different/unknown devices copy. Drops onto pinned containers default to copy; empty pin-board space creates one link per drop. Two-finger rectangle selection leaves one finger available for scrolling.
 - Shared nested File/Edit/View/Select/Settings menus; wildcard/regex selection; name/MIME/size/date sorting in either direction; supported new-document/archive templates.
 - MIME-driven icons, application-package opening and explicit Browse for packaged containers such as APK/LOVE. Native links and .iflink shortcuts share resolution protections.
-- InfiniFolder bundles image, hex/raw-media and video viewers. Text, Markdown, HTML, PDF, CSV, EPUB/document and font viewing is handled by the separate InfiniScribe application; audio playback is handled by InfiniMedia. InfiniFolder forwards supported resources to the matching companion app when installed, or uses the user's external-app choice.
+- InfiniFolder bundles image and hex/raw-media inspectors. Text, Markdown, HTML, PDF, CSV, EPUB/document and font viewing is handled by the separate InfiniScribe application; audio/video playback is handled by InfiniMedia. InfiniFolder forwards supported resources to the matching companion app when installed, or uses the user's external-app choice.
 - Image animation includes IFF color cycling, indexed FLI/FLC, PNG-based MNG/APNG and platform GIF/WebP playback, with shared thumbnail decoding. Format subsets and device checks are documented in [image animation](docs/image-animation.md).
 - Unidentified binary data opens in the hex explorer; valid raw-media sidecars restore PIC/WAVE configuration. Known formats retain their viewer/container routes. See [hex and raw-media behavior](docs/hex-editor.md).
 - Capability-aware transfers, cancellation, per-file/overall progress, remembered optional copy verification, foreground execution and background completion notifications. Successful progress dialogs dismiss automatically; warnings/errors remain reviewable.
@@ -21,28 +21,52 @@ An Android file browser with interchangeable storage providers, browsable archiv
 - Shared 200 MiB disk cache, LRU eviction before capacity prompts, separate individual-file limit and six-hour idle expiry. Unfinished editor work is protected outside disposable cache.
 - Light/dark/system themes, configurable icons, previews and hidden-file display. Toolbar activity light: green reads, dim green load waits, red file work, amber verification. Tap for operation details.
 
-InfiniScribe is maintained in its [own repository](https://github.com/gretchycat/infiniscribe)
-and pinned here as a submodule. The shared icon artwork and generators live in
-[infini-icon-theme](https://github.com/gretchycat/infini-icon-theme).
+The four applications have separate repositories: [Infinifolder](https://github.com/gretchycat/infinifolder),
+[Infiniscribe](https://github.com/gretchycat/infiniscribe),
+[Infinimedia](https://github.com/gretchycat/infinimedia), and
+[Infinikey](https://github.com/gretchycat/infinikey-ime).
+This repository fetches library dependencies only. See the
+[architecture audit and verification matrix](docs/architecture-audit.md).
 
-See [current confirmations and remaining work](docs/project-status.md) and the
-[runtime-discovery verification record](docs/runtime-capabilities.md).
-Implemented features and handset acceptance are tracked separately.
+## Standalone build
 
-## Build
-
-Kotlin Android application `com.infinifolder`: minSdk 26, compileSdk 36, targetSdk 35. Install the matching Android SDK and project Gradle dependencies, then run:
+Application ID `com.infinifolder`: minSdk 26, compileSdk 36, targetSdk 35.
+Install JDK 17 or 21, Python 3, Android SDK platform 36/build tools 35.0.0,
+NDK 27.2.12479018 and CMake 3.22.1. Set `ANDROID_HOME` or `sdk.dir` in this
+checkout's untracked `local.properties`.
 
 ```sh
-./get-dependencies.sh
-bash build.sh
+git clone https://github.com/gretchycat/infinifolder.git
+cd infinifolder
+python3 scripts/fetch-dependencies.py
+./gradlew :app:assembleDebug :app:testDebugUnitTest :storage-engine:testDebugUnitTest
 ```
 
-`get-dependencies.sh` initializes the pinned libraries, standalone apps, and nested repositories. `build.sh` configures native AAPT2 on Termux, builds distinct app APKs (InfiniFolder, InfiniScribe, and InfiniMedia), copies them into `packages/` with app and ABI names, and invokes `xdg-open` after success. Use `bash build.sh --only infinimedia` to build and open only InfiniMedia. The combined development viewer host is available only through `--only viewer-host`; it is not part of InfiniFolder or the default product build. `--no-open` skips the installer handoff. A failed Gradle invocation gets one retry after stopping daemons, using `--no-daemon`; a second failure stops the script. Elsewhere use `gradle :app:assembleDebug`; on ARM Termux the native AAPT2 override may be required. Independent applications are documented in [viewer modules](docs/viewer-modules.md).
+The APK is `app/build/outputs/apk/debug/app-debug.apk`. Add
+`-PtargetAbi=arm64-v8a` to restrict application packaging. `./build.sh` fetches
+this app's dependencies and runs its build; additional arguments go to Gradle.
+The wrapper pins Gradle 9.7.1 and its distribution checksum. Source dependencies
+are pinned by Git submodule commits and `dependencies.lock.json`, including their
+transitive closure. No other application is cloned or required. Library checkout
+paths are inside this checkout; the bootstrap rejects dependency symlinks and
+conflicting pins and refuses to overwrite changes when switching revisions.
 
-### Audio library checkout
+On Termux install its JDK, Python, clang, aapt2 and native dependencies documented
+by the individual libraries. Configure `android.aapt2FromMavenOverride` with the
+installed aapt2 executable's path. Native builds use the environment's toolchain
+prefix rather than a fixed device path. The current Termux JNI packaging supports
+arm64; standard desktop builds use the NDK.
 
-Audio parsing and processing come from [libinfinisound](https://github.com/gretchycat/libinfinisound), pinned as a submodule. Clone with `--recurse-submodules`, or run `git submodule update --init --recursive` before building an existing checkout. See [audio library integration](docs/audio-processing-library.md).
+## Storage service
+
+Infinifolder exposes advanced storage through the grant-checked Android
+DocumentsProvider at `com.infinifolder.documents`. Third-party applications can
+use standard SAF document/tree requests or the lightweight
+[libinfiniselect](https://github.com/gretchycat/libinfiniselect) library. Native
+random access is retained through proxy descriptors where supported; sequential
+sources remain streams. Receiving apps do not include the storage engines.
+The floating picker and temporary relay references remain supported.
+
 
 ## Diagnostics
 
@@ -56,4 +80,9 @@ Start with the [documentation index](docs/README.md), [architecture](docs/archit
 
 ## Reusable library sources
 
-The pinned submodules under libraries/ are Stream (shared contracts), Store (resource access), Vault (containers/images), Sound, Canvas (images), Scribe (text/documents) and Video. See [ownership and checkpoint verification](docs/infinistream-migration.md). Clone with --recurse-submodules, or run git submodule update --init --recursive before building. Each repository has a standalone source build and explicit dependencies; the Android app composes the implementations without changing the UI. Native iOS and fully minimal standalone hosts remain follow-up work.
+The source lock includes Stream, Select, Core, Store, Vault, Sound, Canvas, Scribe,
+Video, Meta and UI. Responsibilities, transitive edges and repository links are
+in [the architecture report](docs/architecture-audit.md). Run the dependency
+bootstrap before building; individual libraries also have standalone build and
+test workflows. The icon theme is pinned within UI. No application submodule is
+included in this repository.

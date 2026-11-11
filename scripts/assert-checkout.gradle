@@ -1,0 +1,26 @@
+// Optional standalone verification guard. Toolchain paths and dependency caches
+// are allowed; every Gradle project/settings/source root must stay in the checkout.
+def allowed = System.getProperty('infini.verifyCheckout')
+if (allowed != null) {
+    def root = new File(allowed).canonicalFile.toPath()
+    def checkPath = { File path, String kind ->
+        if (!path.canonicalFile.toPath().startsWith(root))
+            throw new GradleException("${kind} escapes isolated checkout: ${path}")
+    }
+    gradle.settingsEvaluated { settings -> checkPath(settings.rootDir, 'Settings root') }
+    gradle.beforeProject { project ->
+        checkPath(project.projectDir, 'Project root')
+        project.afterEvaluate {
+            def android = project.extensions.findByName('android')
+            if (android != null) android.sourceSets.each { source ->
+                [source.java, source.res, source.assets, source.jniLibs].each { directorySet ->
+                    directorySet.srcDirs.each { checkPath(it, 'Android source root') }
+                }
+            }
+            def javaSets = project.extensions.findByName('sourceSets')
+            if (javaSets != null) javaSets.each { source ->
+                source.allSource.srcDirs.each { checkPath(it, 'Java source root') }
+            }
+        }
+    }
+}

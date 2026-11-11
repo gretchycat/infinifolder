@@ -32,7 +32,7 @@ subprocess.run([str(SDK / 'build-tools/36.0.0/d8'), '--min-api', '26', '--lib', 
 (dex / 'classes.dex').chmod(0o444)
 apk = OUT / 'libvlc-audio-runtime.apk'
 if apk.exists(): apk.chmod(0o644)
-shutil.copyfile(ROOT / 'app/build/outputs/apk/debug/app-debug.apk', apk)
+shutil.copyfile(Path(os.environ['INFINIMEDIA_APK']), apk)
 apk.chmod(0o444)
 with zipfile.ZipFile(apk) as archive:
     for name in archive.namelist():

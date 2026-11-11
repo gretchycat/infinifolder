@@ -28,13 +28,7 @@ BASES = {
     "infinikey": "key.svg",
 }
 
-ROOTS = {
-    "infinifolder": ROOT / "app/src/main/res",
-    "infiniscribe": ROOT / "infiniscribe/src/main/res",
-    "infinimedia": ROOT / "infinimedia/app/src/main/res",
-    "infinicanvas": ROOT / "infinicanvas/app/src/main/res",
-    "infinikey": ROOT.parent / "infinikey-ime/app/src/main/res",
-}
+ROOTS = {"infinifolder": ROOT / "app/src/main/res"}
 
 DENSITIES = {"mdpi": (48, 108), "hdpi": (72, 162), "xhdpi": (96, 216),
              "xxhdpi": (144, 324), "xxxhdpi": (192, 432)}
@@ -147,7 +141,10 @@ def build_one(name: str, base_svg: bytes, logo_root: ET.Element, output: Path,
             folder = target / f"mipmap-{density}"
             rasterize(foreground_svg, folder / "ic_launcher_foreground.png", foreground_size, renderer)
             rasterize(square_svg, folder / "ic_launcher.png", legacy_size, renderer)
-            rasterize(round_svg, folder / "ic_launcher_round.png", legacy_size, renderer)
+            (folder / "ic_launcher_round.png").unlink(missing_ok=True)
+        values = target / "values"
+        values.mkdir(exist_ok=True)
+        (values / "icon_aliases.xml").write_text('<resources>\n    <item name="ic_launcher_round" type="mipmap">@mipmap/ic_launcher</item>\n</resources>\n')
 
 
 def main() -> int:
@@ -158,7 +155,11 @@ def main() -> int:
                         help="generated source/icon directory for apps without projects yet")
     parser.add_argument("--only", choices=sorted(BASES), action="append",
                         help="build only this app (may be supplied repeatedly)")
+    parser.add_argument("--resources-dir", type=Path,
+                        help="explicit Android resource destination; requires one --only app")
     args = parser.parse_args()
+    if args.resources_dir is not None and len(args.only or []) != 1:
+        parser.error("--resources-dir requires exactly one --only app")
     if not ZIP.is_file() or not LOGO.is_file():
         print("icons.zip and infini.svg must be present in the project root", file=sys.stderr)
         return 2
@@ -170,10 +171,10 @@ def main() -> int:
                 filename = BASES[name]
                 if filename not in members:
                     raise FileNotFoundError(f"{filename} is missing from {ZIP.name}")
-                destination = ROOTS[name]
+                destination = args.resources_dir or ROOTS.get(name)
                 # Keep exports ready for components whose standalone projects
                 # have not been created, without inventing those projects here.
-                target = destination if destination.exists() else None
+                target = destination if destination is not None and destination.exists() else None
                 build_one(name, archive.read(filename), logo, args.output, target, args.renderer)
                 print(f"Built {name} launcher art" + (f" -> {destination}" if target else " (generated bundle)"))
     except (OSError, ET.ParseError, zipfile.BadZipFile, subprocess.CalledProcessError) as error:

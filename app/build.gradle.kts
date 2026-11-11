@@ -10,7 +10,7 @@ val targetAbiFilters = providers.gradleProperty("targetAbi").orNull
 dependencies {
     // Audio playback and document/text viewing belong to their separate
     // InfiniMedia and InfiniScribe applications. Keep only the viewer modules
-    // that InfiniFolder hosts itself, including image and video playback.
+    // that InfiniFolder hosts itself. Images use the optional shared UI module.
     rootProject.subprojects.filter {
         it.name.startsWith("viewer-") && it.name !in setOf(
             "viewer-host", "viewer-audio", "viewer-text", "viewer-markdown", "viewer-html",
@@ -20,6 +20,9 @@ dependencies {
         .sortedBy { it.name }.forEach { implementation(project(it.path)) }
 
     implementation(project(":storage-engine"))
+    implementation("io.github.gretchycat.libinfiniui:ui-image:0.1.0")
+    // Thumbnail extraction remains reusable; the media-player Activity belongs to InfiniMedia.
+    implementation("io.github.gretchycat.libinfinivideo:video-android:0.1.0")
     implementation("io.github.gretchycat.libinfinimeta:meta-sega:0.1.0")
     implementation("io.github.gretchycat.libinfinimeta:meta-nintendo:0.1.0")
     implementation("io.github.gretchycat.libinfinimeta:meta-consoles:0.1.0")
@@ -69,13 +72,6 @@ android {
     }
 }
 
-android.sourceSets.getByName("main").assets.srcDir(
-    project(":viewer-common").layout.buildDirectory.dir("generated/default-icon-theme/assets")
-)
-tasks.named("preBuild").configure {
-    dependsOn(project(":viewer-common").tasks.named("prepareDefaultIconTheme"))
-}
-
 val generatedIntentManifest = layout.buildDirectory.file("generated/android-intents/AndroidManifest.xml")
 val generateIntentManifest by tasks.registering(Exec::class) {
     description = "Register supported file types and URI handlers with Android"
@@ -111,3 +107,5 @@ val exportSupportedTypes by tasks.registering(Exec::class) {
         "--output", inventory,
     )
 }
+
+apply(from = rootProject.file("scripts/third-party-notices.gradle"))

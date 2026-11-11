@@ -1,10 +1,10 @@
 pluginManagement {
     resolutionStrategy.eachPlugin {
-        if (requested.id.id == "com.android.library") useModule("com.android.tools.build:gradle:8.9.2")
+        if (requested.id.id.startsWith("com.android.")) useModule("com.android.tools.build:gradle:8.9.2")
+        if (requested.id.id.startsWith("org.jetbrains.kotlin.")) useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.20")
     }
     repositories { google(); mavenCentral(); gradlePluginPortal() }
 }
-
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
@@ -13,40 +13,24 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "InfiniFolder"
-include(":app")
 
-include(":storage-engine")
-// Viewer components are self-registering; new modules need no application source list.
-rootDir.listFiles().orEmpty().filter { it.isDirectory && it.name.startsWith("viewer-") && it.resolve("build.gradle.kts").isFile }
-    .sortedBy { it.name }.forEach { include(":" + it.name) }
-
-
-
-// Pinned external source dependency; clone with --recurse-submodules.
-val soundLibrary = file("libraries/libinfinisound")
-check(soundLibrary.resolve("settings.gradle.kts").isFile) {
-    "libinfinisound is missing. Run: git submodule update --init --recursive"
+// Read only this checkout's SDK configuration. Composite builds share the resolved SDK.
+if (System.getenv("ANDROID_HOME").isNullOrBlank() && System.getenv("ANDROID_SDK_ROOT").isNullOrBlank() && System.getProperty("android.home").isNullOrBlank()) {
+    val local = file("local.properties")
+    if (local.isFile) java.util.Properties().apply { local.inputStream().use { load(it) } }
+        .getProperty("sdk.dir")?.let { System.setProperty("android.home", file(it).absolutePath) }
 }
-// Android composite builds do not inherit the host's local.properties. Share its
-// SDK through AGP's supported system property when no SDK was supplied globally.
-if (System.getenv("ANDROID_HOME").isNullOrBlank() &&
-    System.getenv("ANDROID_SDK_ROOT").isNullOrBlank() &&
-    System.getProperty("android.home").isNullOrBlank()) {
-    val localSdk = java.util.Properties().apply {
-        val propertiesFile = file("local.properties")
-        if (propertiesFile.isFile) propertiesFile.inputStream().use { load(it) }
-    }.getProperty("sdk.dir")
-    if (!localSdk.isNullOrBlank()) System.setProperty("android.home", file(localSdk).absolutePath)
-}
-includeBuild(soundLibrary)
-
-includeBuild("libraries/libinfinistream")
-includeBuild("libraries/libinfinimeta")
-
-includeBuild("libraries/libinfinistore")
-includeBuild("libraries/libinfinivault")
-
-includeBuild("libraries/libinfinicanvas")
-includeBuild("libraries/libinfiniscribe")
-includeBuild("libraries/libinfinivideo")
-includeBuild("libraries/libinfiniselect")
+val dependencyRoot = file("libraries")
+System.setProperty("infini.dependencies", dependencyRoot.canonicalPath)
+includeBuild(dependencyRoot.resolve("libinfinistream"))
+includeBuild(dependencyRoot.resolve("libinfiniselect"))
+includeBuild(dependencyRoot.resolve("libinfinicore"))
+includeBuild(dependencyRoot.resolve("libinfinistore"))
+includeBuild(dependencyRoot.resolve("libinfinivault"))
+includeBuild(dependencyRoot.resolve("libinfinicanvas"))
+includeBuild(dependencyRoot.resolve("libinfinimeta"))
+includeBuild(dependencyRoot.resolve("libinfinisound"))
+includeBuild(dependencyRoot.resolve("libinfiniscribe"))
+includeBuild(dependencyRoot.resolve("libinfinivideo"))
+includeBuild(dependencyRoot.resolve("libinfiniui"))
+include(":app", ":storage-engine", ":viewer-hex")

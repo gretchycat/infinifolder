@@ -559,7 +559,7 @@ class HexViewerActivity : ViewerActivity(), ThemeChangeListener {
     private fun saveRawMetadata(record:RawMediaConfigStore.Record){
         if(changed>0){Toast.makeText(this,"Save byte changes in HEX mode before saving media metadata",Toast.LENGTH_LONG).show();return}
         runWork("Saving raw media metadata…",done={Toast.makeText(this,"Media metadata saved beside the file",Toast.LENGTH_LONG).show()}){
-            val provider=com.infinifolder.storage.StorageRuntime.get(this).provider
+            val provider=com.infinifolder.storage.ViewerStorage.get(this).provider
             val ref=provider.refForUri(session.uri)?:error("This URI has no storage provider")
             val entry=(provider.stat(ref) as? com.infinifolder.model.ProviderResult.Success)?.value?:error("Cannot identify source file")
             RawMediaConfigStore.save(applicationContext,entry,record)

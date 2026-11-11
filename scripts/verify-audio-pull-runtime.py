@@ -27,8 +27,8 @@ classpath = [ANDROID, kotlin,
     ROOT / 'libraries/libinfinisound/audio-core/build/libs/audio-core-0.2.0.jar',
     ROOT / 'libraries/libinfinistream/stream-core/build/libs/stream-core-0.1.0.jar',
     ROOT / 'libraries/libinfinisound/audio-processing/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar',
-    ROOT / 'viewer-audio/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar',
-    ROOT / 'viewer-common/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar']
+    Path(os.environ['INFINIMEDIA_CLASSES_JAR']),
+    ROOT / 'libraries/libinfiniui/ui-android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar']
 for path in classes.glob('AudioPullRuntimeCheck*.class'):
     path.unlink()
 subprocess.run(['javac', '-classpath', ':'.join(map(str, classpath)), '-d', str(classes),
@@ -40,7 +40,7 @@ subprocess.run([str(SDK / 'build-tools/36.0.0/d8'), '--lib', str(ANDROID), '--ou
 apk = OUT / 'audio-pull-runtime.apk'
 if apk.exists():
     apk.chmod(0o644)
-shutil.copyfile(ROOT / 'app/build/outputs/apk/debug/app-debug.apk', apk)
+shutil.copyfile(Path(os.environ['INFINIMEDIA_APK']), apk)
 apk.chmod(0o444)
 env = os.environ.copy()
 env.pop('LD_LIBRARY_PATH', None)

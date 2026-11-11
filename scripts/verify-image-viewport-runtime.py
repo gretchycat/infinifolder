@@ -16,7 +16,7 @@ classes.mkdir(parents=True, exist_ok=True)
 dex.mkdir(exist_ok=True)
 kotlin = next((Path.home() / '.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.2.20').glob('*/*.jar'))
 classpath = [ANDROID, kotlin,
-    ROOT / 'viewer-common/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar']
+    ROOT / 'libraries/libinfiniui/ui-android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar']
 for path in classes.glob('ImageViewportRuntimeCheck*.class'):
     path.unlink()
 subprocess.run(['javac', '-classpath', ':'.join(map(str, classpath)), '-d', str(classes),

@@ -12,7 +12,7 @@ import com.infinifolder.storage.ContentRevision
 import com.infinifolder.storage.DiagnosticLog
 import com.infinifolder.storage.DiskCache
 import com.infinifolder.storage.ProviderStreams
-import com.infinifolder.storage.StorageRuntime
+import com.infinifolder.storage.ViewerStorage
 import com.infinifolder.storage.validateSeekableResult
 import com.infinifolder.storage.openNativeSeekable
 import io.github.gretchycat.infiniscribe.BinaryChunkReader
@@ -110,7 +110,7 @@ internal class HexSession(val uri: Uri, val name: String) {
     }
 
     private fun openSource(context: Context) {
-        val provider = StorageRuntime.get(context).provider
+        val provider = ViewerStorage.get(context).provider
         val ref = provider.refForUri(uri) ?: throw IOException("No storage provider owns this source")
         when (val opened = validateSeekableResult(provider.openNativeSeekable(ref, false), false)) {
             is ProviderResult.Success -> {
@@ -162,7 +162,7 @@ internal class HexSession(val uri: Uri, val name: String) {
     }
 
     private fun freshInput(context: Context): java.io.InputStream {
-        val provider = StorageRuntime.get(context).provider
+        val provider = ViewerStorage.get(context).provider
         val ref = provider.refForUri(uri) ?: throw IOException("Source provider unavailable")
         return when (val opened = validateSeekableResult(provider.openNativeSeekable(ref, false), false)) {
             is ProviderResult.Success -> object : java.io.FilterInputStream(opened.value.asInputStream()) {
@@ -182,7 +182,7 @@ internal class HexSession(val uri: Uri, val name: String) {
         val folder = checkNotNull(directory)
         val journal = File(folder, "differences.bin")
         val pending = File(folder, "merge-pending")
-        val provider = StorageRuntime.get(context).provider
+        val provider = ViewerStorage.get(context).provider
         val ref = provider.refForUri(destination) ?: throw IOException("Destination provider unavailable")
         val sameOriginal = destination == uri || ref == provider.refForUri(uri)
         if (pending.exists()) check(sameOriginal) { "Resume saving the original before exporting interrupted differences" }
@@ -232,7 +232,7 @@ internal class HexSession(val uri: Uri, val name: String) {
             RandomAccessFile(lease.file, "rw").use { it.fd.sync() }
             val revision = ContentRevision(lease.file.length(), digest.digest().joinToString("") { "%02x".format(it) })
             lease.complete()
-            val provider = StorageRuntime.get(context).provider
+            val provider = ViewerStorage.get(context).provider
             val ref = provider.refForUri(destination) ?: throw IOException("Destination provider unavailable")
             when (val result = ContentReplacement.replaceFromFile(provider, ref, lease.file,
                 File(context.filesDir, "save_recovery"), if (sameOriginal) revision else null)) {

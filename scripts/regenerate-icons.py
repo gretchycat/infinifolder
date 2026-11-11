@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ARCHIVE = ROOT / "icons.zip"
-THEME_BASES = ROOT / "themes/icon-theme/icon/bases"
+THEME_BASES = ROOT / "libraries/libinfiniui/themes/icon-theme/icon/bases"
 BASE_NAMES = ("archive.svg", "audio.svg", "binary.svg", "code.svg", "disk.svg",
               "document.svg", "folder.svg", "image.svg", "link.svg", "video.svg")
 
@@ -33,7 +33,7 @@ def main() -> int:
             payloads = {name: archive.read(name) for name in BASE_NAMES}
         for name, data in payloads.items():
             (THEME_BASES / name).write_bytes(data)
-        subprocess.run([sys.executable, str(ROOT / "themes/icon-theme/icon/scripts/generate_icons.py")],
+        subprocess.run([sys.executable, str(ROOT / "libraries/libinfiniui/themes/icon-theme/icon/scripts/generate_icons.py")],
                        cwd=ROOT, check=True)
         subprocess.run([sys.executable, str(ROOT / "scripts/build-app-icons.py")],
                        cwd=ROOT, check=True)

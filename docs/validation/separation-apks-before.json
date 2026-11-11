@@ -1,0 +1,578 @@
+{
+  "InfiniFolder-arm64-v8a.apk": {
+    "bytes": 87143358,
+    "compressed_groups": {
+      "META-INF": 20597,
+      "classes.dex": 4165428,
+      "classes10.dex": 384557,
+      "classes11.dex": 15773,
+      "classes12.dex": 3906,
+      "classes13.dex": 145318,
+      "classes14.dex": 26572,
+      "classes15.dex": 97790,
+      "classes16.dex": 744340,
+      "classes17.dex": 139860,
+      "classes18.dex": 20419,
+      "classes19.dex": 74927,
+      "classes2.dex": 318086,
+      "classes20.dex": 862153,
+      "classes21.dex": 4625915,
+      "classes22.dex": 3279253,
+      "classes3.dex": 378979,
+      "classes4.dex": 101349,
+      "classes5.dex": 39863,
+      "classes6.dex": 82030,
+      "classes7.dex": 132982,
+      "classes8.dex": 181871,
+      "classes9.dex": 13394,
+      "lib": 65551089,
+      "assets": 1979262,
+      "AndroidManifest.xml": 102372,
+      "res": 629719,
+      "resources.arsc": 1131256,
+      "DebugProbesKt.bin": 777,
+      "bgi-fonts": 67032,
+      "infodict.yml": 204,
+      "kotlin": 12350,
+      "metainfo.yml": 285,
+      "mozilla": 73896,
+      "okhttp3": 41543,
+      "org": 1338922,
+      "the8472": 1063,
+      "tracker_response.yml": 447
+    },
+    "largest_entries": [
+      {
+        "path": "lib/arm64-v8a/libvlc.so",
+        "bytes": 45875392,
+        "compressed": 45875392
+      },
+      {
+        "path": "lib/arm64-v8a/libc++_shared.so",
+        "bytes": 9290184,
+        "compressed": 9290184
+      },
+      {
+        "path": "classes21.dex",
+        "bytes": 11342528,
+        "compressed": 4625915
+      },
+      {
+        "path": "classes.dex",
+        "bytes": 9742316,
+        "compressed": 4165428
+      },
+      {
+        "path": "classes22.dex",
+        "bytes": 7790252,
+        "compressed": 3279253
+      },
+      {
+        "path": "lib/arm64-v8a/libjxlcoder.so",
+        "bytes": 2738600,
+        "compressed": 2738600
+      },
+      {
+        "path": "lib/arm64-v8a/lib7-Zip-JBinding.so",
+        "bytes": 2676496,
+        "compressed": 2676496
+      },
+      {
+        "path": "lib/arm64-v8a/libjxl.so",
+        "bytes": 2020048,
+        "compressed": 2020048
+      },
+      {
+        "path": "assets/icon-themes/infinifolder-default.zip",
+        "bytes": 2835096,
+        "compressed": 1818233
+      },
+      {
+        "path": "resources.arsc",
+        "bytes": 1131256,
+        "compressed": 1131256
+      },
+      {
+        "path": "classes20.dex",
+        "bytes": 1960696,
+        "compressed": 862153
+      },
+      {
+        "path": "org/bouncycastle/pqc/crypto/picnic/lowmcL5.bin.properties",
+        "bytes": 752652,
+        "compressed": 749257
+      },
+      {
+        "path": "classes16.dex",
+        "bytes": 1624680,
+        "compressed": 744340
+      },
+      {
+        "path": "lib/arm64-v8a/libbrotlienc.so",
+        "bytes": 697344,
+        "compressed": 697344
+      },
+      {
+        "path": "lib/arm64-v8a/libzstd-jni-1.5.7-11.so",
+        "bytes": 603960,
+        "compressed": 603960
+      },
+      {
+        "path": "lib/arm64-v8a/libopenjpeg.so",
+        "bytes": 407792,
+        "compressed": 407792
+      },
+      {
+        "path": "classes10.dex",
+        "bytes": 878396,
+        "compressed": 384557
+      },
+      {
+        "path": "classes3.dex",
+        "bytes": 783236,
+        "compressed": 378979
+      },
+      {
+        "path": "org/bouncycastle/pqc/crypto/picnic/lowmcL3.bin.properties",
+        "bytes": 350101,
+        "compressed": 348178
+      },
+      {
+        "path": "lib/arm64-v8a/libjxl_cms.so",
+        "bytes": 328896,
+        "compressed": 328896
+      }
+    ],
+    "sha256": "ec86416561d48baa68c8a53c3000a817004ce2a78bb5198ac76aa4a5d088f88c"
+  },
+  "InfiniMedia-arm64-v8a.apk": {
+    "bytes": 82094003,
+    "compressed_groups": {
+      "META-INF": 9315,
+      "classes.dex": 4583871,
+      "classes10.dex": 454089,
+      "classes11.dex": 17100,
+      "classes12.dex": 148427,
+      "classes13.dex": 101954,
+      "classes14.dex": 91631,
+      "classes15.dex": 775061,
+      "classes16.dex": 153735,
+      "classes17.dex": 8561,
+      "classes18.dex": 4247447,
+      "classes19.dex": 4580292,
+      "classes2.dex": 318086,
+      "classes3.dex": 399633,
+      "classes4.dex": 132178,
+      "classes5.dex": 27389,
+      "classes6.dex": 56613,
+      "classes7.dex": 236000,
+      "classes8.dex": 270136,
+      "classes9.dex": 24069,
+      "lib": 59714881,
+      "assets": 806830,
+      "AndroidManifest.xml": 17512,
+      "res": 1063070,
+      "resources.arsc": 1773540,
+      "DebugProbesKt.bin": 777,
+      "bgi-fonts": 67032,
+      "firebase-encoders-json.properties": 53,
+      "firebase-encoders-proto.properties": 54,
+      "firebase-encoders.properties": 48,
+      "infodict.yml": 204,
+      "javazoom": 6968,
+      "kotlin": 12350,
+      "metainfo.yml": 285,
+      "mozilla": 73896,
+      "okhttp3": 41543,
+      "org": 1338922,
+      "play-services-base.properties": 50,
+      "play-services-basement.properties": 53,
+      "play-services-cast-framework.properties": 60,
+      "play-services-cast.properties": 50,
+      "play-services-flags.properties": 51,
+      "play-services-tasks.properties": 51,
+      "the8472": 1063,
+      "tracker_response.yml": 447,
+      "transport-api.properties": 44,
+      "transport-backend-cct.properties": 52,
+      "transport-runtime.properties": 48
+    },
+    "largest_entries": [
+      {
+        "path": "lib/arm64-v8a/libvlc.so",
+        "bytes": 45875392,
+        "compressed": 45875392
+      },
+      {
+        "path": "classes.dex",
+        "bytes": 10738696,
+        "compressed": 4583871
+      },
+      {
+        "path": "classes19.dex",
+        "bytes": 10738492,
+        "compressed": 4580292
+      },
+      {
+        "path": "classes18.dex",
+        "bytes": 10525580,
+        "compressed": 4247447
+      },
+      {
+        "path": "lib/arm64-v8a/libjxlcoder.so",
+        "bytes": 2738600,
+        "compressed": 2738600
+      },
+      {
+        "path": "lib/arm64-v8a/lib7-Zip-JBinding.so",
+        "bytes": 2676496,
+        "compressed": 2676496
+      },
+      {
+        "path": "lib/arm64-v8a/libjxl.so",
+        "bytes": 2020048,
+        "compressed": 2020048
+      },
+      {
+        "path": "resources.arsc",
+        "bytes": 1773540,
+        "compressed": 1773540
+      },
+      {
+        "path": "lib/arm64-v8a/libopenmpt.so",
+        "bytes": 1664881,
+        "compressed": 1664881
+      },
+      {
+        "path": "lib/arm64-v8a/libc++_shared.so",
+        "bytes": 1374336,
+        "compressed": 1374336
+      },
+      {
+        "path": "classes15.dex",
+        "bytes": 1682804,
+        "compressed": 775061
+      },
+      {
+        "path": "org/bouncycastle/pqc/crypto/picnic/lowmcL5.bin.properties",
+        "bytes": 752652,
+        "compressed": 749257
+      },
+      {
+        "path": "lib/arm64-v8a/libbrotlienc.so",
+        "bytes": 697344,
+        "compressed": 697344
+      },
+      {
+        "path": "lib/arm64-v8a/libzstd-jni-1.5.7-11.so",
+        "bytes": 603960,
+        "compressed": 603960
+      },
+      {
+        "path": "classes10.dex",
+        "bytes": 1033520,
+        "compressed": 454089
+      },
+      {
+        "path": "lib/arm64-v8a/libopenjpeg.so",
+        "bytes": 407792,
+        "compressed": 407792
+      },
+      {
+        "path": "classes3.dex",
+        "bytes": 831476,
+        "compressed": 399633
+      },
+      {
+        "path": "org/bouncycastle/pqc/crypto/picnic/lowmcL3.bin.properties",
+        "bytes": 350101,
+        "compressed": 348178
+      },
+      {
+        "path": "lib/arm64-v8a/libjxl_cms.so",
+        "bytes": 328896,
+        "compressed": 328896
+      },
+      {
+        "path": "classes2.dex",
+        "bytes": 714216,
+        "compressed": 318086
+      }
+    ],
+    "sha256": "471626a8320caff21c41c590329aec0f1eee01a8ac292644f70aabe3bb7e7fb8"
+  },
+  "InfiniScribe-arm64-v8a.apk": {
+    "bytes": 40348793,
+    "compressed_groups": {
+      "META-INF": 102263,
+      "classes.dex": 4499565,
+      "classes10.dex": 24069,
+      "classes11.dex": 371978,
+      "classes12.dex": 17100,
+      "classes13.dex": 129925,
+      "classes14.dex": 122454,
+      "classes15.dex": 85901,
+      "classes16.dex": 734587,
+      "classes17.dex": 130943,
+      "classes18.dex": 10766,
+      "classes19.dex": 4763295,
+      "classes2.dex": 3508976,
+      "classes20.dex": 3298445,
+      "classes21.dex": 2913839,
+      "classes22.dex": 1755092,
+      "classes23.dex": 1115341,
+      "classes3.dex": 318086,
+      "classes4.dex": 396394,
+      "classes5.dex": 117569,
+      "classes6.dex": 24429,
+      "classes7.dex": 62664,
+      "classes8.dex": 169091,
+      "classes9.dex": 168249,
+      "lib": 10287889,
+      "assets": 73913,
+      "AndroidManifest.xml": 31444,
+      "res": 618905,
+      "resources.arsc": 1126752,
+      "DebugProbesKt.bin": 777,
+      "Log4j-charsets.properties": 826,
+      "bgi-fonts": 67032,
+      "font_metrics.properties": 11924,
+      "infodict.yml": 204,
+      "io": 99419,
+      "javazoom": 6968,
+      "kotlin": 12350,
+      "metainfo.yml": 285,
+      "mozilla": 73896,
+      "okhttp3": 41543,
+      "org": 2185864,
+      "the8472": 1063,
+      "tracker_response.yml": 447
+    },
+    "largest_entries": [
+      {
+        "path": "classes19.dex",
+        "bytes": 11613468,
+        "compressed": 4763295
+      },
+      {
+        "path": "classes.dex",
+        "bytes": 10445144,
+        "compressed": 4499565
+      },
+      {
+        "path": "classes2.dex",
+        "bytes": 9451984,
+        "compressed": 3508976
+      },
+      {
+        "path": "classes20.dex",
+        "bytes": 7863360,
+        "compressed": 3298445
+      },
+      {
+        "path": "classes21.dex",
+        "bytes": 7084356,
+        "compressed": 2913839
+      },
+      {
+        "path": "lib/arm64-v8a/libjxlcoder.so",
+        "bytes": 2738600,
+        "compressed": 2738600
+      },
+      {
+        "path": "lib/arm64-v8a/lib7-Zip-JBinding.so",
+        "bytes": 2676496,
+        "compressed": 2676496
+      },
+      {
+        "path": "lib/arm64-v8a/libjxl.so",
+        "bytes": 2020048,
+        "compressed": 2020048
+      },
+      {
+        "path": "classes22.dex",
+        "bytes": 6025160,
+        "compressed": 1755092
+      },
+      {
+        "path": "resources.arsc",
+        "bytes": 1126752,
+        "compressed": 1126752
+      },
+      {
+        "path": "classes23.dex",
+        "bytes": 5357248,
+        "compressed": 1115341
+      },
+      {
+        "path": "org/bouncycastle/pqc/crypto/picnic/lowmcL5.bin.properties",
+        "bytes": 752652,
+        "compressed": 749257
+      },
+      {
+        "path": "classes16.dex",
+        "bytes": 1605844,
+        "compressed": 734587
+      },
+      {
+        "path": "lib/arm64-v8a/libbrotlienc.so",
+        "bytes": 697344,
+        "compressed": 697344
+      },
+      {
+        "path": "lib/arm64-v8a/libzstd-jni-1.5.7-11.so",
+        "bytes": 603960,
+        "compressed": 603960
+      },
+      {
+        "path": "lib/arm64-v8a/libopenjpeg.so",
+        "bytes": 407792,
+        "compressed": 407792
+      },
+      {
+        "path": "classes4.dex",
+        "bytes": 821632,
+        "compressed": 396394
+      },
+      {
+        "path": "classes11.dex",
+        "bytes": 858012,
+        "compressed": 371978
+      },
+      {
+        "path": "org/bouncycastle/pqc/crypto/picnic/lowmcL3.bin.properties",
+        "bytes": 350101,
+        "compressed": 348178
+      },
+      {
+        "path": "lib/arm64-v8a/libjxl_cms.so",
+        "bytes": 328896,
+        "compressed": 328896
+      }
+    ],
+    "sha256": "704c2066accacfd6f48a63fae48bcace37a97df43c1031fa2293ba4ac13f59e5"
+  },
+  "InfiniKey-arm64-v8a.apk": {
+    "bytes": 9226066,
+    "compressed_groups": {
+      "META-INF": 94570,
+      "classes.dex": 4039652,
+      "classes2.dex": 128994,
+      "classes3.dex": 123791,
+      "classes4.dex": 49451,
+      "classes5.dex": 39198,
+      "classes6.dex": 159409,
+      "classes7.dex": 33982,
+      "classes8.dex": 51493,
+      "assets": 1524874,
+      "DebugProbesKt.bin": 782,
+      "kotlin": 10463,
+      "AndroidManifest.xml": 2430,
+      "res": 1727135,
+      "resources.arsc": 1059996
+    },
+    "largest_entries": [
+      {
+        "path": "classes.dex",
+        "bytes": 9786496,
+        "compressed": 4039652
+      },
+      {
+        "path": "resources.arsc",
+        "bytes": 1059996,
+        "compressed": 1059996
+      },
+      {
+        "path": "assets/images/ko-fi.png",
+        "bytes": 620518,
+        "compressed": 620518
+      },
+      {
+        "path": "res/drawable/ic_kofi.png",
+        "bytes": 620518,
+        "compressed": 620518
+      },
+      {
+        "path": "assets/fonts/InfinikeySymbols-Regular.ttf",
+        "bytes": 910736,
+        "compressed": 450294
+      },
+      {
+        "path": "res/drawable/ic_launcher.png",
+        "bytes": 272879,
+        "compressed": 272879
+      },
+      {
+        "path": "classes6.dex",
+        "bytes": 360968,
+        "compressed": 159409
+      },
+      {
+        "path": "classes2.dex",
+        "bytes": 504780,
+        "compressed": 128994
+      },
+      {
+        "path": "classes3.dex",
+        "bytes": 258968,
+        "compressed": 123791
+      },
+      {
+        "path": "res/mipmap-xxxhdpi-v4/ic_launcher_foreground.png",
+        "bytes": 77794,
+        "compressed": 77794
+      },
+      {
+        "path": "classes8.dex",
+        "bytes": 128792,
+        "compressed": 51493
+      },
+      {
+        "path": "classes4.dex",
+        "bytes": 106320,
+        "compressed": 49451
+      },
+      {
+        "path": "res/mipmap-xxhdpi-v4/ic_launcher_foreground.png",
+        "bytes": 48140,
+        "compressed": 48140
+      },
+      {
+        "path": "META-INF/CERT.SF",
+        "bytes": 123154,
+        "compressed": 47661
+      },
+      {
+        "path": "META-INF/MANIFEST.MF",
+        "bytes": 123080,
+        "compressed": 44980
+      },
+      {
+        "path": "classes5.dex",
+        "bytes": 76772,
+        "compressed": 39198
+      },
+      {
+        "path": "assets/layouts/emoji_body.json",
+        "bytes": 416376,
+        "compressed": 35828
+      },
+      {
+        "path": "classes7.dex",
+        "bytes": 69296,
+        "compressed": 33982
+      },
+      {
+        "path": "res/mipmap-xxxhdpi-v4/ic_launcher.png",
+        "bytes": 32091,
+        "compressed": 32091
+      },
+      {
+        "path": "res/mipmap-xxxhdpi-v4/ic_launcher_round.png",
+        "bytes": 32091,
+        "compressed": 32091
+      }
+    ],
+    "sha256": "ff3e9aa66c4e6644d1ed2bced1cc9f51cbdc0ca8893f595c31b379a0e845dd3e"
+  }
+}

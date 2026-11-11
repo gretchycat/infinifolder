@@ -51,7 +51,7 @@ subprocess.run([str(SDK / 'build-tools/36.0.0/d8'), '--min-api', '26', '--lib', 
 apk = OUT / ('libvlc' + tag + '-runtime.apk')
 if apk.exists():
     apk.chmod(0o644)
-shutil.copyfile(args.apk or ROOT / 'app/build/outputs/apk/debug/app-debug.apk', apk)
+shutil.copyfile(args.apk or Path(os.environ['INFINIMEDIA_APK']), apk)
 apk.chmod(0o444)
 native = OUT / ('runtime-libvlc' + tag + '-native')
 native.mkdir(exist_ok=True)

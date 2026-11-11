@@ -1,4 +1,4 @@
 #!/usr/bin/env sh
 set -eu
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-git -C "$repo_dir" submodule update --init --recursive
+cd -- "$(dirname -- "$0")"
+exec python3 scripts/fetch-dependencies.py "$@"

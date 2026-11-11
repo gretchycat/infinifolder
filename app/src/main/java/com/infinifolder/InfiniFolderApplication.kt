@@ -14,6 +14,20 @@ class InfiniFolderApplication : Application() {
             (getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager).runningAppProcesses
                 ?.firstOrNull { it.pid == android.os.Process.myPid() }?.processName
         if (processName == "$packageName:startup_report") return
+        com.infinifolder.storage.ViewerStorage.factory = { com.infinifolder.storage.StorageRuntime.get(it).provider }
+        com.infinifolder.storage.ViewerStorage.readConsistency = object : com.infinifolder.storage.ViewerStorage.ReadConsistency {
+            override fun <T> withFreshReads(work: () -> T): T = com.infinifolder.storage.StorageRuntime.get(this@InfiniFolderApplication).archives.withFreshReads(work)
+            override fun invalidateReadCaches() { com.infinifolder.storage.StorageRuntime.get(this@InfiniFolderApplication).archives.invalidateReadCaches() }
+        }
+        com.infinifolder.storage.ViewerStorage.streamingSource = { context, uri ->
+            val runtime = com.infinifolder.storage.StorageRuntime.get(context)
+            val ref = runtime.archives.refForUri(uri)
+            if (ref == null) null else when (val result = runtime.archives.openStreamingSeekable(ref)) {
+                is com.infinifolder.model.ProviderResult.Success -> com.infinifolder.storage.BlockDeviceSource(result.value)
+                is com.infinifolder.model.ProviderResult.Failure -> throw java.io.IOException(result.message, result.cause)
+                is com.infinifolder.model.ProviderResult.Unsupported -> null
+            }
+        }
         val started = android.os.SystemClock.uptimeMillis()
         try {
             DebugTools.install(this)

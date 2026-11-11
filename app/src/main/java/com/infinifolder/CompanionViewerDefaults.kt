@@ -18,7 +18,7 @@ import io.github.gretchycat.infiniscribe.ScribeTextFormats
 internal object CompanionViewerDefaults {
     private data class Target(val packageName: String, val activityName: String)
 
-    private val media = Target("com.infinimedia", "com.infinifolder.standalone.ViewerHostActivity")
+    private val media = Target("com.infinimedia", "com.infinimedia.InfiniMediaActivity")
     private val scribe = Target("com.infiniscribe", "com.infiniscribe.InfiniScribeActivity")
     private val removedScribeViewers = setOf(
         "com.infinifolder.viewer.TextViewerActivity",
@@ -104,8 +104,9 @@ internal object CompanionViewerDefaults {
         installedComponent(context.applicationContext, media)
 
     private fun targetFor(name: String, mime: String): Target? {
+        if (name.endsWith(".mindnodetouch", true) || mime == "application/x-mindnode-touch") return scribe
         val type = MediaTypeDetector.detect(name, mime)
-        if (ArchiveFormats.isPlaylist(name, mime) || type == MediaType.AUDIO ||
+        if (ArchiveFormats.isPlaylist(name, mime) || type in setOf(MediaType.AUDIO, MediaType.VIDEO) ||
             AudioIconFormats.isAudio(MimeRegistry.guess(name))) return media
         return scribe.takeIf { isScribeType(type) }
     }
@@ -133,7 +134,7 @@ internal object CompanionViewerDefaults {
         defaults.rules().filter { it.action == Intent.ACTION_VIEW && it.component.packageName == context.packageName }
             .forEach { rule ->
                 val target = when (rule.component.className) {
-                    "com.infinifolder.viewer.AudioPlayerActivity" -> media
+                    "com.infinifolder.viewer.AudioPlayerActivity", "com.infinifolder.viewer.VideoPlayerActivity" -> media
                     in removedScribeViewers -> scribe
                     else -> return@forEach
                 }

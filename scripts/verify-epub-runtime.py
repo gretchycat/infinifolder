@@ -32,7 +32,7 @@ subprocess.run([str(SDK / 'build-tools/36.0.0/d8'), '--min-api', '26', '--lib', 
 apk = OUT / 'epub-runtime.apk'
 if apk.exists():
     apk.chmod(0o644)
-shutil.copyfile(ROOT / 'app/build/outputs/apk/debug/app-debug.apk', apk)
+shutil.copyfile(Path(os.environ['INFINISCRIBE_APK']), apk)
 apk.chmod(0o444)
 env = os.environ.copy()
 env.pop('LD_LIBRARY_PATH', None)

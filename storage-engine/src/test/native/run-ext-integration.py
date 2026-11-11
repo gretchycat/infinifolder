@@ -12,7 +12,7 @@ work = root / 'build/ext-integration'
 work.mkdir(parents=True, exist_ok=True)
 classes = work / 'classes'
 classes.mkdir(exist_ok=True)
-lib = root / 'storage-engine/build/extNative/arm64-v8a'
+lib = root / 'libraries/libinfinivault/vault-android/build/extNative/arm64-v8a'
 subprocess.run(['javac', '-d', str(classes), str(Path(__file__).with_name('ExtNative.java'))], check=True)
 java = ['java', '-Djava.library.path=' + str(lib), '-cp', str(classes), 'com.infinifolder.archive.ExtNative']
 payload = work / 'payload.bin'

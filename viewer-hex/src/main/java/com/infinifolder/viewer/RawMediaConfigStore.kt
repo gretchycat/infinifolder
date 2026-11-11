@@ -43,8 +43,8 @@ object RawMediaConfigStore {
     @Synchronized fun mightHave(entry: ResourceEntry) = index.get(entry.uri.toString())?.let { it.sidecar != null } ?: true
     /** Presence selects the byte explorer even if metadata cannot be parsed; only valid records enable PIC/WAVE. */
     fun hasSidecar(context:Context,entry:ResourceEntry):Boolean =
-        state(StorageRuntime.get(context).provider,entry,discover=true)?.sidecar!=null
-    fun load(context: Context, entry: ResourceEntry, discover:Boolean=true): Record? = load(StorageRuntime.get(context).provider,entry,discover)
+        state(ViewerStorage.get(context).provider,entry,discover=true)?.sidecar!=null
+    fun load(context: Context, entry: ResourceEntry, discover:Boolean=true): Record? = load(ViewerStorage.get(context).provider,entry,discover)
     private fun state(provider:StorageProvider,entry:ResourceEntry,discover:Boolean):State? {
         if (entry.metadata.isDirectory) return null
         var state = synchronized(this) { index.get(entry.uri.toString()) }
@@ -68,7 +68,7 @@ object RawMediaConfigStore {
         }
     }
     fun load(context: Context, uri: android.net.Uri, name: String): Record? {
-        val provider = StorageRuntime.get(context).provider
+        val provider = ViewerStorage.get(context).provider
         val ref = provider.refForUri(uri) ?: return null
         val entry = (provider.stat(ref) as? ProviderResult.Success)?.value ?: return null
         return load(context, entry)
@@ -113,7 +113,7 @@ object RawMediaConfigStore {
         }
     }
     fun save(context: Context, source: ResourceEntry, record: Record) {
-        save(StorageRuntime.get(context).provider,source,record,File(context.filesDir,"save_recovery"))
+        save(ViewerStorage.get(context).provider,source,record,File(context.filesDir,"save_recovery"))
         context.getSharedPreferences("browser",Context.MODE_PRIVATE).edit().putLong("raw_media_metadata_revision",savedRevision).apply()
     }
     fun save(provider:StorageProvider,source:ResourceEntry,record:Record,recoveryRoot:File){

@@ -986,10 +986,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 mime == "application/x-bittorrent" && ref.providerId != "torrent" -> { externalViewerLaunchPending = false; revealBrowserAfterExternalLaunch(); logExternalOpenRoute("torrent"); openTorrentFile(entry) }
                                 (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null && !extensionIdentityMismatch) || AppsUri.isAppUri(uri) -> { logExternalOpenRoute("link"); open(entry, confirmCommands = true) }
                                 preferredOpen?.let { it.packageName != packageName } == true || staleOpenChoice ||
-                                    type == MediaType.AUDIO || type == MediaType.TEXT -> {
+                                    type in setOf(MediaType.AUDIO, MediaType.VIDEO, MediaType.TEXT) -> {
                                     logExternalOpenRoute(when {
                                         staleOpenChoice -> "stale-default-chooser"
-                                        type == MediaType.AUDIO || type == MediaType.TEXT -> "companion-viewer"
+                                        type in setOf(MediaType.AUDIO, MediaType.VIDEO, MediaType.TEXT) -> "companion-viewer"
                                         else -> "saved-viewer"
                                     })
                                     open(entry)
@@ -1956,7 +1956,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
         } else {
             Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-                type = "audio/*"
+                type = if (entries.all { it.metadata.mimeType.startsWith("video/") }) "video/*" else "*/*"
                 putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
                 putExtra("displayName", title)
             }
@@ -1987,13 +1987,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             val target = startEntry ?: videoTracks.first()
             runOnUiThread {
-                val intent = Intent(this@MainActivity, com.infinifolder.viewer.VideoPlayerActivity::class.java).apply {
-                    data = target.uri
-                    putExtra("uri", target.uri.toString())
-                    putExtra("displayName", target.metadata.name)
-                    putExtra("parentUri", folderUri.toString())
-                }
-                startActivity(intent)
+                val ordered = listOf(target) + videoTracks.filter { it.ref != target.ref }
+                launchMediaEntriesInInfiniMedia(ordered, "Video from ${folderUri.lastPathSegment.orEmpty()}")
             }
         }
     }
@@ -6045,7 +6040,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun launchBuiltInViewer(entry: ResourceEntry, mediaType: com.infinifolder.viewer.MediaType, edit:Boolean=false,forceType:Boolean=false): Boolean {
         // Playback and every Scribe-backed document viewer live in companion apps.
-        if (mediaType == MediaType.AUDIO || CompanionViewerDefaults.isScribeType(mediaType)) return false
+        if (mediaType in setOf(MediaType.AUDIO, MediaType.VIDEO) || CompanionViewerDefaults.isScribeType(mediaType)) return false
         val intent = (if(forceType)null else com.infinifolder.viewer.ViewerLaunch.intentForResource(this,entry,current,edit))
             ?: com.infinifolder.viewer.ViewerLaunch.intent(this, entry, mediaType, current,edit) ?: return false
         return try {

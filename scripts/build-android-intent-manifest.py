@@ -121,7 +121,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--template', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--host', choices=['app', 'viewer', 'infiniscribe'], required=True)
+    parser.add_argument('--host', choices=['app', 'viewer', 'infiniscribe', 'infinimedia'], required=True)
     parser.add_argument('--capabilities-json', type=Path, required=True)
     parser.add_argument('--viewer', default='all')
     args = parser.parse_args()
@@ -153,13 +153,15 @@ def main():
         activity_name = '.MainActivity'
     elif args.host == 'infiniscribe':
         activity_name = 'com.infiniscribe.InfiniScribeActivity'
+    elif args.host == 'infinimedia':
+        activity_name = 'com.infinimedia.InfiniMediaActivity'
     else:
         activity_name = 'com.infinifolder.standalone.ViewerHostActivity'
     activity = next(a for a in tree.getroot().find('application').findall('activity')
         if a.get(attr('name')) == activity_name)
 
     add_filter(activity, mimes=mimes)
-    if args.host in {'app', 'infiniscribe'}:
+    if args.host in {'app', 'infiniscribe', 'infinimedia'}:
         # Providers often supply opaque content IDs, no MIME, or a generic
         # binary MIME. The actual content is validated by the runtime library.
         add_filter(activity, schemes={'content', 'file'})
@@ -196,11 +198,11 @@ def main():
                 extensions=editable_extensions, action='EDIT')
         if mimes:
             add_filter(activity, mimes=mimes, browsable=False, action='SEND')
-    elif args.host == 'viewer' and args.viewer == 'audio':
+    elif args.host == 'infinimedia' or (args.host == 'viewer' and args.viewer == 'audio'):
         # The separate media player accepts direct file shares as well as JSPF,
         # XSPF and other playlists. Generic binary MIME is restricted to known
         # audio/playlist suffixes so unrelated opaque files do not list Media.
-        share_mimes = mimes | {'audio/*'}
+        share_mimes = mimes | {'audio/*', 'video/*'}
         add_filter(activity, mimes=share_mimes, browsable=False, action='SEND')
         add_filter(activity, mimes=share_mimes, browsable=False, action='SEND_MULTIPLE')
         if extensions:

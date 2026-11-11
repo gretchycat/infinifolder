@@ -1,0 +1,56 @@
+// Preserve license/notice text even when duplicate META-INF entries must be excluded from DEX packaging.
+import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
+
+def noticesDir = layout.buildDirectory.dir('generated/third-party-notices/assets')
+def runtimeArtifacts = providers.provider {
+    configurations.getByName('debugRuntimeClasspath').incoming.artifactView {
+        attributes.attribute(org.gradle.api.artifacts.type.ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, 'android-java-res')
+    }.artifacts
+}
+def collectThirdPartyNotices = tasks.register('collectThirdPartyNotices') {
+    inputs.files(providers.provider { runtimeArtifacts.get().artifactFiles })
+    outputs.dir(noticesDir)
+    doLast {
+        def destination = noticesDir.get().asFile
+        delete(destination)
+        destination.mkdirs()
+        def inventory = []
+        runtimeArtifacts.get().artifacts.each { artifact ->
+            def coordinate = artifact.id.componentIdentifier.displayName
+            inventory.add(coordinate)
+            def artifactRoot = new File(destination, 'third-party/dependencies/' + coordinate.replaceAll('[^a-zA-Z0-9._-]', '_'))
+            if (artifact.file.name.endsWith('.jar') || artifact.file.name.endsWith('.aar')) {
+                new ZipFile(artifact.file).withCloseable { zip ->
+                    zip.entries().each { entry ->
+                        def name = entry.name.tokenize('/').last()?.toUpperCase(Locale.ROOT)
+                        if (!entry.directory && name && (name.startsWith('LICENSE') || name.startsWith('NOTICE') || name.startsWith('COPYING'))) {
+                            def target = new File(artifactRoot, entry.name)
+                            if (!target.canonicalFile.toPath().startsWith(artifactRoot.canonicalFile.toPath())) throw new GradleException('Unsafe notice path')
+                            target.parentFile.mkdirs()
+                            zip.getInputStream(entry).withCloseable { input -> target.withOutputStream { it << input } }
+                        }
+                    }
+                    def classes = zip.getEntry('classes.jar')
+                    if (classes) zip.getInputStream(classes).withCloseable { input ->
+                        new ZipInputStream(input).withCloseable { nested ->
+                            def entry
+                            while ((entry = nested.nextEntry) != null) {
+                                def name = entry.name.tokenize('/').last()?.toUpperCase(Locale.ROOT)
+                                if (!entry.directory && name && (name.startsWith('LICENSE') || name.startsWith('NOTICE') || name.startsWith('COPYING'))) {
+                                    def target = new File(artifactRoot, 'classes/' + entry.name)
+                                    if (!target.canonicalFile.toPath().startsWith(artifactRoot.canonicalFile.toPath())) throw new GradleException('Unsafe notice path')
+                                    target.parentFile.mkdirs()
+                                    target.withOutputStream { it << nested }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        new File(destination, 'third-party/dependencies.txt').text = inventory.unique().sort().join('\n') + '\n'
+    }
+}
+android.sourceSets.main.assets.srcDir(noticesDir)
+tasks.named('preBuild').configure { dependsOn(collectThirdPartyNotices) }

@@ -14,13 +14,11 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = [
+    (':libinfiniui:ui-android:testDebugUnitTest', 'libraries/libinfiniui/ui-android/build/test-results/testDebugUnitTest'),
+    (':libinfiniui:ui-image:testDebugUnitTest', 'libraries/libinfiniui/ui-image/build/test-results/testDebugUnitTest'),
+    (':libinfinicore:core-android:testDebugUnitTest', 'libraries/libinfinicore/core-android/build/test-results/testDebugUnitTest'),
     (':app:testDebugUnitTest', 'app/build/test-results/testDebugUnitTest'),
-    (':viewer-csv:testDebugUnitTest', 'viewer-csv/build/test-results/testDebugUnitTest'),
     (':storage-engine:testDebugUnitTest', 'storage-engine/build/test-results/testDebugUnitTest'),
-    (':viewer-common:testDebugUnitTest', 'viewer-common/build/test-results/testDebugUnitTest'),
-    (':viewer-audio:testDebugUnitTest', 'viewer-audio/build/test-results/testDebugUnitTest'),
-    (':viewer-image:testDebugUnitTest', 'viewer-image/build/test-results/testDebugUnitTest'),
-    (':viewer-epub:testDebugUnitTest', 'viewer-epub/build/test-results/testDebugUnitTest'),
     (':libinfinistream:stream-core:test', 'libraries/libinfinistream/stream-core/build/test-results/test'),
     (':libinfinisound:audio-core:test', 'libraries/libinfinisound/audio-core/build/test-results/test'),
     (':libinfinistore:store-android:testDebugUnitTest', 'libraries/libinfinistore/store-android/build/test-results/testDebugUnitTest'),
@@ -39,7 +37,7 @@ parser.add_argument('--online', action='store_true', help='Allow Gradle dependen
 args = parser.parse_args()
 log = ROOT / 'build/infinistream-migration/verification-gate.log'
 log.parent.mkdir(parents=True, exist_ok=True)
-command = ['gradle', ':app:assembleDebug'] + [task for task, _ in MODULES] + ['--continue', '--console=plain', '--max-workers=2']
+command = [str(ROOT / 'gradlew'), ':app:assembleDebug'] + [task for task, _ in MODULES] + ['--continue', '--console=plain', '--max-workers=2']
 if not args.online:
     command.append('--offline')
 started = time.time()

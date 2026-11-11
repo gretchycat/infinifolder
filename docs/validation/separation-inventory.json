@@ -1,0 +1,1720 @@
+{
+  "inventory": [
+    {
+      "repository": "infinifolder",
+      "production_files": 82,
+      "bytes": 1725566,
+      "largest": [
+        {
+          "repository": "infinifolder",
+          "path": "app/src/main/java/com/infinifolder/MainActivity.kt",
+          "bytes": 829892,
+          "sha256": "45242fbb045071eff32861d2e2942886b15500e476629a414d8f31cc6a23ef3f"
+        },
+        {
+          "repository": "infinifolder",
+          "path": "app/src/main/java/com/infinifolder/overlay/FloatingContainerService.kt",
+          "bytes": 92214,
+          "sha256": "6f49fcc6d01544b36a4e5f7be75fcfc598c24883125b0d3d23066f787188b4fc"
+        },
+        {
+          "repository": "infinifolder",
+          "path": "app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png",
+          "bytes": 81358,
+          "sha256": "39ad9b6ae330d72b8225e10f626309776ba4c44cc10e154d676a5d0e2a254b97"
+        },
+        {
+          "repository": "infinifolder",
+          "path": "app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png",
+          "bytes": 50487,
+          "sha256": "ec373bdec813350a4ac019a58f11c3ac87ecbf508b8251d36d5aa7434d76b538"
+        },
+        {
+          "repository": "infinifolder",
+          "path": "viewer-hex/src/main/java/com/infinifolder/viewer/HexViewerActivity.kt",
+          "bytes": 50148,
+          "sha256": "3918cc3be961cb25b5284a1ce8763b1f20e8d537021dc524ee11cf34e13921b1"
+        },
+        {
+          "repository": "infinifolder",
+          "path": "app/src/main/java/com/infinifolder/ResourceIconResolver.kt",
+          "bytes": 38522,
+          "sha256": "1b832f1ac0e1c12c414ff2f767a046bbeb7fbeb0942d73357b282b0e65afffb6"
+        },
+        {
+          "repository": "infinifolder",
+          "path": "app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+          "bytes": 33014,
+          "sha256": "7fa2fce73e2fc2a21605055a437c200dbb8b38ee28f1bd88c024777fcd493f5b"
+        },
+        {
+          "repository": "infinifolder",
+          "path": "viewer-hex/src/main/java/com/infinifolder/viewer/RawExplorerPanes.kt",
+          "bytes": 30046,
+          "sha256": "d512cc836346f6de7613b394c81f0d4728fca5711c285a47c3c560d630f15bab"
+        },
+        {
+          "repository": "infinifolder",
+          "path": "app/src/main/java/com/infinifolder/ResourceArtworkCache.kt",
+          "bytes": 29374,
+          "sha256": "be7c22793044ffc28069e42b02b6d50c64a4093797936750bd25bbbd83dc416a"
+        },
+        {
+          "repository": "infinifolder",
+          "path": "app/src/main/java/com/infinifolder/DiskUsageExplorer.kt",
+          "bytes": 27373,
+          "sha256": "24387039787bc28943ed64f5e3c92c0a0c2824907dafa265201f2b27d9e6fb63"
+        },
+        {
+          "repository": "infinifolder",
+          "path": "app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png",
+          "bytes": 25832,
+          "sha256": "94e4fc5932c4bb6ca179c1f7d356d8f2dbf446dc0ee9922ec78ea1330cdbaf35"
+        },
+        {
+          "repository": "infinifolder",
+          "path": "app/src/main/java/com/infinifolder/FileSelectionRelayProvider.kt",
+          "bytes": 21063,
+          "sha256": "9faee9df4e21e4b6f1558e0ab2b855c5da8995d54385aba499b3ff9ceb69a980"
+        }
+      ]
+    },
+    {
+      "repository": "infiniscribe",
+      "production_files": 54,
+      "bytes": 517980,
+      "largest": [
+        {
+          "repository": "infiniscribe",
+          "path": "src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png",
+          "bytes": 78088,
+          "sha256": "9a9cd858d0eea6d72bb055e033eaf5a5cbf1fcd08d0d705206a473be72d6ddb0"
+        },
+        {
+          "repository": "infiniscribe",
+          "path": "modules/viewer-text/src/main/java/com/infinifolder/viewer/TextViewerActivity.kt",
+          "bytes": 69164,
+          "sha256": "46f1b864032cf12eefdc430b121eadcd85bb3eb5e5a955428735d93cf3ab827d"
+        },
+        {
+          "repository": "infiniscribe",
+          "path": "src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png",
+          "bytes": 48889,
+          "sha256": "93145b892de470db5e5e64c1fc7943f61442159a5314358a7f086f82b2230c26"
+        },
+        {
+          "repository": "infiniscribe",
+          "path": "modules/viewer-csv/src/main/java/com/infinifolder/viewer/CsvViewerActivity.kt",
+          "bytes": 41443,
+          "sha256": "a1b5aafedb6d8e9c0a46ba180e4d7b3df9956e11a9cd0365e91c507a369f97ce"
+        },
+        {
+          "repository": "infiniscribe",
+          "path": "modules/viewer-epub/src/main/java/com/infinifolder/viewer/EpubViewerActivity.kt",
+          "bytes": 32614,
+          "sha256": "42ce528ca15b26d7ed92387efde6f9a5992d4048e88b7499336069599cc774c3"
+        },
+        {
+          "repository": "infiniscribe",
+          "path": "src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+          "bytes": 32550,
+          "sha256": "5df331b68b0f67a01fc5e7dca2b00260cc1ed49d530cff899df941f47917c438"
+        },
+        {
+          "repository": "infiniscribe",
+          "path": "src/main/res/mipmap-xhdpi/ic_launcher_foreground.png",
+          "bytes": 25725,
+          "sha256": "837e0118a621929ec646f088b3dccd56cbbc2721282415510eab200b6eb766b1"
+        },
+        {
+          "repository": "infiniscribe",
+          "path": "src/main/res/mipmap-xxhdpi/ic_launcher.png",
+          "bytes": 20605,
+          "sha256": "56fc14f44318aa77fedd779162aceef0ba34bb3744f9bd9494b505bfe848ac50"
+        },
+        {
+          "repository": "infiniscribe",
+          "path": "modules/viewer-markdown/src/main/java/com/infinifolder/viewer/MarkdownViewerActivity.kt",
+          "bytes": 19554,
+          "sha256": "36b80e4cab53bb80b1a742cb0552b3c05126dd084c572675d0c495fe28118363"
+        },
+        {
+          "repository": "infiniscribe",
+          "path": "modules/viewer-html/src/main/java/com/infinifolder/viewer/HtmlViewerActivity.kt",
+          "bytes": 18839,
+          "sha256": "969742409b2bf68de4edeb613c6fc34d6d917014288bd4ee19ef7b943359a077"
+        },
+        {
+          "repository": "infiniscribe",
+          "path": "src/main/res/mipmap-hdpi/ic_launcher_foreground.png",
+          "bytes": 16051,
+          "sha256": "7ea85c7b831b150f41866b488468dd602e05d37402adad22f95c84bdfe39cf0f"
+        },
+        {
+          "repository": "infiniscribe",
+          "path": "modules/viewer-pdf/src/main/java/com/infinifolder/viewer/PdfViewerActivity.kt",
+          "bytes": 14989,
+          "sha256": "9b5c3cc911c2a9a2990952ece9c8d1b0c694392a9289c944e3b3db879fac9aa1"
+        }
+      ]
+    },
+    {
+      "repository": "infinimedia",
+      "production_files": 61,
+      "bytes": 4969820,
+      "largest": [
+        {
+          "repository": "infinimedia",
+          "path": "src/main/res/ic_launcher_foreground.svg",
+          "bytes": 1144976,
+          "sha256": "7f0e55252eaae918d23d699e041246d18923cebbc6c8ec1ed057a1be2afead85"
+        },
+        {
+          "repository": "infinimedia",
+          "path": "src/main/res/ic_launcher-round.svg",
+          "bytes": 1144936,
+          "sha256": "92979fed871b4b95d1c27c6745bbb3f50e8ff886b85275059b67851e5531763c"
+        },
+        {
+          "repository": "infinimedia",
+          "path": "src/main/res/ic_launcher-square.svg",
+          "bytes": 1144936,
+          "sha256": "92979fed871b4b95d1c27c6745bbb3f50e8ff886b85275059b67851e5531763c"
+        },
+        {
+          "repository": "infinimedia",
+          "path": "modules/viewer-audio/src/main/assets/skins/Winamp3_Classified_v5.5.wsz",
+          "bytes": 253959,
+          "sha256": "da7ac7a7acd3bf76842c86644e23c88cff74cd7fc8826563285ca7c082a01067"
+        },
+        {
+          "repository": "infinimedia",
+          "path": "modules/viewer-audio/src/main/java/com/infinifolder/viewer/AudioPlayerActivity.kt",
+          "bytes": 192128,
+          "sha256": "72f8bc54d4d5360a9fc9424ce0f8fd837c52c5b98860dcf6c057255cff1fa8e5"
+        },
+        {
+          "repository": "infinimedia",
+          "path": "modules/viewer-audio/src/main/assets/skins/Winamp5_Classified_v5.5.wsz",
+          "bytes": 178176,
+          "sha256": "ad749cb68339f443537ce1167e69f9b4b6a28ba3d9690d02b6426175f8772976"
+        },
+        {
+          "repository": "infinimedia",
+          "path": "modules/viewer-audio/src/main/java/com/infinifolder/viewer/AudioPlayerService.kt",
+          "bytes": 109566,
+          "sha256": "59f4d9e6205ca31a7986630ac2d049ae5f27e5c0787e7bca9b15e85ccf08aa12"
+        },
+        {
+          "repository": "infinimedia",
+          "path": "modules/viewer-audio/src/main/assets/skins/base-2.91.wsz",
+          "bytes": 101121,
+          "sha256": "0166fb878cd41de07e1cc51067525ccd3f055b94dc3c227d61124fe528788f6f"
+        },
+        {
+          "repository": "infinimedia",
+          "path": "src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png",
+          "bytes": 100950,
+          "sha256": "769bccbc9a74e3c9b630e7a4c341eff1a521112a36e15c180052f3ee8294a597"
+        },
+        {
+          "repository": "infinimedia",
+          "path": "modules/viewer-audio/src/main/assets/skins/Bento_Classified.wsz",
+          "bytes": 78699,
+          "sha256": "5a526d01240d8a4c642bda901a86726c4ede19327582b8b0be6189747542ab67"
+        },
+        {
+          "repository": "infinimedia",
+          "path": "src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png",
+          "bytes": 63551,
+          "sha256": "986433c0c183e44fd58e5dc3cdb48b762de646bdda203ad5499e38f9bee45d98"
+        },
+        {
+          "repository": "infinimedia",
+          "path": "src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+          "bytes": 42755,
+          "sha256": "f1394e31e36275321205d6fe3eee1efc9f62e5610e72ec3694506ca44bd8dfca"
+        }
+      ]
+    },
+    {
+      "repository": "infinikey-ime",
+      "production_files": 206,
+      "bytes": 5218643,
+      "largest": [
+        {
+          "repository": "infinikey-ime",
+          "path": "app/src/main/assets/fonts/InfinikeySymbols-Regular.ttf",
+          "bytes": 910736,
+          "sha256": "a91a0bb42a2ee3575d35b440fa2fd8c4cf9ac2c40631fd511e989547cd1eeac7"
+        },
+        {
+          "repository": "infinikey-ime",
+          "path": "app/src/main/assets/images/ko-fi.png",
+          "bytes": 620518,
+          "sha256": "92b18be23a942da054de4b32ca2b543333be9336a41663872d4f574f64af94d1"
+        },
+        {
+          "repository": "infinikey-ime",
+          "path": "app/src/main/res/drawable/ic_kofi.png",
+          "bytes": 620518,
+          "sha256": "92b18be23a942da054de4b32ca2b543333be9336a41663872d4f574f64af94d1"
+        },
+        {
+          "repository": "infinikey-ime",
+          "path": "app/src/main/assets/layouts/emoji_body.json",
+          "bytes": 416376,
+          "sha256": "ec1daf8f5cbb326012dbdc8041c57a2319470563c82604d37f52d4cb800ecd30"
+        },
+        {
+          "repository": "infinikey-ime",
+          "path": "app/src/main/res/drawable/ic_launcher.png",
+          "bytes": 272879,
+          "sha256": "c52646f901e6dee988d42a49010f6c31ede2cba1b8b4d94252d0b5e6189c9745"
+        },
+        {
+          "repository": "infinikey-ime",
+          "path": "app/src/main/java/com/infinikey_ime/settings/SettingsActivity.kt",
+          "bytes": 219770,
+          "sha256": "704ec49098c21abac77a5a4cb96141cfbbae8a69c15846d6092cb3d5f3a9fa6d"
+        },
+        {
+          "repository": "infinikey-ime",
+          "path": "app/src/main/java/com/infinikey_ime/view/KeyboardView.kt",
+          "bytes": 155179,
+          "sha256": "9536ea65f69e5d20876a336b31bb2249fb50579877872328b69ed0f928adb49c"
+        },
+        {
+          "repository": "infinikey-ime",
+          "path": "app/src/main/res/layout/activity_settings.xml",
+          "bytes": 144771,
+          "sha256": "fb7055c1194ca58c796f2a239235b01e595f6b8429b427dfe77e8d428ca6b933"
+        },
+        {
+          "repository": "infinikey-ime",
+          "path": "app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png",
+          "bytes": 77794,
+          "sha256": "9a4ec744228e53e948656e7ec9c2b2912c8cc2142e460e34ad9916755b42c5f4"
+        },
+        {
+          "repository": "infinikey-ime",
+          "path": "app/src/main/assets/layouts/emoji_flags.json",
+          "bytes": 76112,
+          "sha256": "d35a3094698eed22064229ef1bf5ab9abf5e230e39dc4886f26c921ea15740d7"
+        },
+        {
+          "repository": "infinikey-ime",
+          "path": "app/src/main/assets/layouts/emoji_objects.json",
+          "bytes": 72590,
+          "sha256": "150de913b5629daeed33c5e6e94b975d56cef5c0bf99cedbd0d58f5209f5b4d3"
+        },
+        {
+          "repository": "infinikey-ime",
+          "path": "app/src/main/java/com/infinikey_ime/ProgrammerInputMethodService.kt",
+          "bytes": 70231,
+          "sha256": "f1c9414cfe5a187b17b7d5505e4321e3855ab6111e121deb75866f636813d480"
+        }
+      ]
+    },
+    {
+      "repository": "libinfinicanvas",
+      "production_files": 52,
+      "bytes": 711251,
+      "largest": [
+        {
+          "repository": "libinfinicanvas",
+          "path": "canvas-android/src/main/assets/fonts/cp437.ttf",
+          "bytes": 123416,
+          "sha256": "c4551ce2ac42bed743f065fdc9fdc29fbc52fbb3481833dc5662365cabc2d03e"
+        },
+        {
+          "repository": "libinfinicanvas",
+          "path": "canvas-android/src/main/java/com/infinifolder/preview/RetroImageDecoder.kt",
+          "bytes": 43128,
+          "sha256": "29f7f7c3df1debb4d2422698c6df4aa03c30b8a5a26d4536a6b03f018074f0e7"
+        },
+        {
+          "repository": "libinfinicanvas",
+          "path": "canvas-android/src/main/java/com/infinifolder/preview/PngAnimationDecoder.kt",
+          "bytes": 33559,
+          "sha256": "38112c5519806197a2cf667ecc98f2d6263595bc19ef0437435251dda0aaddc9"
+        },
+        {
+          "repository": "libinfinicanvas",
+          "path": "canvas-android/src/main/java/com/infinifolder/preview/HdrAndScientificImageDecoder.kt",
+          "bytes": 33440,
+          "sha256": "6d466bf3d4ebb2bfee7ae8fdec032a55564777c638a905ac33b16706dd336f4a"
+        },
+        {
+          "repository": "libinfinicanvas",
+          "path": "canvas-android/src/main/java/com/infinifolder/preview/ImageSignatures.kt",
+          "bytes": 32095,
+          "sha256": "e90f4cb017086237c807352520e2f649cf14a4795de01b87d41775106262f75a"
+        },
+        {
+          "repository": "libinfinicanvas",
+          "path": "canvas-android/src/main/java/com/infinifolder/preview/MetafileAndVectorImageDecoder.kt",
+          "bytes": 29188,
+          "sha256": "b46c36ed5cc389393de38281024ab15d3513da6bfdb25fd6b718aafc3d3f1d07"
+        },
+        {
+          "repository": "libinfinicanvas",
+          "path": "canvas-android/src/main/java/com/infinifolder/preview/LayeredImageDecoder.kt",
+          "bytes": 28633,
+          "sha256": "ec9cf1222fcae3326ffa4412cf4da94b0db2d338c8b035d096fb8dec7eeb7858"
+        },
+        {
+          "repository": "libinfinicanvas",
+          "path": "canvas-android/src/main/java/com/infinifolder/preview/RipScriptDecoder.kt",
+          "bytes": 26970,
+          "sha256": "6d3637af1919199b1d16d932c9803c71d1b7a089b1df289cabe123f9d7413a0d"
+        },
+        {
+          "repository": "libinfinicanvas",
+          "path": "canvas-android/src/main/java/com/infinifolder/preview/ThumbnailDecoder.kt",
+          "bytes": 26787,
+          "sha256": "982bc514e8ccb1850c13478c566fb294781b7addcf71a3a410cbaa2343ae3342"
+        },
+        {
+          "repository": "libinfinicanvas",
+          "path": "canvas-android/src/main/java/com/infinifolder/preview/TiffAndRawImageDecoder.kt",
+          "bytes": 21932,
+          "sha256": "a43a8572e1255a00e1f82330efae73927874388aaef64510f12b07a07f60f9ed"
+        },
+        {
+          "repository": "libinfinicanvas",
+          "path": "canvas-android/src/main/java/com/infinifolder/preview/RawImageExplorer.kt",
+          "bytes": 20763,
+          "sha256": "3d0e3871eb7bfa8c86f8d458b6c84426a9e9e797aa0e223b47c322b9fba306c4"
+        },
+        {
+          "repository": "libinfinicanvas",
+          "path": "canvas-android/src/main/resources/bgi-fonts/GOTH.CHR",
+          "bytes": 18063,
+          "sha256": "8620ae9db9dd874b842f67f7153721a5681fef3cd9e99af0fde41f3b1194f183"
+        }
+      ]
+    },
+    {
+      "repository": "libinfinicore",
+      "production_files": 67,
+      "bytes": 548956,
+      "largest": [
+        {
+          "repository": "libinfinicore",
+          "path": "core-android/src/main/java/com/infinifolder/ops/FileOperations.kt",
+          "bytes": 115010,
+          "sha256": "5194787c36e36ef68a06934fce00daa158ea27bdc9c6b5fce36dc10e50017ecb"
+        },
+        {
+          "repository": "libinfinicore",
+          "path": "core-android/src/main/java/com/infinifolder/storage/FileMagicDetector.kt",
+          "bytes": 80961,
+          "sha256": "bb75e77a37a20a7d37ebf613478863753db65fd3e0efbc870a40f24e08c3ddd3"
+        },
+        {
+          "repository": "libinfinicore",
+          "path": "core-android/src/main/java/com/infinifolder/mime/MimeRegistry.kt",
+          "bytes": 30324,
+          "sha256": "e72c0cfb6c6809019eb4c913b9ead98180500f450ea66b3533ea2cfa915f6fc2"
+        },
+        {
+          "repository": "libinfinicore",
+          "path": "core-android/src/main/java/com/infinifolder/storage/LocalStorageProvider.kt",
+          "bytes": 24849,
+          "sha256": "61616fac3be91e509168a9c256940f9218c26d306789f9e6cad6c9a967c31dcd"
+        },
+        {
+          "repository": "libinfinicore",
+          "path": "core-android/src/main/java/com/infinifolder/ops/OperationCoordinator.kt",
+          "bytes": 21105,
+          "sha256": "86d7685780ee5ad4d5336662e62ca5ecd1447a5cd4134094a4cd6db9d5d41def"
+        },
+        {
+          "repository": "libinfinicore",
+          "path": "core-android/src/main/java/com/infinifolder/archive/BlockDevice.kt",
+          "bytes": 20104,
+          "sha256": "386f137f88d8c2fd77840f9f804c8f6527408711a5f985a7fb5aa1c049a85e32"
+        },
+        {
+          "repository": "libinfinicore",
+          "path": "core-android/src/main/java/com/infinifolder/storage/SafProvider.kt",
+          "bytes": 15713,
+          "sha256": "489e5f669aa9927065ac76de8cc7dc5d953ea5a5e0afec0cd13864347d8cfa90"
+        },
+        {
+          "repository": "libinfinicore",
+          "path": "core-android/src/main/java/com/infinifolder/storage/DiskCache.kt",
+          "bytes": 13687,
+          "sha256": "d288fec33f1908264bba7e6de461694c35cf3f41d07702577ace10fde32a2b93"
+        },
+        {
+          "repository": "libinfinicore",
+          "path": "core-android/src/main/java/com/infinifolder/ops/TransferUndoJournal.kt",
+          "bytes": 11433,
+          "sha256": "a748d58abff6e8af72aebdda59e2aed609d3fc1873073aeb1b321db74e113934"
+        },
+        {
+          "repository": "libinfinicore",
+          "path": "core-android/src/main/java/com/infinifolder/storage/PermissionHelper.kt",
+          "bytes": 11376,
+          "sha256": "d4c16258e84a58f09b79a593563837751e1db29c3ca8d940ed35e5fd6314797d"
+        },
+        {
+          "repository": "libinfinicore",
+          "path": "core-android/src/main/java/com/infinifolder/ops/OperationHistoryStore.kt",
+          "bytes": 10788,
+          "sha256": "0a1c91b01b386863e66135340e084f5db42b53d7e292376dc8e8926b118e70b4"
+        },
+        {
+          "repository": "libinfinicore",
+          "path": "core-android/src/main/java/com/infinifolder/storage/BytePatchJournal.kt",
+          "bytes": 10503,
+          "sha256": "ff248cd90c6599112fc71bead5c1b84df883545d3a124513aa8859f8a052a4cb"
+        }
+      ]
+    },
+    {
+      "repository": "libinfinimeta",
+      "production_files": 74,
+      "bytes": 159234,
+      "largest": [
+        {
+          "repository": "libinfinimeta",
+          "path": "meta-core/src/main/kotlin/io/github/gretchycat/infinimeta/MetadataRegistry.kt",
+          "bytes": 7153,
+          "sha256": "9acff009c21bfb0dac90de0367f08817630a29403082f0b0b1b500a934bf2f8a"
+        },
+        {
+          "repository": "libinfinimeta",
+          "path": "meta-sony-pkg/src/main/kotlin/io/github/gretchycat/infinimeta/sony/pkg/SonyPkgCapabilityProvider.kt",
+          "bytes": 6894,
+          "sha256": "6bc192712b78c9d2b812115c467e5b360be549b7e403ea4f18856871bf9de18e"
+        },
+        {
+          "repository": "libinfinimeta",
+          "path": "meta-xbox-stfs/src/main/kotlin/io/github/gretchycat/infinimeta/xbox/stfs/StfsCapabilityProvider.kt",
+          "bytes": 6541,
+          "sha256": "d906ee3fc64533fbb7b1d456686a81d23c6c47ba7b8be496df0dbc635b13c0fe"
+        },
+        {
+          "repository": "libinfinimeta",
+          "path": "meta-gamepark-gp32/src/main/kotlin/io/github/gretchycat/infinimeta/gamepark/gp32/Gp32CapabilityProvider.kt",
+          "bytes": 6202,
+          "sha256": "abfc3c6a1f771a0da56356d5f9d910b437e13a93a1a8349fa31e5085e247492b"
+        },
+        {
+          "repository": "libinfinimeta",
+          "path": "meta-nintendo-gameboy/src/main/kotlin/io/github/gretchycat/infinimeta/nintendo/gameboy/GameBoyCapabilityProvider.kt",
+          "bytes": 5808,
+          "sha256": "e920d035883537949b9a7690cb7a2388f414977a33254bd5d93015e589802dc3"
+        },
+        {
+          "repository": "libinfinimeta",
+          "path": "meta-nintendo-snes/src/main/kotlin/io/github/gretchycat/infinimeta/nintendo/snes/SnesCapabilityProvider.kt",
+          "bytes": 5389,
+          "sha256": "6c7035ed4076fbd98cf1274767dcff3f377a59ca5aa091f42bc9c9bfcf64047f"
+        },
+        {
+          "repository": "libinfinimeta",
+          "path": "meta-nintendo-nes/src/main/kotlin/io/github/gretchycat/infinimeta/nintendo/nes/NesCapabilityProvider.kt",
+          "bytes": 5375,
+          "sha256": "97e9a8f2bcd57da821b6b70b09d5ff9549f351d9e13912d8ac15c69697addff8"
+        },
+        {
+          "repository": "libinfinimeta",
+          "path": "meta-nintendo-n64/src/main/kotlin/io/github/gretchycat/infinimeta/nintendo/n64/N64CapabilityProvider.kt",
+          "bytes": 4996,
+          "sha256": "1ee9054d28e6ba485483c8110a1c3e8a16a2507091d0b82bb190d69dafe4653b"
+        },
+        {
+          "repository": "libinfinimeta",
+          "path": "meta-nintendo-virtualboy/src/main/kotlin/io/github/gretchycat/infinimeta/nintendo/virtualboy/VirtualBoyCapabilityProvider.kt",
+          "bytes": 4872,
+          "sha256": "b54e563631e0bb399d25688c0180f3455276b57f6bd787203b45e43e6612ebe9"
+        },
+        {
+          "repository": "libinfinimeta",
+          "path": "meta-atari-atr/src/main/kotlin/io/github/gretchycat/infinimeta/atari/atr/AtrCapabilityProvider.kt",
+          "bytes": 4725,
+          "sha256": "716967bb8735e3835edde58171753026f1917373978663855ccbe50b75456530"
+        },
+        {
+          "repository": "libinfinimeta",
+          "path": "meta-xbox-xvd/src/main/kotlin/io/github/gretchycat/infinimeta/xbox/xvd/XvdCapabilityProvider.kt",
+          "bytes": 4643,
+          "sha256": "3c7ad63811a80b45cacedd24f7c0dd213e14881e13ad55ed82086b2280a592ec"
+        },
+        {
+          "repository": "libinfinimeta",
+          "path": "meta-xbox-xbe/src/main/kotlin/io/github/gretchycat/infinimeta/xbox/xbe/XbeCapabilityProvider.kt",
+          "bytes": 4538,
+          "sha256": "bfc93f940180eb4e7d0a8457fe26d4a026a4b89c26e43f1a19fc7eb64bf5dc57"
+        }
+      ]
+    },
+    {
+      "repository": "libinfiniscribe",
+      "production_files": 117,
+      "bytes": 1243823,
+      "largest": [
+        {
+          "repository": "libinfiniscribe",
+          "path": "scribe-mobi-android/src/main/cpp/third_party/libmobi/miniz.c",
+          "bytes": 264049,
+          "sha256": "37ca7a2774e7c575a58c3e09bdbe4d358940237d41fd5e1f9e56b2540d5e693c"
+        },
+        {
+          "repository": "libinfiniscribe",
+          "path": "scribe-mobi-android/src/main/cpp/third_party/libmobi/util.c",
+          "bytes": 113178,
+          "sha256": "0ce43569b39ae62ded8d540eae96d0bf9a17f2a2e3f67416a9514c9c944e6fd3"
+        },
+        {
+          "repository": "libinfiniscribe",
+          "path": "scribe-mobi-android/src/main/cpp/third_party/libmobi/parse_rawml.c",
+          "bytes": 81543,
+          "sha256": "da7716dcf1393080fe232673c2ed2f82fdd11acd46016660dad41651962f6b46"
+        },
+        {
+          "repository": "libinfiniscribe",
+          "path": "scribe-mobi-android/src/main/cpp/third_party/libmobi/opf.c",
+          "bytes": 79014,
+          "sha256": "e573955956afa35f41422d6e6812b893bb289ef192ca74ff090b4a01b514ee05"
+        },
+        {
+          "repository": "libinfiniscribe",
+          "path": "scribe-mobi-android/src/main/cpp/third_party/libmobi/encryption.c",
+          "bytes": 47947,
+          "sha256": "aa1c86c8d2e01a2ae4ca913739ae1abcd53bae20e3452f62f7dc9859ad3ba966"
+        },
+        {
+          "repository": "libinfiniscribe",
+          "path": "scribe-mobi-android/src/main/cpp/third_party/libmobi/index.c",
+          "bytes": 42733,
+          "sha256": "90f21f156231d0a987aa72732faafb3af7f643f99b1502bd25fb10ce9570d98d"
+        },
+        {
+          "repository": "libinfiniscribe",
+          "path": "scribe-mobi-android/src/main/cpp/third_party/libmobi/read.c",
+          "bytes": 35430,
+          "sha256": "ed7f1dafecd1167d8c4cfa1bc2c77fdd3e8e5cd0e96c6405e11506c77bc5b528"
+        },
+        {
+          "repository": "libinfiniscribe",
+          "path": "scribe-mobi-android/src/main/resources/META-INF/libinfiniscribe-mobi/GPL-3.0.txt",
+          "bytes": 35149,
+          "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+        },
+        {
+          "repository": "libinfiniscribe",
+          "path": "scribe-mobi-android/src/main/cpp/third_party/libmobi/mobi.h",
+          "bytes": 30834,
+          "sha256": "dac4a80d25258949ec127640e3ee9a32ca3b853871b89766c52a698b443415b0"
+        },
+        {
+          "repository": "libinfiniscribe",
+          "path": "scribe-mobi-android/src/main/cpp/third_party/libmobi/xmlwriter.c",
+          "bytes": 28658,
+          "sha256": "61535df2afc7d28e0e3d4cf57da516416621decf69b0e688929d2809d5d5652e"
+        },
+        {
+          "repository": "libinfiniscribe",
+          "path": "scribe-core/src/main/kotlin/io/github/gretchycat/infiniscribe/DocumentChunks.kt",
+          "bytes": 24617,
+          "sha256": "b4527ff90bf76bf490937cba9a06d632ac9bd8d69afda3dad25ed49c395f9c78"
+        },
+        {
+          "repository": "libinfiniscribe",
+          "path": "scribe-mobi-android/src/main/cpp/third_party/libmobi/meta.c",
+          "bytes": 24459,
+          "sha256": "95d2576d7e9d5ea196df2b52152c8ead58f0b42b10c0955c70e1c0c844526a74"
+        }
+      ]
+    },
+    {
+      "repository": "libinfiniselect",
+      "production_files": 7,
+      "bytes": 64230,
+      "largest": [
+        {
+          "repository": "libinfiniselect",
+          "path": "select-android/src/main/java/io/github/gretchycat/infiniselect/FileSelectActivity.kt",
+          "bytes": 31919,
+          "sha256": "62aca64397cbedd14242a3e1394dbf39701acd485a22f4b3b04d0f877a0c0756"
+        },
+        {
+          "repository": "libinfiniselect",
+          "path": "select-android/src/main/java/io/github/gretchycat/infiniselect/InfiniSelect.kt",
+          "bytes": 15687,
+          "sha256": "afc96314d85019a6111b6f0607e49091cd90cbf69c7d0f85f73f12acb21f3619"
+        },
+        {
+          "repository": "libinfiniselect",
+          "path": "select-android/src/main/java/io/github/gretchycat/infiniselect/SelectionDocumentProvider.kt",
+          "bytes": 5393,
+          "sha256": "525e3ee3a7c50ae32295b83f34e6fddc81d28d25def9e69841e86247fd7a6a5e"
+        },
+        {
+          "repository": "libinfiniselect",
+          "path": "select-android/src/main/java/io/github/gretchycat/infiniselect/StorageAccess.kt",
+          "bytes": 4924,
+          "sha256": "6da8579d95ccd9bb5d9a46673b46cd32e0e71ee2f67627bd7e9ec5feffd57ca0"
+        },
+        {
+          "repository": "libinfiniselect",
+          "path": "select-android/src/main/java/io/github/gretchycat/infiniselect/FileSelectionContract.kt",
+          "bytes": 4735,
+          "sha256": "f471d99725a828d281d316aa925b7ba4d15be87166c67c00f883d9038f48fd0b"
+        },
+        {
+          "repository": "libinfiniselect",
+          "path": "select-android/src/main/AndroidManifest.xml",
+          "bytes": 862,
+          "sha256": "df182d5aa2c02a99c0415ea3d100cd23ebb03b2d174e45c618540f99dd015763"
+        },
+        {
+          "repository": "libinfiniselect",
+          "path": "select-android/src/main/res/values/styles.xml",
+          "bytes": 710,
+          "sha256": "0c552ba798d970473edb05b596fb272d16ff8d60df10fd737fc5b2ddf0fe03a3"
+        }
+      ]
+    },
+    {
+      "repository": "libinfinisound",
+      "production_files": 274,
+      "bytes": 2105249,
+      "largest": [
+        {
+          "repository": "libinfinisound",
+          "path": "audio-processing/src/main/cpp/third_party/ffmpeg/include/libavformat/avformat.h",
+          "bytes": 118360,
+          "sha256": "a92ad4e9ae2866fb5bb409a30dda8162e253f77e9250fd3057c09f60e3059cbe"
+        },
+        {
+          "repository": "libinfinisound",
+          "path": "audio-processing/src/main/cpp/third_party/ffmpeg/include/libavcodec/avcodec.h",
+          "bytes": 109840,
+          "sha256": "909f5c2fe7caf26601c39cd96acbc6f58f49ec5a78914d2e5b524a3fc2571afc"
+        },
+        {
+          "repository": "libinfinisound",
+          "path": "audio-processing/src/main/cpp/third_party/ffmpeg/include/libavutil/pixfmt.h",
+          "bytes": 47890,
+          "sha256": "6a8f5a61fe8d3bda60a62e59cc15237f61555ebd77adf477fc6d69ab8e609f77"
+        },
+        {
+          "repository": "libinfinisound",
+          "path": "audio-processing/src/main/cpp/third_party/ffmpeg/include/libavutil/opt.h",
+          "bytes": 47238,
+          "sha256": "2a2cd99f0e8dbb799cff0fde4468e28e59e01249a63aeebf5d1dc43e29200120"
+        },
+        {
+          "repository": "libinfinisound",
+          "path": "audio-processing/src/main/cpp/third_party/ffmpeg/include/libavutil/frame.h",
+          "bytes": 42294,
+          "sha256": "91275238d0abfc4fef41f2f6a4f182e279886af78e2f525864329279206a3be9"
+        },
+        {
+          "repository": "libinfinisound",
+          "path": "audio-core/src/main/java/com/infinifolder/audio/tracker/TrackerEngine.kt",
+          "bytes": 39738,
+          "sha256": "b1c79a4c3be4734a60a3d9660dc6b69563e338678ed2d9ecb31b4204df51e42c"
+        },
+        {
+          "repository": "libinfinisound",
+          "path": "audio-processing/src/main/cpp/third_party/smaf/ma_player.cpp",
+          "bytes": 35990,
+          "sha256": "fa14175b335fcc4157d093126958cb3072d842d43295d4413c60b4c30da298a1"
+        },
+        {
+          "repository": "libinfinisound",
+          "path": "audio-api/src/main/java/com/infinifolder/audio/playlist/PlaylistParser.kt",
+          "bytes": 35288,
+          "sha256": "3a5f69432dbd7448615d9a7c9d26b8246cc11f1c63849c2903948c9c7efad8bc"
+        },
+        {
+          "repository": "libinfinisound",
+          "path": "audio-processing/src/main/cpp/third_party/ffmpeg/include/libavutil/channel_layout.h",
+          "bytes": 34091,
+          "sha256": "fbd3246297cd72be45268eacd9229d23247dfe394fb15b6a40ce8773422661c6"
+        },
+        {
+          "repository": "libinfinisound",
+          "path": "audio-processing/src/main/cpp/third_party/ffmpeg/include/libavcodec/packet.h",
+          "bytes": 32343,
+          "sha256": "96b17565536b27251918cdec0776e5200b0cdf2e42d9276024d9f831bfc30cf6"
+        },
+        {
+          "repository": "libinfinisound",
+          "path": "audio-processing/src/main/cpp/third_party/ffmpeg/include/libavformat/avio.h",
+          "bytes": 31178,
+          "sha256": "30312971fc299e65bc69cf1beddb76f50394e044d9c71fe32fec3ae9c13bd1af"
+        },
+        {
+          "repository": "libinfinisound",
+          "path": "audio-core/src/main/java/com/beatofthedrum/alacdecoder/AlacDecodeUtils.java",
+          "bytes": 31057,
+          "sha256": "0ff6bed1dd55ea77da325d0051fca9f33476c83b587ff08e896e4a2afcb8ee0b"
+        }
+      ]
+    },
+    {
+      "repository": "libinfinistore",
+      "production_files": 56,
+      "bytes": 438558,
+      "largest": [
+        {
+          "repository": "libinfinistore",
+          "path": "store-android/src/main/java/com/infinifolder/torrent/MagnetStorageProvider.kt",
+          "bytes": 89021,
+          "sha256": "3bf1fee76bd37db1a7b80c32fad24e3809bf95aba03c5423263fb5bd434ce8ea"
+        },
+        {
+          "repository": "libinfinistore",
+          "path": "store-android/src/main/java/com/infinifolder/sftp/SftpStorageProvider.kt",
+          "bytes": 44525,
+          "sha256": "cae2627c9b46a6bf1639fbadd6602e41715aa050530fb4efff391704242af3a1"
+        },
+        {
+          "repository": "libinfinistore",
+          "path": "store-android/src/main/java/com/infinifolder/storage/RoutingStorageProvider.kt",
+          "bytes": 28103,
+          "sha256": "ea2c6ac4a3a0226326a93a95ca3dd26c37d1711eb085d57b90dbe5def052bc03"
+        },
+        {
+          "repository": "libinfinistore",
+          "path": "store-android/src/main/java/com/infinifolder/sftp/SftpClientPool.kt",
+          "bytes": 24397,
+          "sha256": "d21a53243b0e47f5d5bd73b247bb893aa84f22cb3d026fdd6083342c7d1941b4"
+        },
+        {
+          "repository": "libinfinistore",
+          "path": "store-android/src/main/java/com/infinifolder/ftp/FtpStorageProvider.kt",
+          "bytes": 20986,
+          "sha256": "8064e7ebd1276f7e61357a8b9eeae6ebb7437edab49529fa75ab85b8f6660373"
+        },
+        {
+          "repository": "libinfinistore",
+          "path": "store-android/src/main/java/com/infinifolder/apps/AppsStorageProvider.kt",
+          "bytes": 18046,
+          "sha256": "526bc2ef6382a52668c7f4d40830b8202c703cdefb9ca578209b8f9a67b0c311"
+        },
+        {
+          "repository": "libinfinistore",
+          "path": "store-android/src/main/java/com/infinifolder/smb/SmbStorageProvider.kt",
+          "bytes": 17309,
+          "sha256": "3f2565d9c5a7a374563d57d3b0b41c57f190feb49130b8e340ceff029ca44a3f"
+        },
+        {
+          "repository": "libinfinistore",
+          "path": "store-android/src/main/java/com/infinifolder/webdav/WebDavStorageProvider.kt",
+          "bytes": 15052,
+          "sha256": "109794472856d4506a338769da547e16dede3d774680ab26daf7ec024999ede2"
+        },
+        {
+          "repository": "libinfinistore",
+          "path": "store-android/src/main/java/com/infinifolder/smb/SmbDiscoveryService.kt",
+          "bytes": 14090,
+          "sha256": "1aa9573f307a05c1b430426ed0f83a5368dd3a3d85bd5f224497443a78215b39"
+        },
+        {
+          "repository": "libinfinistore",
+          "path": "store-android/src/main/java/com/infinifolder/storage/PartialDownloadsProvider.kt",
+          "bytes": 11970,
+          "sha256": "49c226a914d553349122ee98ddd5ffdebc98d2354c81319720ed1402085bffb7"
+        },
+        {
+          "repository": "libinfinistore",
+          "path": "store-android/src/main/java/com/infinifolder/torrent/TorrentVerificationCheckpoint.kt",
+          "bytes": 10999,
+          "sha256": "b161d277c93164509c83845f9389d4f219436c3b6b5992564a189c4f15d08eb3"
+        },
+        {
+          "repository": "libinfinistore",
+          "path": "store-android/src/main/java/com/infinifolder/storage/ContainerLinksProvider.kt",
+          "bytes": 10512,
+          "sha256": "a4e33c450929ebc0498f7c1c323c81d722145fb80c47bd3c51c77c31ffdb3253"
+        }
+      ]
+    },
+    {
+      "repository": "libinfinistream",
+      "production_files": 14,
+      "bytes": 63916,
+      "largest": [
+        {
+          "repository": "libinfinistream",
+          "path": "stream-core/src/main/kotlin/io/github/gretchycat/infinistream/RuntimeCapabilities.kt",
+          "bytes": 19814,
+          "sha256": "330b58b1f1a5d0e49964ecbb6b1c71a98e2234a43da1d24aad1f0f72b1598f3e"
+        },
+        {
+          "repository": "libinfinistream",
+          "path": "stream-core/src/main/kotlin/io/github/gretchycat/infinistream/Processing.kt",
+          "bytes": 9669,
+          "sha256": "f9defe440d00442b4072c57edf29cdf8c510d7343cda59576a9e6126fdd6d16c"
+        },
+        {
+          "repository": "libinfinistream",
+          "path": "stream-core/src/main/kotlin/io/github/gretchycat/infinistream/Streams.kt",
+          "bytes": 7058,
+          "sha256": "be4dd7a99f0e8c0149de5c469057fb45c1201d152e5289ce880b62d15e91bb8d"
+        },
+        {
+          "repository": "libinfinistream",
+          "path": "stream-core/src/main/kotlin/io/github/gretchycat/infinistream/JvmStreams.kt",
+          "bytes": 6140,
+          "sha256": "f3ebaf7dcb1a801b4d14afb290b19d4d6df8d21f2350abbe744d4f98202abe1d"
+        },
+        {
+          "repository": "libinfinistream",
+          "path": "stream-core/src/main/kotlin/io/github/gretchycat/infinistream/MetadataCapabilities.kt",
+          "bytes": 5281,
+          "sha256": "f014f1b2a7dd8f15dd739d62bd799679eb41894b0a5533be62e0851a597def8e"
+        },
+        {
+          "repository": "libinfinistream",
+          "path": "stream-core/src/main/kotlin/io/github/gretchycat/infinistream/Detection.kt",
+          "bytes": 4239,
+          "sha256": "9ee6726c7bc9a0e85e0b262560523780fecf37821f30639d95af043083bfcef7"
+        },
+        {
+          "repository": "libinfinistream",
+          "path": "stream-core/src/main/kotlin/io/github/gretchycat/infinistream/CapabilityJson.kt",
+          "bytes": 3633,
+          "sha256": "25e19eae2781850978bc4f96ec4caff2331bc156e1a52c5bcbc2a88a24df0295"
+        },
+        {
+          "repository": "libinfinistream",
+          "path": "stream-core/src/main/kotlin/io/github/gretchycat/infinistream/SharedPositionalResource.kt",
+          "bytes": 3028,
+          "sha256": "d0b5786ed19fdb5bef93a37065b7c9513864cad2800ca4fb51f0f373d77a60e2"
+        },
+        {
+          "repository": "libinfinistream",
+          "path": "stream-core/src/main/kotlin/io/github/gretchycat/infinistream/ImageExtraction.kt",
+          "bytes": 1720,
+          "sha256": "bca89f861ba6f236ee71e0cfdf4b17032af67016519a2f1bd3c72aefe223d2ee"
+        },
+        {
+          "repository": "libinfinistream",
+          "path": "stream-core/src/main/kotlin/io/github/gretchycat/infinistream/StreamCapabilityProvider.kt",
+          "bytes": 1239,
+          "sha256": "871943fd574463d5f63f7a605083e00a0d0e371e66cd2e4dde65f89533fc4236"
+        },
+        {
+          "repository": "libinfinistream",
+          "path": "stream-core/src/main/kotlin/io/github/gretchycat/infinistream/ProcessorCapabilities.kt",
+          "bytes": 1204,
+          "sha256": "c3366817ab4e1edc283918ae3ea553394484e24dfa204c092b30c323a034c992"
+        },
+        {
+          "repository": "libinfinistream",
+          "path": "stream-core/src/main/kotlin/io/github/gretchycat/infinistream/ViewerComponent.kt",
+          "bytes": 418,
+          "sha256": "4ccb8dff7af6a1dc75d5571fec4d1189a51a697d104a4a4fd8b059e721fc3709"
+        }
+      ]
+    },
+    {
+      "repository": "libinfiniui",
+      "production_files": 68,
+      "bytes": 514236,
+      "largest": [
+        {
+          "repository": "libinfiniui",
+          "path": "ui-image/src/main/java/com/infinifolder/viewer/ImageViewerActivity.kt",
+          "bytes": 55314,
+          "sha256": "48903a72989e229c7dc9ad16cdf2a01550b221ee7f266e856249cc1c22f76a93"
+        },
+        {
+          "repository": "libinfiniui",
+          "path": "ui-android/src/main/java/com/infinifolder/theme/IconThemeManager.kt",
+          "bytes": 43241,
+          "sha256": "39bc8631bb57056db46123a1f0f69ca2dbc4aa28bfd527c0eb3ea46197d9bb6e"
+        },
+        {
+          "repository": "libinfiniui",
+          "path": "ui-android/src/main/java/com/infinifolder/viewer/ExternalEditActivity.kt",
+          "bytes": 27008,
+          "sha256": "f18a0dbc773f08ea6c52cd9166b90b8e20b1f24210d7f9d386f4ed1cc4b2e824"
+        },
+        {
+          "repository": "libinfiniui",
+          "path": "ui-android/src/main/java/com/infinifolder/theme/ThemeManager.kt",
+          "bytes": 25474,
+          "sha256": "b67e07e9e4456277a45052c1ce26d040c66fd365f2f4f7445e37868398c25cf9"
+        },
+        {
+          "repository": "libinfiniui",
+          "path": "ui-android/src/main/java/com/infinifolder/viewer/ZoomImageView.kt",
+          "bytes": 23878,
+          "sha256": "45115c6bc0c19560c6957e22208ea7fb1c8feafeacfc368d8a9ad853113f3d61"
+        },
+        {
+          "repository": "libinfiniui",
+          "path": "ui-android/src/main/java/com/infinifolder/viewer/DebugTools.kt",
+          "bytes": 22569,
+          "sha256": "d60c7c885a92f4d1350e1652a8c86572c393ddbcd29d09671e3f9cc502c12944"
+        },
+        {
+          "repository": "libinfiniui",
+          "path": "ui-android/src/main/java/com/infinifolder/storage/ExternalEdits.kt",
+          "bytes": 22460,
+          "sha256": "58808bc4fccdc2670ac5174fe2715ae8650b8f7a7ed62d0acff15a8d04fa994c"
+        },
+        {
+          "repository": "libinfiniui",
+          "path": "ui-android/src/main/java/com/infinifolder/viewer/SyntaxTextController.kt",
+          "bytes": 19937,
+          "sha256": "fdb456d976ae67d50c68fe1a0330f9e71abb48f013e5642b24524c40c0922528"
+        },
+        {
+          "repository": "libinfiniui",
+          "path": "ui-android/src/main/java/com/infinifolder/preview/IconRegistryEditorActivity.kt",
+          "bytes": 19310,
+          "sha256": "ab136e0b248057ce78686b36c2b8ffc652b210995993dfad1e0cd52e235fd643"
+        },
+        {
+          "repository": "libinfiniui",
+          "path": "ui-android/src/main/java/com/infinifolder/shortcut/WebMetadataResolver.kt",
+          "bytes": 18165,
+          "sha256": "8b8f828ee3f966545827ea45b88d11e5bd57ad50ce956ab60d7a51c629e31632"
+        },
+        {
+          "repository": "libinfiniui",
+          "path": "ui-android/src/main/java/com/infinifolder/viewer/MediaSourceAdapter.kt",
+          "bytes": 17882,
+          "sha256": "1074e6ec03e0392c549155683102095dfad5e62dff491e34a1fde18e8474ea3e"
+        },
+        {
+          "repository": "libinfiniui",
+          "path": "ui-android/src/main/java/com/infinifolder/viewer/ExternalAppPickerActivity.kt",
+          "bytes": 16421,
+          "sha256": "4eb842ba097b899c8edfaf2527fe16456a5353beeb7dda07251d59bc19e6c808"
+        }
+      ]
+    },
+    {
+      "repository": "libinfinivault",
+      "production_files": 104,
+      "bytes": 1417338,
+      "largest": [
+        {
+          "repository": "libinfinivault",
+          "path": "vault-android/src/main/java/com/infinifolder/archive/DiscImageReader.kt",
+          "bytes": 108812,
+          "sha256": "815c1523230afa26ba6f9f686ef8c063f245c879132c0bcc4647391dc9cc389c"
+        },
+        {
+          "repository": "libinfinivault",
+          "path": "vault-android/src/main/java/com/infinifolder/archive/ArchiveStorageProvider.kt",
+          "bytes": 73216,
+          "sha256": "e7d8f57075dd45fc8949ecd00656b9532fbac819191541bb530ae6d8f81e20cf"
+        },
+        {
+          "repository": "libinfinivault",
+          "path": "vault-android/src/main/cpp/third_party/lwext4/src/ext4.c",
+          "bytes": 72077,
+          "sha256": "ca9c0c8650ddcf2c6ab7f1360bde535fb2bc77d90868f366db949c0845e5511b"
+        },
+        {
+          "repository": "libinfinivault",
+          "path": "vault-android/src/main/cpp/third_party/lwext4/src/ext4_journal.c",
+          "bytes": 61470,
+          "sha256": "eac4f2182fc217ef21d6e7c6c41362c013b4f75276f0ec6af4c26950ebbadee4"
+        },
+        {
+          "repository": "libinfinivault",
+          "path": "vault-android/src/main/cpp/third_party/lwext4/src/ext4_extent.c",
+          "bytes": 58561,
+          "sha256": "9e72101480386e85abacae17251b1c1828d8facfa8fc48a2cb503e079302a7c6"
+        },
+        {
+          "repository": "libinfinivault",
+          "path": "vault-android/src/main/java/com/infinifolder/archive/FatFileSystem.kt",
+          "bytes": 52219,
+          "sha256": "6d5b3365bec6369b7a6fdc7ed1d930be92d7af47774a0e3e74c226ea84c5e8f1"
+        },
+        {
+          "repository": "libinfinivault",
+          "path": "vault-android/src/main/cpp/third_party/lwext4/src/ext4_fs.c",
+          "bytes": 49291,
+          "sha256": "efc5f8dd373186bada5add0e3ba4e51a1a0675b4b0e694288ed9d9436e460097"
+        },
+        {
+          "repository": "libinfinivault",
+          "path": "vault-android/src/main/java/com/infinifolder/archive/ArchiveReader.kt",
+          "bytes": 49158,
+          "sha256": "f78a0609eae0db8436445d4f18a0a11647e121b15a31783c3c64aff0e484e64c"
+        },
+        {
+          "repository": "libinfinivault",
+          "path": "vault-android/src/main/cpp/third_party/lwext4/src/ext4_xattr.c",
+          "bytes": 41394,
+          "sha256": "53c1c8f1b9ad04f17ee53864aecadb6889a40d573966456bec13e12bcaecf650"
+        },
+        {
+          "repository": "libinfinivault",
+          "path": "vault-android/src/main/cpp/third_party/lwext4/src/ext4_dir_idx.c",
+          "bytes": 40211,
+          "sha256": "aaf5d5ec2ed72b3f91de33c511ea601c8ed71e40c50f85ae6114ec24314d381f"
+        },
+        {
+          "repository": "libinfinivault",
+          "path": "vault-android/src/main/java/com/infinifolder/archive/VmDiskDecoder.kt",
+          "bytes": 36470,
+          "sha256": "c3c52320f76f1aa491d86d8c4be90a7f86754f1502109d7aebadeb28ab5a7e4f"
+        },
+        {
+          "repository": "libinfinivault",
+          "path": "vault-android/src/main/cpp/third_party/lwext4/include/ext4_types.h",
+          "bytes": 27825,
+          "sha256": "cafd5f16aa71ed0373c67e7770f6d54fc4c8fa871136a92252e9cf68a2228291"
+        }
+      ]
+    },
+    {
+      "repository": "libinfinivideo",
+      "production_files": 11,
+      "bytes": 66600,
+      "largest": [
+        {
+          "repository": "libinfinivideo",
+          "path": "video-android/src/main/assets/third-party/libvlc/COPYING.LIB.txt",
+          "bytes": 26419,
+          "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95"
+        },
+        {
+          "repository": "libinfinivideo",
+          "path": "video-api/src/main/kotlin/io/github/gretchycat/infinivideo/VideoStreamServer.kt",
+          "bytes": 13810,
+          "sha256": "9333d5c9252d8e2ed25f05dd5d8a86debe9448a380af5c23610310c458ea14ff"
+        },
+        {
+          "repository": "libinfinivideo",
+          "path": "video-android/src/main/java/io/github/gretchycat/infinivideo/VideoCapabilities.kt",
+          "bytes": 9902,
+          "sha256": "f99ef703f69dbc6e6ffe20ab8035d9dda30463763d72c648967be288a3450105"
+        },
+        {
+          "repository": "libinfinivideo",
+          "path": "video-android/src/main/java/io/github/gretchycat/infinivideo/LibVlcVideoBackend.kt",
+          "bytes": 9227,
+          "sha256": "71182a3638a6cfc1c4e384e8d6eded90d72a07a35f99b3941c756bbb334e273b"
+        },
+        {
+          "repository": "libinfinivideo",
+          "path": "video-api/src/main/kotlin/io/github/gretchycat/infinivideo/VideoMetadata.kt",
+          "bytes": 3403,
+          "sha256": "914bbcdbf1beacaabe220cb529b2f0e25d648642ff38302125c8236ecca21fb4"
+        },
+        {
+          "repository": "libinfinivideo",
+          "path": "video-api/src/main/kotlin/io/github/gretchycat/infinivideo/VideoPlayback.kt",
+          "bytes": 1461,
+          "sha256": "d5c04d5bcde33b85836fa220c9adef91cb90033ddee708af7e7ae36d0e8e058f"
+        },
+        {
+          "repository": "libinfinivideo",
+          "path": "video-android/src/main/java/io/github/gretchycat/infinivideo/LibVlcMedia.kt",
+          "bytes": 994,
+          "sha256": "3e8907ee80d430c7fa96620b554cf983a9d471396becaf8d6dcff4e051993fa3"
+        },
+        {
+          "repository": "libinfinivideo",
+          "path": "video-android/src/main/java/io/github/gretchycat/infinivideo/AndroidVideoBackend.kt",
+          "bytes": 784,
+          "sha256": "ac25e9db653900e8e5de9113656171c53008ed4b8ae675995b2407a11c13957c"
+        },
+        {
+          "repository": "libinfinivideo",
+          "path": "video-android/src/main/assets/third-party/libvlc/NOTICE.txt",
+          "bytes": 530,
+          "sha256": "4e7b2eda8d328f1a6c567b756b771878cc0e00c3cd200a9c2db5928b53bb5c5a"
+        },
+        {
+          "repository": "libinfinivideo",
+          "path": "video-android/src/main/resources/META-INF/services/io.github.gretchycat.infinistream.CapabilityProvider",
+          "bytes": 57,
+          "sha256": "7e6a4d8ec9ca244f40f11281c300cccb588f4fc63a7f2f935445d59d4f948632"
+        },
+        {
+          "repository": "libinfinivideo",
+          "path": "video-android/src/main/AndroidManifest.xml",
+          "bytes": 13,
+          "sha256": "571f2735faf5e857752ee057ac8ef63425576a721616c60b86ee5d4c0a2d682f"
+        }
+      ]
+    }
+  ],
+  "exact_duplicate_production_sources": [],
+  "exact_duplicate_resources": [
+    [
+      {
+        "repository": "infinifolder",
+        "path": "app/src/main/res/drawable/ic_edit_quill.xml",
+        "bytes": 771,
+        "sha256": "1989b863c2cf4861d477c1d4f23e840ff9f7690af2d733de1d3ac97169e343e9"
+      },
+      {
+        "repository": "libinfiniui",
+        "path": "ui-android/src/main/res/drawable/ic_edit_quill.xml",
+        "bytes": 771,
+        "sha256": "1989b863c2cf4861d477c1d4f23e840ff9f7690af2d733de1d3ac97169e343e9"
+      }
+    ],
+    [
+      {
+        "repository": "infinimedia",
+        "path": "src/main/res/ic_launcher-round.svg",
+        "bytes": 1144936,
+        "sha256": "92979fed871b4b95d1c27c6745bbb3f50e8ff886b85275059b67851e5531763c"
+      },
+      {
+        "repository": "infinimedia",
+        "path": "src/main/res/ic_launcher-square.svg",
+        "bytes": 1144936,
+        "sha256": "92979fed871b4b95d1c27c6745bbb3f50e8ff886b85275059b67851e5531763c"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/key_click.wav",
+        "bytes": 3130,
+        "sha256": "04002517ad4880f24628d0abe790d5a74ac583840657664c8a766591f5584f8e"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/key_click.wav",
+        "bytes": 3130,
+        "sha256": "04002517ad4880f24628d0abe790d5a74ac583840657664c8a766591f5584f8e"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/sound_cherry_black_abs.wav",
+        "bytes": 13308,
+        "sha256": "dc2a66dcb7f165b48142f743168c95aae46ec103c0ee14ebd110fb515901f48c"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/sound_cherry_black_abs.wav",
+        "bytes": 13308,
+        "sha256": "dc2a66dcb7f165b48142f743168c95aae46ec103c0ee14ebd110fb515901f48c"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/sound_cherry_black_pbt.wav",
+        "bytes": 13308,
+        "sha256": "f4bb4747962ad02ca268c1112cd31dffacb6c4b94cb4f6b6df19e63fb577ed29"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/sound_cherry_black_pbt.wav",
+        "bytes": 13308,
+        "sha256": "f4bb4747962ad02ca268c1112cd31dffacb6c4b94cb4f6b6df19e63fb577ed29"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/sound_cherry_blue_abs.wav",
+        "bytes": 12270,
+        "sha256": "b2c8b6f5712bb4066bd839fd9c0550b5a2d2927bebdf9281779a6179fe202239"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/sound_cherry_blue_abs.wav",
+        "bytes": 12270,
+        "sha256": "b2c8b6f5712bb4066bd839fd9c0550b5a2d2927bebdf9281779a6179fe202239"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/sound_cherry_blue_pbt.wav",
+        "bytes": 13308,
+        "sha256": "5219a3c67b648e85ec1c6111baee16efb0d2f4ef57c74e6445fbcd0d71c234a9"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/sound_cherry_blue_pbt.wav",
+        "bytes": 13308,
+        "sha256": "5219a3c67b648e85ec1c6111baee16efb0d2f4ef57c74e6445fbcd0d71c234a9"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/sound_cherry_brown_abs.wav",
+        "bytes": 13178,
+        "sha256": "ef1715f08c1a6e3fa20aad9366867233a2a75b4a616cb39df4beea7c7c62723d"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/sound_cherry_brown_abs.wav",
+        "bytes": 13178,
+        "sha256": "ef1715f08c1a6e3fa20aad9366867233a2a75b4a616cb39df4beea7c7c62723d"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/sound_cherry_brown_pbt.wav",
+        "bytes": 13308,
+        "sha256": "9d976342c0f2841d3b69afb421e2a2f7981a43c745ff0da9a7b59a9d2bdb4f9e"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/sound_cherry_brown_pbt.wav",
+        "bytes": 13308,
+        "sha256": "9d976342c0f2841d3b69afb421e2a2f7981a43c745ff0da9a7b59a9d2bdb4f9e"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/sound_cherry_red_abs.wav",
+        "bytes": 13308,
+        "sha256": "657df47d24601f18f74bfeebc816ba5f4b063b9a9454fc362cb1f34a8f6c71fe"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/sound_cherry_red_abs.wav",
+        "bytes": 13308,
+        "sha256": "657df47d24601f18f74bfeebc816ba5f4b063b9a9454fc362cb1f34a8f6c71fe"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/sound_cherry_red_pbt.wav",
+        "bytes": 13948,
+        "sha256": "96822f96a7d5eb5a44a1b87625c218f98a2d6fa20064cbfe0446ff4f4bcf1211"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/sound_cherry_red_pbt.wav",
+        "bytes": 13948,
+        "sha256": "96822f96a7d5eb5a44a1b87625c218f98a2d6fa20064cbfe0446ff4f4bcf1211"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/sound_eg_crystal_purple.wav",
+        "bytes": 12280,
+        "sha256": "47dc35cdb86eeff35c0a0d1612a48a4d8a51f455fdbf52dc18f4fb94c6687e9c"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/sound_eg_crystal_purple.wav",
+        "bytes": 12280,
+        "sha256": "47dc35cdb86eeff35c0a0d1612a48a4d8a51f455fdbf52dc18f4fb94c6687e9c"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/sound_eg_oreo.wav",
+        "bytes": 9692,
+        "sha256": "08686b53dbbba9a1ad4962fbac908005dbdee8982a41126e68fd1302f05488d2"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/sound_eg_oreo.wav",
+        "bytes": 9692,
+        "sha256": "08686b53dbbba9a1ad4962fbac908005dbdee8982a41126e68fd1302f05488d2"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/sound_nk_cream.wav",
+        "bytes": 16386,
+        "sha256": "a38babca5a6e6c1aa75faa417733b329de4010b5e42f825cc9583183cb37666e"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/sound_nk_cream.wav",
+        "bytes": 16386,
+        "sha256": "a38babca5a6e6c1aa75faa417733b329de4010b5e42f825cc9583183cb37666e"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/sound_topre_purple.wav",
+        "bytes": 13308,
+        "sha256": "237fe647667c1dec244c5dcefaed81f69905979299f08fea65a1923385b8f796"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/sound_topre_purple.wav",
+        "bytes": 13308,
+        "sha256": "237fe647667c1dec244c5dcefaed81f69905979299f08fea65a1923385b8f796"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/switch_cherry_black.wav",
+        "bytes": 3572,
+        "sha256": "0be36f57f5f9d963dbf1d0bf0bd16d454fbbfe0b862972a68b162d393d5b07a8"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/switch_cherry_black.wav",
+        "bytes": 3572,
+        "sha256": "0be36f57f5f9d963dbf1d0bf0bd16d454fbbfe0b862972a68b162d393d5b07a8"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/switch_cherry_blue.wav",
+        "bytes": 2690,
+        "sha256": "de6a61dfd86ae32db863ed20ecb9cc4e7d37cd3cbda48f29f23829d74f663f18"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/switch_cherry_blue.wav",
+        "bytes": 2690,
+        "sha256": "de6a61dfd86ae32db863ed20ecb9cc4e7d37cd3cbda48f29f23829d74f663f18"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/switch_cherry_brown.wav",
+        "bytes": 3130,
+        "sha256": "2f6c2524e66a997dbc1824f1bf54f67963c6b0e0cab9cb19b261284eb74b2d95"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/switch_cherry_brown.wav",
+        "bytes": 3130,
+        "sha256": "2f6c2524e66a997dbc1824f1bf54f67963c6b0e0cab9cb19b261284eb74b2d95"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/switch_cherry_red.wav",
+        "bytes": 3130,
+        "sha256": "2be70ced989cf944450f369be16254c1f6121ceb54d80672103f426eb26835d8"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/switch_cherry_red.wav",
+        "bytes": 3130,
+        "sha256": "2be70ced989cf944450f369be16254c1f6121ceb54d80672103f426eb26835d8"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/audio/switch_ibm_buckling.wav",
+        "bytes": 4012,
+        "sha256": "8becad0eb4a5261596658cb2e127f4f664d02441e1d01f95a4a27afdc5b6584d"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/raw/switch_ibm_buckling.wav",
+        "bytes": 4012,
+        "sha256": "8becad0eb4a5261596658cb2e127f4f664d02441e1d01f95a4a27afdc5b6584d"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/images/github.png",
+        "bytes": 8346,
+        "sha256": "0b68242fc932231814a7a7f34bc51f20f4da7dcb32ccefab680302ef177f294c"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/drawable/ic_github.png",
+        "bytes": 8346,
+        "sha256": "0b68242fc932231814a7a7f34bc51f20f4da7dcb32ccefab680302ef177f294c"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/images/ko-fi.png",
+        "bytes": 620518,
+        "sha256": "92b18be23a942da054de4b32ca2b543333be9336a41663872d4f574f64af94d1"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/drawable/ic_kofi.png",
+        "bytes": 620518,
+        "sha256": "92b18be23a942da054de4b32ca2b543333be9336a41663872d4f574f64af94d1"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/images/paypal.png",
+        "bytes": 5875,
+        "sha256": "f8ac3f568756de633910a7024e79af6635681c98a4e948986655db6cd7012eb2"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/drawable/ic_paypal.png",
+        "bytes": 5875,
+        "sha256": "f8ac3f568756de633910a7024e79af6635681c98a4e948986655db6cd7012eb2"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/images/venmo.png",
+        "bytes": 4697,
+        "sha256": "25e3decfb1eea5b42c3ac8d3cdf36daf9d3e0739c3f4b17153447e12b5076e86"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/drawable/ic_venmo.png",
+        "bytes": 4697,
+        "sha256": "25e3decfb1eea5b42c3ac8d3cdf36daf9d3e0739c3f4b17153447e12b5076e86"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/themes/slate.json",
+        "bytes": 1037,
+        "sha256": "c27ca0462f7299abb60cb308f2267829bb96cb2a5a67fd816be1aa12eef2344b"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/assets/themes/system_dark.json",
+        "bytes": 1037,
+        "sha256": "c27ca0462f7299abb60cb308f2267829bb96cb2a5a67fd816be1aa12eef2344b"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/mipmap-hdpi/ic_launcher.png",
+        "bytes": 6385,
+        "sha256": "27d4dd717346245148a88f21c376db18c4bcdbe1bae17177c5bd97b5d26babfc"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/mipmap-hdpi/ic_launcher_round.png",
+        "bytes": 6385,
+        "sha256": "27d4dd717346245148a88f21c376db18c4bcdbe1bae17177c5bd97b5d26babfc"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/mipmap-mdpi/ic_launcher.png",
+        "bytes": 3459,
+        "sha256": "eb7e52d1d23b89f4740f1366fdb3d7500e2fa5a1e769fb2c9f70401a902c9653"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/mipmap-mdpi/ic_launcher_round.png",
+        "bytes": 3459,
+        "sha256": "eb7e52d1d23b89f4740f1366fdb3d7500e2fa5a1e769fb2c9f70401a902c9653"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+        "bytes": 10307,
+        "sha256": "eb0d354166d01a0eadc3996bd5e12a79dd1309459a1ae3f080f2d628082c2e9c"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/mipmap-xhdpi/ic_launcher_round.png",
+        "bytes": 10307,
+        "sha256": "eb0d354166d01a0eadc3996bd5e12a79dd1309459a1ae3f080f2d628082c2e9c"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+        "bytes": 20001,
+        "sha256": "edaf8b5d137b36d1d29c4e817e8950320cbb712b2823c9366d5b80ecec053f04"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png",
+        "bytes": 20001,
+        "sha256": "edaf8b5d137b36d1d29c4e817e8950320cbb712b2823c9366d5b80ecec053f04"
+      }
+    ],
+    [
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+        "bytes": 32091,
+        "sha256": "d73e78e1148868bb831911af99184c2954ea37942315cd99645e4c9ed8cbced8"
+      },
+      {
+        "repository": "infinikey-ime",
+        "path": "app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png",
+        "bytes": 32091,
+        "sha256": "d73e78e1148868bb831911af99184c2954ea37942315cd99645e4c9ed8cbced8"
+      }
+    ],
+    [
+      {
+        "repository": "libinfinicanvas",
+        "path": "canvas-android/src/main/assets/licenses/bgi-fonts.txt",
+        "bytes": 1078,
+        "sha256": "d3425d4a62bd1c59995c5f04b7c82dad5e42db7e94d20268512d8c98c435a063"
+      },
+      {
+        "repository": "libinfinicanvas",
+        "path": "canvas-android/src/main/resources/bgi-fonts/LICENSE.txt",
+        "bytes": 1078,
+        "sha256": "d3425d4a62bd1c59995c5f04b7c82dad5e42db7e94d20268512d8c98c435a063"
+      }
+    ],
+    [
+      {
+        "repository": "libinfiniscribe",
+        "path": "scribe-core/src/main/resources/META-INF/libinfiniscribe/GSON-LICENSE.txt",
+        "bytes": 11358,
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      },
+      {
+        "repository": "libinfiniscribe",
+        "path": "scribe-rtf/src/main/resources/META-INF/libinfiniscribe-rtf/LICENSE",
+        "bytes": 11358,
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      },
+      {
+        "repository": "libinfinisound",
+        "path": "audio-core/src/main/resources/META-INF/libinfinisound/JAAD-LICENSE.txt",
+        "bytes": 11358,
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      },
+      {
+        "repository": "libinfinisound",
+        "path": "audio-processing/src/main/assets/third-party/commons-codec/LICENSE.txt",
+        "bytes": 11358,
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      },
+      {
+        "repository": "libinfinisound",
+        "path": "audio-processing/src/main/assets/third-party/commons-lang3/LICENSE.txt",
+        "bytes": 11358,
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      }
+    ],
+    [
+      {
+        "repository": "libinfiniscribe",
+        "path": "scribe-mobi-android/src/main/cpp/third_party/libmobi/COPYING",
+        "bytes": 7651,
+        "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+      },
+      {
+        "repository": "libinfiniscribe",
+        "path": "scribe-mobi-android/src/main/resources/META-INF/libinfiniscribe-mobi/COPYING",
+        "bytes": 7651,
+        "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+      }
+    ],
+    [
+      {
+        "repository": "libinfiniscribe",
+        "path": "scribe-mobi-android/src/main/cpp/third_party/libmobi/UPSTREAM.md",
+        "bytes": 254,
+        "sha256": "991150c2b6b3a192c95fa4edbc77d4b325e40e3b08c24e7e0107cf6812b0bf18"
+      },
+      {
+        "repository": "libinfiniscribe",
+        "path": "scribe-mobi-android/src/main/resources/META-INF/libinfiniscribe-mobi/UPSTREAM.md",
+        "bytes": 254,
+        "sha256": "991150c2b6b3a192c95fa4edbc77d4b325e40e3b08c24e7e0107cf6812b0bf18"
+      }
+    ],
+    [
+      {
+        "repository": "libinfinisound",
+        "path": "audio-processing/src/main/assets/third-party/libvlc-pcm/COPYING.LIB.txt",
+        "bytes": 26419,
+        "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95"
+      },
+      {
+        "repository": "libinfinivideo",
+        "path": "video-android/src/main/assets/third-party/libvlc/COPYING.LIB.txt",
+        "bytes": 26419,
+        "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95"
+      }
+    ],
+    [
+      {
+        "repository": "libinfinisound",
+        "path": "audio-processing/src/main/assets/third-party/libvlc-pcm/NOTICE.txt",
+        "bytes": 530,
+        "sha256": "4e7b2eda8d328f1a6c567b756b771878cc0e00c3cd200a9c2db5928b53bb5c5a"
+      },
+      {
+        "repository": "libinfinivideo",
+        "path": "video-android/src/main/assets/third-party/libvlc/NOTICE.txt",
+        "bytes": 530,
+        "sha256": "4e7b2eda8d328f1a6c567b756b771878cc0e00c3cd200a9c2db5928b53bb5c5a"
+      }
+    ],
+    [
+      {
+        "repository": "libinfinisound",
+        "path": "audio-processing/src/main/assets/third-party/smaf/LICENSE",
+        "bytes": 11362,
+        "sha256": "caa5857bded64724d7f5f346e614f5dcdc127306f9686c69e1b114ca20e52d20"
+      },
+      {
+        "repository": "libinfinisound",
+        "path": "audio-processing/src/main/cpp/third_party/smaf/LICENSE",
+        "bytes": 11362,
+        "sha256": "caa5857bded64724d7f5f346e614f5dcdc127306f9686c69e1b114ca20e52d20"
+      }
+    ],
+    [
+      {
+        "repository": "libinfinivault",
+        "path": "vault-android/src/main/assets/licenses/lwext4-LICENSE.txt",
+        "bytes": 18189,
+        "sha256": "969e219ae4d0e45a1fc0ca55ebc8f09eae67a2ccdddc1932e7a655dae4181a50"
+      },
+      {
+        "repository": "libinfinivault",
+        "path": "vault-android/src/main/cpp/third_party/lwext4/LICENSE",
+        "bytes": 18189,
+        "sha256": "969e219ae4d0e45a1fc0ca55ebc8f09eae67a2ccdddc1932e7a655dae4181a50"
+      }
+    ],
+    [
+      {
+        "repository": "libinfinivault",
+        "path": "vault-android/src/main/assets/licenses/lwext4-sources.md",
+        "bytes": 2497,
+        "sha256": "1123af979061f7b2b5c92e6b7a4f24968a576c66783b097c043b3022e496dd54"
+      },
+      {
+        "repository": "libinfinivault",
+        "path": "vault-android/src/main/cpp/third_party/lwext4/PROVENANCE.md",
+        "bytes": 2497,
+        "sha256": "1123af979061f7b2b5c92e6b7a4f24968a576c66783b097c043b3022e496dd54"
+      }
+    ]
+  ]
+}

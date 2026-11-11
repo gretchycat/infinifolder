@@ -23,3 +23,7 @@ __pycache__/
 /infinifolder-crash-*.log
 /InfiniMedia Playlist.jspf
 /*-regenerated.iff
+
+# Independent application working copies are maintained in their own repositories.
+/infiniscribe/
+/infinimedia/

@@ -1,185 +1,108 @@
-# Architecture
+# InfiniSuite architecture
 
-> [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
+Each application has its own repository, manifest, application ID and build root.
+Applications obtain pinned library sources inside their own checkout. No Gradle
+build includes another application's source. Git commit locks and Gradle composite
+substitution provide source builds without an unpublished Maven repository.
 
-## Library graph
+## Owners
 
-```text
-InfiniFolder / standalone app hosts (composition, Android UI)
-  -> Store adapters -> Stream
-  -> Vault adapters -> Store contracts + Stream
-  -> Sound / Canvas / Video / Scribe -> Stream
+| Component | Responsibility |
+| --- | --- |
+| Infinifolder | Browser UI, filesystem/storage integration and advanced storage composition |
+| Infiniscribe | Document, ebook, font, source and legacy mind-map viewing/editing UI |
+| Infinimedia | Audio/video player UI, queues, casting and visualizations |
+| Infinikey | IME, input settings, layouts, voice/input helpers |
+| libinfinistream | Portable streams, positional I/O and processing/capability contracts |
+| libinfiniselect | Lightweight Android selection and ContentResolver boundary; no suite implementation dependency |
+| libinfinicore | Resource/provider contracts, local/SAF adapters, guarded I/O/cache and generic support |
+| libinfinistore | Advanced routing, remote clients, torrents, virtual locations and installed-app sources |
+| libinfinivault | Archives, disk images, partitions and filesystem readers/writers |
+| libinfinicanvas | Image decoding/processing and Android bitmap adapters |
+| libinfiniscribe | Document/text parsing, rendering/editing backends and document resource expansion |
+| libinfinisound | Audio formats, metadata, synthesis, decoding and PCM processing |
+| libinfinivideo | Video contracts and platform playback/thumbnail adapters |
+| libinfinimeta | Portable game/console/legacy-image metadata modules |
+| libinfiniui | Shared Android UI/source adaptation and optional shared image viewer |
+
+Existing package names are retained where practical. A `com.infinifolder.*`
+package name in a library denotes source/API compatibility; it does not establish
+an application dependency. Compilation from standalone library checkouts tests
+that distinction.
+
+## Library dependency graph
+
+```mermaid
+graph TD
+  UI[libinfiniui] --> Core[libinfinicore]
+  UI --> Select[libinfiniselect]
+  UI --> Canvas[libinfinicanvas]
+  UI --> Scribe[libinfiniscribe]
+  UI --> Stream[libinfinistream]
+  Core --> Stream
+  Store[libinfinistore] --> Core
+  Store --> Stream
+  Vault[libinfinivault] --> Store
+  Vault --> Sound[libinfinisound:audio-api]
+  Vault --> Stream
+  Sound --> Stream
+  Canvas --> Stream
+  Scribe --> Stream
+  Video[libinfinivideo] --> Stream
+  Meta[libinfinimeta] --> Stream
 ```
 
-Ordinary sources do not pass through Vault. Stream contracts describe optional positional I/O, ownership, immutable input/output metadata and negotiated processing; they never depend on Android. Existing Kotlin/Java codec and storage implementations are preserved behind compatibility adapters. Repository extraction and consumer migration are separate checkpoints; the module list below records the current checkpoint; portable adapters and broader graph migration remain incremental. See [ownership and verification](infinistream-migration.md).
+The sound library's `audio-api` carries portable contracts; Vault does not package
+Sound's decoder/playback implementation. Likewise, linking `scribe-core` through
+the shared UI does not include the Office/PDF/MOBI backends. Source repositories
+can contain optional modules; Gradle compiles/packages the declared artifacts.
 
-## Build modules and ownership
+## Application dependency graph
 
-- `:app`: browser Activity, navigation, menus, Android integrations, operation foreground service. It does not package audio playback or Scribe document viewers (text, Markdown, HTML, PDF, CSV, EPUB, font); those resources are handed to separate InfiniMedia and InfiniScribe applications.
-- `:storage-engine`: host composition (`StorageRuntime`, `RoutingStorageProvider`) and external-edit orchestration. It exports the pinned Store/Vault libraries for compatibility.
-- `libinfinistream`: JVM sources/sinks, optional positional I/O, capabilities, metadata, probing and processor contracts.
-- `libinfinistore` / `store-android`: existing resource/provider, protocol, transfer, link, cache, publication/recovery and Android access implementations. It depends only on Stream within the family.
-- `libinfinivault` / `vault-android`: existing archive/image interpreters, mounts, mutation batches and ext/lwext4 native build; depends on Store/Stream and the small Sound API for playlist containers. Store never depends back on Vault.
-- `:viewer-common`: Android viewer launch/document contracts, themes/icon policy, source/staging adapters, recovery/diagnostics UI and screenshot export. Codec implementations now come from Canvas; bounded text and Markdown processing come from Scribe.
-- `libinfinicanvas` / `canvas-android`: existing platform/custom image codecs and thumbnails with actual BitmapFrame output metadata.
-- `libinfiniscribe` / `scribe-core`: JVM Markdown renderer, bounded charset/text decoding, CSV/TSV parsing/serialization, and positional/sequential document-window readers with actual metadata and original-byte guards for complete edits.
-- `libinfinivideo` / `video-api`, `video-android`: backend-neutral playback controls, typed input/output metadata and the requested libVLC Android backend, owning native video/subtitle surfaces and audio focus. The viewer retains controls, playlist/PiP/lifecycle decisions and source ownership. Local files remain direct;
-  remote/archive videos use common positional/sequential sources through the
-  library's bounded range transport, with native non-extracting Vault views where
-  available. The original Android platform adapter remains for compatibility. See [video boundaries/checks](video-formats.md).
-- `libinfinisound` (Git submodule and Gradle composite build): external `audio-api`, `audio-core` and Android `audio-processing` libraries for audio parsing, codec adapters, metadata and analysis, with playback/output owned by the audio viewer. See [audio library boundaries](audio-processing-library.md).
-- `:viewer-image`, `:viewer-text`, `:viewer-markdown`, `:viewer-html`, `:viewer-pdf`, `:viewer-csv`, `:viewer-epub`, `:viewer-font`, `:viewer-hex`, `:viewer-audio`, `:viewer-video`: independent Android libraries containing format-specific viewers and applicable editors.
-- `:viewer-host`: standalone application including all viewers or one selected with `-Pviewer=<kind>`. It does not depend on the browser application. The separate `infinimedia/` Gradle root selects only `viewer-audio` (`-Pviewer=audio`) and packages it as `com.infinimedia`.
+```mermaid
+graph TD
+  Folder[Infinifolder] --> UI[libinfiniui:ui-image]
+  Folder --> Select[libinfiniselect]
+  Folder --> Store[libinfinistore]
+  Folder --> Vault[libinfinivault]
+  Folder --> Meta[libinfinimeta]
+  Folder --> Scribe[libinfiniscribe:core/Android/MOBI thumbnail support]
+  Folder --> Video[libinfinivideo:thumbnail extraction]
+  Folder --> SoundAPI[libinfinisound:audio-api for raw inspection]
+  Writer[Infiniscribe] --> UI
+  Writer --> Select
+  Writer --> ScribeFull[libinfiniscribe:document backends]
+  Writer --> SoundCore[libinfinisound:audio-core for soundbank inspection]
+  Media[Infinimedia] --> UICore[libinfiniui:ui-android]
+  Media --> Select
+  Media --> Sound[libinfinisound:audio-processing]
+  Media --> Video
+  Key[Infinikey] --> Android[AndroidX/Material/Gson only]
+```
 
-Host storage composition follows `app/host → viewer modules → viewer-common → storage-engine`. Content viewers and extractors also link and invoke their appropriate content libraries directly; they never route decoding through the browser. Viewer sources do not reference MainActivity. `StorageRuntime` owns the provider graph and pools using application context. Browser destruction leaves active viewer connections available. This runtime is process-local; operation queues are not process-death durable.
+Follow the library graph above for transitive edges. Infiniscribe and Infinimedia
+have no Store/Vault dependency. Infinikey has no InfiniSuite library dependency.
+The icon theme is a source submodule owned by libinfiniui, rather than an app.
 
-## Runtime handler discovery
+## Storage access
 
-Each library owns a registry of handlers. Handlers describe MIME/extension/scheme
-associations, magic, operations, metadata, availability and limitations. Stream's
-`RuntimeCapabilities` queries preserve overlapping handlers and support bounded
-resource probes. Providers register with ServiceLoader; adding a handler requires
-its implementation and registration rather than a browser format switch.
+The selection library returns Android `content://` references and standard
+single/multiple/document-tree results. Infinifolder exposes a standard
+DocumentsProvider guarded by MANAGE_DOCUMENTS and Android URI grants. The
+floating selector remains a compatible read-selection route. Writable and tree
+requests use SAF, initially pointed at Infinifolder when its provider is present.
+Without Infinifolder, the same Android facilities remain usable.
 
-Viewers publish `ViewerComponent` services and derive format facts from their
-linked content libraries. Icon policy remains in the host; actual image/audio/book
-extraction uses typed library services. Build-time Android registration reads the
-linked catalog, with compatibility inventory supplements. Dependencies are declared
-in Gradle and packaged; class names alone do not establish availability.
+Native positional handles become proxy descriptors; sequential sources use
+reliable pipes. Unsupported seeking remains explicit. Handles are owned by the
+consumer until closed, and provider resources close when their descriptors or
+streams are released. The boundary does not stage whole files to imitate random
+access. Decoders/renderers can explicitly stage sources for APIs that require it.
 
-Processing uses common sources/sinks, positional access where demonstrated and
-explicit ownership/backpressure. Legacy file/Android adapters remain supported;
-not every decoder is a general multi-input stream processor. See the
-[schemas, dependency audit, registration and limits](runtime-capabilities.md).
-Scribe's optional Office/MOBI/RTF, font/PDF and reparsing modules register their own
-services when linked; absent dependencies do not advertise executable support.
+The shared UI defaults to local/SAF resource adapters. Infinifolder installs its
+advanced provider and archive consistency hooks before UI use. No shared library
+calls back into the application's implementation. Backend credentials and private
+URI schemes remain behind Infinifolder's service.
 
-## Resource and capability contracts
-
-`ResourceRef` contains provider identity and an opaque document ID. SAF URIs are never reconstructed as local paths. Local refs preserve a symbolic link's own directory entry. `StorageProvider` owns URI recognition, stat, listing, parent lookup, create/delete/rename, streams, link resolution, seekable access, and optional atomic replacement. `RoutingStorageProvider` dispatches by provider identity and normalizes MIME metadata.
-
-`ResourceCapabilities` combines backend features, resource metadata, and operation hints. Supported, unsupported, and unknown are distinct. SAF flags remain per document; actual opens can still fail after permission changes. Seekable handles report demonstrated read/write support; a failed writable request cannot become a writable cache snapshot.
-
-Shared capability restrictions are applied after resource/provider overrides.
-TRANSFER_TARGET describes resizable random-write children separately from seeking
-the directory itself. Router and direct default transfer-target calls validate the
-same required handle capabilities. Sources requiring random writes prompt before
-unsupported destinations use full-file staging; background resume never silently
-opts into that fallback. See [contract and remaining tasks](storage-api-consistency.md).
-
-SMB, SFTP, and FTP connections use application-owned pools and existing credential stores. Persisted connection definitions live behind `ConnectionPreferences`; secrets remain separate from non-secret endpoint definitions. NFS/cloud recognition and catalog labels are not installed providers; runtime discovery returns only actual provider factories. WebDAV uses the HTTP provider described in [WebDAV support](webdav-support.md); method support still varies by server.
-
-`StorageActionPolicy` centralizes source action availability and contextual transfer
-eligibility for menus, picker, paste, drops and operation preflight. Container moves
-require explicit `ACCEPT_INTERNAL_MOVE` support and matching backing resources in
-one mutation scope. Device/capability inspection for drops runs off the UI thread.
-Toolbar creation affordances and special catalog/link conversion still need further
-extraction from MainActivity. See [action rules](storage-api-consistency.md).
-
-Private `StorageWriteBatch` views can optionally relocate existing entries without
-duplicating their payload allocation. FAT12/16/32 implements this by preserving
-cluster chains and verifying updated directory records before normal snapshot
-publication. The generic transfer path keeps its space-checked copy/delete fallback
-for batches without native relocation. FAT32 native file moves are user-confirmed
-(19:24 UTC dump); directory moves and FAT12/16/compressed variants remain pending.
-See [FAT findings](storage-api-consistency.md).
-
-## Mounting and random access
-
-Archives and disc images use provider-owned seekable hooks. Remote range caches and direct entry/partition slices avoid full staging where possible. Nonseekable sources may require bounded materialization. Container identity retains its original source, including nested entries. Nested writes are disabled until all enclosing container metadata and bytes can be committed coherently.
-
-Top-level archive mutation depends on format, entry layout, and backing write capability. Registered package types identify application MIME separately from container decoding: ZIP-based packages share ZIP readers while retaining their application opening behavior. Broader mounted case-policy and streaming-link support remain unfinished.
-
-## Transfers, edits, and recovery
-
-All routed copy/move uses `StorageTransfers`/`FileOperations`: preflight source trees, apply the existing collision policy, select contextual native/server/stream strategies, and report failed removals as partial moves. Streamed copies retain byte verification; SFTP native rename verifies the moved entry metadata, while SFTP `copy-data` checks server status, destination size, and source metadata without relaying file contents through the client. The SFTP `copy-data` path cannot claim cryptographic verification because the extension has no checksum response. Move deletion follows successful destination completion and source revalidation. No distributed transaction spans remote verification and deletion. SFTP uses a safe no-overwrite SFTP v3 rename; other backends keep their existing strategy unless they implement the contextual provider hooks. See [SFTP transfer strategies](sftp-server-side-transfers.md).
-
-Editors load through `MediaSourceAdapter` and retain original byte revisions. Incomplete text previews cannot overwrite originals. `ContentReplacement` rejects stale source fingerprints, uses atomic local replacement when available, or preserves a synced checksummed recovery original before streamed writes. Failed writes attempt verified rollback. `SaveRecovery` records interrupted sessions and exposes explicit export/restore/discard operations; it never automatically overwrites a source during startup.
-
-The current sampled image editor exports a new PNG. External browser opens use a durable writable working-copy session with before/after-staging and completion source fingerprints. Explicit finish/conflict choices publish through the same guarded replacement path; unfinished edits survive restart outside disposable cache. See [external editing](external-edit-writeback.md). Owned staged files have explicit cleanup tokens, so releasing a viewer cannot delete a borrowed original.
-
-## MIME, icons, and links
-
-Directory listings reach the browser before content inspection. Local listing
-returns filesystem metadata and provisional extension hints without opening file
-contents or scanning the private cache. Cards draw a default icon immediately;
-after a frame is drawn, background workers index sidecars and resolve cached
-artwork, validate types and generate thumbnails for visible items. Full and
-floating browsers defer this work. Large listings create visible cards within a
-frame budget, and an unchanged virtual grid does not request another layout.
-Opening a file still validates its contents before choosing a viewer.
-
-`MimeRegistry` is the shared alias, inference, application-package, container, and MIME icon mapping. Icon themes and custom MIME keys consume its normalized results. Tapping a package opens an appropriate handler; long-press Browse mounts its registered container. Built-in viewer detection consumes the same MIME identity.
-
-`LinkResolver` gives native links and application shortcuts common cycle/depth protection while retaining link kind and target semantics. `.iflink` is the application JSON format. Legacy JSON `.lnk` is recognized; native Windows LNK decoding is unsupported. Backends resolve native link targets rather than the UI guessing paths.
-
-## Data protection and diagnostics
-
-Recursive deletion preserves lexical link identity and does not follow local/SFTP
-symbolic links. Source roots and mounted backing images remain protected. Transfers
-reject incomplete listings, validate complete trees, preserve originals after failed
-required checks and report partial moves. Link preservation depends on the backend;
-unsupported safe operations fail rather than flattening identities silently.
-
-Revision verification is not a distributed lock. Backends without conditional writes
-retain a concurrent-writer race; stream rollback cannot guarantee remote durability.
-Recovery also requires the original provider/credentials. Nested writes stay disabled
-without coherent enclosing commits. These are explicit limits, not success guarantees.
-
-Minimum API and permission details follow.
-
-Minimum API is 26. SAF grants are user-selected and persist only returned flags. Optional shared-storage access follows Android's all-files/runtime permission flow; private data remains restricted. Local content URIs use a nonexported FileProvider and explicit URI grants. Standalone hosts receive the same sharing provider through the storage library.
-
-Diagnostics record a bounded private session log with credential redaction. A user-selected dump folder is stored as a ResourceRef. **Offload debug information** captures the current app window on demand and exports timestamped PNG, log, and JSON through ordinary provider operations. PixelCopy falls back to view drawing; metadata records the method. No ADB connection is necessary. Logs may contain resource names and screenshots show current app content.
-
-See [operation feedback and dump instructions](operation-feedback.md), [viewer builds](viewer-modules.md), and the [historical audit](code-consistency-audit.md).
-
-## Container destinations
-
-The destination picker queries provider CREATE capabilities asynchronously, including mounted container folders. Drag/drop transfer choices use provider device identities: same-device drops move, while cross-device or unknown-identity drops copy. FAT image writes use disk-backed entry staging and streamed allocation; ordinary ZIP updates rebuild a separate archive and publish through file-backed `ContentReplacement` with revision checks and recovery. Provider-owned backing-resource dependencies prevent copying a container into itself. Moves within the same mounted container stage additions and removals before one verified publication; cross-container moves are rejected. See [container target support](container-targets.md) for the format/backend matrix and remaining limits.
-
-### Isolated destination batches
-
-`StorageProvider.beginWriteBatch` optionally supplies a `StorageWriteBatch`: a private destination provider, explicit commit and discard-on-close. `RoutingStorageProvider` dispatches the hook; `FileOperations` retains common preflight, collision handling, link policy and verification. Writable supported top-level archive/FAT mounts implement isolated sessions; TAR and compressed wrappers rebuild/recompress before publication. ZIP entries remain an overlay until one rebuild; images share one local snapshot. Publication uses the existing content-replacement/recovery contract. See [container batching](container-batching.md).
-
-## Browser state and derived views
-
-Virtual root combines system-managed sources and mutable container-link records; ordinary file payloads are rejected there. Credentials remain in their existing secure stores. Tree source discovery has its own generation, independent of folder loads. Link jumps reset unrelated local history. See [container links](container-links.md).
-
-Shared menus, MIME sorting, pattern selection, pins and two-finger selection use provider identities. Disk usage scans recursive directory sizes but displays only immediate children, never automatically mounting archive/image files. See [navigation and usage](navigation-menus-disk-usage.md).
-
-## Cache, external sessions and activity
-
-DiskCache accounts reusable disk data across viewers and mounts: 200 MiB default, separate file limit, LRU before capacity choices and six-hour idle expiry. Active leases are protected. Transaction/recovery/unfinished editor data is outside eviction. Some nested file exports still pin data for the process lifetime. See [policy](disk-cache-policy.md).
-
-External edit sessions stage and recheck source bytes, then retain a durable working copy. Explicit completion checks source and edited bytes, uses guarded replacement and verifies output. Backends without conditional writes cannot eliminate the final concurrent-write race.
-
-StorageActivity supplies loading/write/verification counters and read pulses. The toolbar uses green reads, steady dim-green waiting, red writes and amber verification. Debug dumping is exposed on the toolbar only in debug builds. Operations survive Activity changes through the foreground service/coordinator; process-death durable queues remain unimplemented.
-
-Current confirmations, acceptance gaps and remaining architecture work are maintained in [project status](project-status.md).
-
-Activity operations support confirmed directional controls: left Cancel/right Pause
-for resumable active downloads, left Remove/right supported Restart/Resume for
-failed/stopped transfers. The coordinator restricts history removal to terminal
-records and retains data-only transfer replay requests. Restart source inspection
-runs on workers; user-stopped torrent sessions disable automatic resume until a
-manual resume reenables it. Arbitrary stream pause and general process-death replay
-remain separate work. See [Activity controls](concurrent-activity.md).
-
-Application startup initializes an app-private terminal operation-history store.
-A single worker loads and atomically saves completed/failed/stopped snapshots and
-their supported manual replay requests. Restored rows merge with live operations
-and suppress old completion feedback; removal is persisted. This store is separate
-from torrent resume sessions and does not persist active ordinary operation queues.
-
-File-pane background drops use the displayed container. Non-container icon drops
-resolve the target's parent entry through the provider on a worker. These paths use
-the same transfer policy as container/navigation drops and retain the full selected
-set; identical source parents/destination are treated as a no-op. See
-[drop destination rules](storage-api-consistency.md).
-
-FAT and the ext2/3/4 write subset share `WritableImageFileSystem`. Ext uses the
-vendored lwext4 JNI engine through bounded `BlockDevice` callbacks. It permits
-mutations only in private batches, replays supported journals there, commits and
-unmounts before checked publication, and relocates inodes without copying payloads.
-Failed image mutations poison their private batch. See [ext support](ext-image-writes.md).
+See [storage validation](storage-validation.md) for the required runtime cases and
+[the audit report](architecture-audit.md) for executed results and limitations.

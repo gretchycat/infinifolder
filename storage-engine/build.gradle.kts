@@ -25,7 +25,7 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().matching { it.
         }.joinToString(",") { it.absolutePath }
     })
 }
-if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
+if ((System.getenv("TERMUX_VERSION") != null)) {
     tasks.withType<Test>().configureEach {
         dependsOn(gradle.includedBuild("libinfinivault").task(":vault-android:buildExtNative"))
         val nativeDir = rootProject.file("libraries/libinfinivault/vault-android/build/extNative/arm64-v8a")

@@ -13,6 +13,7 @@ import android.provider.OpenableColumns
 import com.infinifolder.model.ProviderResult
 import com.infinifolder.storage.SharedFileProvider
 import com.infinifolder.storage.StorageRuntime
+import com.infinifolder.storage.openNativeSeekable
 import java.io.EOFException
 import java.io.File
 import java.io.FileNotFoundException
@@ -49,7 +50,7 @@ class FileSelectionRelayProvider : ContentProvider() {
                     grantToCallingPackages(relay)
                     relay
                 }
-                DirectoryArtwork(directory.uri, directory.name, coverUri)
+                DirectoryArtwork(directory.uri?.let { StorageDocumentsProvider.reference(requireNotNull(context), it) }, directory.name, coverUri)
             }
         } else null
         val cursor = MatrixCursor(columns.toTypedArray())
@@ -119,7 +120,18 @@ class FileSelectionRelayProvider : ContentProvider() {
         if (mode != "r") throw FileNotFoundException("Selected items are read-only")
         val item = record(uri) ?: throw FileNotFoundException("This selection link has expired")
         val context = requireNotNull(context)
-        val (reader, writer) = try { ParcelFileDescriptor.createPipe() }
+        val provider = StorageRuntime.get(context).provider
+        val ref = provider.refForUri(item.source)
+        if (ref != null) {
+            when (val result = provider.openNativeSeekable(ref, false)) {
+                is ProviderResult.Success -> {
+                    return StorageDescriptor.open(context, provider, ref, "r", result)
+                }
+                is ProviderResult.Failure -> throw FileNotFoundException(result.message).apply { initCause(result.cause) }
+                is ProviderResult.Unsupported -> Unit
+            }
+        }
+        val (reader, writer) = try { ParcelFileDescriptor.createReliablePipe() }
         catch (error: IOException) { throw FileNotFoundException(error.message ?: "Cannot open read pipe") }
         try {
             workers.execute {
