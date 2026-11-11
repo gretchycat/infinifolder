@@ -1,5 +1,10 @@
 # Code consistency audit and future task list
 
+> Repository layout updated 2026-11-11. Old host/module paths, build commands and
+> test totals below record their original revision. For current owners and commands,
+> use the [Android build guide](android-builds.md), [architecture](architecture.md)
+> and [executed separation audit](architecture-audit.md).
+
 > Historical evidence. Paths, pending statements and totals below describe their
 > recorded revision. Use [project status](project-status.md), [remaining work](feature-todo.md)
 > and the [latest runtime gate](runtime-capabilities.md) for current scope.

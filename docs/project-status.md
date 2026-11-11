@@ -1,59 +1,32 @@
 # Project status
 
-Updated 2026-11-04. This page summarizes implemented behavior and known acceptance.
-The [task list](feature-todo.md) owns outstanding work; the [roadmap](roadmap.md)
-explains future directions. Format guides retain their specific limits.
+Updated 2026-11-11. The suite now has four independent Android application
+repositories and eleven reusable library repositories. Source locks fetch only
+each application's declared library closure. Folder provides advanced storage
+through Android document/stream interfaces; Scribe and Media use Select/SAF
+without including Store/Vault. Key has no suite library dependency.
 
-## Latest engineering evidence
+Current repository inventory, exact commits, APK sizes and executed test results
+are in the [separation audit](architecture-audit.md). Use the
+[Android build guide](android-builds.md) and [dependency graph](architecture.md).
+The [task list](feature-todo.md) and [roadmap](roadmap.md) record future plans,
+not additional tasks in this audit;
+older migration totals are revision-specific evidence, not the current test count.
 
-The runtime-discovery gate at `f0781a9` passed **1,071 tests**, with no failures,
-errors or skips. All seven libraries built independently; the main app and combined
-standalone viewer APKs built. The baseline comparison found no regressions or
-missing cases. Both APKs packaged 29 providers and the exported catalog contained
-65 handlers. See [commands, pins and limits](runtime-capabilities.md) and the
-[machine-readable record](validation/runtime-capabilities-2026-11-04.json).
-
-The subsequent FLC routing correction expands Canvas-owned MIME aliases and uses
-them for animation routing. It does not change the FLIC decoder or establish new
-handset acceptance. `gradle :app:assembleDebug --offline --console=plain` passed
-after the correction; no new automated test run was performed for this quick fix. See [animation support](image-animation.md).
-
-The Open-with follow-up restores **Open internally** as the first supported choice,
-allows remembering it for a file/type and keeps explicit external preferences.
-Choosing an internal viewer avoids external staging. Same-folder Copy to/Paste uses
-the existing unused-name transfer handling with confirmation; Move restrictions stay.
-Both APKs build. On 2026-11-04, the owner confirmed copying and normal file
-launching after the drag/tap correction, and the warning-suppression checkbox.
-A follow-up also removes the same-parent drag no-op and the legacy global viewer
-switch that could still bypass internal defaults. File/type choices control external
-opening; current-directory drops use confirmed copy/unused-name handling.
-
-Documentation cleanup does not constitute a new implementation test run. Older
-checkpoint totals are historical; they are not the current failure count.
-
-The storage-icon follow-up adds default theme keys for device/application roots
-and extends unavailable-target badges to denied folders and their links. Both
-APKs build; generated SVGs were visually reviewed and documentation links check.
-No new automated tests ran. USB/SD/provider metadata, theme swaps and the expanded
-badge cases remain device checks; see [icons](resource-icons.md#default-storage-location-artwork--2026-11-04)
-and [badges](network-icon-badges.md#unavailable-folders-and-link-targets--2026-11-04).
-
-Virtual root's **Unfinished downloads** location now expands to its saved
-links in the tree. Browsed `.download` files and existing partial patterns enter
-the same private link catalog; their icons follow the source. Resuming foreign
-formats still needs compatible source metadata. The APKs build, while discovery,
-tree and link behavior require a handset check. See
-[Unfinished downloads](partial-download-discovery.md).
+Ubuntu host-native test work and other-platform ports are deferred at the owner's
+request. No platform port was installed locally. Cross-app Android permission,
+provider lifecycle, playback, rendering and casting acceptance still requires
+device validation; compilation alone does not establish these behaviors.
 
 ## Implemented foundations
 
 | Area | Current implementation | Reference |
 | --- | --- | --- |
-| Libraries | Seven pinned, standalone repositories; handler discovery, dependency availability and bounded probes; typed services and existing stream pipelines | [Architecture](architecture.md), [runtime discovery](runtime-capabilities.md) |
+| Libraries | Eleven pinned, standalone library repositories; handler discovery, dependency availability and bounded probes; typed services and existing stream pipelines | [Architecture](architecture.md), [runtime discovery](runtime-capabilities.md) |
 | Storage | Local, SAF, SFTP, FTP/FTPS, SMB, WebDAV, application catalogs and torrent sources; actual resource capabilities govern operations | [Storage contracts](storage-api-consistency.md) |
 | Containers | Supported archives, partitions and filesystem images; guarded ZIP/TAR/compressed/FAT/ext writes; nested write chains remain limited | [Format coverage](file-formats.md), [batches](container-batching.md) |
 | Transfers | Shared preflight, verification, cancellation/undo, source checks, recovery and operation history; ordinary active queues are process-local | [Cancellation](transfer-cancellation.md), [Activity](concurrent-activity.md) |
-| Viewers | Eleven modules: image, text, Markdown, HTML, PDF, CSV, EPUB/document, font, hex/raw-media, audio and video; all or selected standalone host | [Viewer modules](viewer-modules.md) |
+| Viewers | Folder image/hex, Scribe documents/ebooks/fonts/mind maps, Media audio/video; independent application roots | [Viewer modules](viewer-modules.md) |
 | Presentation | Shared MIME/URI icon policies, imported/bundled themes, content thumbnails, covers and overlays; persistent links/pins and floating browser | [Icons](resource-icons.md), [themes](icon-themes.md), [shortcuts](floating-launcher-shortcuts.md) |
 | Editing/cache | Complete-document save guards, sampled-image PNG export, revision checks, durable external working copies and protected cache leases | [External edits](external-edit-writeback.md), [cache](disk-cache-policy.md) |
 

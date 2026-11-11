@@ -2,7 +2,7 @@
 
 > [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
-Updated 2026-10-24. WebDAV support is implemented in `storage-engine` and available through the protocol-specific **New → Link** setup. The user confirmed WebDAV working. A saved connection appears on Virtual root as a container link and in the navigation tree. Credentials use a separate encrypted vault; passwords in a URL are rejected.
+Updated 2026-10-24. WebDAV support is implemented in `libinfinistore/store-android` and available through the protocol-specific **New → Link** setup. The user confirmed WebDAV working. A saved connection appears on Virtual root as a container link and in the navigation tree. Credentials use a separate encrypted vault; passwords in a URL are rejected.
 
 ## Implemented
 

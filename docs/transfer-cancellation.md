@@ -1,5 +1,10 @@
 # Cancelling ordinary copies and moves
 
+> Repository layout updated 2026-11-11. Old host/module paths, build commands and
+> test totals below record their original revision. For current owners and commands,
+> use the [Android build guide](android-builds.md), [architecture](architecture.md)
+> and [executed separation audit](architecture-audit.md).
+
 Implemented 2026-11-02. This applies to active ordinary file copy/move operations,
 including selected groups and directory trees. Torrent continuation/resume is
 user-confirmed working and retains its existing pause/cancel and partial-data policy.

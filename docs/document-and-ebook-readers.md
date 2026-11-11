@@ -1,5 +1,10 @@
 # Document and ebook readers
 
+> Repository layout updated 2026-11-11. Old host/module paths, build commands and
+> test totals below record their original revision. For current owners and commands,
+> use the [Android build guide](android-builds.md), [architecture](architecture.md)
+> and [executed separation audit](architecture-audit.md).
+
 Implemented 2026-11-03. This first reading pass follows the requested “closest good enough” approach: readable, reflowed content and worksheet values. The user confirmed document support working on the handset (2026-11-03).
 
 ## Formats and presentation

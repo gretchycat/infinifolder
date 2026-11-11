@@ -1,5 +1,10 @@
 # Recorded storage failure investigation
 
+> Repository layout updated 2026-11-11. Old host/module paths, build commands and
+> test totals below record their original revision. For current owners and commands,
+> use the [Android build guide](android-builds.md), [architecture](architecture.md)
+> and [executed separation audit](architecture-audit.md).
+
 Completed 2026-11-02, following the library migration and icon repairs.
 The owner authorized reproducing and investigating the historical failures.
 

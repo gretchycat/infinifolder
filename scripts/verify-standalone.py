@@ -34,7 +34,8 @@ def inspect_apk(path):
                 for i in sorted(files,key=lambda i:i.compress_size,reverse=True)[:20]],
             'application_classes':{n:('L'+n.replace('.','/')+';') in classes for n in [
                 'com.infinifolder.MainActivity','com.infiniscribe.InfiniScribeActivity','com.infinimedia.InfiniMediaActivity',
-                'com.infinifolder.viewer.AudioPlayerActivity','com.infinifolder.viewer.TextViewerActivity',
+                'com.infinifolder.viewer.AudioPlayerActivity','com.infinifolder.viewer.VideoPlayerActivity',
+                'com.infinifolder.viewer.TextViewerActivity','com.infinifolder.viewer.MindNodeTouchViewerActivity',
                 'com.infinifolder.storage.RoutingStorageProvider','com.infinifolder.archive.ArchiveStorageProvider',
                 'com.infinifolder.sftp.SftpStorageProvider','com.infinifolder.torrent.MagnetStorageProvider']}}
 
@@ -92,9 +93,9 @@ def main():
                         'com.infinifolder.storage.RoutingStorageProvider','com.infinifolder.archive.ArchiveStorageProvider',
                         'com.infinifolder.sftp.SftpStorageProvider','com.infinifolder.torrent.MagnetStorageProvider']):
                         raise RuntimeError('Unexpected Infinifolder/storage implementation packaged')
-                    if name!='infinimedia' and classes['com.infinifolder.viewer.AudioPlayerActivity']:
+                    if name!='infinimedia' and any(classes[c] for c in ['com.infinifolder.viewer.AudioPlayerActivity', 'com.infinifolder.viewer.VideoPlayerActivity']):
                         raise RuntimeError('Unexpected media-player application code packaged')
-                    if name!='infiniscribe' and classes['com.infinifolder.viewer.TextViewerActivity']:
+                    if name!='infiniscribe' and any(classes[c] for c in ['com.infinifolder.viewer.TextViewerActivity', 'com.infinifolder.viewer.MindNodeTouchViewerActivity']):
                         raise RuntimeError('Unexpected document-editor application code packaged')
                 report['result']='passed'
             except Exception as error:

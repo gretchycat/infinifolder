@@ -1,5 +1,10 @@
 # Android file and URI registration
 
+> Repository layout updated 2026-11-11. Old host/module paths, build commands and
+> test totals below record their original revision. For current owners and commands,
+> use the [Android build guide](android-builds.md), [architecture](architecture.md)
+> and [executed separation audit](architecture-audit.md).
+
 The main app, InfiniScribe and standalone viewer hosts generate Android intent
 filters from the runtime capability catalog of their linked libraries. Android
 reads intent filters when a package is installed or updated, so an app cannot

@@ -1,5 +1,10 @@
 # Runtime capability discovery audit
 
+> Repository layout updated 2026-11-11. Old host/module paths, build commands and
+> test totals below record their original revision. For current owners and commands,
+> use the [Android build guide](android-builds.md), [architecture](architecture.md)
+> and [executed separation audit](architecture-audit.md).
+
 Updated 2026-11-07. This change adds installed-handler discovery across all seven
 libraries and the viewer components. It preserves existing decoders, public entry
 points, MIME overrides, icon precedence, source safety and user settings.

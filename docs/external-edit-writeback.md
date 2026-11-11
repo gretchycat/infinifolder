@@ -101,7 +101,7 @@ The final build took 23 seconds; logs are `build/local-external-defaults/app-bui
 and `app-build-final.log` in the same directory. No ADB device was available for
 UI acceptance. The builds include existing unrelated workspace changes.
 
-External file opens from the browser now use a shared external-edit activity/provider in viewer-common and a durable session manager in storage-engine. The external application receives a read/write URI for a working copy, never a writable grant to the original source.
+External file opens from the browser now use a shared external-edit activity/provider in libinfiniui/ui-android and a durable session manager in the same library. The external application receives a read/write URI for a working copy, never a writable grant to the original source.
 
 Each session contains one working copy and the original source identity/fingerprint. Successful completion removes the session; this is not a version-history feature.
 

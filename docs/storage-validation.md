@@ -63,3 +63,17 @@ those policies belong to the consuming application/library.
 
 Proxy descriptor callback semantics follow Android's
 [ProxyFileDescriptorCallback contract](https://developer.android.com/reference/android/os/ProxyFileDescriptorCallback).
+
+## Executed local Android descriptor probes
+
+The audit ran `scripts/verify-storage-runtime.py` through Android app_process64
+without installing an APK. Six checks cover native seek, positional reads,
+nonseekable reliable pipes, producer error delivery, consumer-close delivery,
+and repeated descriptor closure without a leak. The audit records the exact APK
+hash. The script accepts `--select-jar` for the compile artifact from an isolated
+checkout; its runtime classes still come from the supplied APK.
+
+These probes do not exercise Folder's actual proxy callback, backend connection,
+picker UI, cross-UID permission grants or a third-party caller. Unit tests cover
+proxy read completion and access-mode classification, including write-only
+descriptor flags with the read-access bit disabled. Full device acceptance remains the table above.

@@ -1,0 +1,15 @@
+{
+  "runtime": "Android app_process64 on local device; no APK installed",
+  "apk_sha256": "9f4787c2d26eb85998a1e19a06ca997a5e873f365e0660f72c500938bd4d390d",
+  "result": "passed",
+  "checks": [
+    "file.native-seek",
+    "file.positional-read",
+    "pipe.explicit-nonseekable",
+    "pipe.source-error-reaches-consumer",
+    "pipe.consumer-close-reaches-writer",
+    "file.repeated-open-close-does-not-leak-descriptors"
+  ],
+  "scope": "Android descriptor primitives and Select seek probe only; not Folder proxy/cross-UID grants/UI/backends.",
+  "instrumentation": "Select APK compiled; device instrumentation not run."
+}

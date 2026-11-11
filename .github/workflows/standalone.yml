@@ -32,5 +32,7 @@ jobs:
         run: |
           python3 scripts/fetch-dependencies.py
           python3 scripts/fetch-dependencies.py --check
-      - name: Build and test this repository
-        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :storage-engine:testDebugUnitTest :viewer-hex:testDebugUnitTest --max-workers=2 --console=plain
+      # storage-engine's 91 filesystem/JNI integration cases run on Termux.
+      # A Linux host-JVM JNI harness is deferred; do not misreport them as passed here.
+      - name: Build Android APK and run app and hex unit tests
+        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :viewer-hex:testDebugUnitTest --max-workers=2 --console=plain

@@ -1,0 +1,104 @@
+[
+  {
+    "repository": "infinimedia",
+    "commit": "839f3cba173d82352fba5d8130be0ad68ef5954e",
+    "result": "passed",
+    "working_directory_outside_checkout": true,
+    "source_guard": true,
+    "seconds": 50.99,
+    "tests": {
+      "tests": 74,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "compact_apk_build": "passed",
+    "command": [
+      "$CHECKOUT/build.sh",
+      "--max-workers=1",
+      "-PtargetAbi=arm64-v8a",
+      "--no-build-cache",
+      "--console=plain",
+      "--init-script",
+      "$CHECKOUT/build-assert-checkout.gradle",
+      "-Dinfini.verifyCheckout=$CHECKOUT"
+    ]
+  },
+  {
+    "repository": "infiniscribe",
+    "commit": "859b68d1140a5b267ac015a4d753d0e4e97307e7",
+    "result": "passed",
+    "working_directory_outside_checkout": true,
+    "source_guard": true,
+    "seconds": 24.42,
+    "tests": {
+      "tests": 17,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "compact_apk_build": "passed",
+    "command": [
+      "$CHECKOUT/build.sh",
+      "--max-workers=1",
+      "-PtargetAbi=arm64-v8a",
+      "--no-build-cache",
+      "--console=plain",
+      "--init-script",
+      "$CHECKOUT/build-assert-checkout.gradle",
+      "-Dinfini.verifyCheckout=$CHECKOUT"
+    ]
+  },
+  {
+    "repository": "infinifolder",
+    "commit": "57de7306787ff19751128bf6ec9095394b586d06",
+    "result": "passed",
+    "working_directory_outside_checkout": true,
+    "source_guard": true,
+    "seconds": 33.06,
+    "tests": {
+      "tests": 143,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "compact_apk_build": "passed",
+    "command": [
+      "$CHECKOUT/build.sh",
+      "--max-workers=1",
+      "-PtargetAbi=arm64-v8a",
+      "--no-build-cache",
+      "--console=plain",
+      "--init-script",
+      "$CHECKOUT/build-assert-checkout.gradle",
+      "-Dinfini.verifyCheckout=$CHECKOUT"
+    ]
+  },
+  {
+    "repository": "infinikey-ime",
+    "commit": "1a2363ba386d7b95a8797bd30004789d92b38b0e",
+    "result": "passed",
+    "working_directory_outside_checkout": true,
+    "source_guard": true,
+    "seconds": 33.95,
+    "tests": {
+      "tests": 23,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "compact_apk_build": "passed",
+    "command": [
+      "$CHECKOUT/build.sh",
+      "--max-workers=1",
+      "-PtargetAbi=arm64-v8a",
+      "--no-build-cache",
+      "--console=plain",
+      "--init-script",
+      "$CHECKOUT/build-assert-checkout.gradle",
+      "-Dinfini.verifyCheckout=$CHECKOUT",
+      ":app:testDebugUnitTest",
+      "--rerun"
+    ]
+  }
+]

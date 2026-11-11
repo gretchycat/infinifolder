@@ -1,0 +1,125 @@
+{
+  "note": "Read-only status snapshot of already executed Android/JVM workflows. No additional Ubuntu runs requested after owner deferred host-native testing. Folder failed 13 host JNI cases; 91 storage-engine cases pass locally on Termux. The workflow now scopes hosted tests to app/hex; that scope change has not been rerun.",
+  "runs": [
+    {
+      "repository": "infinifolder",
+      "conclusion": "failure",
+      "databaseId": 43091404994,
+      "headSha": "827173349413e1f844f67ca8106a2b15dffe2dd1",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/infinifolder/actions/runs/43091404994"
+    },
+    {
+      "repository": "infiniscribe",
+      "conclusion": "success",
+      "databaseId": 43090236182,
+      "headSha": "5e6299c9acc176e549c48aed4d447fd6590d02db",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/infiniscribe/actions/runs/43090236182"
+    },
+    {
+      "repository": "infinimedia",
+      "conclusion": "success",
+      "databaseId": 43090242897,
+      "headSha": "bf7e34df66914ad30c97be4caa4f7b830e2caf15",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/infinimedia/actions/runs/43090242897"
+    },
+    {
+      "repository": "infinikey-ime",
+      "conclusion": "success",
+      "databaseId": 43090469874,
+      "headSha": "69b9bccc361158d745f3846eae1e7eada9c9d69f",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/infinikey-ime/actions/runs/43090469874"
+    },
+    {
+      "repository": "libinfinistream",
+      "conclusion": "success",
+      "databaseId": 43084088174,
+      "headSha": "0dcb1b17b0450d900d0581f2fd2c13bf0dd32e4d",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/libinfinistream/actions/runs/43084088174"
+    },
+    {
+      "repository": "libinfiniselect",
+      "conclusion": "success",
+      "databaseId": 43087306205,
+      "headSha": "74bdacf5d88fcdcaa97eb50343b0b47b31c398ed",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/libinfiniselect/actions/runs/43087306205"
+    },
+    {
+      "repository": "libinfinicore",
+      "conclusion": "success",
+      "databaseId": 43084099694,
+      "headSha": "1fb1c266ff037c6924571406af814ab638beb464",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/libinfinicore/actions/runs/43084099694"
+    },
+    {
+      "repository": "libinfinistore",
+      "conclusion": "success",
+      "databaseId": 43084128683,
+      "headSha": "4f7a2f94500220c36e8e0dc8a46837f3ec0404ff",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/libinfinistore/actions/runs/43084128683"
+    },
+    {
+      "repository": "libinfinivault",
+      "conclusion": "success",
+      "databaseId": 43087336879,
+      "headSha": "a672ea77e5dff258329d5ac6c9d702fd681dd368",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/libinfinivault/actions/runs/43087336879"
+    },
+    {
+      "repository": "libinfinicanvas",
+      "conclusion": "success",
+      "databaseId": 43087311800,
+      "headSha": "ed3bf70090b19f03e1935a976579d751f3c6a298",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/libinfinicanvas/actions/runs/43087311800"
+    },
+    {
+      "repository": "libinfiniscribe",
+      "conclusion": "success",
+      "databaseId": 43084114203,
+      "headSha": "f3a930c9accffd363c05370a2e520856eb760f48",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/libinfiniscribe/actions/runs/43084114203"
+    },
+    {
+      "repository": "libinfinisound",
+      "conclusion": "success",
+      "databaseId": 43087324237,
+      "headSha": "14b482e314a661ebdbc346d111884b874bc42adf",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/libinfinisound/actions/runs/43087324237"
+    },
+    {
+      "repository": "libinfinivideo",
+      "conclusion": "success",
+      "databaseId": 43084123272,
+      "headSha": "22d234fd3c525b6d920ff3072f428ca7d2897d0e",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/libinfinivideo/actions/runs/43084123272"
+    },
+    {
+      "repository": "libinfinimeta",
+      "conclusion": "success",
+      "databaseId": 43084108662,
+      "headSha": "045901712b0e55d561f982a50e06185b587a6035",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/libinfinimeta/actions/runs/43084108662"
+    },
+    {
+      "repository": "libinfiniui",
+      "conclusion": "success",
+      "databaseId": 43087332490,
+      "headSha": "ecf508685c6bc02ca893d50a7219a6a99777a839",
+      "status": "completed",
+      "url": "https://github.com/gretchycat/libinfiniui/actions/runs/43087332490"
+    }
+  ]
+}

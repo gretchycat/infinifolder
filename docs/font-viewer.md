@@ -1,5 +1,10 @@
 # Font preview
 
+> Repository layout updated 2026-11-11. Old host/module paths, build commands and
+> test totals below record their original revision. For current owners and commands,
+> use the [Android build guide](android-builds.md), [architecture](architecture.md)
+> and [executed separation audit](architecture-audit.md).
+
 Implemented 2026-11-03. Tap a supported font with built-in viewers enabled, or
 choose InfiniFolder through Android Open-with. The combined standalone viewer and
 `-Pviewer=font` builds also include this preview.

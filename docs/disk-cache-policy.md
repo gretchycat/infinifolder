@@ -16,7 +16,7 @@ Status reviewed 2026-10-24. See [current confirmations and remaining work](proje
 
 ## Covered paths and lifetime
 
-- Shared manager: `storage-engine/.../storage/DiskCache.kt`.
+- Shared manager: `libraries/libinfinicore/core-android/src/main/java/com/infinifolder/storage/DiskCache.kt`.
 - Internal PDF/EPUB/audio/video staging, expanded EPUB resources, external-edit preparation, clipboard image staging, extracted archive members, decompressed image snapshots, stream-only archive materialization, multipart volume staging, and optional disk-cached application icons use the shared budget.
 - Viewer sources and expanded EPUB resources release their leases when closed and remain available for LRU eviction. Stable source revisions can reuse cached media/decompressed images. Unknown revisions are not reused by URI alone.
 - Cached snapshots are immutable; provider writes, atomic replacements and other mutations to managed snapshots are refused. Save edits to the original resource or an explicit storage copy. Unsaved editor content/recovery copies never belong to this disposable pool.

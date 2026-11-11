@@ -1,58 +1,62 @@
-# libinfiniselect
+# libinfiniselect storage boundary
 
-`libinfiniselect` is a standalone Android library for viewer applications to
-request file references. Its source repository is
+Updated 2026-11-11. Source and authoritative API documentation:
 [gretchycat/libinfiniselect](https://github.com/gretchycat/libinfiniselect).
-It contains no InfiniFolder UI, storage, or native dependencies.
+This independently buildable Android library has no InfiniSuite implementation
+dependency. Storage access, references and permissions are its scope.
 
-## Selection flow
+## Selection and fallback
 
-1. A viewer calls `InfiniSelect.open(Activity, OpenRequest, requestCode)`.
-2. If `com.infinifolder` is installed, the library opens InfiniFolder's
-   floating selector at Virtual root. Selecting a directory or container link
-   browses into it; selecting a file returns one content reference (or a list
-   when `allowMultiple` is enabled).
-3. If InfiniFolder is unavailable, the library presents the viewer's icon and
-   name, available source buttons, Android's Storage Access Framework, and a
-   per-viewer starting-folder control.
-4. Optional source integrations implement `FileSourceBackend` and are added
-   through `FileSourceRegistry` or Java `ServiceLoader`.
+- `InfiniSelect.open(Activity, OpenRequest, requestCode)` requests single or
+  multiple files. Read selection can use Folder's floating picker; absent or
+  unavailable Folder falls back to Android SAF and registered storage sources.
+- `OpenRequest(writable = true)` uses Android document selection with write
+  flags. Folder's DocumentsProvider can be selected when installed.
+- `StorageAccess.selectDirectory(...)` / `directoryIntent(...)` requests a
+  standard Android tree, initially pointing at Folder's provider when available.
+- `InfiniSelect.save(..., SaveRequest, ...)` requests a destination and copies
+  the caller-authorized source; SAF create-document remains the fallback.
+- `InfiniSelect.readResult(...)` normalizes content references and metadata.
+  Multiple results use ClipData. Existing optional JSPF/XML URI-list serialization
+  and recursive selection remain compatible; they do not decode media contents.
 
-InfiniFolder emits grantable, read-only `content://com.infinifolder.selection/…`
-URIs. A private 24-hour token maps each URI back to the selected VFS source,
-and a bounded worker pool copies bytes into a pipe as the consumer reads. This
-lets the viewer consume local, SAF, network, and archive entries without
-receiving InfiniFolder storage credentials. The pipe provides sequential I/O;
-seek-based consumers need their own staging or seek adapter.
+Optional `FileSourceBackend`/`FileSourceRegistry` hooks are storage-source hooks,
+not general application integration. Media and document logic belongs elsewhere.
 
-## API and build
+## Access and lifetime
 
-The public entry point is `io.github.gretchycat.infiniselect.InfiniSelect`.
-`OpenRequest` carries a stable client ID, display label, MIME filters,
-multiple-selection preference, and optional initial directory. Returned Android
-Activity results use ordinary URI grants, `OpenableColumns.DISPLAY_NAME`,
-`ContentResolver.getType`, and `ClipData` for multi-selection.
+`StorageAccess.openRead`, `openWrite`, and `openDescriptor` use ContentResolver.
+The caller closes each returned stream/descriptor. `seekable` probes an owned
+descriptor without copying. `capabilities` reports provider promises and whether
+access has been persisted; UNKNOWN does not authorize a write. Providers can
+reject a mode or report unsupported random access. No whole-file materialization
+is performed to imitate seeking.
 
-Clients may request `MultipleSelectionDelivery.JSPF` and optional
-`SelectionMetadataFormat.XML`. A multi-item result then includes a JSPF content
-URI whose track locations point at the selected, grantable item URIs, plus a
-companion XML content URI containing each item's URI, display name, MIME type,
-and known byte length. `InfiniSelect.readResult()` normalizes the result for
-viewer code. A single selected item remains a regular content URI.
+Folder exposes the standard authority `com.infinifolder.documents` with
+MANAGE_DOCUMENTS protection and Android URI/tree grants. Backend credentials,
+remote URIs, archives and filesystem implementation remain inside Folder.
+Seekable native handles use proxy descriptors; sequential sources use reliable
+pipes with observable errors and close propagation. Apps need no Store/Vault
+code to consume either form, including third-party SAF clients.
 
-The audio client enables `allowRecursiveAudioDirectories`: long-pressing a
-directory in InfiniFolder scans its descendants through the storage provider,
-skips symbolic links, and returns supported audio files through the same JSPF
-handoff. The standalone media app is built with
-`gradle :viewer-host:assembleDebug -Pviewer=audio` and registers its supported
-audio and playlist handlers for Android share intents.
+Legacy `com.infinifolder.selection` references remain transient, read-granted
+24-hour relays. They cannot be persisted. Saved playlists containing those
+references inherit that limit. Standard SAF document/tree references support
+persistence when the provider and returned flags allow it. Preserve only flags
+actually granted, and request an explicit tree to browse siblings. Directory
+metadata/navigation hints alone grant no sibling access.
 
-Build the library independently with:
+## Standalone build and validation
 
 ```sh
-gradle :select-android:assembleRelease
+git clone https://github.com/gretchycat/libinfiniselect.git
+cd libinfiniselect
+./gradlew :select-android:assembleDebug :select-android:assembleDebugAndroidTest
 ```
 
-The first integrated client is the independently buildable InfiniScribe host.
-Device-level launch, permission, SAF, and cross-app stream checks remain needed
-because there is no connected Android device in this build environment.
+Use JDK 17/21 and Android SDK platform 36/build tools 35.0.0. This library fetches
+no suite repositories. AndroidX instrumentation tests are compiled by that
+command; run `:select-android:connectedDebugAndroidTest` only on an attached
+Android device. See the [storage acceptance matrix](storage-validation.md) and
+[executed audit evidence](architecture-audit.md) for the distinction between
+compilation, descriptor smoke tests and cross-application device validation.

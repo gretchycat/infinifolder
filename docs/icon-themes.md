@@ -6,7 +6,7 @@ The icon theme chooser starts with InfiniFolder's bundled default icon artwork. 
 
 ## InfiniFolder Default
 
-The supplied artwork in `themes/icon-theme/default theme` is bundled in InfiniFolder as
+The supplied artwork in `libraries/libinfiniui/themes/icon-theme/default theme` is bundled in InfiniFolder as
 **InfiniFolder Default**. Other freedesktop themes are not preloaded into the APK.
 Its source is a Freeicon SVG/CSV
 bundle; the app-ready archive follows the
@@ -46,20 +46,20 @@ magnet and other supplied schemes can retain their own artwork.
 Regenerate only the app-ready package from the project root:
 
 ```sh
-python3 themes/icon-theme/icon/scripts/build_icon_theme.py
-gradle :app:assembleDebug --offline --console=plain
+python3 libraries/libinfiniui/themes/icon-theme/icon/scripts/build_icon_theme.py
+./gradlew :app:assembleDebug --console=plain
 ```
 
-The theme source is used directly by the build. `:viewer-common:prepareDefaultIconTheme`
-generates Kotlin metadata and the app-ready ZIP under `viewer-common/build/generated/`;
-only the InfiniFolder application packages that ZIP. Viewer apps use the shared
-procedural defaults and do not carry a duplicate file-manager icon archive. Gradle
+The theme source is used directly by the build. `:libinfiniui:ui-android:prepareDefaultIconTheme`
+generates Kotlin metadata and the app-ready ZIP under `libraries/libinfiniui/ui-android/build/generated/`;
+the shared UI artifact packages that ZIP once in each consuming APK. Applications
+use the declared shared theme source instead of maintaining their own copies. Gradle
 tracks the source art and packager inputs. Python 3.9+ is required (override the
 executable with `-PiconThemePython=/path/to/python3`).
 
 The explicit packaging command above also creates `index.theme` and generated
 `scalable/` aliases inside the source theme, plus the portable import archive
-`themes/exports/infinifolder-default.zip`. ZIP entries contain real SVG bytes,
+`libraries/libinfiniui/themes/exports/infinifolder-default.zip`. ZIP entries contain real SVG bytes,
 including on platforms without symlink support. Import that ZIP through Settings.
 Member order, timestamps and the compiled content revision are deterministic.
 The old `scripts/build-default-icon-theme.py` command forwards to this packager.

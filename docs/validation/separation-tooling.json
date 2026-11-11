@@ -1,0 +1,14 @@
+{
+  "current_documentation_local_links": {
+    "checked": 72,
+    "missing": 0
+  },
+  "source_inventory_fixture_tests": "passed: tracked scope, test exclusion, exact hashes and byte totals",
+  "app_and_integration_unit_cases": 257,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "build_scripts": "all four actual build.sh entry points passed with source guard from outside checkout",
+  "workflow": "task scope reviewed; revised hosted Folder job not rerun after owner deferred Ubuntu testing",
+  "future_scope": "TODOs, roadmaps, other-platform ports and host-JNI work are future plans"
+}

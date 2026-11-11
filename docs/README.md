@@ -2,10 +2,14 @@
 
 Start with the current separation records:
 
+- [Android build commands and current test owners](android-builds.md)
 - [Architecture, component ownership and dependency graphs](architecture.md)
 - [Architecture audit, repository inventory and executed verification](architecture-audit.md)
 - [Storage API behavior and device acceptance matrix](storage-validation.md)
 - [Production source/resource inventory](validation/separation-inventory.json)
+- [Executed app builds and APK inspection](validation/separation-app-builds.json)
+- [Build script verification](validation/separation-build-scripts.json)
+- [Android descriptor probe results](validation/separation-storage-runtime.json)
 
 Build commands belong to each repository's README. The four applications are
 independent repositories; this checkout builds Infinifolder and its declared

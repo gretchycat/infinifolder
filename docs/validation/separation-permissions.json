@@ -1,0 +1,62 @@
+[
+  {
+    "repository": "infinimedia",
+    "permissions": [
+      "uses-permission: name='android.permission.INTERNET'",
+      "uses-permission: name='android.permission.ACCESS_NETWORK_STATE'",
+      "uses-permission: name='android.permission.ACCESS_WIFI_STATE'",
+      "uses-permission: name='android.permission.CHANGE_WIFI_MULTICAST_STATE'",
+      "uses-permission: name='android.permission.FOREGROUND_SERVICE'",
+      "uses-permission: name='android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK'",
+      "uses-permission: name='android.permission.POST_NOTIFICATIONS'",
+      "uses-permission: name='com.infinimedia.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'"
+    ],
+    "result": "passed",
+    "note": "Scribe/Media have no inherited all-files/package-query/overlay permission. Key retains its own launcher/overlay/settings permissions and now declares INTERNET for existing cloud STT."
+  },
+  {
+    "repository": "infiniscribe",
+    "permissions": [
+      "uses-permission: name='android.permission.INTERNET'",
+      "uses-permission: name='com.infiniscribe.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'"
+    ],
+    "result": "passed",
+    "note": "Scribe/Media have no inherited all-files/package-query/overlay permission. Key retains its own launcher/overlay/settings permissions and now declares INTERNET for existing cloud STT."
+  },
+  {
+    "repository": "infinifolder",
+    "permissions": [
+      "uses-permission: name='android.permission.INTERNET'",
+      "uses-permission: name='android.permission.ACCESS_NETWORK_STATE'",
+      "uses-permission: name='android.permission.ACCESS_WIFI_STATE'",
+      "uses-permission: name='android.permission.CHANGE_WIFI_MULTICAST_STATE'",
+      "uses-permission: name='android.permission.MANAGE_EXTERNAL_STORAGE'",
+      "uses-permission: name='android.permission.READ_EXTERNAL_STORAGE' maxSdkVersion='29'",
+      "uses-permission: name='android.permission.WRITE_EXTERNAL_STORAGE' maxSdkVersion='29'",
+      "uses-permission: name='android.permission.QUERY_ALL_PACKAGES'",
+      "uses-permission: name='android.permission.FOREGROUND_SERVICE'",
+      "uses-permission: name='android.permission.FOREGROUND_SERVICE_DATA_SYNC'",
+      "uses-permission: name='android.permission.POST_NOTIFICATIONS'",
+      "uses-permission: name='android.permission.SYSTEM_ALERT_WINDOW'",
+      "uses-permission: name='com.termux.permission.RUN_COMMAND'",
+      "uses-permission: name='com.infinifolder.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'"
+    ],
+    "result": "passed",
+    "note": "Scribe/Media have no inherited all-files/package-query/overlay permission. Key retains its own launcher/overlay/settings permissions and now declares INTERNET for existing cloud STT."
+  },
+  {
+    "repository": "infinikey-ime",
+    "permissions": [
+      "uses-permission: name='android.permission.INTERNET'",
+      "uses-permission: name='android.permission.RECORD_AUDIO'",
+      "uses-permission: name='android.permission.VIBRATE'",
+      "uses-permission: name='android.permission.SYSTEM_ALERT_WINDOW'",
+      "uses-permission: name='android.permission.POST_NOTIFICATIONS'",
+      "uses-permission: name='android.permission.WRITE_SETTINGS'",
+      "uses-permission: name='android.permission.QUERY_ALL_PACKAGES'",
+      "uses-permission: name='com.infinikey_ime.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'"
+    ],
+    "result": "passed",
+    "note": "Scribe/Media have no inherited all-files/package-query/overlay permission. Key retains its own launcher/overlay/settings permissions and now declares INTERNET for existing cloud STT."
+  }
+]

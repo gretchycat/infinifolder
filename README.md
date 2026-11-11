@@ -4,7 +4,7 @@ Runtime handler discovery: [interfaces, dependency audit, processing chains and 
 
 Architecture: [current ownership and interfaces](docs/architecture.md), with [ownership and tested migration checkpoints](docs/infinistream-migration.md). Existing working features and data-safety guarantees remain requirements at every stage.
 
-An Android file browser with interchangeable storage providers, browsable archives/disk images, and independent viewer/editor modules. Android SAF identities remain opaque; source permissions and format limits are checked through shared provider contracts.
+An Android file browser with interchangeable storage providers, browsable archives/disk images, and independent companion viewer/editor applications. Android SAF identities remain opaque; source permissions and format limits are checked through shared provider contracts.
 
 ## Current functionality
 
@@ -39,12 +39,12 @@ checkout's untracked `local.properties`.
 git clone https://github.com/gretchycat/infinifolder.git
 cd infinifolder
 python3 scripts/fetch-dependencies.py
-./gradlew :app:assembleDebug :app:testDebugUnitTest :storage-engine:testDebugUnitTest
+./gradlew :app:assembleDebug :app:testDebugUnitTest :viewer-hex:testDebugUnitTest
 ```
 
 The APK is `app/build/outputs/apk/debug/app-debug.apk`. Add
 `-PtargetAbi=arm64-v8a` to restrict application packaging. `./build.sh` fetches
-this app's dependencies and runs its build; additional arguments go to Gradle.
+this app's dependencies, builds the debug APK and runs app/hex unit tests; on Termux it also runs the native storage integration suite. Additional arguments go to Gradle.
 The wrapper pins Gradle 9.7.1 and its distribution checksum. Source dependencies
 are pinned by Git submodule commits and `dependencies.lock.json`, including their
 transitive closure. No other application is cloned or required. Library checkout
@@ -56,6 +56,11 @@ by the individual libraries. Configure `android.aapt2FromMavenOverride` with the
 installed aapt2 executable's path. Native builds use the environment's toolchain
 prefix rather than a fixed device path. The current Termux JNI packaging supports
 arm64; standard desktop builds use the NDK.
+
+For native filesystem regression tests on Termux, also run
+`./gradlew :storage-engine:testDebugUnitTest`. Their Linux host-JVM JNI setup is
+deferred; Android APK cross-compilation remains separate. See the
+[Android build and test guide](docs/android-builds.md) for all four applications.
 
 ## Storage service
 

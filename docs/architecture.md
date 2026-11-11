@@ -100,8 +100,8 @@ streams are released. The boundary does not stage whole files to imitate random
 access. Decoders/renderers can explicitly stage sources for APIs that require it.
 
 The shared UI defaults to local/SAF resource adapters. Infinifolder installs its
-advanced provider and archive consistency hooks before UI use. No shared library
-calls back into the application's implementation. Backend credentials and private
+advanced provider and archive consistency hooks before UI use. Shared libraries compile against
+provider/callback contracts rather than application implementation types. Backend credentials and private
 URI schemes remain behind Infinifolder's service.
 
 See [storage validation](storage-validation.md) for the required runtime cases and

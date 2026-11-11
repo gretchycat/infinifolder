@@ -2,10 +2,11 @@
 """Run descriptor primitives against a built APK on a local Android app_process runtime."""
 from pathlib import Path
 import argparse,os,subprocess,tempfile,hashlib,shutil
-p=argparse.ArgumentParser(description=__doc__);p.add_argument('--apk',type=Path,required=True);p.add_argument('--sdk',type=Path,required=True)
+p=argparse.ArgumentParser(description=__doc__);p.add_argument('--apk',type=Path,required=True);p.add_argument('--sdk',type=Path,required=True);p.add_argument('--select-jar',type=Path,help='Explicit libinfiniselect compile jar, e.g. from an isolated checkout')
 a=p.parse_args();root=Path(__file__).resolve().parents[1]
 android=a.sdk/'platforms/android-36/android.jar'
-select=root/'libraries/libinfiniselect/select-android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar'
+select=a.select_jar or root/'libraries/libinfiniselect/select-android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar'
+if not select.is_file():p.error('Build libinfiniselect first or supply --select-jar')
 kotlin=next((Path.home()/'.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.2.20').glob('*/*.jar'))
 with tempfile.TemporaryDirectory(prefix='infini-storage-runtime-') as directory:
  work=Path(directory);classes=work/'classes';dex=work/'dex';classes.mkdir();dex.mkdir()

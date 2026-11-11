@@ -75,14 +75,14 @@ and user overrides are retained.
 Unlisted or missing MIME artwork now uses the same base SVG set as the bundled
 default theme, with a type label on a colored plaque. The old separately drawn
 paper icon has been removed. The build compiles `base-fallback-*.svg` and the
-existing artwork metadata from `themes/icon-theme/default theme` into the app. Runtime
+existing artwork metadata from `libraries/libinfiniui/themes/icon-theme/default theme` into the app. Runtime
 fallbacks choose the associated base only when the extension agrees with the
 resolved MIME; otherwise they use MIME/category artwork, then the binary base.
 This selects artwork and does not change identity, associations or capabilities.
 Unknown binary extensions still receive their own label; extensionless sources
 use a MIME label or FILE. Shared MIME audio formats retain their useful labels.
 
-`themes/icon-theme/icon/scripts/icon_style.py` defines the deterministic label-color palette
+`libraries/libinfiniui/themes/icon-theme/icon/scripts/icon_style.py` defines the deterministic label-color palette
 used both by generated SVGs and the compiled runtime style. Generated file/URI
 labels are uppercase and no longer stretch short strings across the whole plaque.
 Folder variants retain only their pictogram stamps. Generic folder and archive

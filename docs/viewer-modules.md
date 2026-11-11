@@ -1,48 +1,45 @@
 # Independent viewer applications
 
-> [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
+Updated 2026-11-11. [Architecture](architecture.md) and the
+[separation audit](architecture-audit.md) define current ownership and executed
+verification. Use the [Android build guide](android-builds.md) for commands;
+`viewer-host` variants and `-Pviewer=...` are retired development structures.
 
-Status reviewed 2026-11-04. See [runtime discovery and build evidence](runtime-capabilities.md) and [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
+## Application and module ownership
 
-Each viewer is an Android library that depends on `:viewer-common` and `:storage-engine`, without depending on the browser or its Activity. Its manifest registers its viewer Activity/service. InfiniFolder packages image, hex/raw-media and video viewers. It excludes `:viewer-audio` and the Scribe-backed `:viewer-text`, `:viewer-markdown`, `:viewer-html`, `:viewer-pdf`, `:viewer-csv`, `:viewer-epub`, and `:viewer-font` modules; InfiniMedia and InfiniScribe host those viewers separately.
+| Owner | Application UI/modules |
+| --- | --- |
+| Infinifolder | File manager, `viewer-hex`, storage composition; uses UI's image viewer and reusable document/video thumbnails |
+| Infiniscribe | Text, Markdown, HTML, PDF, CSV, EPUB/Office, font and legacy mind-map viewers; `document-common` shares app document staging |
+| Infinimedia | Audio/video Activities, queue, visualizations, output and Cast integration |
+| libinfiniui | `ui-android` shared source/UI support; optional `ui-image` image viewer |
 
-The supplied `:viewer-host` provides a launcher document picker, Android VIEW/EDIT entry point for content URIs, recovery, and debug dump controls. The all-viewer variant is an optional integration/debug host and is not part of the InfiniFolder or default product APK builds.
+Every application has its own repository and application ID. There is no combined
+product host or sibling source build. The old Media ViewerHostActivity component
+is retained as a manifest alias for compatibility. Folder opens document and
+media resources through the appropriate independent app or Android external-app
+choice; it does not include complete document/editor or player Activities.
 
-## Build
+Shared UI uses Core's local/SAF adapters by default. Folder installs its advanced
+provider and consistency hooks through `ViewerStorage`. Scribe and Media do not
+link Store/Vault. External sources use [libinfiniselect](libinfiniselect.md) and
+Android content grants; native seekability is retained when available, and pipes
+remain sequential. Staging required by an individual decoder belongs to that
+consumer, not the storage boundary.
 
-```sh
-gradle :viewer-host:assembleDebug -Pviewer=pdf --offline
-```
+Stream owns viewer component/capability contracts. Canvas owns image decoding;
+Scribe owns document backends and highlighting; Sound owns audio parsing,
+decoding/synthesis/PCM; Video owns reusable video adapters. Applications own their
+Activities, lifecycle and user interaction. ServiceLoader discovery operates only
+on explicitly declared, packaged library artifacts.
 
-Replace `pdf` with `image`, `text`, `markdown`, `html`, `csv`, `epub`, `font`, `hex`, `audio`, `video`, or `all` (default). The optional combined host uses `com.infinifolder.standalone.all`; individual host IDs are `com.infinifolder.standalone.<kind>`, except audio, which is `com.infinimedia`. The InfiniMedia product is built independently with `gradle -p infinimedia :viewer-host:assembleDebug --offline`; its project defaults to `-Pviewer=audio`, packages only the audio viewer and uses the `com.infinimedia` application ID. Its APK is under `infinimedia/build/viewer-host/outputs/apk/debug/`. On ARM Termux use the configured native AAPT2 override if required, as for the main app.
+Text, Markdown, HTML and CSV editing remains subject to complete-load and source
+revision checks. Image edits export PNG copies. Font preview uses Scribe's
+portable font tables and Android Typeface adapter. PDF/EPUB/audio/video behavior
+and legacy format limits remain described in their format guides. Compilation
+and unit tests do not establish handset playback, rendering or grant acceptance.
 
-`hex` is now a standalone selector; the all-viewer host includes all eleven
-registered viewer modules. New viewer modules are linked by build discovery and
-publish their own ViewerComponent through ServiceLoader. Format routing is derived
-from the content library; see [runtime discovery](runtime-capabilities.md).
-
-The image module now hosts Canvas image animations and interactive MNG controls;
-the EPUB and CSV modules also host supported ebook/Office content. HTML/Markdown
-share native scroll surfaces with drag handles, CSV enables native fast scrolling,
-and shared Back handling records/rebinds callbacks across content replacement.
-Audio keeps continuous Cast timeline/HTTP integration in the host while Sound
-performs PCM conversion. See [animation](image-animation.md),
-[document readers](document-and-ebook-readers.md), [hex/raw media](hex-editor.md),
-[audio](audio-formats.md) and [Back diagnostics](back-navigation.md).
-
-Text, Markdown, HTML, and CSV include editing subject to complete load and source revision checks. Image edits export PNG copies. PDF/EPUB/audio/video currently expose viewing/playback. ACTION_EDIT is rejected for unsupported formats. A missing viewer library produces an explanatory message.
-
-Audio parsing/processing is provided by the external `libinfinisound` build (`audio-api`, portable `audio-core` and Android `audio-processing`); the audio viewer retains playback/output, queue and Cast integration. See [audio library boundaries](audio-processing-library.md).
-
-Font preview uses `viewer-font`, Scribe's portable font-table inspection and its
-Android Typeface backend. TTF/OTF/TTC/OTC previews are read-only; collection face
-selection, specimen controls and limits are described in [font preview](font-viewer.md).
-
-Shared UI/resources, image codecs, network backends, and themes currently remain common dependencies. Further size reduction can split those dependencies without bringing back a browser dependency. Document access and retained URI permissions still depend on the supplying Android provider. Standalone runtime use and editing require device acceptance checks in addition to build validation.
-
-## Stream architecture checkpoint
-
-The full app and standalone host compose pinned Stream/Store/Vault/Sound/Canvas/Scribe/Video source repositories. viewer-common retains Android contracts, source leases and icon/theme policy; image codecs are provided by Canvas and text/Markdown processing by Scribe. The image viewer requests a BitmapFrame with actual output metadata; text/HTML/CSV/Markdown loads keep complete original bytes for revision checks; CSV parsing and save serialization execute Scribe table processors while preserving the 8 MiB preview and guarded-save policy; video binds its staged source through the Video library while retaining current listeners and surfaces. Dependencies are still exported for compatibility: this checkpoint makes no APK-size or minimal-host claim.
+## Document behavior
 
 ### Discrete text and CSV viewing
 

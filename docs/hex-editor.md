@@ -1,5 +1,10 @@
 # Hex viewer and editor
 
+> Repository layout updated 2026-11-11. Old host/module paths, build commands and
+> test totals below record their original revision. For current owners and commands,
+> use the [Android build guide](android-builds.md), [architecture](architecture.md)
+> and [executed separation audit](architecture-audit.md).
+
 Status: implementation, automated checks and debug build passed. Device
 acceptance remains pending; the owner requested commit and push with those checks
 documented as unverified. Saved raw-media metadata enables automatic
