@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 """Convert a palette-annotated SVG into a color-cycling Amiga ILBM IFF.
 
-Requires Pillow and librsvg's ``rsvg-convert``. Set the output dimensions
-explicitly. Oversized SVG palettes are sampled down to IFF's 256-color limit;
-cycle ranges and speeds are remapped to that palette. Examples:
+Requires Pillow and librsvg's ``rsvg-convert``. Set output dimensions explicitly.
+Artwork is fitted without distortion and centered on the transparent canvas, or
+within ``--content-box`` when provided. Oversized SVG palettes are sampled down
+to IFF's 256-color limit; cycle ranges and speeds are remapped. Examples:
 
     python3 scripts/svg-to-iff.py --width 900 --height 450
     python3 scripts/svg-to-iff.py artwork.svg artwork.iff --width 1024 --height 1024
+    python3 scripts/svg-to-iff.py artwork.svg overlay.iff --width 275 --height 116 \\
+        --content-box 242 90 21 17
+    python3 scripts/svg-to-iff.py artwork.svg composite.iff --width 275 --height 116 \\
+        --content-box 242 90 21 17 --background main.bmp
 """
 
 from __future__ import annotations
 
 import argparse
 import math
+import re
 import shutil
 import struct
 import subprocess
@@ -202,20 +208,59 @@ def downsample_palette(source: list[tuple[int, int, int]],
     return padded, len(selected), output_cycles, warnings
 
 
-def render_svg(svg_path: Path, width: int, height: int, renderer: str) -> Image.Image:
-    """Rasterize the SVG to an exact-size transparent RGBA image."""
+def svg_aspect_ratio(svg_path: Path) -> float:
+    """Return the SVG's intrinsic viewport ratio, including simple unit suffixes."""
+    root = ET.parse(svg_path).getroot()
+
+    def length(value: str | None) -> float | None:
+        if value is None:
+            return None
+        match = re.fullmatch(r"\s*([0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:px)?\s*", value)
+        return float(match.group(1)) if match else None
+
+    width = length(root.get("width"))
+    height = length(root.get("height"))
+    if width and height:
+        return width / height
+    view_box = root.get("viewBox")
+    if view_box:
+        values = [float(value) for value in re.split(r"[\s,]+", view_box.strip())]
+        if len(values) == 4 and values[2] > 0 and values[3] > 0:
+            return values[2] / values[3]
+    raise ValueError("SVG needs positive width/height or a valid viewBox to preserve its aspect ratio")
+
+
+def render_svg(svg_path: Path, width: int, height: int, renderer: str,
+               content_box: tuple[int, int, int, int] | None = None) -> Image.Image:
+    """Render into a transparent canvas, fitting and centering the SVG without distortion."""
+    box_x, box_y, box_width, box_height = content_box or (0, 0, width, height)
+    aspect = svg_aspect_ratio(svg_path)
+    if aspect > box_width / box_height:
+        rendered_width = box_width
+        rendered_height = max(1, round(box_width / aspect))
+    else:
+        rendered_height = box_height
+        rendered_width = max(1, round(box_height * aspect))
+
     with tempfile.TemporaryDirectory(prefix="svg-to-iff-") as temp_dir:
         png_path = Path(temp_dir) / "render.png"
         subprocess.run(
-            [renderer, "--format=png", "--width", str(width), "--height", str(height),
+            [renderer, "--format=png", "--width", str(rendered_width), "--height", str(rendered_height),
              "--output", str(png_path), str(svg_path)],
             check=True,
         )
         with Image.open(png_path) as rendered:
-            image = rendered.convert("RGBA")
-    if image.size != (width, height):
-        raise ValueError(f"SVG renderer returned {image.width}x{image.height}, expected {width}x{height}")
-    return image
+            artwork = rendered.convert("RGBA")
+    if artwork.size != (rendered_width, rendered_height):
+        raise ValueError(
+            f"SVG renderer returned {artwork.width}x{artwork.height}, "
+            f"expected {rendered_width}x{rendered_height}"
+        )
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    paste_x = box_x + (box_width - rendered_width) // 2
+    paste_y = box_y + (box_height - rendered_height) // 2
+    canvas.alpha_composite(artwork, (paste_x, paste_y))
+    return canvas
 
 
 def indexed_pixels(image: Image.Image, palette: list[tuple[int, int, int]],
@@ -232,6 +277,70 @@ def indexed_pixels(image: Image.Image, palette: list[tuple[int, int, int]],
         if index >= palette_size:
             indices[pixel] = palette_size - 1
     return bytes(indices), image.getchannel("A").tobytes()
+
+
+def background_palette(image: Image.Image, color_count: int = 128) -> list[tuple[int, int, int]]:
+    """Build a compact RGB palette for a raster background."""
+    quantized = image.convert("RGB").quantize(
+        colors=color_count, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE
+    )
+    colors = quantized.getpalette()
+    used = sorted(set(quantized.tobytes()))
+    return [tuple(colors[index * 3:index * 3 + 3]) for index in used]
+
+
+def indexed_composite(overlay: Image.Image, background: Image.Image,
+                      svg_palette: list[tuple[int, int, int]],
+                      output_palette: list[tuple[int, int, int]], palette_size: int,
+                      source_cycles: list[CycleRange], output_cycles: list[bytes],
+                      alpha_threshold: int) -> tuple[bytes, bytes]:
+    """Index a full background image while keeping SVG cycle pixels in CRNG ranges."""
+    composite = Image.alpha_composite(background.convert("RGBA"), overlay)
+    cycle_output_ranges = [struct.unpack(">HHHBB", chunk)[3:5] for chunk in output_cycles]
+    classification_palette, _, classification_cycles, _ = downsample_palette(
+        svg_palette, source_cycles
+    )
+    active_source_ranges = [struct.unpack(">HHHBB", chunk)[3:5]
+                            for chunk in classification_cycles]
+    static_indices = [index for index in range(palette_size)
+                      if not any(start <= index <= end for start, end in cycle_output_ranges)]
+    if not static_indices:
+        raise ValueError("The output palette has no colors available for the background")
+
+    static_palette = [output_palette[index] for index in static_indices]
+    padded_static = static_palette + [static_palette[-1]] * (256 - len(static_palette))
+    static_image = Image.new("P", (1, 1))
+    static_image.putpalette([component for color in padded_static for component in color])
+    static_quantized = composite.convert("RGB").quantize(
+        palette=static_image, dither=Image.Dither.FLOYDSTEINBERG
+    )
+    indices = bytearray(static_indices[min(index, len(static_indices) - 1)]
+                        for index in static_quantized.tobytes())
+
+    if active_source_ranges:
+        source_palette_image = Image.new("P", (1, 1))
+        padded_source = classification_palette + [classification_palette[-1]] * (256 - len(classification_palette))
+        source_palette_image.putpalette([component for color in padded_source for component in color])
+        source_indices = overlay.convert("RGB").quantize(
+            palette=source_palette_image, dither=Image.Dither.NONE
+        ).tobytes()
+        overlay_alpha = overlay.getchannel("A").tobytes()
+        output_ranges = cycle_output_ranges
+        output_start = 0
+        for (source_start, source_end), (output_start, output_end) in zip(
+                active_source_ranges, output_ranges):
+            candidates = output_palette[output_start:output_end + 1]
+            for pixel, (source_index, alpha) in enumerate(zip(source_indices, overlay_alpha)):
+                if (alpha < alpha_threshold
+                        or not source_start <= source_index <= source_end):
+                    continue
+                rgb = overlay.getpixel((pixel % overlay.width, pixel // overlay.width))[:3]
+                closest = min(range(len(candidates)), key=lambda offset: sum(
+                    (rgb[channel] - candidates[offset][channel]) ** 2 for channel in range(3)
+                ))
+                indices[pixel] = output_start + closest
+
+    return bytes(indices), composite.getchannel("A").tobytes()
 
 
 def planar_body(indices: bytes, alpha: bytes, width: int, height: int,
@@ -293,6 +402,10 @@ def main() -> int:
                         help="destination IFF (default: repository-root infini.iff)")
     parser.add_argument("--width", type=int, required=True, help="output width in pixels")
     parser.add_argument("--height", type=int, required=True, help="output height in pixels")
+    parser.add_argument("--content-box", type=int, nargs=4, metavar=("X", "Y", "WIDTH", "HEIGHT"),
+                        help="optional canvas region in which to center the aspect-fitted SVG")
+    parser.add_argument("--background", type=Path,
+                        help="opaque image to use as the ILBM base, with palette colors reserved for it")
     parser.add_argument("--renderer", default=shutil.which("rsvg-convert") or "rsvg-convert",
                         help="librsvg rsvg-convert executable")
     parser.add_argument("--alpha-threshold", type=int, default=128,
@@ -305,18 +418,45 @@ def main() -> int:
         parser.error(f"dimensions must be between 1 and {MAX_DIMENSION} pixels")
     if args.width * args.height > MAX_PIXELS:
         parser.error(f"dimensions exceed the {MAX_PIXELS:,}-pixel cycling limit")
+    if args.content_box:
+        x, y, box_width, box_height = args.content_box
+        if (x < 0 or y < 0 or box_width <= 0 or box_height <= 0
+                or x + box_width > args.width or y + box_height > args.height):
+            parser.error("--content-box must be a positive rectangle within the output canvas")
     if not 0 <= args.alpha_threshold <= 255:
         parser.error("--alpha-threshold must be between 0 and 255")
     if args.input.resolve() == args.output.resolve():
         parser.error("input and output paths must differ")
+    if args.background is not None and not args.background.is_file():
+        parser.error(f"background image does not exist: {args.background}")
+    if args.background is not None and args.background.resolve() == args.output.resolve():
+        parser.error("background and output paths must differ")
     if shutil.which(args.renderer) is None and not Path(args.renderer).is_file():
         parser.error(f"SVG renderer not found: {args.renderer}")
 
     try:
         source_palette, source_cycles = read_palette_and_cycles(args.input)
-        palette, palette_size, cycles, warnings = downsample_palette(source_palette, source_cycles)
-        rgba = render_svg(args.input, args.width, args.height, args.renderer)
-        indices, alpha = indexed_pixels(rgba, palette, palette_size)
+        background = None
+        palette_source = source_palette
+        if args.background is not None:
+            with Image.open(args.background) as base:
+                background = base.convert("RGB")
+            if background.size != (args.width, args.height):
+                raise ValueError(
+                    f"Background is {background.width}x{background.height}; "
+                    f"expected {args.width}x{args.height}"
+                )
+            palette_source = source_palette + background_palette(background)
+        palette, palette_size, cycles, warnings = downsample_palette(palette_source, source_cycles)
+        rgba = render_svg(args.input, args.width, args.height, args.renderer,
+                          tuple(args.content_box) if args.content_box else None)
+        if background is None:
+            indices, alpha = indexed_pixels(rgba, palette, palette_size)
+        else:
+            indices, alpha = indexed_composite(
+                rgba, background, source_palette, palette, palette_size,
+                source_cycles, cycles, args.alpha_threshold,
+            )
         body = planar_body(indices, alpha, args.width, args.height, args.alpha_threshold)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         write_ilbm(args.output, args.width, args.height, palette, cycles, body)
