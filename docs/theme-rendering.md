@@ -48,3 +48,7 @@ The runtime probe loads the actual built APK using app_process. Its isolated pro
 These checks do not establish Activity layout/touch behavior, video surface composition, audible playback or storage grants. Ubuntu testing and other-platform ports remain deferred. Executed build and raster results are recorded in the architecture audit and its validation evidence.
 
 The [earlier SVG performance report](svg-cycle-performance.md) is historical: SVG cycling playback has since been removed. Current checks are recorded in the architecture audit.
+
+## Authoring thumbnail and navigation correction
+
+ORA/KRA previews stream from their ZIP containers, large SVGZ is identified from its bounded root prefix, and the PostScript/EPS MIME alias remains thumbnail-capable despite old generic icon settings. Folder supplies displayed image rows to shared UI's private navigation snapshot. The [thumbnail/order report](thumbnail-order.md) records real test-fixture renders, limits, source pins and standalone results. This preserves static SVG and IFF animation behavior.

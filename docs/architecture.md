@@ -133,3 +133,7 @@ executed checks. The SVG-to-IFF authoring tool is documented [separately](svg-to
 SVG color-cycling playback was removed at the owner's request. Static SVG rendering and IFF cycling remain; image schedulers count rendering/publication within a 33 ms deadline. The SVG source and SVG-to-IFF authoring tool remain available. No dependency edge changed.
 
 Infinifolder migrates saved defaults for its removed audio/video players to installed Infinimedia. Explicit type-wide external-app choices replace extension defaults for the same MIME type so automatic companion defaults cannot override the user's newer choice. Local preferences and Android system defaults remain separate.
+
+## Image navigation and authoring thumbnail follow-up
+
+Core consults registered validators before generic compressed-container classification. Canvas recognizes authoring ZIP mimetypes, bounded SVGZ roots and application MIME aliases for thumbnails. Shared UI's private image-order snapshot preserves Folder's already sorted/filtered rows without large Intent payloads or cross-application grants. The image viewer consumes the snapshot for next/previous/slideshow. Dependency edges and storage ownership remain unchanged; see the [executed follow-up](thumbnail-order.md).

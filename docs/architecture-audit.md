@@ -1,6 +1,12 @@
 # InfiniSuite architecture audit and separation
 
-## Current follow-up: static SVG and audio defaults (2026-11-11)
+## Current follow-up: authoring thumbnails and image order (2026-11-11)
+
+ORA/KRA authoring ZIPs and large SVGZ retain their image identity. EPS's PostScript MIME routes to thumbnails instead of generic type icons. Folder captures displayed image order for shared UI's next/previous/slideshow navigation. The existing automatic installed-Media fallback for audio without saved choices has additional regression coverage. Source locks/gitlinks remain aligned, with no new dependency edge.
+
+Independent Folder/Media/Scribe APK builds passed 150 / 80 / 17 tests, plus 11 environment checks each. Canvas/Core/UI/Store/Vault standalone AAR builds passed; one real-server SFTP case was skipped without credentials. The final Android probe passed 17 groups, including rendered/visually inspected thumbnails for the original test EPS/ORA/KRA/SVGZ. See the [architectural corrections, commits and limits](thumbnail-order.md) and [executed evidence](validation/thumbnail-order.json). Earlier sections below are historical checkpoints.
+
+## Earlier follow-up: static SVG and audio defaults (2026-11-11)
 
 SVG cycling rendering was removed at the owner's request; ordinary static SVG/SVGZ and IFF cycling remain. Folder now migrates old internal media-player defaults, and explicit type-wide choices replace same-MIME extension defaults that previously overrode them. Media's existing Android audio registration was verified in the packaged manifest and installed resolver. Application/library dependency edges are unchanged.
 

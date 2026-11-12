@@ -106,3 +106,5 @@ The shared rendering follow-up at d4d2293 also passed all 143 app/native tests a
 SVG/SVGZ render as static artwork; experimental SVG color cycling has been removed. IFF cycling remains supported. Saved audio defaults now migrate to the separate Media app, and type-wide choices override older extension defaults. See [theme rendering](docs/theme-rendering.md) and the [architecture audit](docs/architecture-audit.md) for current boundaries and verification.
 
 Current follow-up: independent Folder verification passed 146 app/native tests and 11 environment checks. The [static SVG/audio-default report](docs/static-svg-audio-defaults.md) records the corrections, all affected build results and Android runtime limits.
+
+Current thumbnail/navigation follow-up: ORA, KRA, large SVGZ and PostScript/EPS identities retain content thumbnails; the image viewer follows displayed icon order. Folder passed 150 tests, and the Android probe rendered the four original test formats. [Corrections and verification](docs/thumbnail-order.md).
