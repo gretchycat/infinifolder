@@ -129,3 +129,5 @@ No storage library or application-to-application dependency was added.
 
 See [theme rendering and verification](theme-rendering.md) for interfaces and
 executed checks. The SVG-to-IFF authoring tool is documented [separately](svg-to-iff.md).
+
+Indexed SVG playback now compiles flat paints to cached raster palette bindings in Canvas. An optional frame-interval hint keeps both image schedulers from adding a fixed delay after rendering. Still-only theme color sampling avoids animation setup. See the [measured performance correction](svg-cycle-performance.md) for ownership, tests and raster/gradient limitations; repository dependency edges are unchanged.

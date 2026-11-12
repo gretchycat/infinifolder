@@ -1,5 +1,17 @@
 # InfiniSuite architecture audit and separation
 
+## SVG cycling performance correction (2026-11-11)
+
+The original direct-vector implementation compiled and passed basic pixel checks, but its 4,013-path source took 204.32 ms per warmed frame and could not keep up with its 24-step/second cycle. Its playback timers also added a full 33 ms wait after worker/publication time. This was a performance/verification gap; the earlier eight-group probe did not measure full rotations or frame cadence.
+
+Canvas now rasterizes flat indexed paints once per decode size, then animates cached palette-bound pixels. It retains original palette IDs, fixed artwork and palettes larger than 256 entries. Duplicate colors remain distinct. Mixed-paint edges/overlaps use a documented raster approximation; tagged animated gradient stops retain the exact vector fallback. Still-only theme color sampling avoids compiling animation state. Both playback controllers count work inside their frame interval. Application dependencies and storage boundaries are unchanged.
+
+The independent Media APK measured 8.62 ms median / 8.79 ms 95th-percentile rendering, about 24× faster. Setup increased from 514 ms to 1,478 ms once per decode. The initial frame matched exactly; the largest whole-canvas mean RGB error among four sampled times was 0.218/255, with a maximum individual channel difference of 39 at mixed pixels. These are CPU/raster measurements, not visible Activity FPS.
+
+Canvas passed 104 tests; shared UI passed 121 + 5. Independent Media, Scribe and Folder builds passed 80, 17 and 143 tests, plus their 11 environment checks and source-root/pin verification. Media passed all 15 Android runtime groups, including every phase of the real 192-color cycle, 300-color rotations, duplicate IDs/opacity, still decoding, gradient fallback, both frame-deadline simulations and SVG cache lifecycle. Original IFF/frame/composition checks remain passing. Infinikey was unchanged and was not rerun.
+
+Implementation commits: Canvas 387c0ca/0e39c0a, UI b5ce192/07f9dea, Media 1726316/6acbbec, Scribe 08e9488/339e95b and Folder 17f2968/ac926de. An added IFF/BMP still-preview parity check caught a first-frame sampling difference; the non-SVG still route now preserves established initial pixels. All existing repositories/history were retained. See the [architectural/performance breakdown](svg-cycle-performance.md) and [executed evidence](validation/svg-cycle-performance.json). Visible UI/device acceptance, Ubuntu and other-platform work remain outside these checks. Earlier sections below describe their historical implementations and checkpoints.
+
 ## Theme and visual-media follow-up (2026-11-11)
 
 Infinimedia now owns and packages **Infinimedia Default** as its sole bundled skin. Its corrected opaque IFF faceplate cycles natively; its name is updated in theme.json, skininfo.xml, readme and the chooser, with original artwork credits retained. The four previous bundled archives moved unchanged into Media's test-assets/skins. Imported skins remain supported; missing saved bundled paths fall back to the configured default. The optional SF3 bank remains outside production assets.
