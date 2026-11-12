@@ -398,8 +398,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", nargs="?", type=Path, default=ROOT / "infini.svg",
                         help="source SVG (default: repository-root infini.svg)")
-    parser.add_argument("output", nargs="?", type=Path, default=ROOT / "infini.iff",
-                        help="destination IFF (default: repository-root infini.iff)")
+    parser.add_argument("output", nargs="?", type=Path, default=ROOT / "build/generated/infini.iff",
+                        help="destination IFF (default: build/generated/infini.iff)")
     parser.add_argument("--width", type=int, required=True, help="output width in pixels")
     parser.add_argument("--height", type=int, required=True, help="output height in pixels")
     parser.add_argument("--content-box", type=int, nargs=4, metavar=("X", "Y", "WIDTH", "HEIGHT"),

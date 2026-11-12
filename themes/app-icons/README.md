@@ -1,26 +1,24 @@
-# Infini app icons
+# Launcher icon artwork
 
-`icons.zip` at the repository root contains the standalone bases for InfiniFolder,
-Infiniscribe, InfiniMedia, InfiniCanvas and InfiniKey. The source emblem is
-`infini.svg`. Run this from the repository root to regenerate both the default
-theme artwork and the app icons. The app-icon step composes the emblem over each
-base, adds a soft black drop shadow behind the emblem, renders adaptive/legacy
-density assets, and installs them into projects that exist in this checkout:
+`icons.zip` contains the suite's small launcher base drawings and the generic
+file icon symbols. `infini.svg` is the shared emblem. The Android app packages
+only the generated files under `app/src/main/res/`.
+
+Regenerate Infinifolder's launcher resources and the shared file icon artwork
+from the repository root:
 
 ```sh
 python3 scripts/regenerate-icons.py
 ```
 
-The script uses `rsvg-convert` from librsvg. Composited SVGs and generated PNGs
-are kept under `themes/app-icons/generated/`; existing InfiniFolder,
-Infiniscribe and sibling InfiniKey Android resource folders are updated too.
-InfiniMedia and InfiniCanvas outputs stay in the generated directory until those
-app projects exist here. Running the command again refreshes every available
-target from the root artwork sources.
+The launcher generator defaults to Infinifolder. Other base drawings can be
+rendered explicitly for review, for example:
 
-Adaptive foreground art is scaled into the Android icon safe area. Legacy square
-and round PNGs use the full composition on the shared dark background.
+```sh
+python3 scripts/build-app-icons.py --only infinimedia
+```
 
-For launcher assets only, run `python3 scripts/build-app-icons.py`. For the
-freedesktop theme only, edit `themes/icon-theme/icon/bases/` as needed and run
-`python3 themes/icon-theme/icon/scripts/generate_icons.py`.
+Those review outputs are written under the ignored
+`themes/app-icons/generated/` directory. They are not required to build
+Infinifolder and do not update another app repository. The committed
+Infinifolder launcher resources live in `app/src/main/res/`.

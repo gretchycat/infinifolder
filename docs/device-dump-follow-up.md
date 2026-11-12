@@ -42,7 +42,7 @@ Future transfers now log destination document/provider identity, expected size, 
 
 Debug dumping now refreshes the current browser listing automatically after export completes, including partial export failures. The diagnostics screen refreshes its log too. Returning to the browser after exporting from another screen also refreshes its listing. Both automatic and manual folder refresh use the same method.
 
-Moved the 15 original project-root dump files (five sets) to `build/debug-dumps/previous-root/`, retaining all evidence. The latest dump directly in `build/` was left in place. The ordinary `infinifolder.png` artwork was left in place.
+Moved the 15 original project-root dump files (five sets) to `build/debug-dumps/previous-root/`, retaining all evidence. The latest dump directly in `build/` was left in place. The ordinary `infinifolder.png` artwork was retained for manual transfer checks; the later asset audit moved it out of this application repository into the workspace-level InfiniSuite test fixtures.
 
 ## Third device run: small local-to-USB copy
 

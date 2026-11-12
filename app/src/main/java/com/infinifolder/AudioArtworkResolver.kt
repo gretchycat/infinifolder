@@ -63,20 +63,22 @@ internal class AudioArtworkResolver(
     private fun embedded(entry:ResourceEntry,size:Int):EmbeddedResult {
         val key="${entry.ref}:${entry.uri}:${entry.metadata.name}:${entry.metadata.sizeBytes}:${entry.metadata.modifiedAtMillis}:$size"
         embedded.get(key)?.takeIf {System.currentTimeMillis()<it.expires}?.let {return EmbeddedResult(it.bitmap,false)}
-        if(!pendingEmbedded.add(key))return EmbeddedResult(null,true)
+        // A cache miss is not a pending icon refresh: the regular audio glyph is
+        // already correct. A later refresh is needed only if an actual image is found.
+        if(!pendingEmbedded.add(key))return EmbeddedResult(null,false)
         try {
             ResourceArtworkCache.sourceExecutor(entry).execute {
                 val bitmap=loadEmbedded(entry,size)
                 embedded.put(key,Cached(bitmap,System.currentTimeMillis()+if(bitmap==null || entry.metadata.modifiedAtMillis==null)30000 else 300000))
                 pendingEmbedded.remove(key)
-                onArtworkReady(entry.uri)
+                if(bitmap!=null)onArtworkReady(entry.uri)
             }
         } catch(_:java.util.concurrent.RejectedExecutionException) {
             pendingEmbedded.remove(key)
             embedded.put(key,Cached(null,System.currentTimeMillis()+3000))
-            return EmbeddedResult(null,true)
+            return EmbeddedResult(null,false)
         }
-        return EmbeddedResult(null,true)
+        return EmbeddedResult(null,false)
     }
 
     private fun loadEmbedded(entry:ResourceEntry,size:Int):Bitmap? {

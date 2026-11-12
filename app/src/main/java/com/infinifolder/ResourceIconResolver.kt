@@ -185,7 +185,11 @@ class ResourceIconResolver(context: Context) {
         if(AppsUri.isRoot(entry.uri))FileTypeIcons.installedApplications(size)
         else if(entry.metadata.isDirectory)FileTypeIcons.folder(size) else FileTypeIcons.bitmap(entry.metadata,size),
         if(AppsUri.isRoot(entry.uri))"▦" else FileIconView.fallback(entry.metadata),entry.metadata.name,entry.metadata.isDirectory)
-    private fun notifyChanged(uri: Uri) { rendered.evictAll(); onArtworkChanged?.invoke(uri) }
+    private fun notifyChanged(uri: Uri) {
+        val prefix = "icons-v13:$uri:"
+        rendered.snapshot().keys.filter { it.startsWith(prefix) }.forEach { rendered.remove(it) }
+        onArtworkChanged?.invoke(uri)
+    }
     private fun overrideBitmap(value:String?,mime:String?,size:Int):Bitmap? =
         IconOverrideAssets.decode(appContext.filesDir,icons,decoder,value,mime,size)
     private fun uriRule(raw: String,size: Int): Bitmap? {

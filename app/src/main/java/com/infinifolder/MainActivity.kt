@@ -219,9 +219,13 @@ class MainActivity : Activity(), DebugDumpObserver {
     private var lastIconRegistryRevision=""
     @Volatile private var iconRegistryCheckGeneration = 0
     private val resourceIconResolver by lazy { ResourceIconResolver(applicationContext).apply {
-        onArtworkChanged={ runOnUiThread {
-            operationUiHandler.removeCallbacks(artworkRefreshRunnable)
-            operationUiHandler.postDelayed(artworkRefreshRunnable,150)
+        onArtworkChanged={ uri -> runOnUiThread {
+            val refreshEntry = entryArtworkRefreshers[uri]
+            if (refreshEntry != null) refreshEntry()
+            else {
+                operationUiHandler.removeCallbacks(artworkRefreshRunnable)
+                operationUiHandler.postDelayed(artworkRefreshRunnable,150)
+            }
         } }
     } }
     private val imageIo = com.infinifolder.storage.StorageActivity.loadingExecutor(Executors.newFixedThreadPool(4))
@@ -374,6 +378,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     @Volatile private var rootContainerLinks = emptyList<Pair<ResourceEntry, ShortcutInfo>>()
     private var homeSourcesGeneration = 0
     private val entryIconViews = mutableMapOf<Uri, View>()
+    private val entryArtworkRefreshers = mutableMapOf<Uri, () -> Unit>()
     private var largeEntrySurface: VirtualizedEntrySurface? = null
     private var renderedFileLocation: Uri? = null
     private var restoringFileScrollLocation: Uri? = null
@@ -980,6 +985,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 showHomeRoot()
                             }
                             val openDefaults = com.infinifolder.viewer.ExternalAppDefaults(this@MainActivity)
+                            CompanionViewerDefaults.ensureForEntry(this@MainActivity, openDefaults, ref, name, mime)
                             val savedOpenChoices = openDefaults.candidates(Intent.ACTION_VIEW,
                                 com.infinifolder.viewer.ExternalAppDefaults.sourceKey(ref), mime, name)
                             val preferredOpen = openDefaults.openPreference(ref, mime, name)
@@ -5106,6 +5112,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             pendingCardProbes.clear()
             visibleProbeScheduled = false
             entryIconViews.clear()
+            entryArtworkRefreshers.clear()
             clearEntryContentViews()
             val rows = if (pinBoard.isRoot(current)) entries.filter { showHidden || !it.metadata.isHidden }
                 .sortedWith(compareBy<ResourceEntry> { it.metadata.name.lowercase(Locale.ROOT) }.thenBy { it.metadata.name })
@@ -5153,6 +5160,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     onCardRemoved = { entry, card ->
                         val icon = entryIconViews[entry.uri]
                         if (icon?.parent === card) entryIconViews.remove(entry.uri)
+                        entryArtworkRefreshers.remove(entry.uri)
                         pendingCardProbes.removeAll { it.view === card }
                         visibleArtworkUris = visibleArtworkUris - entry.uri
                     }
@@ -5393,6 +5401,13 @@ class MainActivity : Activity(), DebugDumpObserver {
                         }
                     }
                 } }
+            }
+            entryArtworkRefreshers[entry.uri] = {
+                if (box.isAttachedToWindow && entry.uri in visibleArtworkUris &&
+                    artworkGeneration == loadGeneration && cardRender == artworkRenderGeneration && !isDestroyed) {
+                    authoritativeApplied = false
+                    startArtwork()
+                }
             }
             if(!authoritativeApplied)registerVisibleCardProbe(box, artworkGeneration, startArtwork)
         }

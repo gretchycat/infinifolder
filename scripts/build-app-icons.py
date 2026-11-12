@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build launcher icon PNGs by overlaying infini.svg on icons.zip app bases."""
+"""Build launcher icon PNGs by overlaying infini.svg on suite app bases."""
 
 from __future__ import annotations
 
@@ -154,7 +154,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=GENERATED,
                         help="generated source/icon directory for apps without projects yet")
     parser.add_argument("--only", choices=sorted(BASES), action="append",
-                        help="build only this app (may be supplied repeatedly)")
+                        help="build this app (repeat to build several; defaults to infinifolder)")
     parser.add_argument("--resources-dir", type=Path,
                         help="explicit Android resource destination; requires one --only app")
     args = parser.parse_args()
@@ -167,7 +167,7 @@ def main() -> int:
         logo = ET.fromstring(LOGO.read_bytes())
         with zipfile.ZipFile(ZIP) as archive:
             members = set(archive.namelist())
-            for name in args.only or BASES.keys():
+            for name in args.only or ["infinifolder"]:
                 filename = BASES[name]
                 if filename not in members:
                     raise FileNotFoundError(f"{filename} is missing from {ZIP.name}")

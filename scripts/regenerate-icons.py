@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate theme artwork and all app icons from icons.zip and infini.svg."""
+"""Regenerate shared file icons and Infinifolder launcher art."""
 
 from __future__ import annotations
 
