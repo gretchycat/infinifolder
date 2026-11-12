@@ -41,7 +41,7 @@ when it does not.
 ### Vector, metafile & terminal art formats
 
 - **SVG / SVGZ**: `.svg`, `.svgz` (`image/svg+xml`) rendered to `Bitmap` at the target display/thumbnail dimensions via `com.caverock:androidsvg-aar`
-- **Windows Metafile**: `.wmf`, `.wmz` (`image/wmf`) via `MetafileAndVectorImageDecoder` (supports GZIP `.wmz`, Aldus Placeable headers, and `META_STRETCHDIB` / `META_DIBSTRETCHBLT` / `META_SETDIBTODEV` records)
+- **Windows Metafile**: `.wmf`, `.wmz` (`image/wmf`) via `MetafileAndVectorImageDecoder` (supports GZIP `.wmz`, Aldus Placeable headers, and `META_STRETCHDIB` / `META_DIBSTRETCHBLT` / `META_SETDIBTODEV` records). File identification validates the gzip payload as WMF before classifying `.wmz` as an image, so thumbnail routing does not treat it as a generic gzip file.
 - **PostScript / Encapsulated PostScript**: `.ps`, `.eps`, `.ept` (`image/x-eps`) via `MetafileAndVectorImageDecoder` and `TiffAndRawImageDecoder` (DOS binary `.ept` embedded TIFF/WMF previews, EPSI `%%BeginPreview` hex bitmaps, and `DisplayImage` DirectClass/PseudoClass raster streams)
 - **ANSI Art & DEC Sixel**: `.ans` (`image/x-ansi`) via `MetafileAndVectorImageDecoder` (real CP437 bitmap glyphs (8×8 rows doubled to 8×16 cells) with 16-color, 256-color, and 24-bit TrueColor SGR + `SAUCE00` metadata) and `.sixel`, `.six` (`image/x-sixel`) via `RetroImageDecoder`
 
@@ -51,7 +51,7 @@ Decoded via `LayeredImageDecoder`:
 
 - **OpenRaster & Krita**: `.ora`, `.kra` (`image/openraster`, `image/x-krita`) — extracts `mergedimage.png` / `preview.png` / `Thumbnails/thumbnail.png`
 - **Adobe Photoshop**: `.psd`, `.psb` (`image/vnd.adobe.photoshop`) — decodes v1 PSD and v2 PSB merged composite image data (Raw & PackBits RLE across Bitmap, Grayscale, Indexed, RGB, and CMYK modes, 8-bit & 16-bit)
-- **GIMP XCF**: `.xcf` (`image/x-xcf`) — parses the supported 8-bit RGB/RGBA/grayscale visible layers, tile hierarchies, and uncompressed/RLE 64×64 tiles and composites them onto the canvas
+- **GIMP XCF**: `.xcf` (`image/x-xcf`) — parses the supported 8-bit RGB/RGBA/grayscale visible layers, tile hierarchies, and uncompressed/RLE/zlib 64×64 tiles and composites them onto the canvas
 - **Aseprite**: `.ase`, `.aseprite` (`image/x-aseprite`) — parses frame 0 layer, palette (`0x2019`/`0x0004`), and raw/zlib-compressed cel (`0x2005`) chunks across 32-bit RGBA, 16-bit Grayscale, and 8-bit Indexed modes
 
 ### Workstation, classic computer & mobile bitmap formats
@@ -80,9 +80,13 @@ Checkpoint 23 rejects unsupported compression and incomplete mandatory raster
 bytes instead of returning blank or padded successful frames. This includes
 missing EXR chunks, XCF/TIFF compression outside implemented modes, missing
 PSD composite data and truncated HDR/FITS/DDS/PCX/QOI/Netpbm/EPSI/WMF pixels.
-The custom TIFF reader rejects BigTIFF's different directory layout; BigTIFF,
-EXR RLE and XCF zlib remain future codec work. Genuine blank images remain valid.
+The custom TIFF reader rejects BigTIFF's different directory layout; BigTIFF and
+EXR RLE remain future codec work. Genuine blank images remain valid.
 These are supported subsets, not complete format-conformance guarantees.
+
+InfiniFolder selects the image viewer for `.xpm` by extension even when a
+content provider labels the source `text/plain`. Long press offers **Show as
+text** to open the original source in InfiniScribe when it is installed.
 
 ### Camera RAW formats
 
@@ -176,7 +180,7 @@ Decoded via Android's platform RAW extractor (`ImageDecoder` / `BitmapFactory` /
 | **OpenRaster & Krita** | `.ora`, `.kra` | **Tier 2 (Thumbnail/Merged)** / **Tier 4 (Full Layers)** | **Tier 3 (Merged)** / **Tier 4 (Layered)** | **Prerequisites**: ZIP extractor (already in `storage-engine`)! Both `.ora` (`mergedimage.png` / `Thumbnails/thumbnail.png`) and `.kra` (`mergedimage.png` / `preview.png`) store standard PNG composites inside a ZIP container—so **Tier 2 viewer support** only needs to read `mergedimage.png` from the ZIP. Full layer editing requires XML stack parsing (`stack.xml` / `maindoc.xml`) + tile decompression + blend modes. |
 | **Adobe Photoshop** | `.psd`, `.psb` | **Tier 3 (Merged Composite)** / **Tier 4 (Layer Tree)** | **Tier 3 (Merged)** / **Tier 5 (Full PSD)** | **Prerequisites**: 26-byte `8BPS` header + Color Mode Data + Image Resources + Layer/Mask section skipper + **Image Data section** reader (which stores a pre-composited full-image planar bitmap compressed with Raw, PackBits RLE, or ZIP) + CMYK/16-bit channel converter. |
 | **Aseprite** | `.ase`, `.aseprite` | **Tier 3 (Medium)** | **Tier 3 (Medium)** | **Prerequisites**: 128-byte header + frame/chunk parser (`0x2004` Layer, `0x2005` Cel with zlib-compressed indexed/RGBA pixels, `0x2019` Palette) + normal/multiply/screen cel compositor. |
-| **GIMP XCF** | `.xcf`, `.xcf.gz`, `.xcf.bz2` | **Tier 4 (High)** | **Tier 4 (High)** | **Prerequisites**: Outer Gzip/BZip2 stream wrapper (already in `FileMagicDetector`) + XCF pointer/property parser + 64×64 tile hierarchy reader (RLE or zlib) + GEGL/legacy layer blend mode compositor. |
+| **GIMP XCF** | `.xcf`, `.xcf.gz`, `.xcf.bz2` | **Tier 4 (High)** | **Tier 4 (High)** | **Current subset**: visible 8-bit RGB/RGBA/grayscale layers with uncompressed, RLE, and zlib tiles. Broader fidelity would require additional layer types, precision modes, blend modes, and more XCF version coverage. |
 
 ---
 
@@ -198,5 +202,5 @@ Decoded via Android's platform RAW extractor (`ImageDecoder` / `BitmapFactory` /
 | Format | Extensions | Viewer Difficulty | Creation Difficulty | Prerequisites |
 | --- | --- | --- | --- | --- |
 | **Canon CR3 & Legacy RAWs** | `.cr3`, `.crw`, `.x3f`, `.3fr`, `.iiq`, `.mrw`, `.gpr` | **Tier 2 (Embedded Preview)** / **Tier 5 (Full Demosaic)** | **Tier 5 (Very High)** | **Prerequisites**: Almost all camera RAW files (including ISOBMFF `.cr3` `PRVW`/`THMB` boxes and CIFF `.crw`) contain a full-size embedded JPEG preview. A **Tier 2 lightweight extractor** locates the embedded JPEG offset/length and passes it to `BitmapFactory`. Full sensor demosaicing requires `LibRaw` JNI. |
-| **Windows Metafile (WMF / EMF)** | `.wmf`, `.emf`, `.wmz`, `.emz` | **Tier 3–4 (Medium–High)** | **Tier 3 (Medium)** | **Prerequisites**: GZIP wrapper (`.wmz`/`.emz`) + 16-bit WMF / 32-bit EMF GDI record interpreter mapping `PolyPolygon`, `PatBlt`, `StretchDIBits`, pens, brushes, and fonts onto an Android `Canvas` (`Bitmap`). |
+| **Windows Metafile (WMF / EMF)** | `.wmf`, `.emf`, `.wmz`, `.emz` | **Tier 3–4 (Medium–High)** | **Tier 3 (Medium)** | **Current subset**: `.wmf` and GZIP `.wmz` headers plus bitmap-bearing WMF records. Broader future coverage could add EMF and more GDI records for vector paths, pens, brushes, and fonts. |
 | **PostScript / EPS** | `.ps`, `.eps` | **Tier 2 (DOS EPS Preview)** / **Tier 5 (Full Interpreter)** | **Tier 3 (Simple Vector/Bitmap EPS)** | **Prerequisites**: DOS binary EPS files (`C5 D0 D3 C6` magic) embed a TIFF or WMF preview image at a 30-byte header offset (**Tier 2**). Full `.ps`/`.eps` rendering requires a PostScript stack virtual machine and Type 1/3 font rasterizer. |

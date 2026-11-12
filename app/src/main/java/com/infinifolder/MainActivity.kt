@@ -12236,6 +12236,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         val isCategory = AppsUri.isCategoryUri(entry.uri)
         val infiniMediaInstalled = CompanionViewerDefaults.installedMediaComponent(this) != null
         val isFile = !entry.metadata.isDirectory && !isApp && !isCategory && !isShortcut
+        val sourceTextExtension = entry.metadata.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        val canShowSourceAsText = isFile && entry.metadata.canRead && sourceTextExtension in setOf("xcf", "xpm") &&
+            CompanionViewerDefaults.installedScribeComponent(this) != null
 
         val detectedMagic=archiveInfo.magicMime?.let {com.infinifolder.storage.FileMagicResult(it,"Detected content",archiveInfo.browsable)}
         val isArchive=archiveInfo.browsable
@@ -12326,6 +12329,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             (isArchive || (entry.metadata.isDirectory && !isApp && !isCategory))
         val openGroup = baseOpenGroup +
             (if (canPlayContainerInMedia) listOf("Queue all audio in InfiniMedia") else emptyList()) +
+            (if (canShowSourceAsText) listOf("Show as text") else emptyList()) +
             (if (!entry.metadata.isDirectory && !isApp && !isCategory && entry.metadata.canRead) listOf("Open in hex editor") else emptyList()) +
             (if (canShowDeleted) listOf("Show deleted files") else emptyList())
         val canCopyContents = !entry.metadata.isDirectory && !isApp && !isCategory &&
@@ -12486,6 +12490,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 "Browse archive", "Browse" -> if(ArchiveUri.isArchiveUri(entry.uri))browseNestedArchive(entry)
                     else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
                 "Queue all audio in InfiniMedia" -> playContainerAudioInMedia(entry, inArchive)
+                "Show as text" -> openEntryAsTextInInfiniScribe(entry)
                 "Open with…" -> open(entry, externalOnly = true, forceExternalChooser = true)
                 "Open in hex editor" -> openHexEditor(entry)
                 "Open" -> if (entry.metadata.isDirectory) navigate(entry.uri, displayName = entry.metadata.name) else open(entry)
@@ -12517,6 +12522,34 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
 
 
+    }
+
+    private fun openEntryAsTextInInfiniScribe(entry: ResourceEntry) {
+        val component = CompanionViewerDefaults.installedScribeComponent(this) ?: run {
+            Toast.makeText(this, "InfiniScribe is not installed", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val relay = try {
+            FileSelectionRelayProvider.register(this, entry.uri, entry.metadata.name, "text/plain", entry.metadata.sizeBytes)
+        } catch (error: Exception) {
+            Toast.makeText(this, "Could not open the source as text: ${error.message}", Toast.LENGTH_LONG).show()
+            return
+        }
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(relay, "text/plain")
+            setComponent(component)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            putExtra("displayName", entry.metadata.name)
+            putExtra("mimeType", "text/plain")
+            putExtra("forcePlainTextViewer", true)
+            clipData = ClipData.newRawUri(entry.metadata.name, relay)
+        }
+        try {
+            grantUriPermission(component.packageName, relay, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startViewerActivity(intent)
+        } catch (error: Exception) {
+            Toast.makeText(this, "Could not open InfiniScribe: ${error.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun copyEntriesToClipboard(entries: List<ResourceEntry>, cut: Boolean = false) {

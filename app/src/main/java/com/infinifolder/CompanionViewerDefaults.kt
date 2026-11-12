@@ -119,6 +119,10 @@ internal object CompanionViewerDefaults {
     fun installedMediaComponent(context: Context): ComponentName? =
         installedComponent(context.applicationContext, media)
 
+    /** Installed InfiniScribe host, used by explicit text-view actions. */
+    fun installedScribeComponent(context: Context): ComponentName? =
+        installedComponent(context.applicationContext, scribe)
+
     internal fun defaultPackageFor(name: String, mime: String): String? = targetFor(name, mime)?.packageName
 
     /** Infinimedia is launched as an explicit component; MIME-filter visibility is not required. */
