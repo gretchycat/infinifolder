@@ -40,4 +40,16 @@ class CompanionViewerDefaultsTest {
         assertFalse(CompanionViewerDefaults.mayAssociateWithoutIntentFilter("com.infiniscribe"))
         assertFalse(CompanionViewerDefaults.mayAssociateWithoutIntentFilter("org.example.player"))
     }
+
+    @Test fun longPressOffersModuleDeclaredBackupViewers() {
+        assertTrue(CompanionViewerDefaults.hasTextBackupFor("icon.xpm", "image/x-xpixmap"))
+        assertTrue(CompanionViewerDefaults.hasTextBackupFor("art.ans", "image/x-ansi"))
+        assertFalse(CompanionViewerDefaults.hasTextBackupFor("notes.txt", "text/plain"))
+        assertTrue(CompanionViewerDefaults.isRawAnsiSource("art.ans", "image/x-ansi"))
+        assertFalse(CompanionViewerDefaults.isRawAnsiSource("icon.xpm", "image/x-xpixmap"))
+    }
+
+    @Test fun overlappingAnsiViewDefaultsToMediaWhileKeepingScribeAsBackup() {
+        assertEquals("com.infinimedia", CompanionViewerDefaults.defaultPackageFor("art.ans", "image/x-ansi"))
+    }
 }

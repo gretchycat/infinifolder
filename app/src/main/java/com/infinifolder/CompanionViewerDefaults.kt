@@ -12,6 +12,10 @@ import com.infinifolder.preview.AudioIconFormats
 import com.infinifolder.viewer.ExternalAppDefaults
 import com.infinifolder.viewer.MediaType
 import com.infinifolder.viewer.MediaTypeDetector
+import io.github.gretchycat.infinistream.CapabilityHandler
+import io.github.gretchycat.infinistream.Operations
+import io.github.gretchycat.infinistream.RuntimeCapabilities
+import io.github.gretchycat.infinistream.ViewerTarget
 import io.github.gretchycat.infiniscribe.ScribeTextFormats
 
 /** Local routing defaults for the separately installed media and document apps. */
@@ -125,15 +129,47 @@ internal object CompanionViewerDefaults {
 
     internal fun defaultPackageFor(name: String, mime: String): String? = targetFor(name, mime)?.packageName
 
+    /** A long-press source viewer is offered when another declared module owns the normal view. */
+    internal fun hasTextBackupFor(name: String, mime: String): Boolean {
+        val targets = matchingHandlers(name, mime).mapNotNull { it.viewerTarget() }.toSet()
+        return ViewerTarget.INFINISCRIBE in targets &&
+            targets.any { it == ViewerTarget.INFINIFOLDER || it == ViewerTarget.INFINIMEDIA }
+    }
+
+    /** The ANSI source capability asks the host for byte-preserving escape rendering. */
+    internal fun isRawAnsiSource(name: String, mime: String): Boolean = matchingHandlers(name, mime).any { handler ->
+        handler.viewerTarget() == ViewerTarget.INFINISCRIBE && handler.describe().attributes["sourceMode"] == "ansi"
+    }
+
     /** Infinimedia is launched as an explicit component; MIME-filter visibility is not required. */
     internal fun mayAssociateWithoutIntentFilter(packageName: String): Boolean = packageName == media.packageName
 
     private fun targetFor(name: String, mime: String): Target? {
+        val targets = matchingHandlers(name, mime).mapNotNull { it.viewerTarget() }.toSet()
+        // For overlapping ANSI playback and source-text handlers, the media app
+        // owns normal open; Scribe remains available as the long-press fallback.
+        if (ViewerTarget.INFINIMEDIA in targets && ViewerTarget.INFINISCRIBE in targets) return media
+        if (ViewerTarget.INFINIMEDIA in targets && ViewerTarget.INFINIFOLDER !in targets) return media
         if (name.endsWith(".mindnodetouch", true) || mime == "application/x-mindnode-touch") return scribe
         val type = MediaTypeDetector.detect(name, mime)
         if (ArchiveFormats.isPlaylist(name, mime) || type in setOf(MediaType.AUDIO, MediaType.VIDEO) ||
             AudioIconFormats.isAudio(MimeRegistry.guess(name))) return media
         return scribe.takeIf { isScribeType(type) }
+    }
+
+    private fun matchingHandlers(name: String, mime: String): List<CapabilityHandler> {
+        val normalizedMime = MimeRegistry.normalize(mime)
+        val operations = setOf(Operations.DECODE, Operations.VIEW, Operations.EDIT, Operations.PLAY)
+        return RuntimeCapabilities.installed().registeredHandlers().filter { handler ->
+            val descriptor = handler.describe()
+            if (descriptor.operations.none { it in operations }) return@filter false
+            handler.detectExtensions(name).isNotEmpty() || descriptor.formats.any { format ->
+                format.mimeTypes.any { declared ->
+                    val value = MimeRegistry.normalize(declared)
+                    value == normalizedMime || value.endsWith("/*") && normalizedMime.startsWith(value.dropLast(1))
+                }
+            }
+        }
     }
 
     private fun removedTarget(className: String): Target? = when (className) {

@@ -3,19 +3,19 @@
   "repositories": {
     "libinfinicanvas": {
       "url": "https://github.com/gretchycat/libinfinicanvas.git",
-      "commit": "c0b6c1ec7e5c3149c0ffb983fc1ae2a15c430a1a"
+      "commit": "f27940b24875343dcb06a2eec95398846f36486a"
     },
     "libinfinicore": {
       "url": "https://github.com/gretchycat/libinfinicore.git",
-      "commit": "0f98a0e9c94e9de0133e4e1ab53a1274b0fd33d8"
+      "commit": "342439121b7b93172d43614abef7a16c370c7a7b"
     },
     "libinfinimeta": {
       "url": "https://github.com/gretchycat/libinfinimeta.git",
-      "commit": "045901712b0e55d561f982a50e06185b587a6035"
+      "commit": "e8b211b3233af2674188422f90248ea98e58c399"
     },
     "libinfiniscribe": {
       "url": "https://github.com/gretchycat/libinfiniscribe.git",
-      "commit": "60dd088497e8ea518b8b966b37dbada011db6d12"
+      "commit": "87076fc147f6f315a302a51f539c160a45b3d1da"
     },
     "libinfiniselect": {
       "url": "https://github.com/gretchycat/libinfiniselect.git",
@@ -23,7 +23,7 @@
     },
     "libinfinisound": {
       "url": "https://github.com/gretchycat/libinfinisound.git",
-      "commit": "14b482e314a661ebdbc346d111884b874bc42adf"
+      "commit": "1057aabca8470338b10b2d4bade96816313c18c7"
     },
     "libinfinistore": {
       "url": "https://github.com/gretchycat/libinfinistore.git",
@@ -31,11 +31,11 @@
     },
     "libinfinistream": {
       "url": "https://github.com/gretchycat/libinfinistream.git",
-      "commit": "0dcb1b17b0450d900d0581f2fd2c13bf0dd32e4d"
+      "commit": "6a551a523f3161902b3a1f70902fd2a4ee49a6cd"
     },
     "libinfiniui": {
       "url": "https://github.com/gretchycat/libinfiniui.git",
-      "commit": "65ad5a9f223b2fa3273f18eb7df246e319342df3"
+      "commit": "e62bc822b6ef5c58c6a733ef7fb379a89ab596fd"
     },
     "libinfinivault": {
       "url": "https://github.com/gretchycat/libinfinivault.git",
@@ -43,7 +43,7 @@
     },
     "libinfinivideo": {
       "url": "https://github.com/gretchycat/libinfinivideo.git",
-      "commit": "22d234fd3c525b6d920ff3072f428ca7d2897d0e"
+      "commit": "994ca6eedb9fc1f14a133eca36b2c1f6fbdbdbe2"
     }
   }
 }

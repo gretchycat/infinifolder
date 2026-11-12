@@ -21,6 +21,7 @@ def main():
             raise SystemExit('A declared submodule is missing or differs from its pinned revision')
     directory=root/lock['directory']
     if not directory.resolve().is_relative_to(root):raise SystemExit('Dependency directory must be inside this checkout')
+    requirements={}
     for name,spec in lock['repositories'].items():
         if not re.fullmatch('[A-Za-z0-9_-]+',name) or not re.fullmatch('[0-9a-f]{40}',spec['commit']):
             raise SystemExit('Invalid dependency name or unpinned revision')
@@ -45,6 +46,15 @@ def main():
         nested=target/'dependencies.lock.json'
         if nested.exists():
             for child,childspec in json.loads(nested.read_text())['repositories'].items():
-                if lock['repositories'].get(child)!=childspec:raise SystemExit(f'Conflicting or undeclared dependency: {name} -> {child}')
+                requirements.setdefault((child,childspec['url']),set()).add(childspec['commit'])
         print(f'{name} {spec["commit"]}')
+    for (child,url),commits in requirements.items():
+        selected=lock['repositories'].get(child)
+        if selected is None or selected['url']!=url:
+            raise SystemExit(f'Undeclared or conflicting dependency repository: {child} ({url})')
+        for required in commits:
+            result=subprocess.run(['git','-C',str(directory/child),'merge-base','--is-ancestor',required,selected['commit']],
+                stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            if result.returncode:
+                raise SystemExit(f'{child}: selected {selected["commit"]} does not include pinned requirement {required}')
 if __name__=='__main__':main()

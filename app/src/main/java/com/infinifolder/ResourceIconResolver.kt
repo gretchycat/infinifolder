@@ -183,7 +183,8 @@ class ResourceIconResolver(context: Context) {
     }
     private fun fallback(entry: ResourceEntry, size: Int): Icon = Icon(
         if(AppsUri.isRoot(entry.uri))FileTypeIcons.installedApplications(size)
-        else if(entry.metadata.isDirectory)FileTypeIcons.folder(size) else FileTypeIcons.bitmap(entry.metadata,size),
+        else if(entry.metadata.isDirectory)FileTypeIcons.folder(size) else FileTypeIcons.bitmap(
+            entry.metadata.copy(mimeType=MimeRegistry.guess(entry.metadata.name)), size, MimeRegistry.guess(entry.metadata.name)),
         if(AppsUri.isRoot(entry.uri))"▦" else FileIconView.fallback(entry.metadata),entry.metadata.name,entry.metadata.isDirectory)
     private fun notifyChanged(uri: Uri) {
         val prefix = "icons-v13:$uri:"
@@ -200,12 +201,6 @@ class ResourceIconResolver(context: Context) {
         val base=fallback(entry,size)
         browserLocation(entry.uri,entry.metadata.name,size)?.let { return it }
         if(!seen.add(entry.ref) || seen.size>16)return base.copy(bitmap=LinkIcons.protocol("BROKEN",size),source="broken-link")
-        // A directory's own cover wins over sibling per-file custom artwork.
-        if(!entry.metadata.isDirectory &&
-            (ResourceIconSidecars.find(entry)!=null || !ResourceIconSidecars.hasObserved(entry))) {
-            val saved=IconWork.bounded(lane="metadata:${entry.ref.providerId}") {artworkCache.load(entry,size,false)}
-            if(saved!=null && !saved.generated && IconBitmapUsability.visible(saved.bitmap))return base.copy(bitmap=saved.bitmap,source="file-override")
-        }
         if(ShortcutInfo.isShortcut(entry.metadata.name,entry.metadata.mimeType))return link(entry,size,seen)
         if(LinkIcons.isMagnet(entry.uri))return base.copy(bitmap=theme.resolveSchemeIcon("magnet",size) ?: LinkIcons.protocol("MAGNET",size),source="scheme")
         if(entry.metadata.isSymbolicLink) {
@@ -217,30 +212,13 @@ class ResourceIconResolver(context: Context) {
         if(AppsUri.isAppUri(entry.uri))return base.copy(bitmap=AppsUri.getPackageName(entry.uri)?.let { runtime.apps.getAppIconBitmap(it,size,useDiskCache=false) } ?: base.bitmap,source="provider-app")
         if(AppsUri.isCategoryUri(entry.uri))return base.copy(bitmap=null,fallback=runtime.apps.getCategoryIcon(AppsUri.getCategoryName(entry.uri).orEmpty()),source="provider-category")
         if(entry.metadata.isDirectory)return directory(entry,size,seen)
-        val rawMetadata=if(com.infinifolder.viewer.RawMediaConfigStore.mightHave(entry))
-            IconWork.bounded(lane="metadata:${entry.ref.providerId}") {
-                com.infinifolder.viewer.RawMediaConfigStore.load(appContext,entry,discover=!ResourceIconSidecars.hasObserved(entry))
-            } else null
-        rawMetadata?.let {raw->
-            if(raw.kind=="image"){
-                val image=IconWork.bounded(3000,lane="thumbnail:${entry.ref.providerId}") {
-                    com.infinifolder.viewer.RawMediaRendering.thumbnail(appContext,entry,raw,size)
-                }
-                return base.copy(bitmap=image ?: theme.resolveLogicalIcon("image-x-generic",size)
-                    ?: FileTypeIcons.bitmap(entry.metadata.copy(mimeType="image/x-infinifolder-raw"),size),
-                    source=if(image!=null)"raw-image-thumbnail" else "raw-image-fallback",mimeType="image/x-infinifolder-raw")
-            }
-            if(raw.kind=="audio")return base.copy(bitmap=theme.resolveLogicalIcon("audio-x-generic",size)
-                ?:FileTypeIcons.bitmap(entry.metadata.copy(mimeType="audio/pcm"),size),source="raw-audio-metadata",mimeType="audio/pcm")
-        }
+        // Pass 2: validate the suffix-selected identity before metadata or
+        // thumbnail work. Identity results are cached independently per source.
         val id=identity(entry)
         var resolvedIdentity=id
         var parserValidatedImage:Bitmap?=null
-        // The lightweight signature probe can be inconclusive for some providers or
-        // uncommon image variants. A successful Canvas decode is itself a format
-        // validation; use that result and its bitmap rather than briefly relabeling a
-        // valid image as generic binary. A failed decode leaves the strict identity
-        // result untouched.
+        // A successful image parser/decode can verify a weak or provider-blocked
+        // signature probe. This is still validation, before the content phase.
         if(MimeRegistry.isUnspecified(id.mimeType)) {
             val imageCandidate=registry.candidates(entry.metadata.name).singleOrNull()?.let(MimeRegistry::normalize)
                 ?.takeIf { it.startsWith("image/") || it in ImageFormats.animationMimeTypes }
@@ -256,6 +234,29 @@ class ResourceIconResolver(context: Context) {
                         "name=${entry.metadata.name} candidate=$imageCandidate extension=$extension")
                 }
             }
+        }
+        // Pass 3 starts here: content metadata and artwork are consulted only
+        // after extension and parser/signature identity have settled.
+        // Explicit artwork is resolved only after the file identity pass.
+        if(ResourceIconSidecars.find(entry)!=null || !ResourceIconSidecars.hasObserved(entry)) {
+            val saved=IconWork.bounded(lane="metadata:${entry.ref.providerId}") {artworkCache.load(entry,size,false)}
+            if(saved!=null && !saved.generated && IconBitmapUsability.visible(saved.bitmap))return base.copy(bitmap=saved.bitmap,source="file-override")
+        }
+        val rawMetadata=if(com.infinifolder.viewer.RawMediaConfigStore.mightHave(entry))
+            IconWork.bounded(lane="metadata:${entry.ref.providerId}") {
+                com.infinifolder.viewer.RawMediaConfigStore.load(appContext,entry,discover=!ResourceIconSidecars.hasObserved(entry))
+            } else null
+        rawMetadata?.let {raw->
+            if(raw.kind=="image"){
+                val image=IconWork.bounded(3000,lane="thumbnail:${entry.ref.providerId}") {
+                    com.infinifolder.viewer.RawMediaRendering.thumbnail(appContext,entry,raw,size)
+                }
+                return base.copy(bitmap=image ?: theme.resolveLogicalIcon("image-x-generic",size)
+                    ?: FileTypeIcons.bitmap(entry.metadata.copy(mimeType="image/x-infinifolder-raw"),size),
+                    source=if(image!=null)"raw-image-thumbnail" else "raw-image-fallback",mimeType="image/x-infinifolder-raw")
+            }
+            if(raw.kind=="audio")return base.copy(bitmap=theme.resolveLogicalIcon("audio-x-generic",size)
+                ?:FileTypeIcons.bitmap(entry.metadata.copy(mimeType="audio/pcm"),size),source="raw-audio-metadata",mimeType="audio/pcm")
         }
         val meta=entry.metadata.copy(mimeType=resolvedIdentity.mimeType)
         val storedRecord=registry.mime(resolvedIdentity.mimeType)

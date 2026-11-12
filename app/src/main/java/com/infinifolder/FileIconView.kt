@@ -18,7 +18,7 @@ import com.infinifolder.theme.IconThemeManager
 /** First-frame artwork for both file grids; ResourceIconResolver supplies the final icon. */
 object FileIconView {
     fun fallback(meta: ResourceMetadata): String = if (meta.isDirectory) "📁" else
-        MimeRegistry.fallbackIcon(MimeRegistry.effective(meta.name, meta.mimeType))
+        MimeRegistry.fallbackIcon(MimeRegistry.guess(meta.name))
 
     /** No theme/store construction or source access is needed for the initial card. */
     fun createDefault(
@@ -30,10 +30,13 @@ object FileIconView {
     ): IconImageView = IconImageView(context).apply {
         scaleType=ImageView.ScaleType.FIT_CENTER
         val size=((if(asGrid)iconSizeDp else 44)*context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
+        // Pass 1 is suffix-only. Provider MIME hints and source bytes are handled
+        // asynchronously after the complete listing has been populated.
+        val extensionMime = MimeRegistry.guess(meta.name, meta.isDirectory)
         setImageBitmap(when {
             AppsUri.isRoot(entry.uri) -> FileTypeIcons.installedApplications(size)
             meta.isDirectory -> FileTypeIcons.folder(size)
-            else -> FileTypeIcons.bitmap(meta,size)
+            else -> FileTypeIcons.bitmap(meta.copy(mimeType=extensionMime),size,extensionMime)
         })
         contentDescription="File icon"
         layoutParams=FrameLayout.LayoutParams(-1,-1,Gravity.CENTER)
@@ -58,9 +61,10 @@ object FileIconView {
         return createDefault(context,entry,meta,asGrid,iconSizeDp).apply {
             val size=((if(asGrid)iconSizeDp else 44)*context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
             val hasTheme=!theme.getActiveThemeId().isNullOrBlank()
+            val extensionMime = MimeRegistry.guess(meta.name, meta.isDirectory)
             val themed=when {
                 AppsUri.isRoot(entry.uri) && hasTheme -> theme.peekPlaceIcon("installed_apps",size)
-                hasTheme -> theme.peekFileIcon(meta,size)
+                hasTheme -> theme.peekFileIcon(meta.copy(mimeType=extensionMime),size)
                 else -> null
             }
             if(themed!=null)setImageBitmap(themed)

@@ -48,7 +48,9 @@ The wrapper pins Gradle 9.7.1 and its distribution checksum. Source dependencies
 are pinned by Git submodule commits and `dependencies.lock.json`, including their
 transitive closure. No other application is cloned or required. Library checkout
 paths are inside this checkout; the bootstrap rejects dependency symlinks and
-conflicting pins and refuses to overwrite changes when switching revisions.
+refuses to overwrite changes when switching revisions. One exact app-level commit
+is selected for each shared library; it must descend from every linked library's
+declared dependency commit.
 
 On Termux install its JDK, Python, clang, aapt2 and native dependencies documented
 by the individual libraries. The build script configures the installed native aapt2; direct Gradle calls need

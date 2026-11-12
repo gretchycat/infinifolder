@@ -12236,8 +12236,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         val isCategory = AppsUri.isCategoryUri(entry.uri)
         val infiniMediaInstalled = CompanionViewerDefaults.installedMediaComponent(this) != null
         val isFile = !entry.metadata.isDirectory && !isApp && !isCategory && !isShortcut
-        val sourceTextExtension = entry.metadata.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
-        val canShowSourceAsText = isFile && entry.metadata.canRead && sourceTextExtension in setOf("xcf", "xpm") &&
+        val canShowSourceAsText = isFile && entry.metadata.canRead &&
+            CompanionViewerDefaults.hasTextBackupFor(entry.metadata.name, entry.metadata.mimeType) &&
             CompanionViewerDefaults.installedScribeComponent(this) != null
 
         val detectedMagic=archiveInfo.magicMime?.let {com.infinifolder.storage.FileMagicResult(it,"Detected content",archiveInfo.browsable)}
@@ -12542,6 +12542,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             putExtra("displayName", entry.metadata.name)
             putExtra("mimeType", "text/plain")
             putExtra("forcePlainTextViewer", true)
+            putExtra("rawAnsiSource", CompanionViewerDefaults.isRawAnsiSource(entry.metadata.name, entry.metadata.mimeType))
             clipData = ClipData.newRawUri(entry.metadata.name, relay)
         }
         try {
