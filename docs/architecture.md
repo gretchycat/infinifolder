@@ -113,8 +113,8 @@ Infinimedia owns the custom Infinimedia Default theme, the four original Winamp 
 
 ## Theme image boundary
 
-Canvas owns format detection, image decoding, indexed IFF animation and direct
-rendering of the Infini SVG palette extension. The shared UI owns skin archive
+Canvas owns format detection, image decoding, indexed IFF animation and static
+SVG/SVGZ rendering. Custom SVG cycling metadata is ignored. The shared UI owns skin archive
 validation, logical sprite-to-image mappings, optional same-canvas layers, bounded
 image caching and lifecycle animation scheduling. The Media application owns its
 default theme choice, artwork, theme metadata and player-specific frame geometry.
@@ -130,4 +130,6 @@ No storage library or application-to-application dependency was added.
 See [theme rendering and verification](theme-rendering.md) for interfaces and
 executed checks. The SVG-to-IFF authoring tool is documented [separately](svg-to-iff.md).
 
-Indexed SVG playback now compiles flat paints to cached raster palette bindings in Canvas. An optional frame-interval hint keeps both image schedulers from adding a fixed delay after rendering. Still-only theme color sampling avoids animation setup. See the [measured performance correction](svg-cycle-performance.md) for ownership, tests and raster/gradient limitations; repository dependency edges are unchanged.
+SVG color-cycling playback was removed at the owner's request. Static SVG rendering and IFF cycling remain; image schedulers count rendering/publication within a 33 ms deadline. The SVG source and SVG-to-IFF authoring tool remain available. No dependency edge changed.
+
+Infinifolder migrates saved defaults for its removed audio/video players to installed Infinimedia. Explicit type-wide external-app choices replace extension defaults for the same MIME type so automatic companion defaults cannot override the user's newer choice. Local preferences and Android system defaults remain separate.

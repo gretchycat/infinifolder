@@ -103,4 +103,6 @@ On 2026-11-11, implementation commit `18c2481` produced the debug APK and passed
 
 The shared rendering follow-up at d4d2293 also passed all 143 app/native tests and 11 build-environment checks in the independent checkout. See the [current architectural breakdown](docs/theme-rendering.md), [full report](docs/architecture-audit.md) and [executed theme/build evidence](docs/validation/theme-rendering.json). Media owns the sole packaged Infinimedia Default theme; Folder has no player theme assets or Media application dependency.
 
-SVG color cycling now uses cached palette rasters for flat indexed artwork, with frame deadlines in both image schedulers. The [performance report](docs/svg-cycle-performance.md) records setup cost, approximation/gradient limits, measured speed and the final standalone/runtime checks.
+SVG/SVGZ render as static artwork; experimental SVG color cycling has been removed. IFF cycling remains supported. Saved audio defaults now migrate to the separate Media app, and type-wide choices override older extension defaults. See [theme rendering](docs/theme-rendering.md) and the [architecture audit](docs/architecture-audit.md) for current boundaries and verification.
+
+Current follow-up: independent Folder verification passed 146 app/native tests and 11 environment checks. The [static SVG/audio-default report](docs/static-svg-audio-defaults.md) records the corrections, all affected build results and Android runtime limits.

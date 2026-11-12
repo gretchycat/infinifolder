@@ -43,7 +43,7 @@ Previously the importer ignored all bitmap sheets, SelectedBG and Font, always m
 
 This adapts classic skin chrome and palettes to the existing player layout; it does not execute Winamp scripts or implement modern XML/WAL skins, custom player layouts, cursors, or every bitmap control. Empty/unrecognized archives are rejected. All expanded entries count toward the 8 MiB per-entry, 24 MiB combined and 512-entry limits; the imported compressed file is limited to 32 MiB. Skin images are limited to 2 million pixels each, with an aggregate 8 million pixel layer/composite cache budget. Unsupported codecs use the existing visual fallback.
 
-All four compatibility archives are tested explicitly. The independent Media build passed 80 unit tests; eight Android raster/lifecycle checks cover SVG/IFF animation, compositing, format detection and the full visual frame. Activity appearance, touch handling, theme restoration and video surface composition remain device acceptance checks.
+All four compatibility archives are tested explicitly. The independent Media build passed 80 unit tests; the Android raster/lifecycle probe covers static SVG, IFF animation, compositing, format detection and the full visual frame. Activity appearance, touch handling, theme restoration and video surface composition remain device acceptance checks.
 
 ## Image scaling preference
 

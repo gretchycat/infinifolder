@@ -1,6 +1,12 @@
 # InfiniSuite architecture audit and separation
 
-## SVG cycling performance correction (2026-11-11)
+## Current follow-up: static SVG and audio defaults (2026-11-11)
+
+SVG cycling rendering was removed at the owner's request; ordinary static SVG/SVGZ and IFF cycling remain. Folder now migrates old internal media-player defaults, and explicit type-wide choices replace same-MIME extension defaults that previously overrode them. Media's existing Android audio registration was verified in the packaged manifest and installed resolver. Application/library dependency edges are unchanged.
+
+Canvas passed 90 tests; shared UI passed 125 + 5. Independent Media/Scribe/Folder build.sh runs produced APKs and passed 80 / 17 / 146 tests, plus 11 environment cases each. All 13 Android runtime groups and three skin packaging tests passed. Visible resolver/default-setting interaction remains manual acceptance; Ubuntu and other-platform work remain deferred. See the [architectural breakdown, commits and limits](static-svg-audio-defaults.md) and [executed evidence](validation/static-svg-audio-defaults.json). The following sections record earlier checkpoints and superseded SVG implementations.
+
+## SVG cycling performance correction (historical; later removed)
 
 The original direct-vector implementation compiled and passed basic pixel checks, but its 4,013-path source took 204.32 ms per warmed frame and could not keep up with its 24-step/second cycle. Its playback timers also added a full 33 ms wait after worker/publication time. This was a performance/verification gap; the earlier eight-group probe did not measure full rotations or frame cadence.
 
@@ -12,7 +18,7 @@ Canvas passed 104 tests; shared UI passed 121 + 5. Independent Media, Scribe and
 
 Implementation commits: Canvas 387c0ca/0e39c0a, UI b5ce192/07f9dea, Media 1726316/6acbbec, Scribe 08e9488/339e95b and Folder 17f2968/ac926de. An added IFF/BMP still-preview parity check caught a first-frame sampling difference; the non-SVG still route now preserves established initial pixels. All existing repositories/history were retained. See the [architectural/performance breakdown](svg-cycle-performance.md) and [executed evidence](validation/svg-cycle-performance.json). Visible UI/device acceptance, Ubuntu and other-platform work remain outside these checks. Earlier sections below describe their historical implementations and checkpoints.
 
-## Theme and visual-media follow-up (2026-11-11)
+## Theme and visual-media follow-up (historical implementation checkpoint)
 
 Infinimedia now owns and packages **Infinimedia Default** as its sole bundled skin. Its corrected opaque IFF faceplate cycles natively; its name is updated in theme.json, skininfo.xml, readme and the chooser, with original artwork credits retained. The four previous bundled archives moved unchanged into Media's test-assets/skins. Imported skins remain supported; missing saved bundled paths fall back to the configured default. The optional SF3 bank remains outside production assets.
 

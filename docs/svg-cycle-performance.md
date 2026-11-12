@@ -1,4 +1,6 @@
-# SVG color cycling performance correction
+# SVG color cycling performance correction (historical)
+
+**Superseded:** SVG color-cycling rendering has been removed at the owner’s request. SVG/SVGZ now render as still images. This report preserves measurements of the removed experiment; its implementation descriptions and benchmark commands apply only to the recorded commits. IFF cycling and the general scheduler deadline fix remain.
 
 ## Cause and implementation
 

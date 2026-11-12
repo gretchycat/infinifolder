@@ -2,7 +2,7 @@
 
 ## Application and library boundaries
 
-* **libinfinicanvas:** `CanvasStreams.decodeBytes` uses content signatures and the existing codec registry for in-memory artwork. It preserves IFF color cycling and directly renders the Infini SVG palette extension. `BitmapFrame` exposes the bitmap and optional animation controller.
+* **libinfinicanvas:** `CanvasStreams.decodeBytes` uses content signatures and the existing codec registry for in-memory artwork. It preserves IFF color cycling and renders SVG/SVGZ as still images. Custom SVG cycling metadata is ignored. `BitmapFrame` exposes the bitmap and optional animation controller.
 * **libinfiniui:** skin archive validation, logical sprite roles, `theme.json` mappings/layers, bitmap caching and lifecycle scheduling. The common `ImageAnimationPlayback` scheduler is now in ui-android; the optional ui-image screen uses the same class through its existing dependency. Media therefore does not need that screen to animate a skin.
 * **Infinimedia:** the custom default artwork and attribution, theme selection, deterministic packaging and the player-specific full visual frame. VIDEO supplies the title; GEN supplies side borders and bottom corners. Scaling uses the player's 275-pixel grid, while the inner media stage retains 16:9 geometry. Title clicks retain collapse behavior.
 
@@ -30,7 +30,7 @@ Each role accepts one to four same-canvas images, composited in order. Support i
 
 Archive limits: 512 entries, 8 MiB per entry and 24 MiB total expanded data. Skin images are limited to 2 million pixels each, with an aggregate 8 million pixel budget for layer/composite buffers. Hosts register an animation handle while resumed and close it while paused/destroyed. One shared worker renders skin frames; published frames are updated on the main thread. Closing the last host pauses work, and changing a theme discards queued old frames.
 
-The SVG extension uses the namespace `https://infinicanvas.org/svg`, an indexed palette, disjoint cycle ranges and `palette-index` paint bindings. Flat indexed paints now compile once to cached raster bindings with the original palette and no 256-color limit. Untagged equal-RGB paint remains fixed. Mixed indexed edges can have small color approximation errors; tagged animated gradient stops retain the vector fallback. See [Canvas's schema and limits](https://github.com/gretchycat/libinfinicanvas/blob/0e39c0ad9ca33c6c4a0a8877d1608ac0f61e8e99/docs/svg-palette-cycling.md).
+SVG/SVGZ use ordinary static AndroidSVG rendering. The experimental custom SVG color-cycling parser, vector animation, raster animation and optional frame-interval protocol have been removed at the owner's request. The source SVG and SVG-to-IFF authoring converter remain intact. Theme SVGs should include standard fallback paints; custom palette-only bindings are ignored. Use indexed IFF for cycling artwork. Still-only sampling preserves IFF/BMP first-frame pixels, and image schedulers retain a 33 ms deadline that includes rendering/publication work.
 
 ## Reproducible checks
 
@@ -43,8 +43,8 @@ python3 scripts/test-package-default-theme.py
 python3 scripts/verify-theme-runtime.py
 ```
 
-The runtime probe loads the actual built APK using app_process. Its isolated process initializes a real system font for AndroidSVG without bootstrapping an Activity. It verifies indexed SVG paints/direction, a palette above 256 colors, the supplied infini.svg, corrected IFF opacity/cycling, content-signature format detection, ordered transparent layers, bitmap lifetime, complete frame pixels at two scales, and cache play/pause/resume/clear. PNG frame previews are written under `build/theme-runtime`. A [recorded full-frame preview](validation/visual-media-frame-550.png) shows the assembled renderer output.
+The runtime probe loads the actual built APK using app_process. Its isolated process initializes a real system font for AndroidSVG without bootstrapping an Activity. It verifies static SVG/SVGZ with ignored cycling metadata, document dimensions/aspect ratio, the supplied infini.svg as a still, corrected IFF opacity/cycling, first-frame parity, content-signature format detection, ordered layers, bitmap lifetime, complete frame pixels at two scales, frame deadlines, cache play/pause/resume/clear and Android IntentFilter matching of the APK's playback registrations. PNG frame previews are written under `build/theme-runtime`. A [recorded full-frame preview](validation/visual-media-frame-550.png) shows the assembled renderer output.
 
 These checks do not establish Activity layout/touch behavior, video surface composition, audible playback or storage grants. Ubuntu testing and other-platform ports remain deferred. Executed build and raster results are recorded in the architecture audit and its validation evidence.
 
-The [SVG performance correction](svg-cycle-performance.md) supersedes the original per-frame vector rendering path and records the expanded 15-group Android probe, timing measurements and approximation limits.
+The [earlier SVG performance report](svg-cycle-performance.md) is historical: SVG cycling playback has since been removed. Current checks are recorded in the architecture audit.
