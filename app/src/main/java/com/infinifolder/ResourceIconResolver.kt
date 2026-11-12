@@ -258,7 +258,7 @@ class ResourceIconResolver(context: Context) {
         // glyph. Once identity validation says this is a renderable image or
         // animation, always prefer its actual content thumbnail; a failed
         // render still falls through to the effective MIME icon below.
-        val record=if(resolvedIdentity.mimeType.startsWith("image/") || resolvedIdentity.mimeType in ImageFormats.animationMimeTypes)
+        val record=if(ImageFormats.isRenderableMime(resolvedIdentity.mimeType))
             storedRecord.copy(isImage=true,overrideImageIcon=false) else storedRecord
         var artworkPending=false
         if(AudioIconFormats.isAudio(resolvedIdentity.mimeType) && !ArchiveFormats.isPlaylist(meta.name,resolvedIdentity.mimeType)) {

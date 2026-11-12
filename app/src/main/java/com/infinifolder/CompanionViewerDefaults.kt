@@ -107,6 +107,8 @@ internal object CompanionViewerDefaults {
     fun installedMediaComponent(context: Context): ComponentName? =
         installedComponent(context.applicationContext, media)
 
+    internal fun defaultPackageFor(name: String, mime: String): String? = targetFor(name, mime)?.packageName
+
     private fun targetFor(name: String, mime: String): Target? {
         if (name.endsWith(".mindnodetouch", true) || mime == "application/x-mindnode-touch") return scribe
         val type = MediaTypeDetector.detect(name, mime)

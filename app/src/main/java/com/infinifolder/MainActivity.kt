@@ -368,6 +368,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private var current: Uri? = null
     @Volatile private var loadGeneration = 0
     private var entries = emptyList<ResourceEntry>()
+    private var displayedEntries = emptyList<ResourceEntry>()
     private val containerLinkProvider get() = com.infinifolder.storage.StorageRuntime.get(this).containerLinks
     private val commonLocations get() = com.infinifolder.storage.StorageRuntime.get(this).commonLocations
     @Volatile private var rootContainerLinks = emptyList<Pair<ResourceEntry, ShortcutInfo>>()
@@ -5107,6 +5108,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             val rows = if (pinBoard.isRoot(current)) entries.filter { showHidden || !it.metadata.isHidden }
                 .sortedWith(compareBy<ResourceEntry> { it.metadata.name.lowercase(Locale.ROOT) }.thenBy { it.metadata.name })
                 else FileViewGrid.sortedEntries(entries, showHidden, sortKey, sortDescending)
+            displayedEntries = rows
             if (rows.isEmpty()) {
                 content.addView(TextView(this).apply {
                     text = openingVirtualDirectoryLabel?.let { "Opening $it…" }
@@ -6056,6 +6058,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     }
 
     private fun startViewerActivity(intent: Intent) {
+        com.infinifolder.viewer.ImageNavigationOrder.attach(this, intent, displayedEntries)
         val shouldCloseOnReturn = externalViewerLaunchPending || externalLaunchRequestActive
         try {
             startActivity(intent)
