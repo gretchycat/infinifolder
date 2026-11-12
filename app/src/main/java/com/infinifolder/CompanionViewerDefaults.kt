@@ -20,6 +20,10 @@ internal object CompanionViewerDefaults {
 
     private val media = Target("com.infinimedia", "com.infinimedia.InfiniMediaActivity")
     private val scribe = Target("com.infiniscribe", "com.infiniscribe.InfiniScribeActivity")
+    private val removedMediaViewers = setOf(
+        "com.infinifolder.viewer.AudioPlayerActivity",
+        "com.infinifolder.viewer.VideoPlayerActivity",
+    )
     private val removedScribeViewers = setOf(
         "com.infinifolder.viewer.TextViewerActivity",
         "com.infinifolder.viewer.Cp437ViewerActivity",
@@ -81,10 +85,10 @@ internal object CompanionViewerDefaults {
         val sourceKey = ExternalAppDefaults.sourceKey(ref)
         val existing = defaults.candidates(Intent.ACTION_VIEW, sourceKey, mime, name)
         if (existing.isNotEmpty()) {
-            val staleScribeChoice = existing.any {
-                it.packageName == context.packageName && it.className in removedScribeViewers
+            val staleCompanionChoice = existing.any {
+                it.packageName == context.packageName && removedTarget(it.className) != null
             }
-            if (!staleScribeChoice) return null
+            if (!staleCompanionChoice) return null
             val replacement = installedComponent(context.applicationContext, target) ?: return null
             migrateRemovedInternalDefaults(context.applicationContext, defaults, mapOf(target to replacement))
             return replacement
@@ -111,6 +115,15 @@ internal object CompanionViewerDefaults {
         return scribe.takeIf { isScribeType(type) }
     }
 
+    private fun removedTarget(className: String): Target? = when (className) {
+        in removedMediaViewers -> media
+        in removedScribeViewers -> scribe
+        else -> null
+    }
+
+    internal fun replacementPackageForRemovedViewer(className: String): String? =
+        removedTarget(className)?.packageName
+
     private fun handles(context: Context, component: ComponentName, name: String, mime: String): Boolean {
         val probeUri = Uri.Builder().scheme("content").authority("infinifolder-default-probe")
             .appendPath(name).build()
@@ -133,11 +146,7 @@ internal object CompanionViewerDefaults {
         available: Map<Target, ComponentName>) {
         defaults.rules().filter { it.action == Intent.ACTION_VIEW && it.component.packageName == context.packageName }
             .forEach { rule ->
-                val target = when (rule.component.className) {
-                    "com.infinifolder.viewer.AudioPlayerActivity", "com.infinifolder.viewer.VideoPlayerActivity" -> media
-                    in removedScribeViewers -> scribe
-                    else -> return@forEach
-                }
+                val target = removedTarget(rule.component.className) ?: return@forEach
                 val replacement = available[target] ?: return@forEach
                 if (!handles(context, replacement, rule.name.ifBlank { "document" }, rule.mime)) return@forEach
                 defaults.remember(rule.action, rule.scope,
