@@ -108,3 +108,5 @@ SVG/SVGZ render as static artwork; experimental SVG color cycling has been remov
 Current follow-up: independent Folder verification passed 146 app/native tests and 11 environment checks. The [static SVG/audio-default report](docs/static-svg-audio-defaults.md) records the corrections, all affected build results and Android runtime limits.
 
 Current thumbnail/navigation follow-up: ORA, KRA, large SVGZ and PostScript/EPS identities retain content thumbnails; the image viewer follows displayed icon order. Folder passed 150 tests, and the Android probe rendered the four original test formats. [Corrections and verification](docs/thumbnail-order.md).
+
+Audio identity/default follow-up: inconclusive audio probes now keep their extension identity, and installed Infinimedia receives local defaults for registered audio and playlist formats without requiring filter discovery. The [audio identity and association report](docs/audio-identity-defaults.md) records current test/build results and device limits.

@@ -70,6 +70,12 @@ before the default MIME artwork, preserving explicit MIME icon customizations
 as the fallback when no album artwork is available. Existing registry records
 and user overrides are retained.
 
+Audio extension identity remains stable while a bounded content probe is
+inconclusive. A concrete conflicting format can replace it, and an explicit
+generic-binary result (or an empty audio file) uses the binary icon. This avoids
+relabeling audio as binary merely because the file manager lacks a signature
+for a codec that Infinimedia can parse.
+
 ## Default fallback style
 
 Unlisted or missing MIME artwork now uses the same base SVG set as the bundled
