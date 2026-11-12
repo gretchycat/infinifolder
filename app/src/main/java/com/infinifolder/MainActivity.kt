@@ -936,7 +936,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                 if (sourceReadable && hasExtensionCandidate) {
                     mime = if (original.metadata.sizeBytes == 0L &&
                         com.infinifolder.mime.MimeRegistry.isTextBased(extensionMime)) extensionMime
-                    else FileMagicDetector.validatedExtensionMime(name, extensionMime, magic)
+                    else com.infinifolder.preview.AudioIconFormats
+                        .extensionCandidateAfterInconclusiveProbe(extensionMime, magic?.mimeType, original.metadata.sizeBytes)
+                        ?: FileMagicDetector.validatedExtensionMime(name, extensionMime, magic)
                 } else if (sourceReadable && magic != null) {
                     ambiguousMagicCache.put(uri.toString(), magic)
                     mime = com.infinifolder.mime.MimeRegistry.effective(name, mime, magic.mimeType)
@@ -6270,7 +6272,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                 val resolvedMime = if (!sourceReadable) null else when {
                     extensionOnlyCandidate && entry.metadata.sizeBytes == 0L &&
                         com.infinifolder.mime.MimeRegistry.isTextBased(extensionMime) -> extensionMime
-                    extensionOnlyCandidate -> FileMagicDetector.validatedExtensionMime(entry.metadata.name, extensionMime, detected)
+                    extensionOnlyCandidate -> com.infinifolder.preview.AudioIconFormats
+                        .extensionCandidateAfterInconclusiveProbe(extensionMime, detected?.mimeType, entry.metadata.sizeBytes)
+                        ?: FileMagicDetector.validatedExtensionMime(entry.metadata.name, extensionMime, detected)
                     else -> detected?.mimeType ?: "application/octet-stream"
                 }
                 if (sourceReadable && resolvedMime != null) {
@@ -6296,6 +6300,11 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         val effectiveMime = validatedMime ?: com.infinifolder.mime.MimeRegistry.effective(
             entry.metadata.name, entry.metadata.mimeType, cachedMagic?.mimeType)
+        if (!externalOnly && extensionOnlyCandidate &&
+            com.infinifolder.preview.AudioIconFormats.isAudio(extensionMime) && extensionValidationFailed) {
+            openHexEditor(entry.copy(metadata = entry.metadata.copy(mimeType = "application/octet-stream")))
+            return
+        }
         val appDefaults = com.infinifolder.viewer.ExternalAppDefaults(this)
         if (!entry.metadata.isDirectory && !externalOnly && !forceExternalChooser) {
             CompanionViewerDefaults.ensureForEntry(this, appDefaults, entry.ref, entry.metadata.name, effectiveMime)
@@ -14947,6 +14956,8 @@ class MainActivity : Activity(), DebugDumpObserver {
             finish()
             return
         }
+        Thread({ runCatching { CompanionViewerDefaults.initialize(applicationContext) } },
+            "CompanionViewerDefaults").apply { isDaemon = true; start() }
         checkIconRegistryRevision()
         refreshPinBoard()
         if (backNavigation == null) {

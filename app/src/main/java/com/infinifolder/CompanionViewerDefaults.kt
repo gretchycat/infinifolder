@@ -17,6 +17,7 @@ import io.github.gretchycat.infiniscribe.ScribeTextFormats
 /** Local routing defaults for the separately installed media and document apps. */
 internal object CompanionViewerDefaults {
     private data class Target(val packageName: String, val activityName: String)
+    private data class InitializationSnapshot(val media: ComponentName?, val scribe: ComponentName?, val capabilities: Long)
 
     private val media = Target("com.infinimedia", "com.infinimedia.InfiniMediaActivity")
     private val scribe = Target("com.infiniscribe", "com.infiniscribe.InfiniScribeActivity")
@@ -34,21 +35,30 @@ internal object CompanionViewerDefaults {
         "com.infinifolder.viewer.FontViewerActivity",
         "com.infinifolder.viewer.PdfViewerActivity",
     )
+    @Volatile private var initializedSnapshot: InitializationSnapshot? = null
 
     fun isScribeType(type: MediaType): Boolean = type in setOf(
         MediaType.TEXT, MediaType.MARKDOWN, MediaType.HTML, MediaType.PDF, MediaType.FONT,
         MediaType.EPUB, MediaType.EBOOK, MediaType.DOCUMENT, MediaType.SPREADSHEET,
     )
 
-    /** Populate new installs from the installed apps' actual Android filters. */
-    fun initialize(context: Context) {
+    /** Seed local defaults for installed app entry points while preserving saved choices. */
+    @Synchronized fun initialize(context: Context) {
         val app = context.applicationContext
         val defaults = ExternalAppDefaults(app)
+        val mediaComponent = installedComponent(app, media)
+        val scribeComponent = installedComponent(app, scribe)
+        val snapshot = InitializationSnapshot(mediaComponent, scribeComponent,
+            io.github.gretchycat.infinistream.RuntimeCapabilities.installed().revision)
+        if (initializedSnapshot == snapshot) return
         val components = mapOfNotNull(
-            media to installedComponent(app, media),
-            scribe to installedComponent(app, scribe),
+            media to mediaComponent,
+            scribe to scribeComponent,
         )
-        if (components.isEmpty()) return
+        if (components.isEmpty()) {
+            initializedSnapshot = snapshot
+            return
+        }
 
         migrateRemovedInternalDefaults(app, defaults, components)
 
@@ -56,7 +66,7 @@ internal object CompanionViewerDefaults {
             val name = "document.$extension"
             val target = targetFor(name, mime) ?: return@forEach
             val component = components[target] ?: return@forEach
-            if (!handles(app, component, name, mime)) return@forEach
+            if (!mayAssociateWithoutIntentFilter(target.packageName) && !handles(app, component, name, mime)) return@forEach
             if (defaults.candidates(Intent.ACTION_VIEW, null, mime, name).isEmpty()) {
                 defaults.remember(Intent.ACTION_VIEW, ExternalAppDefaults.EXTENSION, null, mime, name, component)
             }
@@ -72,10 +82,11 @@ internal object CompanionViewerDefaults {
             val target = targetFor("document", mime) ?: return@forEach
             val component = components[target] ?: return@forEach
             if (defaults.candidates(Intent.ACTION_VIEW, null, mime, "document").isNotEmpty()) return@forEach
-            if (handles(app, component, "document", mime)) {
+            if (mayAssociateWithoutIntentFilter(target.packageName) || handles(app, component, "document", mime)) {
                 defaults.remember(Intent.ACTION_VIEW, ExternalAppDefaults.TYPE, null, mime, "document", component)
             }
         }
+        initializedSnapshot = snapshot
     }
 
     /** Add the companion as a local default only when this item has no saved choice. */
@@ -94,7 +105,8 @@ internal object CompanionViewerDefaults {
             return replacement
         }
         val component = installedComponent(context.applicationContext, target) ?: return null
-        if (!handles(context.applicationContext, component, name, mime)) return null
+        if (!mayAssociateWithoutIntentFilter(target.packageName) &&
+            !handles(context.applicationContext, component, name, mime)) return null
         val extension = ExternalAppDefaults.extensionOf(name)
         val scope = if (extension == null) ExternalAppDefaults.TYPE else ExternalAppDefaults.EXTENSION
         defaults.remember(Intent.ACTION_VIEW, scope,
@@ -108,6 +120,9 @@ internal object CompanionViewerDefaults {
         installedComponent(context.applicationContext, media)
 
     internal fun defaultPackageFor(name: String, mime: String): String? = targetFor(name, mime)?.packageName
+
+    /** Infinimedia is launched as an explicit component; MIME-filter visibility is not required. */
+    internal fun mayAssociateWithoutIntentFilter(packageName: String): Boolean = packageName == media.packageName
 
     private fun targetFor(name: String, mime: String): Target? {
         if (name.endsWith(".mindnodetouch", true) || mime == "application/x-mindnode-touch") return scribe
@@ -150,7 +165,8 @@ internal object CompanionViewerDefaults {
             .forEach { rule ->
                 val target = removedTarget(rule.component.className) ?: return@forEach
                 val replacement = available[target] ?: return@forEach
-                if (!handles(context, replacement, rule.name.ifBlank { "document" }, rule.mime)) return@forEach
+                if (!mayAssociateWithoutIntentFilter(target.packageName) &&
+                    !handles(context, replacement, rule.name.ifBlank { "document" }, rule.mime)) return@forEach
                 defaults.remember(rule.action, rule.scope,
                     if (rule.scope == ExternalAppDefaults.FILE) rule.key else null,
                     rule.mime, rule.name.ifBlank { "document" }, replacement)

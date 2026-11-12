@@ -119,6 +119,7 @@ class ResourceIconResolver(context: Context) {
         val identity=identityResolver.resolve(entry.metadata.name,entry.metadata.mimeType) {
             val extensionMime = MimeRegistry.guess(entry.metadata.name)
             if (entry.metadata.sizeBytes == 0L && MimeRegistry.isTextBased(extensionMime)) extensionMime
+            else if (entry.metadata.sizeBytes == 0L && AudioIconFormats.isAudio(extensionMime)) "application/octet-stream"
             else IconWork.bounded(lane="metadata:${entry.ref.providerId}") {
                 if (FileMagicDetector.requiresPositionalProbe(entry.metadata.name, extensionMime)) {
                     FileMagicDetector.detectFromSource(entry.metadata.name, extensionMime,

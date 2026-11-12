@@ -2,6 +2,9 @@ package com.infinifolder
 
 import org.junit.Assert.*
 import org.junit.Test
+import com.infinifolder.archive.ArchiveFormats
+import com.infinifolder.mime.MimeRegistry
+import com.infinifolder.preview.AudioIconFormats
 
 class CompanionViewerDefaultsTest {
     @Test fun audioWithoutAnExtensionOrWithAGenericMimeStillTargetsMedia() {
@@ -22,5 +25,19 @@ class CompanionViewerDefaultsTest {
     @Test fun existingViewersAndUnrelatedAppsAreNotMigrated() {
         assertNull(CompanionViewerDefaults.replacementPackageForRemovedViewer("com.infinifolder.viewer.HexViewerActivity"))
         assertNull(CompanionViewerDefaults.replacementPackageForRemovedViewer("com.other.AudioPlayerActivity"))
+    }
+    @Test fun everyRegisteredAudioAndPlaylistExtensionTargetsMedia() {
+        val associations = MimeRegistry.associations().filter { (extension, mime) ->
+            AudioIconFormats.isAudio(mime) || ArchiveFormats.isPlaylist("track.$extension", mime)
+        }
+        assertTrue("Expected the MIME registry to expose audio and playlist extensions", associations.size > 40)
+        associations.forEach { (extension, mime) ->
+            assertEquals(extension, "com.infinimedia", CompanionViewerDefaults.defaultPackageFor("track.$extension", mime))
+        }
+    }
+    @Test fun installedMediaCanBeAssociatedWithoutQueryableMimeFilters() {
+        assertTrue(CompanionViewerDefaults.mayAssociateWithoutIntentFilter("com.infinimedia"))
+        assertFalse(CompanionViewerDefaults.mayAssociateWithoutIntentFilter("com.infiniscribe"))
+        assertFalse(CompanionViewerDefaults.mayAssociateWithoutIntentFilter("org.example.player"))
     }
 }

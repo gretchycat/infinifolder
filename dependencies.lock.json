@@ -35,7 +35,7 @@
     },
     "libinfiniui": {
       "url": "https://github.com/gretchycat/libinfiniui.git",
-      "commit": "6072700abebbc7142120d78a44e544cfa958f8e7"
+      "commit": "827433c6e72fa3acf3f826c0b6a9245f30c2ef13"
     },
     "libinfinivault": {
       "url": "https://github.com/gretchycat/libinfinivault.git",
