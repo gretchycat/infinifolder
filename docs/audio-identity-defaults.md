@@ -42,7 +42,8 @@ Infinimedia's playback implementation or add an application dependency.
   source dependencies and verified the app against the committed library pins.
   App tests passed **45**, viewer-hex tests passed **16**, and native
   storage-engine tests passed **91**: **152 passed, 0 failed, 0 skipped**.
-  `:app:assembleDebug` produced an 87,141,960-byte debug APK.
+  `:app:assembleDebug` produced an 87,989,041-byte debug APK in the fresh
+  InfiniSuite checkout.
   This confirms an Android debug build and those JVM/native test suites; it is
   not a release-size measurement.
 
