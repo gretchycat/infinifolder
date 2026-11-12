@@ -1,5 +1,32 @@
 # InfiniSuite architecture audit and separation
 
+## Theme and visual-media follow-up (2026-11-11)
+
+Infinimedia now owns and packages **Infinimedia Default** as its sole bundled skin. Its corrected opaque IFF faceplate cycles natively; its name is updated in theme.json, skininfo.xml, readme and the chooser, with original artwork credits retained. The four previous bundled archives moved unchanged into Media's test-assets/skins. Imported skins remain supported; missing saved bundled paths fall back to the configured default. The optional SF3 bank remains outside production assets.
+
+Canvas now decodes in-memory skin images through its existing format discovery and renders the supplied indexed SVG extension directly. Shared UI owns logical sprite mapping, bounded layers/cache and lifecycle animation. Its image animation scheduler moved from optional ui-image to ui-android, retaining its package for rebuilt consumers. Media owns the default choice and player-specific frame: VIDEO title artwork plus GEN side borders and bottom corners, scaled to the player with a 16:9 inner stage and the existing collapse action. No application dependency, storage implementation dependency or library cycle was introduced. The SVG-to-IFF authoring script now honors aspect fitting/content boxes and background merging, with overwrite protection.
+
+The Android raster probe caught a real incompatibility that JVM tests missed: Android DOM can return snapshot node lists. Metadata removal now works with both snapshot and live lists. Independent-checkout verification also caught a Folder gitlink/lock mismatch introduced during this update; d4d2293 aligned the lock, and the complete matrix was rerun successfully.
+
+| Component | Tested implementation | Result |
+| --- | --- | --- |
+| Infinimedia | 9938277 | APK 72,682,965 bytes; 80 unit tests |
+| Infiniscribe | a51efa5 | APK 31,579,870 bytes; 17 unit tests |
+| Infinifolder | d4d2293 | APK 87,986,599 bytes; 143 unit/native tests |
+| Infinikey | Unchanged | Previous c844925 result: 23 tests; not rerun in this follow-up |
+| Canvas Android | 9e16942 | Standalone AAR; 96 tests |
+| Shared UI / optional image UI | f0c1691 | Standalone AARs; 121 + 5 tests |
+
+All executed tests above passed without failures or skips. Each affected app's documented build.sh ran in the user's independent checkout with SDK variables unset, no local.properties and the source-root guard enabled. Declared pins passed their post-build checks; APK inspection rejected unrelated app/storage implementations. Each affected app also passed its 11 build-environment checks. Converter tests passed 5 cases, deterministic theme packaging passed 3 and inventory tests passed 2.
+
+Eight real Android raster/lifecycle checks passed against the independent Media APK: SVG indexed paints/directions and fixed untagged paint; palettes above 256 colors; supplied infini.svg; IFF opacity/cycling; signature-based format discovery; ordered layers/published bitmap lifetime; complete VIDEO/GEN frame at two sizes; and cache play/pause/resume/clear. The produced frame [preview](validation/visual-media-frame-550.png) is a renderer artifact, not an Activity screenshot. Activity layout/touch, video surface composition, audible output and Android grants remain device-validation gaps. Ubuntu and other-platform work remain deferred.
+
+The compressed skin payload dropped from 575,708 to 148,785 bytes: **426,923 bytes (about 417 KiB)**. Overall Media debug APK size decreased by only 322 bytes in these incremental builds; the skin payload reduction must not be reported as the whole APK reduction. Native VLC and image-codec binaries remain the largest package contributors. Source packaging, the independent checkout and the APK contain byte-identical generated skin archives. Authoring scripts/backups and the other skins/SF3 bank are absent from APK assets.
+
+Five existing repositories changed: Folder (converter, pins and reports), Media (default artwork/frame/fixtures/packaging), Scribe (shared pins/docs), Canvas (decoding/SVG) and UI (mapping/cache/scheduler). Implementation commits include Folder 8ae435e/0612f65/d4d2293, Media 0126bc3/9938277, Scribe a51efa5, Canvas bde2ecc/9e16942, and UI b93e477/c944041/f0c1691. No repository was created and no published history was rewritten. Original untracked theme sources were backed up before the user's checkout was fast-forwarded; unrelated authoring files were retained.
+
+See the [architectural breakdown and interfaces](theme-rendering.md), [executed evidence](validation/theme-rendering.json) and [updated tracked-file inventory](validation/theme-tracked-inventory.json). Earlier sections below are historical checkpoints; their former four-skin packaging description is superseded by this update.
+
 ## Fresh-checkout and media-asset correction (2026-11-11)
 
 The initial isolated builds supplied SDK configuration and missed the startup failure reported from new checkouts with neither SDK variables nor local.properties. This was a verification gap. Scribe conditionally hid its Android modules when the SDK was absent, leading to misleading attempts to fetch unpublished Android coordinates from Maven. Its Android modules are now declared by default; SDK-free JVM builds explicitly use `-PportableOnly`. Every application's build.sh now discovers installed conventional SDK locations, forwards the SDK as a JVM property (required for existing Termux daemons), passes native aapt2 on Termux and defaults arm64 packaging. Explicit SDK settings and user Gradle arguments remain supported.

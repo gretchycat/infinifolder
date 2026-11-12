@@ -109,4 +109,23 @@ See [storage validation](storage-validation.md) for the required runtime cases a
 
 ## Asset ownership
 
-Infinimedia owns all four original Winamp skin archives and the optional original SF3 bank. Skins live in its audio module's production assets. The bank lives in its `test-assets/soundfonts` with matching upstream license and provenance, outside APK source sets; current opt-in import behavior is preserved. The real archive/hash regression tests live in Media. The generic skin parser remains in shared UI with synthetic fixtures. Shared icon artwork remains in libinfiniui's pinned icon-theme submodule. Small generated codec fixtures remain with their owning processing libraries; storage integrity images remain with storage tests.
+Infinimedia owns the custom Infinimedia Default theme, the four original Winamp archives and the optional original SF3 bank. Only Infinimedia Default is packaged, generated deterministically from its theme directory. The older archives are compatibility fixtures in test-assets/skins, outside production assets. The bank lives in its `test-assets/soundfonts` with matching upstream license and provenance, outside APK source sets; current opt-in import behavior is preserved. The real archive/hash regression tests live in Media. The generic skin parser remains in shared UI with synthetic fixtures. Shared icon artwork remains in libinfiniui's pinned icon-theme submodule. Small generated codec fixtures remain with their owning processing libraries; storage integrity images remain with storage tests.
+
+## Theme image boundary
+
+Canvas owns format detection, image decoding, indexed IFF animation and direct
+rendering of the Infini SVG palette extension. The shared UI owns skin archive
+validation, logical sprite-to-image mappings, optional same-canvas layers, bounded
+image caching and lifecycle animation scheduling. The Media application owns its
+default theme choice, artwork, theme metadata and player-specific frame geometry.
+The visual media pane combines VIDEO title artwork with GEN frame pieces; its
+content remains an independent 16:9 stage.
+
+`ImageAnimationPlayback` retains its package/API while moving from optional
+ui-image into ui-android. Both image viewers and skin hosts use it, without making
+Media depend on the full image-viewer screen. Existing explicit user theme choices
+remain preferred; missing old bundled archives fall back to the configured default.
+No storage library or application-to-application dependency was added.
+
+See [theme rendering and verification](theme-rendering.md) for interfaces and
+executed checks. The SVG-to-IFF authoring tool is documented [separately](svg-to-iff.md).

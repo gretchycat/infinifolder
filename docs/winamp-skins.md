@@ -1,23 +1,26 @@
 # Winamp skin integration
 
-> Repository layout updated 2026-11-11. Old host/module paths, build commands and
-> test totals below record their original revision. For current owners and commands,
-> use the [Android build guide](android-builds.md), [architecture](architecture.md)
-> and [executed separation audit](architecture-audit.md).
+Updated 2026-11-11. Player-specific artwork and UI belong to Infinimedia;
+reusable archive/image support belongs to shared UI and Canvas. See the
+[theme rendering guide](theme-rendering.md) for the current interfaces and
+[executed audit](architecture-audit.md) for build and runtime results.
 
-> [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
+**Infinimedia Default** is the only packaged skin. The four older skins are
+compatibility fixtures outside production assets. The custom theme retains
+its original artwork authors and copyright. Its corrected IFF faceplate cycles;
+the visual media pane uses the VIDEO title plus GEN edges and bottom corners.
 
 ## Supported resources
 
-Classic Winamp and XMMS skins in `.wsz`, ZIP, TAR, TAR.GZ/TGZ or TAR.BZ2 archives can be imported from Interface Theme → Import Winamp / XMMS Skin using a path, storage URI, or Browse button. Import reads a private copy on a worker thread, validates it, then publishes the theme on the main thread. The private archive and display name survive app restarts. Failed imports leave the selected theme intact.
+Classic Winamp and XMMS skins in `.wsz`, ZIP, TAR, TAR.GZ/TGZ or TAR.BZ2 archives can be imported from the player’s theme chooser → Import Winamp / XMMS Skin using a path, storage URI, or Browse button. Import reads a private copy on a worker thread, validates it, then publishes the theme on the main thread. The private archive and display name survive app restarts. Failed imports leave the selected theme intact.
 
 - `PLEDIT.TXT`: Normal, Current, NormalBG, SelectedBG and Font. Keys tolerate whitespace and case differences. Arial maps to the platform sans-serif font; monospace/Courier/console names select monospace. Arbitrary Windows font files are not imported.
 - `VISCOLOR.TXT`: background and spectrum/oscilloscope colors, including decimal RGB values with leading zeroes and inline comments.
-- `MAIN.BMP`, `GEN.BMP`, `CBUTTONS.BMP`: bitmap-derived surface, toolbar and button palettes. Black backgrounds receive differentiated fallback surfaces when artwork is missing.
+- Main, gen and cbuttons logical roles: decoded artwork supplies surface, toolbar and button palettes. BMP naming remains compatible, while any Canvas-supported encoding may supply the role. A theme.json mapping can select arbitrary filenames or ordered same-size layers.
 - `TITLEBAR.BMP`: the audio player displays the original classic title-bar artwork, including any embedded text.
-- Floating-window borders use narrow edge strips from `MAIN.BMP`, excluding playback controls. Bitmap strips are tiled and scaled in whole-number steps without smoothing.
+- The visual media frame combines VIDEO title sprites and GEN side/bottom pieces, with a 16:9 inner stage. Clicking its title collapses the stage. Playlist and other existing chrome keep their own sprite layouts.
 
-File labels and selection backgrounds now consume the selected theme instead of fixed modern colors. Foreground colors for selected text and toolbar/button text receive contrast correction. The file manager toolbar uses theme colors without skin images; floating windows use the bitmap frame. Icons still follow the separate icon-theme system.
+Player text and selection backgrounds consume the selected palette with foreground contrast correction. Infinifolder uses its own modern light/dark interface. Icons follow the separate icon-theme system. The player pauses animated skin rendering with its Activity lifecycle; theme changes close old controllers and discard queued results.
 
 ## Regular UI surfaces
 
@@ -32,15 +35,15 @@ player, playlist and bitmap chrome; this rule does not recolor skin artwork.
 
 ## Findings from project fixtures
 
-All four archives owned by [Infinimedia](https://github.com/gretchycat/infinimedia/tree/main/modules/viewer-audio/src/main/assets/skins) contain classic bitmap skins, despite the Winamp3, Winamp5 and Bento names. They contain both palette text files, main/title-bar bitmap sheets, and generic-window bitmap sheets. Base has green-on-black text and blue selection; Classified v3 has pale green text; Classified v5 has white text on a blue background; Bento has blue-gray text on near-black.
+All four archives owned by [Infinimedia](https://github.com/gretchycat/infinimedia/tree/main/test-assets/skins) contain classic bitmap skins, despite the Winamp3, Winamp5 and Bento names. They contain both palette text files, main/title-bar bitmap sheets, and generic-window bitmap sheets. Base has green-on-black text and blue selection; Classified v3 has pale green text; Classified v5 has white text on a blue background; Bento has blue-gray text on near-black.
 
 Previously the importer ignored all bitmap sheets, SelectedBG and Font, always marked imports dark/monospace, and could report success for unrelated ZIP files by generating a fabricated fallback theme. Copy failures could apply a theme that was not durably saved. File-card colors were also hardcoded, masking imported text colors.
 
 ## Limits and validation
 
-This adapts classic skin chrome and palettes to the existing file manager layout; it does not execute Winamp scripts or implement modern XML/WAL skins, custom player layouts, cursors, or every bitmap control. Empty/unrecognized ZIP archives are rejected. Recognized entries are bounded to 8 MiB each, 24 MiB combined, at most 512 archive entries; the imported compressed file is limited to 32 MiB. Bitmap decoding checks dimensions before allocating pixels (maximum 2 million pixels).
+This adapts classic skin chrome and palettes to the existing player layout; it does not execute Winamp scripts or implement modern XML/WAL skins, custom player layouts, cursors, or every bitmap control. Empty/unrecognized archives are rejected. All expanded entries count toward the 8 MiB per-entry, 24 MiB combined and 512-entry limits; the imported compressed file is limited to 32 MiB. Skin images are limited to 2 million pixels each, with an aggregate 8 million pixel layer/composite cache budget. Unsupported codecs use the existing visual fallback.
 
-Fixture archive contents were inspected directly. APK compilation validates integration; handset confirmation of each skin's appearance, theme restoration and floating chrome is pending.
+All four compatibility archives are tested explicitly. The independent Media build passed 80 unit tests; eight Android raster/lifecycle checks cover SVG/IFF animation, compositing, format detection and the full visual frame. Activity appearance, touch handling, theme restoration and video surface composition remain device acceptance checks.
 
 ## Image scaling preference
 
@@ -70,20 +73,19 @@ notification without invalidating the iteration. This fixes the
 `ConcurrentModificationException` recorded during audio theme switches in
 `build/infinifolder-crash-20261104-213324-073.log`.
 
-Main and combined standalone host build command:
-`gradle :app:assembleDebug :viewer-host:assembleDebug --offline --console=plain`.
-Build log: `build/docs-audit/wmp-audio-interface-build.log`. No automated tests
-were run for this UI change. Device appearance, controls, Cast, rotation,
-restart restoration and repeated theme switching remain unverified.
+Build the current independent player from its own repository with
+`./build.sh --max-workers=1 --console=plain`. The older WMP layout change has no
+separate device acceptance result; controls, Cast, rotation and repeated theme
+switches still require visible on-device validation.
 
 ## Audio player and XMMS
 
 The audio player has its own skin selection and persists its own imported archive, independently of the file manager interface theme. XMMS classic skin archives share the classic bitmap layout; ZIP, WSZ, TAR, gzip-compressed TAR and bzip2-compressed TAR are recognized by content. XMMS-specific extensions and unpacked skin directories are not supported.
 
-The audio visualizer is disabled until the playback subsystem provides reliable analysis data.
+The frame/theme renderer does not change the playback analysis or visualization pipeline.
 
 ## Repository ownership
 
-The four original skin archives live only in Infinimedia's `modules/viewer-audio/src/main/assets/skins`. Its `MediaAssetOwnershipTest` checks all four archives explicitly. The generic parser remains reusable in libinfiniui, whose tests use synthetic fixtures. Former Folder copies in `Winamp/` and `themes/mediaplayer/` were identical and were consolidated into Media.
+The custom default source lives in Infinimedia's theme/ directory and is packaged reproducibly as skins/Infini.wsz. The four original archives live in test-assets/skins, outside production assets. MediaAssetOwnershipTest checks every fixture, the default IFF, metadata name and retained authors explicitly. The generic parser remains reusable in libinfiniui, whose tests use synthetic fixtures. Former Folder copies in `Winamp/` and `themes/mediaplayer/` were identical and were consolidated into Media.
 
 The optional `FluidR3Mono_GM.sf3` bank likewise belongs to Infinimedia, under `test-assets/soundfonts`, with the matching upstream license and provenance. The bank remains available for import/testing; current opt-in SoundFont playback behavior is preserved. See [asset comparison evidence](validation/media-asset-consolidation.json).

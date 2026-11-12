@@ -1,0 +1,1515 @@
+{
+  "date": "2026-11-11",
+  "scope": "Android theme/SVG/frame follow-up; Ubuntu and platform ports deferred",
+  "applications": [
+    {
+      "repository": "infinimedia",
+      "checkout": "/data/data/com.termux/files/home/Projects/android/infinisuite/infinimedia",
+      "commit": "99382772244b9e7b57d81502aa369839d7a93074",
+      "sdk_environment_unset": [
+        "ANDROID_HOME",
+        "ANDROID_SDK_ROOT"
+      ],
+      "local_properties_present": false,
+      "source_guard": true,
+      "command": [
+        "./build.sh",
+        "--max-workers=1",
+        "--console=plain",
+        "--init-script",
+        "/data/data/com.termux/files/home/Projects/android/infinifolder/scripts/assert-checkout.gradle",
+        "-Dinfini.verifyCheckout=/data/data/com.termux/files/home/Projects/android/infinisuite/infinimedia"
+      ],
+      "tests": [
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.audio.AudioDecodersFixtureTest.xml",
+          "tests": 19,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.audio.AudioPlaybackDiagnosticsFixtureTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.audio.LibraryAudioPreparationTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.audio.PcmAudioEngineTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.audio.PcmMediaDataSourceTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.audio.cast.CastRangeTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.audio.cddb.CddbManagerTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.AudioPlaybackInputTest.xml",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.AudioPlayerLayoutTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.GaplessQueueTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.MediaAssetOwnershipTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.PlaylistExpanderTest.xml",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.PlaylistMetadataWorkTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.PlaylistOrderingTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.RealAudioVisualizerBridgeTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.UnreadablePlaylistTest.xml",
+          "tests": 13,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-audio/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.VisualFrameGeometryTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "apks": [
+        {
+          "path": "/data/data/com.termux/files/home/Projects/android/infinisuite/infinimedia/build/outputs/apk/debug/InfiniMedia-debug.apk",
+          "bytes": 72682965,
+          "sha256": "db0e6983974a845facee27883e9ced665473fc82e180b692ad2d8f9dc1802ad9",
+          "native_libraries": [
+            "lib/arm64-v8a/libbrotlicommon.so",
+            "lib/arm64-v8a/libbrotlidec.so",
+            "lib/arm64-v8a/libbrotlienc.so",
+            "lib/arm64-v8a/libc++_shared.so",
+            "lib/arm64-v8a/libinfiniopenmpt.so",
+            "lib/arm64-v8a/libinfinismaf.so",
+            "lib/arm64-v8a/libinfinivlcpcm.so",
+            "lib/arm64-v8a/libjxl.so",
+            "lib/arm64-v8a/libjxl_cms.so",
+            "lib/arm64-v8a/libjxl_threads.so",
+            "lib/arm64-v8a/libjxlcoder.so",
+            "lib/arm64-v8a/libmpg123.so",
+            "lib/arm64-v8a/libogg.so",
+            "lib/arm64-v8a/libopenjpeg.so",
+            "lib/arm64-v8a/libopenmpt.so",
+            "lib/arm64-v8a/libvlc.so",
+            "lib/arm64-v8a/libvlcjni.so",
+            "lib/arm64-v8a/libvorbis.so",
+            "lib/arm64-v8a/libvorbisfile.so"
+          ],
+          "notices": [
+            "assets/third-party/commons-codec/LICENSE.txt",
+            "assets/third-party/commons-codec/NOTICE.txt",
+            "assets/third-party/commons-compress/LICENSE.txt",
+            "assets/third-party/commons-compress/NOTICE.txt",
+            "assets/third-party/commons-io/LICENSE.txt",
+            "assets/third-party/commons-io/NOTICE.txt",
+            "assets/third-party/commons-lang3/LICENSE.txt",
+            "assets/third-party/commons-lang3/NOTICE.txt",
+            "assets/third-party/dependencies.txt",
+            "assets/third-party/dependencies/commons-codec_commons-codec_1.17.1/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/commons-codec_commons-codec_1.17.1/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/commons-io_commons-io_2.16.1/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/commons-io_commons-io_2.16.1/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/org.apache.commons_commons-compress_1.27.1/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.apache.commons_commons-compress_1.27.1/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/org.apache.commons_commons-lang3_3.16.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.apache.commons_commons-lang3_3.16.0/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark-ext-autolink_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark-ext-gfm-strikethrough_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark-ext-gfm-tables_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark-ext-task-list-items_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/ffmpeg/COPYING.LGPLv2.1.txt",
+            "assets/third-party/ffmpeg/NOTICE.txt",
+            "assets/third-party/fluidlite/LICENSE.txt",
+            "assets/third-party/fluidlite/NOTICE.txt",
+            "assets/third-party/game-music-emu/LICENSE.txt",
+            "assets/third-party/game-music-emu/NOTICE.txt",
+            "assets/third-party/libvlc-pcm/COPYING.LIB.txt",
+            "assets/third-party/libvlc-pcm/NOTICE.txt",
+            "assets/third-party/libvlc/COPYING.LIB.txt",
+            "assets/third-party/libvlc/NOTICE.txt",
+            "assets/third-party/smaf/LICENSE",
+            "assets/third-party/termux-native/README.txt",
+            "assets/third-party/termux-native/libc++/COPYRIGHT.txt",
+            "assets/third-party/termux-native/libmpg123/COPYRIGHT.txt",
+            "assets/third-party/termux-native/libogg/COPYRIGHT.txt",
+            "assets/third-party/termux-native/libopenmpt/COPYRIGHT.txt",
+            "assets/third-party/termux-native/libvorbis/COPYRIGHT.txt",
+            "assets/third-party/tuxguitar/AUTHORS",
+            "assets/third-party/tuxguitar/LICENSE.html"
+          ],
+          "largest_entries": [
+            {
+              "name": "lib/arm64-v8a/libvlc.so",
+              "compressed": 45875392,
+              "bytes": 45875392
+            },
+            {
+              "name": "classes18.dex",
+              "compressed": 4137398,
+              "bytes": 10111364
+            },
+            {
+              "name": "classes.dex",
+              "compressed": 3683133,
+              "bytes": 8760148
+            },
+            {
+              "name": "lib/arm64-v8a/libjxlcoder.so",
+              "compressed": 2738600,
+              "bytes": 2738600
+            },
+            {
+              "name": "lib/arm64-v8a/libjxl.so",
+              "compressed": 2020048,
+              "bytes": 2020048
+            },
+            {
+              "name": "assets/icon-themes/infinifolder-default.zip",
+              "compressed": 1818233,
+              "bytes": 2835096
+            },
+            {
+              "name": "resources.arsc",
+              "compressed": 1773332,
+              "bytes": 1773332
+            },
+            {
+              "name": "lib/arm64-v8a/libopenmpt.so",
+              "compressed": 1664881,
+              "bytes": 1664881
+            },
+            {
+              "name": "lib/arm64-v8a/libc++_shared.so",
+              "compressed": 1374336,
+              "bytes": 1374336
+            },
+            {
+              "name": "lib/arm64-v8a/libbrotlienc.so",
+              "compressed": 697344,
+              "bytes": 697344
+            },
+            {
+              "name": "classes10.dex",
+              "compressed": 458569,
+              "bytes": 1046112
+            },
+            {
+              "name": "lib/arm64-v8a/libopenjpeg.so",
+              "compressed": 407792,
+              "bytes": 407792
+            },
+            {
+              "name": "classes3.dex",
+              "compressed": 407555,
+              "bytes": 848048
+            },
+            {
+              "name": "lib/arm64-v8a/libjxl_cms.so",
+              "compressed": 328896,
+              "bytes": 328896
+            },
+            {
+              "name": "classes2.dex",
+              "compressed": 318366,
+              "bytes": 714736
+            },
+            {
+              "name": "classes15.dex",
+              "compressed": 314374,
+              "bytes": 689308
+            },
+            {
+              "name": "lib/arm64-v8a/libjxl_threads.so",
+              "compressed": 265080,
+              "bytes": 265080
+            },
+            {
+              "name": "classes8.dex",
+              "compressed": 243829,
+              "bytes": 549876
+            },
+            {
+              "name": "lib/arm64-v8a/libmpg123.so",
+              "compressed": 241488,
+              "bytes": 241488
+            },
+            {
+              "name": "classes16.dex",
+              "compressed": 153459,
+              "bytes": 593028
+            }
+          ],
+          "application_classes": {
+            "com.infinifolder.MainActivity": false,
+            "com.infiniscribe.InfiniScribeActivity": false,
+            "com.infinimedia.InfiniMediaActivity": true,
+            "com.infinifolder.viewer.AudioPlayerActivity": true,
+            "com.infinifolder.viewer.VideoPlayerActivity": true,
+            "com.infinifolder.viewer.TextViewerActivity": false,
+            "com.infinifolder.viewer.MindNodeTouchViewerActivity": false,
+            "com.infinifolder.storage.RoutingStorageProvider": false,
+            "com.infinifolder.archive.ArchiveStorageProvider": false,
+            "com.infinifolder.sftp.SftpStorageProvider": false,
+            "com.infinifolder.torrent.MagnetStorageProvider": false
+          },
+          "skin_archives": [
+            "assets/skins/Infini.wsz"
+          ],
+          "sf3_entries": []
+        }
+      ],
+      "dependencies": {
+        "libinfinicanvas": {
+          "url": "https://github.com/gretchycat/libinfinicanvas.git",
+          "commit": "9e169420b46d4d0c0e8cc28af4a1fffc0585e5a5"
+        },
+        "libinfinicore": {
+          "url": "https://github.com/gretchycat/libinfinicore.git",
+          "commit": "1fb1c266ff037c6924571406af814ab638beb464"
+        },
+        "libinfiniscribe": {
+          "url": "https://github.com/gretchycat/libinfiniscribe.git",
+          "commit": "60dd088497e8ea518b8b966b37dbada011db6d12"
+        },
+        "libinfiniselect": {
+          "url": "https://github.com/gretchycat/libinfiniselect.git",
+          "commit": "74bdacf5d88fcdcaa97eb50343b0b47b31c398ed"
+        },
+        "libinfinisound": {
+          "url": "https://github.com/gretchycat/libinfinisound.git",
+          "commit": "14b482e314a661ebdbc346d111884b874bc42adf"
+        },
+        "libinfinistream": {
+          "url": "https://github.com/gretchycat/libinfinistream.git",
+          "commit": "0dcb1b17b0450d900d0581f2fd2c13bf0dd32e4d"
+        },
+        "libinfiniui": {
+          "url": "https://github.com/gretchycat/libinfiniui.git",
+          "commit": "f0c1691b30efdde795b7c57bb7b11cfb98ddabc2"
+        },
+        "libinfinivideo": {
+          "url": "https://github.com/gretchycat/libinfinivideo.git",
+          "commit": "22d234fd3c525b6d920ff3072f428ca7d2897d0e"
+        }
+      },
+      "result": "passed",
+      "seconds": 18.36
+    },
+    {
+      "repository": "infiniscribe",
+      "checkout": "/data/data/com.termux/files/home/Projects/android/infinisuite/infiniscribe",
+      "commit": "a51efa5edd3ee54189b1a815812d6876d9b6b381",
+      "sdk_environment_unset": [
+        "ANDROID_HOME",
+        "ANDROID_SDK_ROOT"
+      ],
+      "local_properties_present": false,
+      "source_guard": true,
+      "command": [
+        "./build.sh",
+        "--max-workers=1",
+        "--console=plain",
+        "--init-script",
+        "/data/data/com.termux/files/home/Projects/android/infinifolder/scripts/assert-checkout.gradle",
+        "-Dinfini.verifyCheckout=/data/data/com.termux/files/home/Projects/android/infinisuite/infiniscribe"
+      ],
+      "tests": [
+        {
+          "path": "modules/viewer-markdown/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.MarkdownCapabilityIntegrationTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-epub/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.EpubLinksTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-csv/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.CsvParserTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-csv/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.CsvRowStatsTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "modules/viewer-csv/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.CsvStartupTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "apks": [
+        {
+          "path": "/data/data/com.termux/files/home/Projects/android/infinisuite/infiniscribe/build/outputs/apk/debug/InfiniScribe-debug.apk",
+          "bytes": 31579870,
+          "sha256": "669bba4dcac24f5cb1840f11dab52d7684c6b968de3c8303307680a7ad0c47a6",
+          "native_libraries": [
+            "lib/arm64-v8a/libbrotlicommon.so",
+            "lib/arm64-v8a/libbrotlidec.so",
+            "lib/arm64-v8a/libbrotlienc.so",
+            "lib/arm64-v8a/libinfinimobi.so",
+            "lib/arm64-v8a/libjxl.so",
+            "lib/arm64-v8a/libjxl_cms.so",
+            "lib/arm64-v8a/libjxl_threads.so",
+            "lib/arm64-v8a/libjxlcoder.so",
+            "lib/arm64-v8a/libopenjpeg.so"
+          ],
+          "notices": [
+            "assets/third-party/dependencies.txt",
+            "assets/third-party/dependencies/commons-codec_commons-codec_1.17.1/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/commons-codec_commons-codec_1.17.1/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/commons-io_commons-io_2.16.1/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/commons-io_commons-io_2.16.1/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/org.apache.commons_commons-compress_1.27.1/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.apache.commons_commons-compress_1.27.1/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/org.apache.commons_commons-lang3_3.16.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.apache.commons_commons-lang3_3.16.0/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/org.checkerframework_checker-qual_3.21.2/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark-ext-autolink_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark-ext-gfm-strikethrough_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark-ext-gfm-tables_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark-ext-task-list-items_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/LICENSE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/NOTICE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/aalto-xml-1.3.3.jar/META-INF/LICENSE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/commons-codec-1.20.0.jar/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/commons-codec-1.20.0.jar/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/commons-collections4-4.5.0.jar/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/commons-collections4-4.5.0.jar/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/commons-compress-1.28.0.jar/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/commons-compress-1.28.0.jar/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/commons-io-2.21.0.jar/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/commons-io-2.21.0.jar/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/commons-lang3-3.18.0.jar/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/commons-lang3-3.18.0.jar/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/commons-math3-3.6.1.jar/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/commons-math3-3.6.1.jar/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/log4j-api-2.26.1.jar/META-INF/LICENSE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/log4j-api-2.26.1.jar/META-INF/NOTICE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/poi-5.5.1.jar/META-INF/LICENSE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/poi-5.5.1.jar/META-INF/NOTICE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/poi-ooxml-5.5.1.jar/META-INF/LICENSE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/poi-ooxml-5.5.1.jar/META-INF/NOTICE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/poi-ooxml-lite-5.5.1.jar/META-INF/LICENSE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/poi-ooxml-lite-5.5.1.jar/META-INF/NOTICE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/poi-scratchpad-5.5.1.jar/META-INF/LICENSE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/poi-scratchpad-5.5.1.jar/META-INF/NOTICE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/stax2-api-4.2.2.jar/META-INF/LICENSE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/xmlbeans-5.3.0.jar/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-poi_/META-INF/libinfiniscribe-office/xmlbeans-5.3.0.jar/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-rtf_/META-INF/libinfiniscribe-rtf/LICENSE",
+            "assets/third-party/dependencies/project___libinfiniscribe_scribe-rtf_/META-INF/libinfiniscribe-rtf/NOTICE"
+          ],
+          "largest_entries": [
+            {
+              "name": "classes.dex",
+              "compressed": 4656210,
+              "bytes": 11456816
+            },
+            {
+              "name": "classes2.dex",
+              "compressed": 3508976,
+              "bytes": 9451984
+            },
+            {
+              "name": "classes20.dex",
+              "compressed": 2913839,
+              "bytes": 7084356
+            },
+            {
+              "name": "lib/arm64-v8a/libjxlcoder.so",
+              "compressed": 2738600,
+              "bytes": 2738600
+            },
+            {
+              "name": "classes19.dex",
+              "compressed": 2448959,
+              "bytes": 5686560
+            },
+            {
+              "name": "lib/arm64-v8a/libjxl.so",
+              "compressed": 2020048,
+              "bytes": 2020048
+            },
+            {
+              "name": "assets/icon-themes/infinifolder-default.zip",
+              "compressed": 1818233,
+              "bytes": 2835096
+            },
+            {
+              "name": "classes21.dex",
+              "compressed": 1755092,
+              "bytes": 6025160
+            },
+            {
+              "name": "resources.arsc",
+              "compressed": 1126544,
+              "bytes": 1126544
+            },
+            {
+              "name": "classes22.dex",
+              "compressed": 1115341,
+              "bytes": 5357248
+            },
+            {
+              "name": "lib/arm64-v8a/libbrotlienc.so",
+              "compressed": 697344,
+              "bytes": 697344
+            },
+            {
+              "name": "lib/arm64-v8a/libopenjpeg.so",
+              "compressed": 407792,
+              "bytes": 407792
+            },
+            {
+              "name": "classes4.dex",
+              "compressed": 403424,
+              "bytes": 838232
+            },
+            {
+              "name": "classes11.dex",
+              "compressed": 386636,
+              "bytes": 890972
+            },
+            {
+              "name": "lib/arm64-v8a/libjxl_cms.so",
+              "compressed": 328896,
+              "bytes": 328896
+            },
+            {
+              "name": "classes3.dex",
+              "compressed": 318366,
+              "bytes": 714736
+            },
+            {
+              "name": "classes16.dex",
+              "compressed": 278647,
+              "bytes": 617068
+            },
+            {
+              "name": "lib/arm64-v8a/libjxl_threads.so",
+              "compressed": 265080,
+              "bytes": 265080
+            },
+            {
+              "name": "lib/arm64-v8a/libinfinimobi.so",
+              "compressed": 201425,
+              "bytes": 201425
+            },
+            {
+              "name": "classes9.dex",
+              "compressed": 140985,
+              "bytes": 324276
+            }
+          ],
+          "application_classes": {
+            "com.infinifolder.MainActivity": false,
+            "com.infiniscribe.InfiniScribeActivity": true,
+            "com.infinimedia.InfiniMediaActivity": false,
+            "com.infinifolder.viewer.AudioPlayerActivity": false,
+            "com.infinifolder.viewer.VideoPlayerActivity": false,
+            "com.infinifolder.viewer.TextViewerActivity": true,
+            "com.infinifolder.viewer.MindNodeTouchViewerActivity": true,
+            "com.infinifolder.storage.RoutingStorageProvider": false,
+            "com.infinifolder.archive.ArchiveStorageProvider": false,
+            "com.infinifolder.sftp.SftpStorageProvider": false,
+            "com.infinifolder.torrent.MagnetStorageProvider": false
+          },
+          "skin_archives": [],
+          "sf3_entries": []
+        }
+      ],
+      "dependencies": {
+        "libinfinicanvas": {
+          "url": "https://github.com/gretchycat/libinfinicanvas.git",
+          "commit": "9e169420b46d4d0c0e8cc28af4a1fffc0585e5a5"
+        },
+        "libinfinicore": {
+          "url": "https://github.com/gretchycat/libinfinicore.git",
+          "commit": "1fb1c266ff037c6924571406af814ab638beb464"
+        },
+        "libinfiniscribe": {
+          "url": "https://github.com/gretchycat/libinfiniscribe.git",
+          "commit": "60dd088497e8ea518b8b966b37dbada011db6d12"
+        },
+        "libinfiniselect": {
+          "url": "https://github.com/gretchycat/libinfiniselect.git",
+          "commit": "74bdacf5d88fcdcaa97eb50343b0b47b31c398ed"
+        },
+        "libinfinisound": {
+          "url": "https://github.com/gretchycat/libinfinisound.git",
+          "commit": "14b482e314a661ebdbc346d111884b874bc42adf"
+        },
+        "libinfinistream": {
+          "url": "https://github.com/gretchycat/libinfinistream.git",
+          "commit": "0dcb1b17b0450d900d0581f2fd2c13bf0dd32e4d"
+        },
+        "libinfiniui": {
+          "url": "https://github.com/gretchycat/libinfiniui.git",
+          "commit": "f0c1691b30efdde795b7c57bb7b11cfb98ddabc2"
+        }
+      },
+      "result": "passed",
+      "seconds": 18.74
+    },
+    {
+      "repository": "infinifolder",
+      "checkout": "/data/data/com.termux/files/home/Projects/android/infinisuite/infinifolder",
+      "commit": "d4d2293cac3f467f857ca2a67b9e169694f6d4a7",
+      "sdk_environment_unset": [
+        "ANDROID_HOME",
+        "ANDROID_SDK_ROOT"
+      ],
+      "local_properties_present": false,
+      "source_guard": true,
+      "command": [
+        "./build.sh",
+        "--max-workers=1",
+        "--console=plain",
+        "--init-script",
+        "/data/data/com.termux/files/home/Projects/android/infinifolder/scripts/assert-checkout.gradle",
+        "-Dinfini.verifyCheckout=/data/data/com.termux/files/home/Projects/android/infinisuite/infinifolder"
+      ],
+      "tests": [
+        {
+          "path": "viewer-hex/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.RawImageViewportSizeTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "viewer-hex/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.RawMediaConfigStoreTest.xml",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "storage-engine/build/test-results/testDebugUnitTest/TEST-com.infinifolder.archive.ArchiveStorageTest.xml",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "storage-engine/build/test-results/testDebugUnitTest/TEST-com.infinifolder.archive.ContainerPublicationIntegrityTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "storage-engine/build/test-results/testDebugUnitTest/TEST-com.infinifolder.archive.ExtImageMutationTest.xml",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "storage-engine/build/test-results/testDebugUnitTest/TEST-com.infinifolder.archive.FatPartialRecoveryTest.xml",
+          "tests": 18,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "storage-engine/build/test-results/testDebugUnitTest/TEST-com.infinifolder.archive.FatRecoveryTest.xml",
+          "tests": 42,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "storage-engine/build/test-results/testDebugUnitTest/TEST-com.infinifolder.archive.PartitionedImagesTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "storage-engine/build/test-results/testDebugUnitTest/TEST-com.infinifolder.archive.PlaylistVirtualDirectoryTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "app/build/test-results/testDebugUnitTest/TEST-com.infinifolder.FileNameEllipsizerTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "app/build/test-results/testDebugUnitTest/TEST-com.infinifolder.HiddenFilesTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "app/build/test-results/testDebugUnitTest/TEST-com.infinifolder.HomeItemRoutingTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "app/build/test-results/testDebugUnitTest/TEST-com.infinifolder.IconWorkTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "app/build/test-results/testDebugUnitTest/TEST-com.infinifolder.StorageAccessModeTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "app/build/test-results/testDebugUnitTest/TEST-com.infinifolder.StorageProxyReadsTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "app/build/test-results/testDebugUnitTest/TEST-com.infinifolder.TreeInteractionTest.xml",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "app/build/test-results/testDebugUnitTest/TEST-com.infinifolder.apps.AppsStorageProviderTest.xml",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "apks": [
+        {
+          "path": "/data/data/com.termux/files/home/Projects/android/infinisuite/infinifolder/app/build/outputs/apk/debug/app-debug.apk",
+          "bytes": 87986599,
+          "sha256": "b35556b0d7d1f3f5b6e7ae8bd09005ff23dee6d3bbb61949e32c78871aafef40",
+          "native_libraries": [
+            "lib/arm64-v8a/lib7-Zip-JBinding.so",
+            "lib/arm64-v8a/libbrotlicommon.so",
+            "lib/arm64-v8a/libbrotlidec.so",
+            "lib/arm64-v8a/libbrotlienc.so",
+            "lib/arm64-v8a/libc++_shared.so",
+            "lib/arm64-v8a/libinfiniext.so",
+            "lib/arm64-v8a/libinfinimobi.so",
+            "lib/arm64-v8a/libjxl.so",
+            "lib/arm64-v8a/libjxl_cms.so",
+            "lib/arm64-v8a/libjxl_threads.so",
+            "lib/arm64-v8a/libjxlcoder.so",
+            "lib/arm64-v8a/libopenjpeg.so",
+            "lib/arm64-v8a/libvlc.so",
+            "lib/arm64-v8a/libvlcjni.so",
+            "lib/arm64-v8a/libzstd-jni-1.5.7-11.so"
+          ],
+          "notices": [
+            "assets/third-party/dependencies.txt",
+            "assets/third-party/dependencies/com.github.mwiede_jsch_2.28.8/META-INF/LICENSE.JZlib.txt",
+            "assets/third-party/dependencies/com.github.mwiede_jsch_2.28.8/META-INF/LICENSE.jBCrypt.txt",
+            "assets/third-party/dependencies/com.github.mwiede_jsch_2.28.8/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/com.google.inject_guice_4.2.3/META-INF/LICENSE",
+            "assets/third-party/dependencies/com.google.inject_guice_4.2.3/META-INF/NOTICE",
+            "assets/third-party/dependencies/com.squareup.okhttp3_okhttp_4.12.0/okhttp3/internal/publicsuffix/NOTICE",
+            "assets/third-party/dependencies/commons-codec_commons-codec_1.17.1/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/commons-codec_commons-codec_1.17.1/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/commons-io_commons-io_2.16.1/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/commons-io_commons-io_2.16.1/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/commons-logging_commons-logging_1.2/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/commons-logging_commons-logging_1.2/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/commons-net_commons-net_3.11.1/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/commons-net_commons-net_3.11.1/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/org.apache.commons_commons-compress_1.27.1/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.apache.commons_commons-compress_1.27.1/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/org.apache.commons_commons-lang3_3.16.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.apache.commons_commons-lang3_3.16.0/META-INF/NOTICE.txt",
+            "assets/third-party/dependencies/org.apache.httpcomponents_httpclient_4.5.13/META-INF/LICENSE",
+            "assets/third-party/dependencies/org.apache.httpcomponents_httpclient_4.5.13/META-INF/NOTICE",
+            "assets/third-party/dependencies/org.apache.httpcomponents_httpcore_4.4.13/META-INF/LICENSE",
+            "assets/third-party/dependencies/org.apache.httpcomponents_httpcore_4.4.13/META-INF/NOTICE",
+            "assets/third-party/dependencies/org.checkerframework_checker-qual_3.5.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark-ext-autolink_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark-ext-gfm-strikethrough_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark-ext-gfm-tables_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark-ext-task-list-items_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/dependencies/org.commonmark_commonmark_0.32.0/META-INF/LICENSE.txt",
+            "assets/third-party/libvlc/COPYING.LIB.txt",
+            "assets/third-party/libvlc/NOTICE.txt"
+          ],
+          "largest_entries": [
+            {
+              "name": "lib/arm64-v8a/libvlc.so",
+              "compressed": 45875392,
+              "bytes": 45875392
+            },
+            {
+              "name": "lib/arm64-v8a/libc++_shared.so",
+              "compressed": 9290184,
+              "bytes": 9290184
+            },
+            {
+              "name": "classes21.dex",
+              "compressed": 4625915,
+              "bytes": 11342528
+            },
+            {
+              "name": "classes.dex",
+              "compressed": 4165428,
+              "bytes": 9742316
+            },
+            {
+              "name": "classes22.dex",
+              "compressed": 3279253,
+              "bytes": 7790252
+            },
+            {
+              "name": "lib/arm64-v8a/libjxlcoder.so",
+              "compressed": 2738600,
+              "bytes": 2738600
+            },
+            {
+              "name": "lib/arm64-v8a/lib7-Zip-JBinding.so",
+              "compressed": 2676496,
+              "bytes": 2676496
+            },
+            {
+              "name": "lib/arm64-v8a/libjxl.so",
+              "compressed": 2020048,
+              "bytes": 2020048
+            },
+            {
+              "name": "assets/icon-themes/infinifolder-default.zip",
+              "compressed": 1818233,
+              "bytes": 2835096
+            },
+            {
+              "name": "resources.arsc",
+              "compressed": 1131048,
+              "bytes": 1131048
+            },
+            {
+              "name": "classes20.dex",
+              "compressed": 877412,
+              "bytes": 1993528
+            },
+            {
+              "name": "org/bouncycastle/pqc/crypto/picnic/lowmcL5.bin.properties",
+              "compressed": 749257,
+              "bytes": 752652
+            },
+            {
+              "name": "classes16.dex",
+              "compressed": 745305,
+              "bytes": 1627432
+            },
+            {
+              "name": "lib/arm64-v8a/libbrotlienc.so",
+              "compressed": 697344,
+              "bytes": 697344
+            },
+            {
+              "name": "lib/arm64-v8a/libzstd-jni-1.5.7-11.so",
+              "compressed": 603960,
+              "bytes": 603960
+            },
+            {
+              "name": "lib/arm64-v8a/libopenjpeg.so",
+              "compressed": 407792,
+              "bytes": 407792
+            },
+            {
+              "name": "classes3.dex",
+              "compressed": 390819,
+              "bytes": 808548
+            },
+            {
+              "name": "org/bouncycastle/pqc/crypto/picnic/lowmcL3.bin.properties",
+              "compressed": 348178,
+              "bytes": 350101
+            },
+            {
+              "name": "classes10.dex",
+              "compressed": 347594,
+              "bytes": 791920
+            },
+            {
+              "name": "lib/arm64-v8a/libjxl_cms.so",
+              "compressed": 328896,
+              "bytes": 328896
+            }
+          ],
+          "application_classes": {
+            "com.infinifolder.MainActivity": true,
+            "com.infiniscribe.InfiniScribeActivity": false,
+            "com.infinimedia.InfiniMediaActivity": false,
+            "com.infinifolder.viewer.AudioPlayerActivity": false,
+            "com.infinifolder.viewer.VideoPlayerActivity": false,
+            "com.infinifolder.viewer.TextViewerActivity": false,
+            "com.infinifolder.viewer.MindNodeTouchViewerActivity": false,
+            "com.infinifolder.storage.RoutingStorageProvider": true,
+            "com.infinifolder.archive.ArchiveStorageProvider": true,
+            "com.infinifolder.sftp.SftpStorageProvider": true,
+            "com.infinifolder.torrent.MagnetStorageProvider": true
+          },
+          "skin_archives": [],
+          "sf3_entries": []
+        }
+      ],
+      "dependencies": {
+        "libinfinicanvas": {
+          "url": "https://github.com/gretchycat/libinfinicanvas.git",
+          "commit": "9e169420b46d4d0c0e8cc28af4a1fffc0585e5a5"
+        },
+        "libinfinicore": {
+          "url": "https://github.com/gretchycat/libinfinicore.git",
+          "commit": "1fb1c266ff037c6924571406af814ab638beb464"
+        },
+        "libinfinimeta": {
+          "url": "https://github.com/gretchycat/libinfinimeta.git",
+          "commit": "045901712b0e55d561f982a50e06185b587a6035"
+        },
+        "libinfiniscribe": {
+          "url": "https://github.com/gretchycat/libinfiniscribe.git",
+          "commit": "60dd088497e8ea518b8b966b37dbada011db6d12"
+        },
+        "libinfiniselect": {
+          "url": "https://github.com/gretchycat/libinfiniselect.git",
+          "commit": "74bdacf5d88fcdcaa97eb50343b0b47b31c398ed"
+        },
+        "libinfinisound": {
+          "url": "https://github.com/gretchycat/libinfinisound.git",
+          "commit": "14b482e314a661ebdbc346d111884b874bc42adf"
+        },
+        "libinfinistore": {
+          "url": "https://github.com/gretchycat/libinfinistore.git",
+          "commit": "4f7a2f94500220c36e8e0dc8a46837f3ec0404ff"
+        },
+        "libinfinistream": {
+          "url": "https://github.com/gretchycat/libinfinistream.git",
+          "commit": "0dcb1b17b0450d900d0581f2fd2c13bf0dd32e4d"
+        },
+        "libinfiniui": {
+          "url": "https://github.com/gretchycat/libinfiniui.git",
+          "commit": "f0c1691b30efdde795b7c57bb7b11cfb98ddabc2"
+        },
+        "libinfinivault": {
+          "url": "https://github.com/gretchycat/libinfinivault.git",
+          "commit": "a672ea77e5dff258329d5ac6c9d702fd681dd368"
+        },
+        "libinfinivideo": {
+          "url": "https://github.com/gretchycat/libinfinivideo.git",
+          "commit": "22d234fd3c525b6d920ff3072f428ca7d2897d0e"
+        }
+      },
+      "result": "passed",
+      "seconds": 122.72
+    }
+  ],
+  "unchanged_application": {
+    "repository": "infinikey-ime",
+    "previous_implementation_commit": "c844925",
+    "previous_passed_tests": 23,
+    "not_rerun_in_this_follow_up": true,
+    "reason": "No shared library dependency or app source changed"
+  },
+  "libraries": [
+    {
+      "repository": "libinfinicanvas",
+      "commit": "9e169420b46d4d0c0e8cc28af4a1fffc0585e5a5",
+      "modules": [
+        "canvas-android"
+      ],
+      "result": "passed",
+      "command": [
+        "./gradlew",
+        ":canvas-android:assembleDebug",
+        ":canvas-android:testDebugUnitTest"
+      ],
+      "tests": [
+        {
+          "path": "canvas-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.CachedImageCodecTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "canvas-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.CanvasViewerSourceTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "canvas-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.DecoderRejectionTest.xml",
+          "tests": 15,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "canvas-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.EncodedImageTest.xml",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "canvas-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.ImageDecodersFixtureTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "canvas-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.ImageMetadataTest.xml",
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "canvas-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.ImageSignaturesTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "canvas-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.ImageTransformsTest.xml",
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "canvas-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.RawImageExplorerTest.xml",
+          "tests": 20,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "canvas-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.RuntimeCanvasCapabilitiesTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "canvas-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.SvgPaletteCyclingTest.xml",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "sdk_platform": 36,
+      "host": "Termux, native aapt2, max-workers=1"
+    },
+    {
+      "repository": "libinfiniui",
+      "commit": "f0c1691b30efdde795b7c57bb7b11cfb98ddabc2",
+      "modules": [
+        "ui-android",
+        "ui-image"
+      ],
+      "result": "passed",
+      "command": [
+        "./gradlew",
+        ":ui-android:assembleDebug",
+        ":ui-android:testDebugUnitTest",
+        ":ui-image:assembleDebug",
+        ":ui-image:testDebugUnitTest"
+      ],
+      "tests": [
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.CustomIconStoreTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.DirectoryIconResolverTest.xml",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.IconIdentityPolicyTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.IconRegistryTest.xml",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.ImageFormatsTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.preview.UriIconRegistryTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.shortcut.PublicIconUrlsTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.shortcut.ShortcutFileTest.xml",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.theme.FreeDesktopThemeTest.xml",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.theme.SkinArtworkTest.xml",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.theme.ThemeManagerTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.DocumentSourceTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.FontViewerRoutingTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.ImageViewportGeometryTest.xml",
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.MediaTypeDetectorTest.xml",
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.MonkeyAudioAssociationTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.RuntimeViewerDiscoveryTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.ScrollWindowTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.SourceDocumentTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.StagedSourceTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.SyntaxLanguageSelectionTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.SyntaxRefreshSchedulerTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.TextWindowPresentationTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-android/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.ViewerCatalogTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "path": "ui-image/build/test-results/testDebugUnitTest/TEST-com.infinifolder.viewer.ImageInspectorFieldsTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "sdk_platform": 36,
+      "host": "Termux, native aapt2, max-workers=1"
+    }
+  ],
+  "theme_runtime": {
+    "checkout": "independent user Media checkout",
+    "command": [
+      "python3",
+      "scripts/verify-theme-runtime.py"
+    ],
+    "result": "passed",
+    "checks": [
+      "PASS theme.svg-indexed-paint-direction-and-static-paint",
+      "PASS theme.svg-palette-above-256",
+      "PASS theme.supplied-infini-svg-raster",
+      "PASS theme.corrected-iff-cycling-and-opaque-background",
+      "PASS theme.format-discovery-ignores-misleading-extension",
+      "PASS theme.ordered-layers-and-published-bitmap-lifetime",
+      "PASS theme.video-title-gen-complete-frame-and-resizing",
+      "PASS theme.cache-play-pause-resume-clear"
+    ],
+    "apk_sha256": "db0e6983974a845facee27883e9ced665473fc82e180b692ad2d8f9dc1802ad9",
+    "font_setup": "Headless app_process only: initializes a real system Roboto font map; no Activity bootstrap",
+    "limitations": [
+      "Activity layout and touch handling not validated",
+      "Video surface composition, audible playback and storage grants not validated"
+    ]
+  },
+  "script_tests": [
+    {
+      "command": "python3 scripts/test-svg-to-iff.py",
+      "repository": "infinifolder",
+      "passed": 5
+    },
+    {
+      "command": "python3 scripts/test-package-default-theme.py",
+      "repository": "infinimedia",
+      "passed": 3
+    },
+    {
+      "command": "python3 scripts/test-inventory-repositories.py",
+      "repository": "infinifolder",
+      "passed": 2
+    }
+  ],
+  "packaged_theme": {
+    "sha256": "2165e2594f635273c881cb21e7117bc20aa63058e2c27d1744ac72b9d933717b",
+    "bytes": 153599,
+    "apk_compressed_bytes": 148785,
+    "previous_skin_compressed_bytes": 575708,
+    "skin_payload_reduction_bytes": 426923,
+    "entries": [
+      {
+        "path": "albumlist.bmp",
+        "bytes": 92454,
+        "sha256": "885332d78232b6ec73e3278c65e84f1ace1086cbde89d44609a5f9dacd595423"
+      },
+      {
+        "path": "albumlist.txt",
+        "bytes": 89,
+        "sha256": "dbc129c4e879063145e67645453b4cb6f8aacf4d370113f6cfbcd15c5e0df7fd"
+      },
+      {
+        "path": "amarok.bmp",
+        "bytes": 110934,
+        "sha256": "0f22f17e72163b746c7070220c4bdd01451de3762b62b5b1b12f060ed95f93d6"
+      },
+      {
+        "path": "balance.bmp",
+        "bytes": 88386,
+        "sha256": "ffcad9ecf3b56324ea46f90810b9d0f514ac5891b9feeb1d41c89653953d2ee9"
+      },
+      {
+        "path": "cbuttons.bmp",
+        "bytes": 14742,
+        "sha256": "d5abc16439cbc02ac4175dd0b7e2be5c581b47bf77fde4970224740c2f5e64e8"
+      },
+      {
+        "path": "eq_ex.bmp",
+        "bytes": 67950,
+        "sha256": "84274def0d73a0ddd573e5aac092b0122de1bc09f93016cbf14e6de657a2400a"
+      },
+      {
+        "path": "eqmain.bmp",
+        "bytes": 260874,
+        "sha256": "9af35327fa1b5bc87849040dec054cddcb565f3eb637564ad18002b5517e1166"
+      },
+      {
+        "path": "gen.bmp",
+        "bytes": 63710,
+        "sha256": "93f56bbe35aae854a180f2afd5c157efc53c9ff23fc0798c7fd390d30000d6ab"
+      },
+      {
+        "path": "genex.bmp",
+        "bytes": 29454,
+        "sha256": "2d591e769ddf87b916eed4930b1630ac8a6b13f1e2bca8fd2210eafd824f0cdc"
+      },
+      {
+        "path": "main.iff",
+        "bytes": 38424,
+        "sha256": "69b15911c5819e98d1a54c4cf58b59ea965bb4d1d08ab4ac34c5891b14c853b8"
+      },
+      {
+        "path": "mb.bmp",
+        "bytes": 83830,
+        "sha256": "eafdbf2449c8be8272711eda708f9f47452ac4072ecf2d1bf8ce9433536e4136"
+      },
+      {
+        "path": "mikro.bmp",
+        "bytes": 24358,
+        "sha256": "534a13e99d1c921e60f8a225ed528c08b8506620ec9823302b1f589c6f375ee1"
+      },
+      {
+        "path": "monoster.bmp",
+        "bytes": 5624,
+        "sha256": "4ed386eeada9ee535f398d27d3ecbf38f38e1d57cca7642fe21f09c0d12a15be"
+      },
+      {
+        "path": "numbers.bmp",
+        "bytes": 2380,
+        "sha256": "6d189d80c60413412a17b77a037cc43d6629f05e00afced3d2f2e4e176d54567"
+      },
+      {
+        "path": "nums_ex.bmp",
+        "bytes": 4266,
+        "sha256": "3aa504c7d3c62dff7a3c6cbcc9bde4ce4030b840df78c16ae8b43adf54b05a5e"
+      },
+      {
+        "path": "playpaus.bmp",
+        "bytes": 1208,
+        "sha256": "391605f90bbb8304d14568b542388fa1432f18fd81c34f761e3fa307bdb16f79"
+      },
+      {
+        "path": "pledit.bmp",
+        "bytes": 156294,
+        "sha256": "a0c6be2ed916500ca5260bb91a42da419d21fd52235dbab86d2679b490b45cae"
+      },
+      {
+        "path": "pledit.txt",
+        "bytes": 117,
+        "sha256": "117a1a7770ea3cfc1f83072f1664cf91d830640243873886fa6db2f91fc51a4d"
+      },
+      {
+        "path": "posbar.bmp",
+        "bytes": 9294,
+        "sha256": "5bbf4faababace875287e19350f9949a99c647eb6e5ac979ed5bad3f8f04c48e"
+      },
+      {
+        "path": "readme.txt",
+        "bytes": 485,
+        "sha256": "d3959401d715a49e287fc822cb9146ba9da4791d1609d7aa25b36c22ba6f330d"
+      },
+      {
+        "path": "region.txt",
+        "bytes": 411,
+        "sha256": "d6fcd05a231209c448a326b5c56a392d98c45f20c66bb4e6dd5be7288303a357"
+      },
+      {
+        "path": "screenshot.png",
+        "bytes": 19907,
+        "sha256": "9ea13d8f58658f990cea4ea54ed9d96df5abb03ef42ef33f215e8db7934203fe"
+      },
+      {
+        "path": "shufrep.bmp",
+        "bytes": 23514,
+        "sha256": "baf3e094c6cb8d41114f743ff2755ee133bcc2a4e225ebfef81cbe684c554c48"
+      },
+      {
+        "path": "skininfo.xml",
+        "bytes": 334,
+        "sha256": "8ad9e40d5a5d9bd0ed0670fadfe67befb0c76d12580aef9f350e9a1ff02b4fdc"
+      },
+      {
+        "path": "text.bmp",
+        "bytes": 8478,
+        "sha256": "f69073d96b0e093f91de0a758f86ae5a3e329569171d7076f7c7d3d54bba1339"
+      },
+      {
+        "path": "theme.json",
+        "bytes": 78,
+        "sha256": "61451e7739d1efbf0b21382ae6c41c60141ed6759275b92355bf9fd07a498b3d"
+      },
+      {
+        "path": "titlebar.bmp",
+        "bytes": 89838,
+        "sha256": "0a69d7e5d691e0e2eee85e539274bd963a2c32dee29eb4bc8a841c4a52f8cf0a"
+      },
+      {
+        "path": "video.bmp",
+        "bytes": 83830,
+        "sha256": "e8255d54edcdbef94c61ec0f72f45f917752703b443686ac1072ea1dac3f3848"
+      },
+      {
+        "path": "viscolor.txt",
+        "bytes": 733,
+        "sha256": "c796f06928e79efeafe617529a9c5e2df75fc3901fa32842b313a1a324c3555d"
+      },
+      {
+        "path": "volume.bmp",
+        "bytes": 88386,
+        "sha256": "16c4f45bf1d7d1812b029ccd50afb8809049dd8cd64d64b45adfc341aa6ffcb7"
+      }
+    ]
+  },
+  "corrections_during_verification": [
+    "Android DOM snapshot NodeList required snapshot-safe metadata removal; rerun passed",
+    "Folder gitlink/lock mismatch corrected by d4d2293; guard and pin checks rerun successfully"
+  ],
+  "whole_apk_size_comparison": {
+    "previous_media_bytes": 72683287,
+    "current_media_bytes": 72682965,
+    "reduction_bytes": 322,
+    "note": "Skin-entry savings are not the total APK delta; incremental debug packaging and other code changes are included."
+  },
+  "user_source_preservation": "Original colliding untracked Media theme files were hash-checked and backed up locally before fast-forward; other untracked authoring files were preserved."
+}
