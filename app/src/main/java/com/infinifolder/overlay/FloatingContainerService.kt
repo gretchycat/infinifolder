@@ -1,5 +1,6 @@
 package com.infinifolder.overlay
 
+import com.infinifolder.SelectionInitialLocationFallback
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.ClipData
@@ -628,6 +629,19 @@ class FloatingContainerService : Service() {
             } catch (error: Exception) {
                 onMain {
                     if (generation == loadGeneration) {
+                        val virtualRoot = com.infinifolder.storage.ContainerLinksProvider.ROOT
+                        if (SelectionInitialLocationFallback.shouldReturnToVirtualRoot(
+                                selectionMode = selectionMode,
+                                resetRoot = resetRoot,
+                                location = uri.toString(),
+                                virtualRoot = virtualRoot.toString(),
+                            )) {
+                            com.infinifolder.storage.DiagnosticLog.record(
+                                "floating.selector.initial-location.reset-to-virtual-root"
+                            )
+                            show(virtualRoot, "Virtual root", resetRoot = true)
+                            return@onMain
+                        }
                         scroll.isRefreshing = false
                         grid.removeAllViews()
                         grid.addView(TextView(this).apply {
