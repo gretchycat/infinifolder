@@ -96,9 +96,21 @@ internal object CompanionViewerDefaults {
     /** Add the companion as a local default only when this item has no saved choice. */
     fun ensureForEntry(context: Context, defaults: ExternalAppDefaults, ref: ResourceRef,
         name: String, mime: String): ComponentName? {
-        val target = targetFor(name, mime) ?: return null
         val sourceKey = ExternalAppDefaults.sourceKey(ref)
         val existing = defaults.candidates(Intent.ACTION_VIEW, sourceKey, mime, name)
+        val target = targetFor(name, mime)
+        if (target == null) {
+            // A prior "Open with Scribe" choice can outlive the capability
+            // update that made an image parser primary. Remove only ecosystem
+            // companion rules; preserve any third-party app the user chose.
+            if (prefersFolderImage(name, mime)) {
+                defaults.rules().filter { rule ->
+                    rule.action == Intent.ACTION_VIEW && rule.component in existing &&
+                        (rule.component.packageName == media.packageName || rule.component.packageName == scribe.packageName)
+                }.forEach(defaults::remove)
+            }
+            return null
+        }
         if (existing.isNotEmpty()) {
             val staleCompanionChoice = existing.any {
                 it.packageName == context.packageName && removedTarget(it.className) != null
@@ -129,6 +141,16 @@ internal object CompanionViewerDefaults {
 
     internal fun defaultPackageFor(name: String, mime: String): String? = targetFor(name, mime)?.packageName
 
+    internal fun prefersFolderImage(name: String, mime: String): Boolean {
+        if (MediaTypeDetector.detect(name, mime) != MediaType.IMAGE) return false
+        return matchingHandlers(name, mime).any { handler ->
+            val descriptor = handler.describe()
+            handler.viewerTarget() == ViewerTarget.INFINIFOLDER &&
+                descriptor.attributes["presentation"]?.equals("image", ignoreCase = true) == true &&
+                descriptor.attributes["sourceMode"].isNullOrBlank()
+        }
+    }
+
     /** A long-press source viewer is offered when another declared module owns the normal view. */
     internal fun hasTextBackupFor(name: String, mime: String): Boolean {
         val targets = matchingHandlers(name, mime).mapNotNull { it.viewerTarget() }.toSet()
@@ -141,17 +163,21 @@ internal object CompanionViewerDefaults {
         handler.viewerTarget() == ViewerTarget.INFINISCRIBE && handler.describe().attributes["sourceMode"] == "ansi"
     }
 
-    /** Infinimedia is launched as an explicit component; MIME-filter visibility is not required. */
-    internal fun mayAssociateWithoutIntentFilter(packageName: String): Boolean = packageName == media.packageName
+    /** Both companions are launched explicitly after checking their exported entry point. */
+    internal fun mayAssociateWithoutIntentFilter(packageName: String): Boolean =
+        packageName == media.packageName || packageName == scribe.packageName
 
     private fun targetFor(name: String, mime: String): Target? {
         val targets = matchingHandlers(name, mime).mapNotNull { it.viewerTarget() }.toSet()
+        val type = MediaTypeDetector.detect(name, mime)
+        // A visual image parser outranks a source-text capability. Infinifolder
+        // remains the image owner; Scribe's text view stays in the long-press menu.
+        if (type == MediaType.IMAGE && ViewerTarget.INFINIFOLDER in targets) return null
         // For overlapping ANSI playback and source-text handlers, the media app
         // owns normal open; Scribe remains available as the long-press fallback.
         if (ViewerTarget.INFINIMEDIA in targets && ViewerTarget.INFINISCRIBE in targets) return media
         if (ViewerTarget.INFINIMEDIA in targets && ViewerTarget.INFINIFOLDER !in targets) return media
         if (name.endsWith(".mindnodetouch", true) || mime == "application/x-mindnode-touch") return scribe
-        val type = MediaTypeDetector.detect(name, mime)
         if (ArchiveFormats.isPlaylist(name, mime) || type in setOf(MediaType.AUDIO, MediaType.VIDEO) ||
             AudioIconFormats.isAudio(MimeRegistry.guess(name))) return media
         return scribe.takeIf { isScribeType(type) }

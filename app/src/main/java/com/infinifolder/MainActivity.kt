@@ -6060,8 +6060,12 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun launchBuiltInViewer(entry: ResourceEntry, mediaType: com.infinifolder.viewer.MediaType, edit:Boolean=false,forceType:Boolean=false): Boolean {
         // Playback and every Scribe-backed document viewer live in companion apps.
         if (mediaType in setOf(MediaType.AUDIO, MediaType.VIDEO) || CompanionViewerDefaults.isScribeType(mediaType)) return false
-        val intent = (if(forceType)null else com.infinifolder.viewer.ViewerLaunch.intentForResource(this,entry,current,edit))
-            ?: com.infinifolder.viewer.ViewerLaunch.intent(this, entry, mediaType, current,edit) ?: return false
+        // Resolve using the chosen media type first. A file such as XPM/XCF may
+        // also advertise a plain-text parser, but that alternate must not steal
+        // the primary image viewer route.
+        val intent = com.infinifolder.viewer.ViewerLaunch.intent(this, entry, mediaType, current,edit)
+            ?: (if (forceType) null else com.infinifolder.viewer.ViewerLaunch.intentForResource(this,entry,current,edit))
+            ?: return false
         return try {
             com.infinifolder.storage.DiagnosticLog.record("browser.open.internal",
                 "viewer=${intent.component?.className} mime=${intent.type}")
@@ -12330,7 +12334,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val openGroup = baseOpenGroup +
             (if (canPlayContainerInMedia) listOf("Queue all audio in InfiniMedia") else emptyList()) +
             (if (canShowSourceAsText) listOf("Show as text") else emptyList()) +
-            (if (!entry.metadata.isDirectory && !isApp && !isCategory && entry.metadata.canRead) listOf("Open in hex editor") else emptyList()) +
+            (if (!entry.metadata.isDirectory && !isApp && !isCategory && entry.metadata.canRead) listOf("Open in hex viewer") else emptyList()) +
             (if (canShowDeleted) listOf("Show deleted files") else emptyList())
         val canCopyContents = !entry.metadata.isDirectory && !isApp && !isCategory &&
             (isTextEntry(entry, detectedMagic) || isImageEntry(entry, detectedMagic))
@@ -12492,7 +12496,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 "Queue all audio in InfiniMedia" -> playContainerAudioInMedia(entry, inArchive)
                 "Show as text" -> openEntryAsTextInInfiniScribe(entry)
                 "Open with…" -> open(entry, externalOnly = true, forceExternalChooser = true)
-                "Open in hex editor" -> openHexEditor(entry)
+                "Open in hex viewer" -> openHexEditor(entry)
                 "Open" -> if (entry.metadata.isDirectory) navigate(entry.uri, displayName = entry.metadata.name) else open(entry)
                 "Use as debug dump folder" -> {
                     com.infinifolder.storage.DebugDumpDestination.set(this, entry.ref)

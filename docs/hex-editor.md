@@ -13,7 +13,7 @@ HEX; recognized formats retain their appropriate viewers/container routing.
 
 ## Launch and presentation
 
-Long-press a readable file and choose **Open in hex editor**. The action applies
+Long-press a readable file and choose **Open in hex viewer**. The action applies
 to ordinary files, link-file bytes, archives, disk images and files inside
 containers. Directories and virtual installed-app/category entries do not have
 this byte action. The source URI goes directly to the viewer; the archive parser
@@ -232,7 +232,7 @@ sidecars are never overwritten. Replacement uses the existing guarded storage
 save path; a failed new save removes its empty newly created sidecar.
 
 Normal opening of a configured file enters PIC or WAVE without autoplay. Explicit
-external defaults and **Open externally** retain priority; **Open in hex editor**
+external defaults and **Open externally** retain priority; **Open in hex viewer**
 still starts in HEX. A valid image sidecar generates an actual thumbnail through
 the shared icon resolver; audio metadata selects an audio icon. Explicit per-file
 artwork remains higher priority. Failed rendering uses an image icon fallback.

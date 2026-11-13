@@ -29,6 +29,13 @@ class CompanionViewerDefaultsTest {
         assertEquals("com.infiniscribe",
             CompanionViewerDefaults.defaultPackageFor("manual.pdf", "application/pdf"))
     }
+    @Test fun officeDocumentsKeepScribeAsThePrimaryRouteWhenMagicOnlyIdentifiesZip() {
+        val docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        assertEquals("com.infiniscribe", CompanionViewerDefaults.defaultPackageFor("report.docx", docx))
+        assertEquals("com.infiniscribe", CompanionViewerDefaults.defaultPackageFor("report.docx", "application/zip"))
+        assertEquals(com.infinifolder.viewer.MediaType.DOCUMENT,
+            com.infinifolder.viewer.MediaTypeDetector.detect("report.docx", "application/zip"))
+    }
     @Test fun existingViewersAndUnrelatedAppsAreNotMigrated() {
         assertNull(CompanionViewerDefaults.replacementPackageForRemovedViewer("com.infinifolder.viewer.HexViewerActivity"))
         assertNull(CompanionViewerDefaults.replacementPackageForRemovedViewer("com.other.AudioPlayerActivity"))
@@ -44,8 +51,26 @@ class CompanionViewerDefaultsTest {
     }
     @Test fun installedMediaCanBeAssociatedWithoutQueryableMimeFilters() {
         assertTrue(CompanionViewerDefaults.mayAssociateWithoutIntentFilter("com.infinimedia"))
-        assertFalse(CompanionViewerDefaults.mayAssociateWithoutIntentFilter("com.infiniscribe"))
+        assertTrue(CompanionViewerDefaults.mayAssociateWithoutIntentFilter("com.infiniscribe"))
         assertFalse(CompanionViewerDefaults.mayAssociateWithoutIntentFilter("org.example.player"))
+    }
+
+    @Test fun visualParsersWinOverSourceTextAndOldCompanionDefaultsCanBeCleared() {
+        assertEquals(com.infinifolder.viewer.MediaType.IMAGE,
+            com.infinifolder.viewer.MediaTypeDetector.detect("icon.xpm", "text/plain"))
+        assertEquals(com.infinifolder.viewer.MediaType.IMAGE,
+            com.infinifolder.viewer.MediaTypeDetector.detect("icon.xcf", "image/x-xcf"))
+        assertTrue(CompanionViewerDefaults.prefersFolderImage("icon.xpm", "image/x-xpixmap"))
+        assertTrue(CompanionViewerDefaults.prefersFolderImage("icon.xcf", "image/x-xcf"))
+        assertNull(CompanionViewerDefaults.defaultPackageFor("icon.xpm", "image/x-xpixmap"))
+        assertTrue(CompanionViewerDefaults.hasTextBackupFor("icon.xpm", "image/x-xpixmap"))
+    }
+
+    @Test fun imageTypeKeepsImageViewerFallbackWhenPlainSourceIsAlsoDeclared() {
+        val imageType = com.infinifolder.viewer.MediaTypeDetector.detect("icon.xpm", "image/x-xpixmap")
+        assertEquals(com.infinifolder.viewer.MediaType.IMAGE, imageType)
+        assertEquals("com.infinifolder.viewer.ImageViewerActivity",
+            com.infinifolder.viewer.ViewerCatalog.activity(imageType))
     }
 
     @Test fun longPressOffersModuleDeclaredBackupViewers() {
