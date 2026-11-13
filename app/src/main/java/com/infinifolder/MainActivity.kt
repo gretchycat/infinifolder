@@ -19,6 +19,7 @@ import io.github.gretchycat.infinimeta.MetadataInspection
 import io.github.gretchycat.infinimeta.MetadataRegistry
 
 import com.infinifolder.theme.IconImageView
+import io.github.gretchycat.infiniselect.FileSelectionContract
 import android.app.Activity
 import android.app.ProgressDialog
 import android.app.NotificationChannel
@@ -1962,12 +1963,15 @@ class MainActivity : Activity(), DebugDumpObserver {
                 setDataAndType(uris.single(), mime.ifBlank { "audio/*" })
                 putExtra("displayName", entry.metadata.name)
                 putExtra("mimeType", mime)
+                putExtra(FileSelectionContract.EXTRA_RESULT_AUTHORITATIVE_URI, entry.uri.toString())
             }
         } else {
             Intent(Intent.ACTION_SEND_MULTIPLE).apply {
                 type = if (entries.all { it.metadata.mimeType.startsWith("video/") }) "video/*" else "*/*"
                 putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
                 putExtra("displayName", title)
+                putStringArrayListExtra(FileSelectionContract.EXTRA_RESULT_AUTHORITATIVE_URIS,
+                    ArrayList(entries.map { it.uri.toString() }))
             }
         }.apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -2022,6 +2026,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         val send = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
             type = "audio/*"
             putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            putStringArrayListExtra(FileSelectionContract.EXTRA_RESULT_AUTHORITATIVE_URIS,
+                ArrayList(entries.map { it.uri.toString() }))
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             clipData = android.content.ClipData.newRawUri(entries.first().metadata.name, uris.first()).apply {
                 uris.drop(1).forEach { addItem(android.content.ClipData.Item(it)) }
@@ -6473,6 +6479,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val scheme = targetUri.scheme?.lowercase()
         if (WebMetadataResolver.isWebUri(targetUri.toString()) || (scheme != null && scheme !in setOf("file", "content"))) {
             val browsableIntent = Intent(Intent.ACTION_VIEW, targetUri).apply {
+                putExtra(FileSelectionContract.EXTRA_RESULT_AUTHORITATIVE_URI, targetUri.toString())
                 addCategory(Intent.CATEGORY_BROWSABLE)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -6482,6 +6489,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             } catch (_: Exception) {
                 try {
                     val plainIntent = Intent(Intent.ACTION_VIEW, targetUri).apply {
+                        putExtra(FileSelectionContract.EXTRA_RESULT_AUTHORITATIVE_URI, targetUri.toString())
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     startViewerActivity(plainIntent)
@@ -6511,6 +6519,9 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(shareableUri, resolvedMime)
+            // The granted URI is an access handle. Preserve the browser's stable resource
+            // identity separately, especially when a file:// URI was wrapped by FileProvider.
+            putExtra(FileSelectionContract.EXTRA_RESULT_AUTHORITATIVE_URI, targetUri.toString())
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             clipData = ClipData.newRawUri(displayName ?: shareableUri.lastPathSegment ?: "file", shareableUri)
@@ -6527,6 +6538,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         } catch (_: Exception) {
             try {
                 val fallback = Intent(Intent.ACTION_VIEW, shareableUri).apply {
+                    putExtra(FileSelectionContract.EXTRA_RESULT_AUTHORITATIVE_URI, targetUri.toString())
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }

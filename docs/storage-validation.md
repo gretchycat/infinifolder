@@ -1,8 +1,10 @@
 # Storage boundary validation
 
-The supported boundary is Android content/document/tree references. Infinifolder
-owns backend routing and credentials. libinfiniselect contains selection and
-ContentResolver operations, with no InfiniSuite implementation dependency.
+The client boundary separates a resource's authoritative URI from its current
+Android content URI. Infinifolder owns backend routing and credentials;
+libinfiniselect returns both values, resolves authoritative locations lazily,
+and handles relative locations without requiring client-side backend parsing.
+The library has no InfiniSuite implementation dependency.
 
 ## Automated coverage
 
@@ -36,7 +38,10 @@ this checklist is not evidence of execution.
 
 | Scenario | Expected behavior |
 | --- | --- |
-| Single/multiple read selection | Granted content references; every selected item remains independently openable |
+| Single/multiple read selection | Content and authoritative URIs are returned separately; every selected item remains independently openable |
+| Playlist persistence | Authoritative URIs are serialized; relay content URIs never become playlist locations |
+| Relative playlist entries | Resolve against the playlist's authoritative location, including remote and nested archive paths |
+| Reopen after relay expiry | Request a fresh content URI from the saved authoritative URI |
 | Directory selection | Standard tree URI and only the granted read/write/prefix/persist flags |
 | Editable selection/create | Write through granted descriptor/stream, reopen to verify exact bytes |
 | Infinifolder absent or floating overlay unavailable | SAF remains usable without loading storage engines into the client |
@@ -47,7 +52,7 @@ this checklist is not evidence of execution.
 | Consumer closes early | Worker closes its backend stream; proxy release closes its device and callback thread |
 | Concurrent open/close | Bounded handles; a failed open releases its allocation |
 | Process recreation | SAF document IDs persist; credentials remain in Infinifolder; backend may require reconnection |
-| Revocation/expired relay | Access fails; temporary relays expire after 24 hours and cannot be persisted |
+| Revocation/expired relay | Current content access fails; resolve a fresh link from the retained authoritative URI |
 | Malicious requesting-package extra | URI grants use the framework caller identity |
 | Save request with unauthorized source | Caller cannot use Infinifolder as a read-permission deputy |
 | Tree traversal across roots | isChildDocument rejects an unrelated document ID |

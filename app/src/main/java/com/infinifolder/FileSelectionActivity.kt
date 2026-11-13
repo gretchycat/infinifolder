@@ -86,9 +86,7 @@ class FileSelectionActivity : Activity() {
 
     private fun publicDirectory(value: String): String {
         if (value.isBlank()) return ""
-        val uri = Uri.parse(value)
-        if (uri.scheme == "content" && uri.authority == StorageDocumentsProvider.AUTHORITY) return value
-        return StorageDocumentsProvider.reference(this, uri).toString()
+        return value
     }
 
     private fun callerCanRead(source: Uri, uid: Int): Boolean {
@@ -222,6 +220,14 @@ class FileSelectionActivity : Activity() {
     }
 
     private fun deliverSelection(data: Bundle) {
+        val recipientPackage = callingPackage ?: callingActivity?.packageName
+        val claimedRecipient = intent.getStringExtra(FileSelectionContract.EXTRA_REQUESTING_PACKAGE)
+        if (recipientPackage == null || (claimedRecipient != null && claimedRecipient != recipientPackage)) {
+            setResult(RESULT_CANCELED, Intent().putExtra(FileSelectionContract.EXTRA_FAILURE_MESSAGE,
+                "Could not verify the requesting application"))
+            finish()
+            return
+        }
         val sources = data.getStringArrayList(FileSelectionContract.EXTRA_RESULT_URIS)
             ?.map(Uri::parse).orEmpty().ifEmpty {
                 listOfNotNull(data.getString(FileSelectionContract.EXTRA_RESULT_URI)?.let(Uri::parse))
@@ -236,13 +242,20 @@ class FileSelectionActivity : Activity() {
         val directoryNames = data.getStringArrayList(FileSelectionContract.EXTRA_ITEM_DIRECTORY_NAMES).orEmpty()
         val directoryCoverSources = data.getStringArrayList(
             FileSelectionContract.EXTRA_ITEM_DIRECTORY_COVER_URIS).orEmpty()
-        val sourceReferences = sources.map { StorageDocumentsProvider.reference(this, it).toString() }
+        // The relay is for this session's reads. Persist the backend address itself
+        // so clients can ask InfiniSelect for a fresh relay after it expires.
+        val sourceReferences = sources.map(Uri::toString)
         val directoryReferences = sources.indices.map { index ->
-            directoryUris.getOrNull(index)?.takeIf(String::isNotBlank)?.let { publicDirectory(it) }.orEmpty()
+            directoryUris.getOrNull(index)?.takeIf(String::isNotBlank).orEmpty()
+        }
+        val directoryAccessUris = sources.indices.map { index ->
+            directoryUris.getOrNull(index)?.takeIf(String::isNotBlank)?.let { source ->
+                StorageDocumentsProvider.reference(this, Uri.parse(source)).toString()
+            }.orEmpty()
         }
         val directoryCoverReferences = sources.indices.map { index ->
             directoryCoverSources.getOrNull(index)?.takeIf(String::isNotBlank)?.let { sourceText ->
-                StorageDocumentsProvider.reference(this, Uri.parse(sourceText)).toString()
+                sourceText
             }.orEmpty()
         }
         if (sources.isEmpty() || names.size != sources.size) {
@@ -291,18 +304,15 @@ class FileSelectionActivity : Activity() {
         // Selection results arrive through a ResultReceiver, not a conventional
         // Activity result callback. Use the requesting package supplied by the
         // picker library before the framework's optional caller fields.
-        val recipientPackage = intent.getStringExtra(FileSelectionContract.EXTRA_REQUESTING_PACKAGE)
-            ?: callingPackage ?: callingActivity?.packageName
-        recipientPackage?.let { recipient ->
+        run {
+            val recipient = recipientPackage
             val grantFailure = runCatching {
                 relays.forEach { relay ->
                     grantUriPermission(recipient, relay, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                (sourceReferences + directoryReferences + directoryCoverReferences)
-                    .filter(String::isNotBlank).distinct().forEach { reference ->
-                        grantUriPermission(recipient, Uri.parse(reference), Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-                    }
+                directoryAccessUris.filter(String::isNotBlank).distinct().forEach { accessUri ->
+                    grantUriPermission(recipient, Uri.parse(accessUri), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
                 coverRelaysBySource.values.distinct().forEach { relay ->
                     runCatching { grantUriPermission(recipient, relay, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                         .onFailure { error ->
@@ -322,27 +332,28 @@ class FileSelectionActivity : Activity() {
             }
             com.infinifolder.storage.DiagnosticLog.record(
                 "infiniselect.grant", "recipient=$recipient count=${relays.size}")
-        } ?: com.infinifolder.storage.DiagnosticLog.record(
-            "infiniselect.grant.skipped", "no calling package count=${relays.size}")
+        }
         val directoryCoverRelays = sources.indices.map { index ->
             directoryCoverSources.getOrNull(index)?.let(coverRelaysBySource::get)
                 ?.takeUnless(ungrantedCoverRelays::contains)?.toString().orEmpty()
         }
         val name = names.first()
         val mime = mimes.firstOrNull()?.takeIf(String::isNotBlank) ?: "application/octet-stream"
-        val primaryReference = Uri.parse(sourceReferences.first())
-        val result = Intent().setDataAndType(primaryReference, if (relays.size == 1) mime else "*/*").apply {
+        val result = Intent().setDataAndType(relays.first(), if (relays.size == 1) mime else "*/*").apply {
             // InfiniFolder selection relays do not support persistable grants;
             // the app grants each relay directly to the requesting package.
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             putExtra(FileSelectionContract.EXTRA_RESULT_URI, relays.first().toString())
+            putExtra(FileSelectionContract.EXTRA_RESULT_AUTHORITATIVE_URI, sourceReferences.first())
             putExtra(FileSelectionContract.EXTRA_RESULT_NAME, name)
             putExtra(FileSelectionContract.EXTRA_RESULT_MIME, mime)
             putExtra(FileSelectionContract.EXTRA_RESULT_SIZE, sizes.firstOrNull() ?: -1L)
             data.getString(FileSelectionContract.EXTRA_RESULT_DIRECTORY)?.let {
-                val reference = publicDirectory(it)
-                putExtra(FileSelectionContract.EXTRA_RESULT_DIRECTORY, reference)
-                putExtra(FileSelectionContract.EXTRA_RESULT_DIRECTORY_REFERENCE, reference)
+                val authoritative = publicDirectory(it)
+                val content = StorageDocumentsProvider.reference(this@FileSelectionActivity,
+                    Uri.parse(authoritative)).toString()
+                putExtra(FileSelectionContract.EXTRA_RESULT_DIRECTORY, content)
+                putExtra(FileSelectionContract.EXTRA_RESULT_DIRECTORY_REFERENCE, authoritative)
             }
             putExtra(FileSelectionContract.EXTRA_RESULT_SCROLL_Y,
                 data.getInt(FileSelectionContract.EXTRA_RESULT_SCROLL_Y, 0).coerceAtLeast(0))
@@ -352,30 +363,32 @@ class FileSelectionActivity : Activity() {
             putExtra(FileSelectionContract.EXTRA_RESULT_SIZES, sizes)
             putStringArrayListExtra(FileSelectionContract.EXTRA_RESULT_SOURCE_REFERENCES,
                 ArrayList(sourceReferences))
+            putStringArrayListExtra(FileSelectionContract.EXTRA_RESULT_AUTHORITATIVE_URIS,
+                ArrayList(sourceReferences))
             putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_URIS,
-                ArrayList(relays.indices.map { publicDirectory(directoryUris.getOrNull(it).orEmpty()) }))
+                ArrayList(directoryAccessUris))
             putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_NAMES,
                 ArrayList(relays.indices.map { directoryNames.getOrNull(it).orEmpty() }))
             putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_REFERENCES,
+                ArrayList(directoryReferences))
+            putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_AUTHORITATIVE_URIS,
                 ArrayList(directoryReferences))
             putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_COVER_URIS,
                 ArrayList(directoryCoverRelays))
             putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_COVER_REFERENCES,
                 ArrayList(directoryCoverReferences))
+            putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_COVER_AUTHORITATIVE_URIS,
+                ArrayList(directoryCoverReferences))
             putExtra("displayName", name)
             putExtra("mimeType", mime)
-            // Include stable references so the library can persist the Android
-            // document grants and later reopen a source after its relay expires.
-            val grantUris = (sourceReferences.map(Uri::parse) +
-                directoryReferences.filter(String::isNotBlank).map(Uri::parse) +
-                directoryCoverReferences.filter(String::isNotBlank).map(Uri::parse) +
-                listOfNotNull(data.getString(FileSelectionContract.EXTRA_RESULT_DIRECTORY)
-                    ?.let(::publicDirectory)?.let(Uri::parse)))
-                .distinct()
+            // Only content links carry Android URI grants. Authoritative backend
+            // addresses (sftp://, archive://, etc.) travel in the typed extras.
+            val grantUris: List<Uri> = (relays + coverRelaysBySource.values +
+                directoryAccessUris.filter(String::isNotBlank).map(Uri::parse)).distinct()
             clipData = android.content.ClipData.newRawUri(name, grantUris.first()).apply {
                 grantUris.drop(1).forEach { addItem(android.content.ClipData.Item(it)) }
             }
-            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
         setResult(RESULT_OK, result)
         finish()

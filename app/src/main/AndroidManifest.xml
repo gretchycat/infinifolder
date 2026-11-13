@@ -85,7 +85,7 @@
         <provider
             android:name=".FileSelectionRelayProvider"
             android:authorities="${applicationId}.selection"
-            android:exported="false"
+            android:exported="true"
             android:grantUriPermissions="true" />
         <activity android:name=".TermuxEditActivity" android:exported="false" />
         <activity-alias android:name=".TermuxFileHandler" android:targetActivity=".TermuxEditActivity"

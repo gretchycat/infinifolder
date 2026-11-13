@@ -7,6 +7,7 @@ import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
 import android.os.Binder
+import android.os.Bundle
 import android.os.Process
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
@@ -14,6 +15,7 @@ import com.infinifolder.model.ProviderResult
 import com.infinifolder.storage.SharedFileProvider
 import com.infinifolder.storage.StorageRuntime
 import com.infinifolder.storage.openNativeSeekable
+import io.github.gretchycat.infiniselect.FileSelectionContract
 import java.io.EOFException
 import java.io.File
 import java.io.FileNotFoundException
@@ -33,10 +35,119 @@ class FileSelectionRelayProvider : ContentProvider() {
 
     override fun onCreate() = true
 
-    override fun getType(uri: Uri): String? = record(uri)?.mime
+    /**
+     * Resolve a durable storage address into a new, short lived content link.
+     * The calling app receives only the requested URI's read capability; storage
+     * credentials and provider implementations stay inside InfiniFolder.
+     */
+    override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
+        if (method == METHOD_RESOLVE_RELATIVE_ARCHIVE) return resolveArchiveRelative(extras)
+        if (method == METHOD_DESCRIBE_ARCHIVE) return describeArchive(extras)
+        if (method == METHOD_CANONICALIZE_SOURCE) return canonicalizeSource(extras)
+        if (method != METHOD_RESOLVE_SOURCE) return super.call(method, arg, extras)
+        val app = requireNotNull(context)
+        val requested = extras?.getString(EXTRA_SOURCE_URI)?.takeIf(String::isNotBlank)
+            ?: arg?.takeIf(String::isNotBlank)
+            ?: throw IllegalArgumentException("A source URI is required")
+        val suppliedUri = Uri.parse(requested)
+        val source = if (suppliedUri.authority == StorageDocumentsProvider.AUTHORITY) {
+            StorageDocumentsProvider.resolveReference(app, suppliedUri)
+                ?: throw FileNotFoundException("The saved InfiniFolder location is unavailable")
+        } else suppliedUri
+        val provider = StorageRuntime.get(app).provider
+        if (provider.refForUri(source) == null) {
+            throw FileNotFoundException("InfiniFolder cannot resolve this storage location")
+        }
+        val name = extras?.getString(EXTRA_DISPLAY_NAME)?.takeIf(String::isNotBlank)
+            ?: Uri.decode(source.lastPathSegment.orEmpty()).substringAfterLast('/').ifBlank { "Selected file" }
+        val mime = extras?.getString(EXTRA_MIME_TYPE)?.takeIf(String::isNotBlank)
+            ?: com.infinifolder.mime.MimeRegistry.guess(name)
+        val size = extras?.getLong(EXTRA_SIZE_BYTES, -1L)?.takeIf { it >= 0L }
+        val relay = register(app, source, name, mime, size)
+        grantToCallingPackages(relay)
+        return Bundle().apply {
+            putString(EXTRA_CONTENT_URI, relay.toString())
+            putString(EXTRA_AUTHORITATIVE_URI, source.toString())
+            putString(EXTRA_DISPLAY_NAME, name)
+            putString(EXTRA_MIME_TYPE, mime)
+            if (size != null) putLong(EXTRA_SIZE_BYTES, size)
+        }
+    }
+
+    private fun resolveArchiveRelative(extras: Bundle?): Bundle {
+        val args = extras ?: throw IllegalArgumentException("An archive location is required")
+        val baseText = args.getString(EXTRA_BASE_URI)?.takeIf(String::isNotBlank)
+            ?: throw IllegalArgumentException("An archive location is required")
+        val reference = args.getString(EXTRA_RELATIVE_PATH)?.takeIf(String::isNotBlank)
+            ?: throw IllegalArgumentException("A relative path is required")
+        val base = Uri.parse(baseText)
+        require(com.infinifolder.archive.ArchiveUri.isArchiveUri(base)) {
+            "The location is not an InfiniFolder archive resource"
+        }
+        val entryPath = com.infinifolder.archive.ArchiveUri.getEntryPath(base)
+        val baseDirectory = if (reference.startsWith('/')) "" else entryPath.substringBeforeLast('/', "")
+        val segments = baseDirectory.replace('\\', '/').split('/').filter(String::isNotEmpty).toMutableList()
+        val decodedReference = Uri.decode(reference.replace("+", "%2B"))
+        for (part in decodedReference.replace('\\', '/').split('/')) {
+            when (part) {
+                "", "." -> Unit
+                ".." -> if (segments.isNotEmpty()) segments.removeAt(segments.lastIndex)
+                else -> segments.add(part)
+            }
+        }
+        val resolved = com.infinifolder.archive.ArchiveUri.build(
+            com.infinifolder.archive.ArchiveUri.getSourceUri(base),
+            segments.joinToString("/"),
+            deleted = com.infinifolder.archive.ArchiveUri.isDeletedView(base),
+        )
+        return Bundle().apply { putString(EXTRA_RESOLVED_URI, resolved.toString()) }
+    }
+
+    private fun describeArchive(extras: Bundle?): Bundle {
+        val source = extras?.getString(EXTRA_SOURCE_URI)?.takeIf(String::isNotBlank)
+            ?.let(Uri::parse) ?: throw IllegalArgumentException("An archive location is required")
+        require(com.infinifolder.archive.ArchiveUri.isArchiveUri(source)) {
+            "The location is not an InfiniFolder archive resource"
+        }
+        val provider = StorageRuntime.get(requireNotNull(context)).provider
+        val ref = provider.refForUri(source) ?: throw FileNotFoundException("Archive location is unavailable")
+        val entry = when (val result = provider.stat(ref)) {
+            is ProviderResult.Success -> result.value
+            is ProviderResult.Failure -> throw FileNotFoundException(result.message).apply { initCause(result.cause) }
+            is ProviderResult.Unsupported -> throw FileNotFoundException("Archive metadata is unsupported")
+        }
+        return Bundle().apply {
+            putString(EXTRA_DISPLAY_NAME, entry.metadata.name)
+            putString(EXTRA_MIME_TYPE, entry.metadata.mimeType)
+            entry.metadata.sizeBytes?.let { putLong(EXTRA_SIZE_BYTES, it) }
+        }
+    }
+
+    private fun canonicalizeSource(extras: Bundle?): Bundle {
+        val requested = extras?.getString(EXTRA_SOURCE_URI)?.takeIf(String::isNotBlank)
+            ?: throw IllegalArgumentException("A source URI is required")
+        val supplied = Uri.parse(requested)
+        val app = requireNotNull(context)
+        val relay = supplied.authority == app.packageName + AUTHORITY_SUFFIX
+        if (relay) requireReadGrant(supplied)
+        val source = (if (relay) record(supplied)?.source else null) ?: if (supplied.authority == StorageDocumentsProvider.AUTHORITY) {
+            StorageDocumentsProvider.resolveReference(app, supplied)
+                ?: throw FileNotFoundException("The saved InfiniFolder location is unavailable")
+        } else supplied
+        if (StorageRuntime.get(app).provider.refForUri(source) == null) {
+            throw FileNotFoundException("InfiniFolder cannot resolve this storage location")
+        }
+        return Bundle().apply { putString(EXTRA_AUTHORITATIVE_URI, source.toString()) }
+    }
+
+    override fun getType(uri: Uri): String? {
+        requireReadGrant(uri)
+        return record(uri)?.mime
+    }
 
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?,
         selectionArgs: Array<out String>?, sortOrder: String?): Cursor? {
+        requireReadGrant(uri)
         val item = record(uri) ?: return null
         val columns = projection?.toList() ?: arrayListOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)
         val directoryArtwork = if (columns.any { it == SharedFileProvider.AUDIO_COVER_URI_COLUMN ||
@@ -71,7 +182,7 @@ class FileSelectionRelayProvider : ContentProvider() {
         val uid = Binder.getCallingUid()
         if (uid != Process.myUid() && context.checkUriPermission(uri, Binder.getCallingPid(), uid,
                 android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) != PackageManager.PERMISSION_GRANTED) {
-            throw SecurityException("Read access to the selected audio file is required to query its cover image")
+            throw SecurityException("Read access to this selection link was not granted")
         }
     }
 
@@ -118,6 +229,7 @@ class FileSelectionRelayProvider : ContentProvider() {
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
         if (mode != "r") throw FileNotFoundException("Selected items are read-only")
+        requireReadGrant(uri)
         val item = record(uri) ?: throw FileNotFoundException("This selection link has expired")
         val context = requireNotNull(context)
         val provider = StorageRuntime.get(context).provider
@@ -365,6 +477,19 @@ class FileSelectionRelayProvider : ContentProvider() {
     }
 
     companion object {
+        const val METHOD_RESOLVE_SOURCE = FileSelectionContract.STORAGE_METHOD_RESOLVE_SOURCE
+        const val EXTRA_SOURCE_URI = FileSelectionContract.STORAGE_EXTRA_SOURCE_URI
+        const val EXTRA_CONTENT_URI = FileSelectionContract.STORAGE_EXTRA_CONTENT_URI
+        const val EXTRA_AUTHORITATIVE_URI = FileSelectionContract.STORAGE_EXTRA_AUTHORITATIVE_URI
+        const val EXTRA_DISPLAY_NAME = FileSelectionContract.STORAGE_EXTRA_DISPLAY_NAME
+        const val EXTRA_MIME_TYPE = FileSelectionContract.STORAGE_EXTRA_MIME_TYPE
+        const val EXTRA_SIZE_BYTES = FileSelectionContract.STORAGE_EXTRA_SIZE_BYTES
+        private const val METHOD_RESOLVE_RELATIVE_ARCHIVE = FileSelectionContract.STORAGE_METHOD_RESOLVE_RELATIVE_ARCHIVE
+        private const val EXTRA_BASE_URI = FileSelectionContract.STORAGE_EXTRA_BASE_URI
+        private const val EXTRA_RELATIVE_PATH = FileSelectionContract.STORAGE_EXTRA_RELATIVE_PATH
+        private const val EXTRA_RESOLVED_URI = FileSelectionContract.STORAGE_EXTRA_RESOLVED_URI
+        private const val METHOD_DESCRIBE_ARCHIVE = FileSelectionContract.STORAGE_METHOD_DESCRIBE_ARCHIVE
+        private const val METHOD_CANONICALIZE_SOURCE = FileSelectionContract.STORAGE_METHOD_CANONICALIZE_SOURCE
         private const val PREFS = "selected-file-relay"
         private const val TOKEN_TTL_MS = 24L * 60 * 60 * 1000
         private const val LAST_CLEANUP_KEY = "relay.last_cleanup"
