@@ -82,3 +82,18 @@ These probes do not exercise Folder's actual proxy callback, backend connection,
 picker UI, cross-UID permission grants or a third-party caller. Unit tests cover
 proxy read completion and access-mode classification, including write-only
 descriptor flags with the read-access bit disabled. Full device acceptance remains the table above.
+
+## Authoritative URI revision verification (2026-11-13)
+
+- Infinifolder: `:app:testDebugUnitTest :app:assembleDebug` passed (53 tests,
+  no failures) and produced `app/build/outputs/apk/debug/app-debug.apk`.
+- libinfiniselect: `:select-android:assembleDebug` and
+  `:select-android:assembleDebugAndroidTest` passed. Its local JVM unit-test
+  task has no source tests. The Android instrumentation APK compiled, but was
+  not run because `adb devices` reported no attached device.
+- Infinimedia: `:viewer-audio:testDebugUnitTest assembleDebug` passed (90
+  tests, no failures). Its documented `./build.sh` also passed with the updated
+  pinned dependency and copied `InfiniMedia-debug.apk` to the repository root.
+- Runtime checks across UIDs, Android URI grants, Folder-present/absent
+  fallback, and live SFTP/archive/filesystem-image access remain unverified on
+  a device. Compilation and JVM playlist tests do not establish those behaviors.
