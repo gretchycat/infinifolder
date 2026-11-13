@@ -156,6 +156,16 @@ class StorageDocumentsProvider : DocumentsProvider() {
         fun reference(context: android.content.Context, source: Uri): Uri =
             if (source.scheme == "content" && source.authority == AUTHORITY) source
             else android.provider.DocumentsContract.buildDocumentUri(AUTHORITY, registerSource(context, source, ROOT_ID))
+
+        /** Translate one of this provider's stable references back to its storage URI for InfiniFolder's browser. */
+        fun resolveReference(context: android.content.Context, reference: Uri): Uri? {
+            if (reference.scheme != "content" || reference.authority != AUTHORITY) return reference
+            val documentId = runCatching { android.provider.DocumentsContract.getDocumentId(reference) }.getOrNull()
+                ?: return null
+            if (documentId == ROOT_ID) return ContainerLinksProvider.ROOT
+            return context.getSharedPreferences("storage.documents", 0)
+                .getString("$documentId.uri", null)?.let { runCatching { Uri.parse(it) }.getOrNull() }
+        }
         private fun registerSource(context: android.content.Context, uri: Uri, parent: String): String {
             require(uri.authority != AUTHORITY) { "A document cannot refer back to its own provider" }
             val id = MessageDigest.getInstance("SHA-256").digest("$parent\n$uri".toByteArray())

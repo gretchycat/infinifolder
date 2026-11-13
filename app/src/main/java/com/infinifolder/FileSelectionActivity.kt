@@ -47,9 +47,15 @@ class FileSelectionActivity : Activity() {
                 }
             }
         }
-        val initialDirectory = if (Build.VERSION.SDK_INT >= 33) {
+        val initialReference = if (Build.VERSION.SDK_INT >= 33) {
             intent.getParcelableExtra(FileSelectionContract.EXTRA_INITIAL_DIRECTORY, Uri::class.java)
         } else @Suppress("DEPRECATION") (intent.getParcelableExtra(FileSelectionContract.EXTRA_INITIAL_DIRECTORY) as? Uri)
+        // The remembered value is a stable DocumentsProvider reference for external
+        // consumers. Resolve it to the original backend URI before opening the
+        // in-process browser, which routes backend URIs rather than SAF references.
+        val initialDirectory = initialReference?.let {
+            StorageDocumentsProvider.resolveReference(this, it)
+        }
         val startUri = initialDirectory ?: ContainerLinksProvider.ROOT
         val startName = if (initialDirectory == null) "Virtual root" else null
         val start = FloatingContainerService.intent(this, startUri, startName)
@@ -206,7 +212,11 @@ class FileSelectionActivity : Activity() {
                 result.clipData = android.content.ClipData.newRawUri(name ?: "Saved document", document)
             }
         } else result.putExtra(FileSelectionContract.EXTRA_SAVE_ERROR, error)
-        directory?.let { result.putExtra(FileSelectionContract.EXTRA_SAVE_DIRECTORY, publicDirectory(it.toString())) }
+        directory?.let {
+            val reference = publicDirectory(it.toString())
+            result.putExtra(FileSelectionContract.EXTRA_SAVE_DIRECTORY, reference)
+            result.putExtra(FileSelectionContract.EXTRA_SAVE_DIRECTORY_REFERENCE, reference)
+        }
         setResult(RESULT_OK, result)
         finish()
     }
@@ -226,6 +236,15 @@ class FileSelectionActivity : Activity() {
         val directoryNames = data.getStringArrayList(FileSelectionContract.EXTRA_ITEM_DIRECTORY_NAMES).orEmpty()
         val directoryCoverSources = data.getStringArrayList(
             FileSelectionContract.EXTRA_ITEM_DIRECTORY_COVER_URIS).orEmpty()
+        val sourceReferences = sources.map { StorageDocumentsProvider.reference(this, it).toString() }
+        val directoryReferences = sources.indices.map { index ->
+            directoryUris.getOrNull(index)?.takeIf(String::isNotBlank)?.let { publicDirectory(it) }.orEmpty()
+        }
+        val directoryCoverReferences = sources.indices.map { index ->
+            directoryCoverSources.getOrNull(index)?.takeIf(String::isNotBlank)?.let { sourceText ->
+                StorageDocumentsProvider.reference(this, Uri.parse(sourceText)).toString()
+            }.orEmpty()
+        }
         if (sources.isEmpty() || names.size != sources.size) {
             setResult(RESULT_CANCELED)
             finish()
@@ -272,12 +291,18 @@ class FileSelectionActivity : Activity() {
         // Selection results arrive through a ResultReceiver, not a conventional
         // Activity result callback. Use the requesting package supplied by the
         // picker library before the framework's optional caller fields.
-        val recipientPackage = callingPackage ?: callingActivity?.packageName
+        val recipientPackage = intent.getStringExtra(FileSelectionContract.EXTRA_REQUESTING_PACKAGE)
+            ?: callingPackage ?: callingActivity?.packageName
         recipientPackage?.let { recipient ->
             val grantFailure = runCatching {
                 relays.forEach { relay ->
                     grantUriPermission(recipient, relay, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
+                (sourceReferences + directoryReferences + directoryCoverReferences)
+                    .filter(String::isNotBlank).distinct().forEach { reference ->
+                        grantUriPermission(recipient, Uri.parse(reference), Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                    }
                 coverRelaysBySource.values.distinct().forEach { relay ->
                     runCatching { grantUriPermission(recipient, relay, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                         .onFailure { error ->
@@ -305,7 +330,8 @@ class FileSelectionActivity : Activity() {
         }
         val name = names.first()
         val mime = mimes.firstOrNull()?.takeIf(String::isNotBlank) ?: "application/octet-stream"
-        val result = Intent().setDataAndType(relays.first(), if (relays.size == 1) mime else "*/*").apply {
+        val primaryReference = Uri.parse(sourceReferences.first())
+        val result = Intent().setDataAndType(primaryReference, if (relays.size == 1) mime else "*/*").apply {
             // InfiniFolder selection relays do not support persistable grants;
             // the app grants each relay directly to the requesting package.
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -314,7 +340,9 @@ class FileSelectionActivity : Activity() {
             putExtra(FileSelectionContract.EXTRA_RESULT_MIME, mime)
             putExtra(FileSelectionContract.EXTRA_RESULT_SIZE, sizes.firstOrNull() ?: -1L)
             data.getString(FileSelectionContract.EXTRA_RESULT_DIRECTORY)?.let {
-                putExtra(FileSelectionContract.EXTRA_RESULT_DIRECTORY, publicDirectory(it))
+                val reference = publicDirectory(it)
+                putExtra(FileSelectionContract.EXTRA_RESULT_DIRECTORY, reference)
+                putExtra(FileSelectionContract.EXTRA_RESULT_DIRECTORY_REFERENCE, reference)
             }
             putExtra(FileSelectionContract.EXTRA_RESULT_SCROLL_Y,
                 data.getInt(FileSelectionContract.EXTRA_RESULT_SCROLL_Y, 0).coerceAtLeast(0))
@@ -322,18 +350,32 @@ class FileSelectionActivity : Activity() {
             putStringArrayListExtra(FileSelectionContract.EXTRA_RESULT_NAMES, ArrayList(names))
             putStringArrayListExtra(FileSelectionContract.EXTRA_RESULT_MIMES, ArrayList(mimes))
             putExtra(FileSelectionContract.EXTRA_RESULT_SIZES, sizes)
+            putStringArrayListExtra(FileSelectionContract.EXTRA_RESULT_SOURCE_REFERENCES,
+                ArrayList(sourceReferences))
             putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_URIS,
                 ArrayList(relays.indices.map { publicDirectory(directoryUris.getOrNull(it).orEmpty()) }))
             putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_NAMES,
                 ArrayList(relays.indices.map { directoryNames.getOrNull(it).orEmpty() }))
+            putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_REFERENCES,
+                ArrayList(directoryReferences))
             putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_COVER_URIS,
                 ArrayList(directoryCoverRelays))
+            putStringArrayListExtra(FileSelectionContract.EXTRA_ITEM_DIRECTORY_COVER_REFERENCES,
+                ArrayList(directoryCoverReferences))
             putExtra("displayName", name)
             putExtra("mimeType", mime)
-            // Per-item URIs and directory-cover URIs are included in extras and
-            // already granted directly to the recipient. Keep ClipData small;
-            // recursive selections can contain hundreds of items.
-            clipData = android.content.ClipData.newRawUri(name, relays.first())
+            // Include stable references so the library can persist the Android
+            // document grants and later reopen a source after its relay expires.
+            val grantUris = (sourceReferences.map(Uri::parse) +
+                directoryReferences.filter(String::isNotBlank).map(Uri::parse) +
+                directoryCoverReferences.filter(String::isNotBlank).map(Uri::parse) +
+                listOfNotNull(data.getString(FileSelectionContract.EXTRA_RESULT_DIRECTORY)
+                    ?.let(::publicDirectory)?.let(Uri::parse)))
+                .distinct()
+            clipData = android.content.ClipData.newRawUri(name, grantUris.first()).apply {
+                grantUris.drop(1).forEach { addItem(android.content.ClipData.Item(it)) }
+            }
+            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
         }
         setResult(RESULT_OK, result)
         finish()
