@@ -5,6 +5,7 @@ build/
 local.properties
 *.iml
 .idea/
+/*.apk
 
 # Python fixture-generator caches
 __pycache__/
