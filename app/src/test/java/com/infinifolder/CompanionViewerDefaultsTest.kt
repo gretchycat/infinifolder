@@ -22,6 +22,13 @@ class CompanionViewerDefaultsTest {
         assertEquals("com.infiniscribe", CompanionViewerDefaults.replacementPackageForRemovedViewer("com.infinifolder.viewer.PdfViewerActivity"))
         assertEquals("com.infiniscribe", CompanionViewerDefaults.replacementPackageForRemovedViewer("com.infinifolder.viewer.TextViewerActivity"))
     }
+    @Test fun pdfIsDetectedAndAssignedToTheScribeCompanion() {
+        assertEquals(com.infinifolder.viewer.MediaType.PDF,
+            com.infinifolder.viewer.MediaTypeDetector.detect("manual.pdf", "application/pdf"))
+        assertTrue(CompanionViewerDefaults.isScribeType(com.infinifolder.viewer.MediaType.PDF))
+        assertEquals("com.infiniscribe",
+            CompanionViewerDefaults.defaultPackageFor("manual.pdf", "application/pdf"))
+    }
     @Test fun existingViewersAndUnrelatedAppsAreNotMigrated() {
         assertNull(CompanionViewerDefaults.replacementPackageForRemovedViewer("com.infinifolder.viewer.HexViewerActivity"))
         assertNull(CompanionViewerDefaults.replacementPackageForRemovedViewer("com.other.AudioPlayerActivity"))

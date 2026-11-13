@@ -995,17 +995,17 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 mime == "application/x-bittorrent" && ref.providerId != "torrent" -> { externalViewerLaunchPending = false; revealBrowserAfterExternalLaunch(); logExternalOpenRoute("torrent"); openTorrentFile(entry) }
                                 (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null && !extensionIdentityMismatch) || AppsUri.isAppUri(uri) -> { logExternalOpenRoute("link"); open(entry, confirmCommands = true) }
                                 preferredOpen?.let { it.packageName != packageName } == true || staleOpenChoice ||
-                                    type in setOf(MediaType.AUDIO, MediaType.VIDEO, MediaType.TEXT) -> {
+                                    type in setOf(MediaType.AUDIO, MediaType.VIDEO) || CompanionViewerDefaults.isScribeType(type) -> {
                                     logExternalOpenRoute(when {
                                         staleOpenChoice -> "stale-default-chooser"
-                                        type in setOf(MediaType.AUDIO, MediaType.VIDEO, MediaType.TEXT) -> "companion-viewer"
+                                        type in setOf(MediaType.AUDIO, MediaType.VIDEO) || CompanionViewerDefaults.isScribeType(type) -> "companion-viewer"
                                         else -> "saved-viewer"
                                     })
                                     open(entry)
                                 }
                                 hasRawMetadata -> { logExternalOpenRoute("raw-metadata-hex"); openHexEditor(entry,loadMetadata=true) }
                                 extensionUnknownBinary -> { logExternalOpenRoute("hex"); openHexEditor(entry) }
-                                com.infinifolder.viewer.ViewerComponents.canView(entry) || com.infinifolder.viewer.ViewerCatalog.activity(type) != null -> {
+                                com.infinifolder.viewer.ViewerComponents.canView(entry) -> {
                                     logExternalOpenRoute("internal-viewer:$type")
                                     if (!launchBuiltInViewer(entry, type)) revealBrowserAfterExternalLaunch()
                                 }
