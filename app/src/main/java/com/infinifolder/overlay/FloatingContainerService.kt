@@ -1,6 +1,8 @@
 package com.infinifolder.overlay
 
-import com.infinifolder.SelectionInitialLocationFallback
+import com.infinifolder.SelectionBreadcrumb
+import com.infinifolder.SelectionBreadcrumbState
+import com.infinifolder.SelectionLocationFallback
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.ClipData
@@ -73,6 +75,8 @@ class FloatingContainerService : Service() {
     private var currentDisplayName: String? = null
     private data class Crumb(val uri: Uri, val name: String)
     private val trail = mutableListOf<Crumb>()
+    private var selectionStartUri: String? = null
+    private val selectionBreadcrumbsKey = "floating_selector_breadcrumbs_v1"
     private var breadcrumbGeneration = 0L
     private var iconDp = 56
     private var currentListingComplete=true
@@ -176,7 +180,27 @@ class FloatingContainerService : Service() {
         try {
             if (windowView == null) createWindow()
             updateSelectionControls()
-            show(uri, intent?.getStringExtra(EXTRA_DISPLAY_NAME), resetRoot = true)
+            val displayName = intent?.getStringExtra(EXTRA_DISPLAY_NAME)
+            if (selectionMode) {
+                selectionStartUri = uri.toString()
+                val rootUri = com.infinifolder.storage.ContainerLinksProvider.ROOT
+                val restored = SelectionBreadcrumbState.decode(
+                    getSharedPreferences("browser", MODE_PRIVATE).getString(selectionBreadcrumbsKey, null),
+                    uri.toString(), rootUri.toString(),
+                )
+                if (restored != null) {
+                    trail.clear()
+                    trail.addAll(restored.map { Crumb(Uri.parse(it.uri), it.name) })
+                    val last = trail.last()
+                    show(last.uri, last.name)
+                    resolveSelectionBreadcrumbs(last.uri, last.name, breadcrumbGeneration)
+                } else {
+                    show(uri, displayName, resetRoot = true)
+                }
+            } else {
+                selectionStartUri = null
+                show(uri, displayName, resetRoot = true)
+            }
         } catch (error: Exception) {
             com.infinifolder.storage.DiagnosticLog.record("floating.selector.initialize-failed", error = error)
             if (selectionMode) finishSelection(FileSelectionContract.RESULT_FALLBACK, Bundle().apply {
@@ -558,6 +582,12 @@ class FloatingContainerService : Service() {
     }
 
     private fun show(uri: Uri, displayName: String? = null, resetRoot: Boolean = false) {
+        val virtualRoot = com.infinifolder.storage.ContainerLinksProvider.ROOT
+        if (selectionMode && !resetRoot && trail.firstOrNull()?.uri != virtualRoot) {
+            com.infinifolder.storage.DiagnosticLog.record("floating.selector.breadcrumb-root-missing")
+            show(virtualRoot, "Virtual root", resetRoot = true)
+            return
+        }
         current = uri
         val headerName = displayName?.takeIf { it.isNotBlank() } ?: containerName(uri)
         currentDisplayName = headerName
@@ -565,8 +595,8 @@ class FloatingContainerService : Service() {
         if (resetRoot) {
             trail.clear()
             if (selectionMode) {
-                trail.add(Crumb(com.infinifolder.storage.ContainerLinksProvider.ROOT, "Virtual root"))
-                if (uri != com.infinifolder.storage.ContainerLinksProvider.ROOT) trail.add(Crumb(uri, headerName))
+                trail.add(Crumb(virtualRoot, "Virtual root"))
+                if (uri != virtualRoot) trail.add(Crumb(uri, headerName))
                 resolveSelectionBreadcrumbs(uri, headerName, breadcrumbToken)
             } else trail.add(Crumb(uri, headerName))
         } else {
@@ -575,6 +605,7 @@ class FloatingContainerService : Service() {
                 while (trail.size > previous + 1) trail.removeAt(trail.lastIndex)
             } else trail.add(Crumb(uri, headerName))
         }
+        persistSelectionBreadcrumbs()
         renderBreadcrumbs()
         renderGeneration++
         pendingIcons.clear()
@@ -641,14 +672,14 @@ class FloatingContainerService : Service() {
                 onMain {
                     if (generation == loadGeneration) {
                         val virtualRoot = com.infinifolder.storage.ContainerLinksProvider.ROOT
-                        if (SelectionInitialLocationFallback.shouldReturnToVirtualRoot(
+                        if (SelectionLocationFallback.shouldReturnToVirtualRoot(
                                 selectionMode = selectionMode,
-                                resetRoot = resetRoot,
                                 location = uri.toString(),
                                 virtualRoot = virtualRoot.toString(),
                             )) {
                             com.infinifolder.storage.DiagnosticLog.record(
-                                "floating.selector.initial-location.reset-to-virtual-root"
+                                "floating.selector.location.reset-to-virtual-root",
+                                "failedLocation=$uri"
                             )
                             show(virtualRoot, "Virtual root", resetRoot = true)
                             return@onMain
@@ -675,9 +706,37 @@ class FloatingContainerService : Service() {
                 if (token != breadcrumbGeneration || !selectionMode || current != uri || windowView == null) return@onMain
                 trail.clear()
                 trail.addAll(route)
+                if (trail.firstOrNull()?.uri != com.infinifolder.storage.ContainerLinksProvider.ROOT) {
+                    trail.clear()
+                    trail.add(Crumb(com.infinifolder.storage.ContainerLinksProvider.ROOT, "Virtual root"))
+                    current = com.infinifolder.storage.ContainerLinksProvider.ROOT
+                    currentDisplayName = "Virtual root"
+                    persistSelectionBreadcrumbs()
+                    show(com.infinifolder.storage.ContainerLinksProvider.ROOT, "Virtual root", resetRoot = true)
+                    return@onMain
+                }
+                persistSelectionBreadcrumbs()
                 renderBreadcrumbs()
             }
         }, "InfiniSelectBreadcrumbs").start()
+    }
+
+    private fun persistSelectionBreadcrumbs() {
+        if (!selectionMode) return
+        val startUri = selectionStartUri ?: return
+        val rootUri = com.infinifolder.storage.ContainerLinksProvider.ROOT
+        val encoded = SelectionBreadcrumbState.encode(
+            startUri,
+            trail.map { SelectionBreadcrumb(it.uri.toString(), it.name) },
+            rootUri.toString(),
+        )
+        if (encoded == null) {
+            com.infinifolder.storage.DiagnosticLog.record("floating.selector.breadcrumb-state-invalid")
+            return
+        }
+        getSharedPreferences("browser", MODE_PRIVATE).edit()
+            .putString(selectionBreadcrumbsKey, encoded)
+            .commit()
     }
 
     private fun buildSelectionBreadcrumbs(uri: Uri, displayName: String): List<Crumb> {
