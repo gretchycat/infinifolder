@@ -84,9 +84,11 @@ internal class NetworkConnectionBadge private constructor(
         val next = resource?.let(NetworkConnectionStatus::state) ?: NetworkConnectionStatus.State.UNKNOWN
         if (next != state) blinkStarted = SystemClock.uptimeMillis()
         state = next
-        visibility = if (next == NetworkConnectionStatus.State.DISCONNECTED ||
+        visibility = if (next == NetworkConnectionStatus.State.CONNECTING ||
+            next == NetworkConnectionStatus.State.DISCONNECTED ||
             next == NetworkConnectionStatus.State.RECONNECTING) VISIBLE else INVISIBLE
         contentDescription = when (next) {
+            NetworkConnectionStatus.State.CONNECTING -> "Connecting to remote storage"
             NetworkConnectionStatus.State.DISCONNECTED -> if (connection?.let(NetworkConnectionStatus::state) == NetworkConnectionStatus.State.DISCONNECTED)
                 "Remote connection disconnected" else "Remote folder or link target unavailable"
             NetworkConnectionStatus.State.RECONNECTING -> "Remote connection reconnecting"
@@ -117,17 +119,31 @@ internal class NetworkConnectionBadge private constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         removeCallbacks(frame)
+        val connecting = state == NetworkConnectionStatus.State.CONNECTING
         val reconnecting = state == NetworkConnectionStatus.State.RECONNECTING
-        if (!reconnecting && state != NetworkConnectionStatus.State.DISCONNECTED) return
+        if (!connecting && !reconnecting && state != NetworkConnectionStatus.State.DISCONNECTED) return
         val save = canvas.save()
         val side = minOf(width, height).toFloat()
         canvas.translate((width - side) / 2, (height - side) / 2)
         canvas.scale(side / 20f, side / 20f)
         paint.style = Paint.Style.FILL
-        paint.color = 0xFFD32F2F.toInt()
-        paint.alpha = if (reconnecting && (SystemClock.uptimeMillis() - blinkStarted) % 700 >= 350) 45 else 255
+        paint.color = when {
+            connecting -> 0xFF1976D2.toInt()
+            reconnecting -> 0xFFF57C00.toInt()
+            else -> 0xFFD32F2F.toInt()
+        }
+        paint.alpha = if ((connecting || reconnecting) &&
+            (SystemClock.uptimeMillis() - blinkStarted) % 900 >= 450) 210 else 255
         canvas.drawCircle(10f, 10f, 9f, paint)
-        if (!reconnecting) {
+        if (connecting || reconnecting) {
+            paint.color = 0xFFFFFFFF.toInt()
+            paint.alpha = 255
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2.2f
+            paint.strokeCap = Paint.Cap.ROUND
+            val rotation = (SystemClock.uptimeMillis() % 900).toFloat() * 0.4f
+            canvas.drawArc(RectF(5f, 5f, 15f, 15f), rotation, 245f, false, paint)
+        } else {
             // A disconnected plug, drawn locally at badge size (no font/emoji dependency).
             paint.color = 0xFFFFFFFF.toInt(); paint.alpha = 255
             canvas.rotate(-35f, 10f, 10f)
@@ -139,7 +155,7 @@ internal class NetworkConnectionBadge private constructor(
             canvas.drawLine(10f, 16f, 10f, 17f, paint)
         }
         canvas.restoreToCount(save)
-        if (reconnecting && isShown && windowVisibility == VISIBLE) postDelayed(frame, 80)
+        if ((connecting || reconnecting) && isShown && windowVisibility == VISIBLE) postDelayed(frame, 80)
     }
     companion object {
         private fun needsConnectionBadge(entry: ResourceEntry?, target: Uri?): Boolean {
