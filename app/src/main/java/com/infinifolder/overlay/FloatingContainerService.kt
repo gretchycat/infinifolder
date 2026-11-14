@@ -1110,8 +1110,13 @@ class FloatingContainerService : Service() {
             val entryKey = entry.uri.toString()
             card.container.alpha = if (entryKey in selectedEntries) 0.58f else 1f
             card.container.setOnClickListener {
-                if (selectionMode && selectionAllowMultiple && !entry.metadata.isDirectory &&
-                    com.infinifolder.storage.LinkResolver.kind(entry.metadata) == null) toggleSelection(entry, card.container)
+                if (ArchiveNavigationPolicy.shouldToggleMultipleSelection(
+                        selectionMode = selectionMode,
+                        allowMultiple = selectionAllowMultiple,
+                        isDirectory = entry.metadata.isDirectory,
+                        isBrowsableContainer = isBrowsableSelectionContainer(entry),
+                        isLink = com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null,
+                    )) toggleSelection(entry, card.container)
                 else activate(entry)
             }
             card.container.setOnLongClickListener {
@@ -1255,14 +1260,7 @@ class FloatingContainerService : Service() {
                         when {
                             namedTarget == null -> Toast.makeText(this, "This link does not resolve to a readable file", Toast.LENGTH_SHORT).show()
                             namedTarget.metadata.isDirectory -> show(namedTarget.uri, targetName)
-                            !com.infinifolder.apps.AppsUri.isAppUri(target.uri) &&
-                                !ArchiveFormats.isPackagedFormat(namedTarget.metadata.name, namedTarget.metadata.mimeType) &&
-                                (ArchiveFormats.isArchive(namedTarget.metadata.name, namedTarget.metadata.mimeType) ||
-                                    ArchiveFormats.isDiscImage(namedTarget.metadata.name, namedTarget.metadata.mimeType)) -> {
-                                val mounted = ArchiveUri.toArchiveUri(namedTarget.uri)
-                                if (runtime.provider.refForUri(mounted) != null) show(mounted, targetName)
-                                else selectEntry(namedTarget)
-                            }
+                            browseArchive(namedTarget) { selectEntry(namedTarget) } -> Unit
                             else -> selectEntry(namedTarget)
                         }
                     }
@@ -1292,6 +1290,9 @@ class FloatingContainerService : Service() {
                         else selectEntry(entry)
                 }
             } else if (entry.metadata.isDirectory) show(entry.uri, entry.metadata.name)
+            else if (browseArchive(entry) {
+                    Toast.makeText(this, "This archive cannot be browsed here", Toast.LENGTH_SHORT).show()
+                }) Unit
             else if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null) {
                 activateSelectionLink(entry)
             } else selectEntry(entry)
@@ -1299,14 +1300,23 @@ class FloatingContainerService : Service() {
         }
         when {
             entry.metadata.isDirectory -> show(entry.uri, entry.metadata.name)
-            !com.infinifolder.apps.AppsUri.isAppUri(entry.uri) &&
-                !ArchiveFormats.isPackagedFormat(entry.metadata.name, entry.metadata.mimeType) &&
-                (ArchiveFormats.isArchive(entry.metadata.name, entry.metadata.mimeType) || ArchiveFormats.isDiscImage(entry.metadata.name, entry.metadata.mimeType)) -> {
-                val mounted = ArchiveUri.toArchiveUri(entry.uri)
-                if (runtime.provider.refForUri(mounted) != null) show(mounted, entry.metadata.name) else launchInMain(entry.uri)
-            }
+            browseArchive(entry) { launchInMain(entry.uri) } -> Unit
             else -> launchInMain(entry.uri)
         }
+    }
+
+    /** Opens a supported container in this browser without making callers understand archive URIs. */
+    private fun browseArchive(entry: ResourceEntry, onUnavailable: () -> Unit): Boolean {
+        if (!ArchiveNavigationPolicy.shouldBrowse(
+                name = entry.metadata.name,
+                mimeType = entry.metadata.mimeType,
+                isApplicationUri = com.infinifolder.apps.AppsUri.isAppUri(entry.uri),
+            )) return false
+
+        val mounted = ArchiveUri.toArchiveUri(entry.uri)
+        if (runtime.provider.refForUri(mounted) != null) show(mounted, entry.metadata.name)
+        else onUnavailable()
+        return true
     }
 
     private fun selectEntry(entry: ResourceEntry) {
@@ -1583,8 +1593,11 @@ class FloatingContainerService : Service() {
     }
 
     private fun isBrowsableSelectionContainer(entry: ResourceEntry): Boolean =
-        ArchiveFormats.isDiscImage(entry.metadata.name, entry.metadata.mimeType) ||
-            ArchiveFormats.isDefaultBrowsableArchive(entry.metadata.name, entry.metadata.mimeType)
+        ArchiveNavigationPolicy.shouldBrowse(
+            name = entry.metadata.name,
+            mimeType = entry.metadata.mimeType,
+            isApplicationUri = com.infinifolder.apps.AppsUri.isAppUri(entry.uri),
+        )
 
     private fun matchesSelectionFormat(entry: ResourceEntry, mime: String): Boolean {
         val hasMimeFilter = selectionMimeTypes.any { it.isNotBlank() && it != "*/*" }
