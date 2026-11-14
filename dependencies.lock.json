@@ -19,7 +19,7 @@
     },
     "libinfiniselect": {
       "url": "https://github.com/gretchycat/libinfiniselect.git",
-      "commit": "42ab2f344991e9609191164636a1f14cc881b723"
+      "commit": "800fb14fb747d98a20e887fcccab1fe752314d6c"
     },
     "libinfinisound": {
       "url": "https://github.com/gretchycat/libinfinisound.git",
@@ -35,7 +35,7 @@
     },
     "libinfiniui": {
       "url": "https://github.com/gretchycat/libinfiniui.git",
-      "commit": "e62bc822b6ef5c58c6a733ef7fb379a89ab596fd"
+      "commit": "745a7bba80baa041c2315faafe581b74d5f6b6a6"
     },
     "libinfinivault": {
       "url": "https://github.com/gretchycat/libinfinivault.git",
