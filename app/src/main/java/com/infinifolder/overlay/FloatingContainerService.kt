@@ -585,20 +585,25 @@ class FloatingContainerService : Service() {
         val headerEntry = runtime.provider.refForUri(uri)?.let { ref ->
             ResourceEntry(ref, com.infinifolder.model.ResourceMetadata(headerName, "", null, null, true), uri)
         }
+        val providerId = headerEntry?.ref?.providerId
         showContainerIcon(null)
         grid.removeAllViews()
         val loading = TextView(this).apply { text = "Loading…"; setTextColor(Color.GRAY); textSize = 14f }
         grid.addView(loading)
         Thread {
+            var phase = "resolve provider"
             try {
                 val ref = runtime.provider.refForUri(uri)
+                phase = "validate provider"
                 val syntheticApplicationPublic = selectionMode && uri == BrowserLocations.uri("application_public")
                 if (ref == null && !syntheticApplicationPublic) throw IOException("No storage provider owns this location")
+                phase = "read cached folder artwork"
                 headerEntry?.let { entry ->
                     iconResolver.cached(entry, headerSize)?.let { saved ->
                         onMain { if (generation == loadGeneration) showContainerIcon(saved) }
                     }
                 }
+                phase = "list location"
                 val listing = when {
                     selectionMode && uri == com.infinifolder.storage.ContainerLinksProvider.ROOT ->
                         ProviderResult.Success(selectionRootEntries())
@@ -606,6 +611,7 @@ class FloatingContainerService : Service() {
                         ProviderResult.Success(selectionApplicationPublicEntries())
                     else -> runtime.provider.list(requireNotNull(ref))
                 }
+                phase = "handle listing result"
                 when (val result = listing) {
                     is ProviderResult.Success -> onMain {
                         if (generation == loadGeneration) {
@@ -627,6 +633,11 @@ class FloatingContainerService : Service() {
                     is ProviderResult.Unsupported -> throw IOException("This location cannot be browsed")
                 }
             } catch (error: Exception) {
+                com.infinifolder.storage.DiagnosticLog.record(
+                    "floating.browser.location-load-failed",
+                    "location=$uri provider=${providerId ?: "unresolved"} phase=$phase",
+                    error,
+                )
                 onMain {
                     if (generation == loadGeneration) {
                         val virtualRoot = com.infinifolder.storage.ContainerLinksProvider.ROOT
