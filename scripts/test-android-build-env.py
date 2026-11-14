@@ -91,13 +91,15 @@ class AndroidBuildEnvironmentTest(unittest.TestCase):
         (self.root / 'build.sh').chmod(0o755)
         (self.root / 'scripts/fetch-dependencies.py').write_text('pass\n')
         wrapper = self.root / 'gradlew'
-        wrapper.write_text('#!/usr/bin/env sh\nprintf "%s\\n" "$@"\n')
+        wrapper.write_text('#!/usr/bin/env sh\nmkdir -p app/build/outputs/apk/debug\n: > app/build/outputs/apk/debug/app-debug.apk\nprintf "%s\\n" "$@"\n')
         wrapper.chmod(0o755)
         args = ['-Pexample=value with spaces', '--max-workers=1']
         result = subprocess.run([str(self.root / 'build.sh'), *args], cwd=self.home, env=self.env, capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(args, result.stdout.splitlines()[-2:])
-        self.assertIn('-Dandroid.home=' + str(self.home / 'android-sdk'), result.stdout.splitlines())
+        lines = result.stdout.splitlines()
+        copied_index = next(i for i, line in enumerate(lines) if line.startswith('Copied APK to repository root:'))
+        self.assertEqual(args, lines[copied_index - len(args):copied_index])
+        self.assertIn('-Dandroid.home=' + str(self.home / 'android-sdk'), lines)
 
     def test_build_script_supplies_native_flags_before_user_overrides(self):
         self.test_build_script_preserves_arguments_and_working_directory()
@@ -109,7 +111,7 @@ class AndroidBuildEnvironmentTest(unittest.TestCase):
         self.env['PATH'] = str(binary.parent) + os.pathsep + self.env['PATH']
         result = subprocess.run([str(self.root / 'build.sh'), '-PtargetAbi=override'], cwd=self.home, env=self.env, capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stderr)
-        args = result.stdout.splitlines()
+        args = [line for line in result.stdout.splitlines() if line.startswith('-')]
         self.assertIn('-Pandroid.aapt2FromMavenOverride=' + str(binary), args)
         if platform.machine() in ('aarch64', 'arm64'):
             self.assertLess(args.index('-PtargetAbi=arm64-v8a'), args.index('-PtargetAbi=override'))
