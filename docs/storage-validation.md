@@ -29,6 +29,46 @@ Run on an attached Android device with:
 
 An instrumentation APK building successfully does not mean its tests ran.
 
+## Relay permission regression
+
+Version 0.1.2 protects the relay's token paths with a signature permission while
+leaving the authority-root resolver public. Ordinary clients receive URI grants;
+they do not request the signature permission. Previously, exported and
+unprotected token paths caused Android to skip ordinary grant bookkeeping, and
+the provider's explicit `checkUriPermission` then rejected reads. See
+[Android's grant handling](https://android.googlesource.com/platform/frameworks/base/+/66f21e8a188554adb035812694f3f8294b5fb1b3/services/core/java/com/android/server/uri/UriGrantsManagerService.java#1138).
+The resolver now grants as the provider owner to the framework-verified caller
+and verifies the grant before returning a content link. Read checks remain in
+place; backend access still runs under the provider identity after authorization.
+
+Run from this repository on Android/Termux with an SDK and JDK installed:
+
+```sh
+./build.sh --console=plain
+python3 scripts/verify-selection-permissions-runtime.py
+```
+
+The regression loads the actual APK's binary manifest using Android's
+`AssetManager` and checks token-path permissions using Android's `PathPermission`
+matcher. It checks exported resolver access configuration, grant delegation,
+protected read/write paths and signature permission protection. The old 0.1.1
+APK failed the protected-path assertion; the new 0.1.2 APK passed all eight
+checks. The APK SHA-256 values from these runs are:
+
+| APK | SHA-256 |
+| --- | --- |
+| 0.1.1, failing | `79d4aa5b3d16d9f5100ef77e4d27ab6d8e98a13ea56b5bc03c7fa6c80d14c129` |
+| 0.1.2, passing | `76ceb21aa3d2a4ab2dbd42fd86770f6535900a3136ef50a08d47774ee8a07cfc` |
+
+The 0.1.2 APK build passed. All three unit-test tasks were explicitly rerun:
+53 app, 91 storage-engine and 16 hex-viewer tests passed with no failures,
+errors or skips (160 total). The packaged manifest reports version code 3.
+This regression runs real Android XML/path APIs,
+but does not register the provider, create a cross-UID grant, open a remote
+resource or play/render its contents. No ADB device was attached for those
+end-to-end checks. Install the new Infinifolder APK and reselect/re-resolve a
+resource in the 0.1.1 Scribe/Media clients to request a fresh grant.
+
 ## Required device acceptance
 
 Repeat on supported Android versions with both applications installed, then with

@@ -86,12 +86,22 @@ The icon theme is a source submodule owned by libinfiniui, rather than an app.
 
 ## Storage access
 
-The selection library returns Android `content://` references and standard
-single/multiple/document-tree results. Infinifolder exposes a standard
+The selection library returns distinct `authoritativeUri` and `contentUri`
+values for selected/resolved resources. Clients preserve the authoritative
+identity, including in playlists, and request current Android access lazily.
+Relative paths are resolved against the containing resource's authoritative
+location in the library. Single/multiple/document-tree requests remain supported.
+Infinifolder exposes a standard
 DocumentsProvider guarded by MANAGE_DOCUMENTS and Android URI grants. The
 floating selector remains a compatible read-selection route. Writable and tree
 requests use SAF, initially pointed at Infinifolder when its provider is present.
 Without Infinifolder, the same Android facilities remain usable.
+
+The floating relay keeps its authority-root resolver public and protects token
+paths with a signature permission. Clients receive individual Android URI grants
+rather than requesting that permission. This ensures Android records the grants
+which the relay checks explicitly. Backend opens then run under the provider's
+identity, after the client grant has been checked. See [storage validation](storage-validation.md).
 
 Native positional handles become proxy descriptors; sequential sources use
 reliable pipes. Unsupported seeking remains explicit. Handles are owned by the

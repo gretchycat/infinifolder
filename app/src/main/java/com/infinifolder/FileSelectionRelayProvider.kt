@@ -222,8 +222,22 @@ class FileSelectionRelayProvider : ContentProvider() {
         val context = requireNotNull(context)
         val uid = Binder.getCallingUid()
         if (uid == Process.myUid()) return
-        context.packageManager.getPackagesForUid(uid).orEmpty().forEach { packageName ->
-            context.grantUriPermission(packageName, uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val recipients = callingPackage?.let(::listOf)
+            ?: context.packageManager.getPackagesForUid(uid).orEmpty().toList()
+        if (recipients.isEmpty()) throw SecurityException("Cannot identify the requesting application")
+        val identity = Binder.clearCallingIdentity()
+        try {
+            recipients.forEach { packageName ->
+                context.grantUriPermission(packageName, uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            // Do not return an apparently valid link if the framework skipped or
+            // rejected its grant. This also detects a misconfigured public path.
+            if (context.checkUriPermission(uri, -1, uid, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                != PackageManager.PERMISSION_GRANTED) {
+                throw SecurityException("Android did not establish read access to the selected link")
+            }
+        } finally {
+            Binder.restoreCallingIdentity(identity)
         }
     }
 

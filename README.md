@@ -85,6 +85,20 @@ The 0.1.1 Android build passed `./build.sh --console=plain` on Termux: 53 app,
 reports version code 2. Cross-application grants and remote reads still require
 device acceptance; a successful build does not establish those runtime results.
 
+Version 0.1.2 corrects the relay's manifest permissions. Its token paths require
+an internal signature permission or an Android URI grant; the authority-root
+resolver remains public. Clients do not request the internal permission. With
+the previously unprotected paths, Android could skip recording ordinary grants,
+and the relay's explicit grant check then rejected client reads. The resolver now
+grants access as the provider owner to the framework-verified calling package,
+and checks that the grant exists before returning a link. Keep the clients'
+authoritative URIs; they are not replaced by these temporary access links.
+
+Install the updated Infinifolder APK and reselect a file or reopen its
+authoritative location in Scribe/Media to obtain a fresh grant. The 0.1.1 clients
+can use this provider update. See the [permission regression and validation
+limits](docs/storage-validation.md#relay-permission-regression) for executed checks.
+
 
 ## Diagnostics
 
