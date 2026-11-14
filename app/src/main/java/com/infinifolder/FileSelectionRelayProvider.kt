@@ -230,6 +230,21 @@ class FileSelectionRelayProvider : ContentProvider() {
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
         if (mode != "r") throw FileNotFoundException("Selected items are read-only")
         requireReadGrant(uri)
+        // The caller is authorized for this relay, not for InfiniFolder's SAF
+        // grants, saved credentials or backend handles. Check it before clearing
+        // the Binder identity, then open storage as the owning application.
+        val identity = Binder.clearCallingIdentity()
+        try {
+            return openSourceDescriptor(uri)
+        } catch (error: Exception) {
+            com.infinifolder.storage.DiagnosticLog.record("infiniselect.source.open-failed", error = error)
+            throw error
+        } finally {
+            Binder.restoreCallingIdentity(identity)
+        }
+    }
+
+    private fun openSourceDescriptor(uri: Uri): ParcelFileDescriptor {
         val item = record(uri) ?: throw FileNotFoundException("This selection link has expired")
         val context = requireNotNull(context)
         val provider = StorageRuntime.get(context).provider
@@ -237,6 +252,8 @@ class FileSelectionRelayProvider : ContentProvider() {
         if (ref != null) {
             when (val result = provider.openNativeSeekable(ref, false)) {
                 is ProviderResult.Success -> {
+                    com.infinifolder.storage.DiagnosticLog.record("infiniselect.source.open",
+                        "name=${item.name} provider=${ref.providerId} access=positional")
                     return StorageDescriptor.open(context, provider, ref, "r", result)
                 }
                 is ProviderResult.Failure -> throw FileNotFoundException(result.message).apply { initCause(result.cause) }
@@ -246,6 +263,8 @@ class FileSelectionRelayProvider : ContentProvider() {
         val (reader, writer) = try { ParcelFileDescriptor.createReliablePipe() }
         catch (error: IOException) { throw FileNotFoundException(error.message ?: "Cannot open read pipe") }
         try {
+            com.infinifolder.storage.DiagnosticLog.record("infiniselect.source.open",
+                "name=${item.name} provider=${ref?.providerId ?: item.source.scheme} access=stream")
             workers.execute {
                 val output = ParcelFileDescriptor.AutoCloseOutputStream(writer)
                 try {

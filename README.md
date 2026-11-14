@@ -73,6 +73,18 @@ random access is retained through proxy descriptors where supported; sequential
 sources remain streams. Receiving apps do not include the storage engines.
 The floating picker and temporary relay references remain supported.
 
+Version 0.1.1 pins the corrected libinfiniselect grant handoff. The relay validates
+the requesting application's grant before opening storage with InfiniFolder's
+own Binder identity, so clients do not need the underlying SAF grants or saved
+backend credentials. Access failures and stream/positional opens are recorded in
+the diagnostic log. When updating remote-playlist clients, install this provider
+update as well; client library updates cannot replace an installed storage service.
+
+The 0.1.1 Android build passed `./build.sh --console=plain` on Termux: 53 app,
+91 storage-engine and 16 hex-viewer unit tests passed. The packaged manifest
+reports version code 2. Cross-application grants and remote reads still require
+device acceptance; a successful build does not establish those runtime results.
+
 
 ## Diagnostics
 

@@ -44,8 +44,8 @@ android {
         applicationId = "com.infinifolder"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
         testInstrumentationRunner = "com.infinifolder.IconRepairInstrumentation"
         targetAbiFilters?.let { filters -> ndk { abiFilters.addAll(filters) } }
     }
