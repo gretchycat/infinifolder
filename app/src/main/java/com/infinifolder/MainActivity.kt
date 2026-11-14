@@ -6343,6 +6343,21 @@ class MainActivity : Activity(), DebugDumpObserver {
         val hasStaleOpenChoice = hasSavedOpenChoice && preferredOpen == null
         val hasExternalDefault = preferredOpen?.let { it.packageName != packageName } == true
         val preferInternal = preferredOpen?.packageName == packageName
+        // Companion apps consume the storage boundary directly. Sending provider-owned
+        // resources through ExternalEditActivity stages a temporary working copy and
+        // loses the durable identity needed for remote, archive, and image-backed files.
+        if (!externalOnly && preferredOpen != null) {
+            when (preferredOpen) {
+                CompanionViewerDefaults.installedMediaComponent(this) -> {
+                    launchMediaEntriesInInfiniMedia(listOf(entry), entry.metadata.name)
+                    return
+                }
+                CompanionViewerDefaults.installedScribeComponent(this) -> {
+                    launchEntryInInfiniScribe(entry, effectiveMime)
+                    return
+                }
+            }
+        }
         if(!externalOnly&&!hasSavedOpenChoice&&!skipRawMetadata&&!entry.metadata.isDirectory&&
             com.infinifolder.viewer.RawMediaConfigStore.mightHave(entry)){
             val generation=++browserNavigationGeneration
@@ -12540,24 +12555,26 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     }
 
-    private fun openEntryAsTextInInfiniScribe(entry: ResourceEntry) {
+    private fun launchEntryInInfiniScribe(entry: ResourceEntry, mimeType: String,
+        forcePlainText: Boolean = false) {
         val component = CompanionViewerDefaults.installedScribeComponent(this) ?: run {
             Toast.makeText(this, "InfiniScribe is not installed", Toast.LENGTH_SHORT).show()
             return
         }
         val relay = try {
-            FileSelectionRelayProvider.register(this, entry.uri, entry.metadata.name, "text/plain", entry.metadata.sizeBytes)
+            FileSelectionRelayProvider.register(this, entry.uri, entry.metadata.name, mimeType, entry.metadata.sizeBytes)
         } catch (error: Exception) {
-            Toast.makeText(this, "Could not open the source as text: ${error.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Could not prepare ${entry.metadata.name} for InfiniScribe: ${error.message}", Toast.LENGTH_LONG).show()
             return
         }
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(relay, "text/plain")
+            setDataAndType(relay, mimeType)
             setComponent(component)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             putExtra("displayName", entry.metadata.name)
-            putExtra("mimeType", "text/plain")
-            putExtra("forcePlainTextViewer", true)
+            putExtra("mimeType", mimeType)
+            putExtra(FileSelectionContract.EXTRA_RESULT_AUTHORITATIVE_URI, entry.uri.toString())
+            if (forcePlainText) putExtra("forcePlainTextViewer", true)
             putExtra("rawAnsiSource", CompanionViewerDefaults.isRawAnsiSource(entry.metadata.name, entry.metadata.mimeType))
             clipData = ClipData.newRawUri(entry.metadata.name, relay)
         }
@@ -12568,6 +12585,9 @@ class MainActivity : Activity(), DebugDumpObserver {
             Toast.makeText(this, "Could not open InfiniScribe: ${error.message}", Toast.LENGTH_LONG).show()
         }
     }
+
+    private fun openEntryAsTextInInfiniScribe(entry: ResourceEntry) =
+        launchEntryInInfiniScribe(entry, "text/plain", forcePlainText = true)
 
     private fun copyEntriesToClipboard(entries: List<ResourceEntry>, cut: Boolean = false) {
         if (entries.isEmpty()) return
