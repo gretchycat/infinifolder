@@ -4,6 +4,15 @@
 
 Status reviewed 2026-10-24. See [current confirmations and remaining work](project-status.md); dated build/dump statements below describe their original increment.
 
+## Current follow-up: readable saved network links (2026-11-16)
+
+Folder displays a saved SFTP/FTP/FTPS/SMB/WebDAV target as a conventional URI when
+it can resolve the saved connection: scheme, configured username when present,
+host, non-default port and path. Passwords are never included in the displayed URI;
+they remain in the separate credential vault. Editing and saving an unchanged
+readable network target preserves its saved-connection binding. Password-bearing
+input URIs remain rejected.
+
 ## Implemented
 
 - Virtual root accepts container link records, not ordinary file payloads. Create, copy, move, rename and delete operate on link metadata; deleting a link preserves its target.
@@ -11,6 +20,7 @@ Status reviewed 2026-10-24. See [current confirmations and remaining work](proje
 - Saved network connections are migrated into Virtual root links. Deleting their link does not remove saved credentials or recreate the link on the next refresh.
 - Long press a remote connection link and choose **Edit connection…** to edit its existing protocol settings. Shared links to that connection continue using the same saved account; link paths remain independent.
 - Public network URIs bind to saved accounts. Ambiguous account matches require a choice; passwords belong in connection settings, not link URIs.
+- Saved network links and their properties display a readable protocol URI with the configured username, server, port and path when the connection can be resolved. Passwords are never included. Saving an unchanged displayed URI retains the saved connection binding; passwords remain in the separate credential vault.
 - Container links support navigation, selection and drag targets. Dropping actual containers onto Virtual root creates links. Ordinary files are rejected.
 - Saving network link metadata does not contact the server. Access is checked when opening it.
 - Magnet links open a read-only torrent browser. Metadata is loaded before listing; copying a file downloads only that selected torrent file and verifies it before exposing its contents.

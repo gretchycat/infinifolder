@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated 2026-11-04. [Project status](project-status.md) records what is implemented
+Updated 2026-11-16. [Project status](project-status.md) records what is implemented
 and accepted. [Feature to-do](feature-todo.md) is the actionable backlog; this page
 explains direction and constraints rather than repeating completed checklists.
 
@@ -15,8 +15,8 @@ Continue exposing negotiating stream adapters around existing implementations,
 including clearer positional/local-file requirements. Reuse Stream's processor
 planner; do not implement another pipeline engine or duplicate decoders. Multi-port
 ambiguity still needs explicit bindings. Desktop output/native packaging and iOS
-backends remain separate work from JVM portability. Release licensing and native
-source-build review are still required.
+backends remain separate work from JVM portability. Original code is MIT-licensed;
+third-party/native source-build and distribution review remains required before releases.
 
 ## Reliability before expansion
 

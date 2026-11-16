@@ -1,6 +1,6 @@
 # Remaining work
 
-Updated 2026-11-04. This is the actionable backlog. [Project status](project-status.md)
+Updated 2026-11-16. This is the actionable backlog. [Project status](project-status.md)
 records implemented behavior and owner confirmations; the [roadmap](roadmap.md)
 describes future scope. Dated evidence stays in domain guides and validation records.
 A pending variant does not revoke earlier acceptance.
@@ -12,7 +12,7 @@ passes 1,071 cases; the 30 historical storage failures are repaired, not open wo
 See [runtime discovery](runtime-capabilities.md) for exact revisions and limits.
 Libraries are explicitly linked; handlers own format metadata and consumers use
 typed services. Further source/sink adapters, multi-input planning, platform ports
-and release/licensing work remain below.
+and third-party/native distribution review remain below.
 
 Font preview (scaling, collections, dark mode, rotation, navigation and keyboard),
 launcher folder/file/archive/remote/public-app shortcuts, connection badges,
@@ -125,7 +125,7 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 - [ ] Continue converting legacy callers to metadata-driven composition before removing compatibility APIs or exported dependencies.
 - [ ] Extend automatic planning for arbitrary multi-input/track graphs; current multi-port processors use explicit bindings.
 - [ ] Verify live remote providers, Android playback/seek/gapless/route behavior and editor/container write acceptance after these checkpoints.
-- [ ] Resolve original-code licensing and existing F-Droid native/AAR build requirements before a distributable library release.
+- [ ] Review third-party license compatibility and native/AAR source-build requirements before distributing a library or combined APK.
 
 ## Large text and CSV editing
 

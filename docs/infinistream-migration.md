@@ -9,6 +9,8 @@
 > recorded revision. Use [project status](project-status.md), [remaining work](feature-todo.md)
 > and the [latest runtime gate](runtime-capabilities.md) for current scope.
 
+> Current licensing update (2026-11-16): original code in the apps and shared libraries is MIT-licensed. Third-party terms remain in force, and combined-APK distribution compatibility and native source-build obligations still need review. Historical pending statements below describe their original checkpoint.
+
 
 Design authority: [implementation assignment](infinistream_architecture_codex.md). Baseline: InfiniFolder `9233495`, libinfinisound `c6137cd`, 2026-10-30. The user supplied the assignment as an untracked file; preserve it intact. No AGENTS.md was found in the workspace or its project/home ancestors. The initial documentation checkpoint preceded all source moves; the implementation checkpoints below record the current state.
 

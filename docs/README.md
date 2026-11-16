@@ -1,5 +1,7 @@
 # Documentation
 
+Current code licensing: original application and shared-library code is MIT-licensed; third-party components retain their own terms. See [InfiniFolder LICENSE.md](../LICENSE.md) and the individual application and library license files. The combined APK distribution review remains separate from the original-code license choice.
+
 Start with the current separation records:
 
 - [Android build commands and current test owners](android-builds.md)

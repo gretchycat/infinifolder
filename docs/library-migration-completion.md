@@ -9,7 +9,9 @@
 > recorded revision. Use [project status](project-status.md), [remaining work](feature-todo.md)
 > and the [latest runtime gate](runtime-capabilities.md) for current scope.
 
-Current follow-up, 2026-11-04: [project status](project-status.md) and the
+> Current licensing update (2026-11-16): original application and library code is MIT-licensed. Third-party terms and combined-app distribution review remain separate. The local library license/documentation edits are not committed or published, and source locks still select the earlier library commits.
+
+Historical follow-up, 2026-11-04: [project status](project-status.md) and the
 [runtime gate](runtime-capabilities.md) track current library/viewer builds and
 local commits. The runtime-discovery commits have not been pushed. The checkpoint
 evidence and local-only publication statement below describe that earlier increment; later source publication does not establish device acceptance.
@@ -160,7 +162,8 @@ Automatic arbitrary multi-input graph search, new formats/providers, paged editi
 new desktop/iOS backends, truly minimal per-viewer dependencies and broader ABI or
 live-server/device acceptance remain separate capability work.
 
-Original-code licensing still requires the owner's choice. Existing native/AAR
+At this checkpoint, original-code licensing still required the owner's choice;
+the MIT decision is recorded in the current update at the top of this file. Native/AAR
 7-Zip, zstd, JPEG XL, JPEG2000 and libVLC dependencies retain their recorded source,
 license and F-Droid build-review requirements. Finishing source extraction does not
 resolve those release decisions. No remote publication is claimed for this final

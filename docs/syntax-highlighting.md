@@ -106,4 +106,5 @@ leaves remaining text readable with default styling. Exact whole-file grammar
 state and embedded-language engines can be added behind the shared descriptor.
 
 Gson 2.11.0 supplies JSON handling; its Apache 2.0 license/notice are bundled under
-META-INF/libinfiniscribe. Original project licensing remains unchanged.
+META-INF/libinfiniscribe. This dependency retains its own terms; the original project
+code is MIT-licensed as described in the repository LICENSE.md.

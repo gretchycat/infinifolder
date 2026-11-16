@@ -1,6 +1,6 @@
 # Project status
 
-Updated 2026-11-11. The suite now has four independent Android application
+Updated 2026-11-16. The suite now has four independent Android application
 repositories and eleven reusable library repositories. Source locks fetch only
 each application's declared library closure. Folder provides advanced storage
 through Android document/stream interfaces; Scribe and Media use Select/SAF
@@ -43,7 +43,7 @@ variant or the latest runtime-discovery change has been exercised on a device.
 | Opening | Normal file taps use the internal viewer after the default-route correction; broader chooser/provider cases remain separate |
 | Transfers | Current-directory copying and the warning-suppression checkbox; Copy, Cancel and restricted-destination failures; cancelled SAF move cleanup before originals were removed; earlier ZIP/FAT16 behavior and native FAT32 file moves |
 | Recovery/formats | General delivered FAT recovery fixtures and partial recovery; reported RAR/ARJ/CAB, UFS, NTFS and HFS-family browsing; individual subsets remain documented |
-| Audio | ANSI music and the softer waveform, local MP3 seeking/gapless and playable playlist lengths were confirmed |
+| Audio | ANSI music and the softer waveform, local MP3 seeking/gapless and playable playlist lengths were confirmed; remote SFTP metadata now gets a longer read budget and awaits cellular retest |
 | Documents/fonts | EPUB and the first Office/ebook reading pass; font display, rotation, navigation/keyboard insets |
 | Launcher | Dragging folders, regular files, archives, remote locations and public application directories; direct URL handoff was subsequently repaired |
 | Animations | IFF color cycling and the earlier autoplay/loop/progress repair; later FLC header recovery and interactive MNG remain separate checks |
@@ -61,6 +61,8 @@ variant or the latest runtime-discovery change has been exercised on a device.
    move restoration after originals have been removed.
 5. Extend cache, external-edit and container publication checks to interruption,
    low space, unknown lengths, concurrent writers and the remaining providers.
+6. Retest SFTP audio tag/artwork enrichment over cellular after the longer metadata
+   read budget; the updated behavior has not yet been owner-confirmed on device.
 
 ADB had no connected device during the runtime-discovery gate. The latest native
 surface/playback, Android UI and live-provider paths therefore remain unverified.
@@ -77,8 +79,9 @@ Detailed matrices live with the relevant feature, not in duplicate status diarie
 - Large text/CSV editing, broader format fidelity, seekable torrent pieces,
   NFS/cloud providers, a launcher widget and universal Android virtual-document
   export remain future work. See [priorities](feature-todo.md).
-- Original-code licensing, source-buildable third-party/native dependencies and
-  release/ABI verification remain prerequisites for distributable library releases.
+- Original code across the four apps and eleven shared libraries is MIT-licensed.
+  Third-party components keep their own terms; review combined Folder APK license
+  implications, native source-build obligations and release/ABI requirements before distribution.
 
 ## Historical evidence
 

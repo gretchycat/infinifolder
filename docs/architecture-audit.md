@@ -1,5 +1,9 @@
 # InfiniSuite architecture audit and separation
 
+## Current licensing update (2026-11-16)
+
+Original code in the four application repositories and eleven shared library repositories is licensed under MIT; each license limits its grant to original project code. Bundled third-party components retain their own licenses and notices. InfiniFolder’s combined APK still needs a distribution compatibility review because it includes lwext4 under GPL-2.0 alongside Apache-2.0 dependencies. The audit statements below remain dated evidence for their recorded revisions. These license and library-document changes are local and uncommitted; fresh checkouts remain on pinned revisions until the library changes are published and app dependency locks are updated.
+
 ## Current follow-up: authoring thumbnails and image order (2026-11-11)
 
 ORA/KRA authoring ZIPs and large SVGZ retain their image identity. EPS's PostScript MIME routes to thumbnails instead of generic type icons. Folder captures displayed image order for shared UI's next/previous/slideshow navigation. The existing automatic installed-Media fallback for audio without saved choices has additional regression coverage. Source locks/gitlinks remain aligned, with no new dependency edge.
@@ -124,9 +128,7 @@ history were retained. **Infinimedia, libinfinicore and libinfiniui were created
 | [libinfiniui](https://github.com/gretchycat/libinfiniui) | Shared Android UI/source support and optional image viewer | Folder, Scribe, Media |
 | [infini-icon-theme](https://github.com/gretchycat/infini-icon-theme) | Unchanged pinned artwork/theme repository, owned as a UI dependency | Transitive through UI |
 
-No applicable AGENTS.md files were found in the inspected repositories. Original
-license/provenance files were preserved; Key's MIT license remains. Original-code
-licenses marked pending were not replaced with a new license decision.
+No applicable AGENTS.md files were found in the inspected repositories. At that audit snapshot, original-code licenses marked pending had not been replaced; the current decision is recorded in the licensing update at the top of this file. License and provenance records continue to preserve third-party terms.
 
 ## Dependency graph
 
@@ -443,9 +445,7 @@ were corrected. Current documentation links and the inventory script were checke
 - The existing Termux native tracker path targets arm64; other environments retain
   their documented portable fallback. This audit does not establish equal native
   codec availability on every host or ABI.
-- Original-code license choices previously marked pending remain the owner's
-  decision. Existing third-party notices/source links are preserved and packaged;
-  this is not a substitute for a distribution/source-build license review.
+- Original-code licenses are now MIT. Existing third-party notices/source links are preserved and packaged; distribution of the combined Folder APK still needs compatibility and source-build review.
 - Exact hashes cannot prove all semantic duplication or dynamic-resource usage.
   Uncertain format/resource cleanup was preserved to avoid losing functionality.
 

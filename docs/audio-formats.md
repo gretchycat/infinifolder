@@ -2,7 +2,22 @@
 
 > [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
-Updated 2026-11-02. This document tracks audio and sound format support across MIME/magic classification (`MediaTypeDetector`, `MimeRegistry`, `FileMagicDetector`) and the modular audio playback engine (`:viewer-audio` / `AudioPlayerActivity`, `AudioPlayerService`, `PcmAudioEngine`, and `UniversalAudioDecoder`). Parsing, codec adapters, metadata probing and analysis now live in the external `libinfinisound` library (`audio-api` / `audio-core` / Android `audio-processing`); see [audio library boundaries](audio-processing-library.md). Playback/output remains in `:viewer-audio`.
+Updated 2026-11-02; current queue and metadata follow-up added 2026-11-16. This document tracks audio and sound format support across MIME/magic classification (`MediaTypeDetector`, `MimeRegistry`, `FileMagicDetector`) and the modular audio playback engine (`:viewer-audio` / `AudioPlayerActivity`, `AudioPlayerService`, `PcmAudioEngine`, and `UniversalAudioDecoder`). Parsing, codec adapters, metadata probing and analysis now live in the external `libinfinisound` library (`audio-api` / `audio-core` / Android `audio-processing`); see [audio library boundaries](audio-processing-library.md). Playback/output remains in `:viewer-audio`.
+
+## Mixed-media queueing and remote metadata (2026-11-16)
+
+InfiniMedia's Add media selection requests audio, video and images together. From a
+Folder directory or supported container, **Queue all media in InfiniMedia** recursively
+adds supported media matched by runtime capabilities and MIME/extension filters. A
+readable `cover.*` image is queued first for its directory. Images and video appear
+as queue items; this does not expand the audio decoder's supported formats.
+
+Playback and background tag reads allow 16 MiB and 512 positional reads per probe,
+with a cooperative time budget of 30 seconds for positional sources and 10 seconds
+for other sources. Failed audio metadata probes are eligible for one retry after the
+first pass across queued audio items. The elapsed-time budget is checked around reads
+and cannot cancel a single provider read already blocked in the transport. Cellular
+SFTP metadata behavior still needs device confirmation after this change.
 
 > **ANSI music playback in the dedicated CP437 viewer is user-confirmed (2026-11-02).** Sound’s `AnsiMusic` parses supported BBS/BASIC PLAY melodies and produces mono PCM; the viewer prepares a temporary WAVE for Android media playback. The tone generator now uses a rounded waveform between square and sine, with reduced third/fifth harmonics and short attack/release fades. Timing, rests and peak level are preserved. The user confirms the softened timbre sounds good (2026-11-03); see the [to-do list](feature-todo.md#ansi-music). General music-player routing, broader dialects and synchronized presentation remain separate follow-up work.
 

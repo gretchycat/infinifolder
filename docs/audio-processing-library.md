@@ -7,7 +7,7 @@
 
 > [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
-Updated 2026-10-31. The independent [libinfinisound repository](https://github.com/gretchycat/libinfinisound) is pinned at `libraries/libinfinisound` and imported as a Gradle composite build. Both library-owned portable codecs and Android's codec adapter are selected inside the library.
+Updated 2026-10-31; remote metadata follow-up added 2026-11-16. The independent [libinfinisound repository](https://github.com/gretchycat/libinfinisound) is pinned at `libraries/libinfinisound` and imported as a Gradle composite build. Both library-owned portable codecs and Android's codec adapter are selected inside the library.
 
 ## Current modules and ownership
 
@@ -18,7 +18,7 @@ Updated 2026-10-31. The independent [libinfinisound repository](https://github.c
 | `audio-processing` | Android extractor/codec backend, metadata and analysis adapters, default composition, tracker JNI packaging |
 | `viewer-audio` | Source staging and leases, queue and gapless handoff, MediaPlayer PCM output, routing/focus, UI and Cast |
 
-The player service sends original encoded sources to `AudioProcessing.openPlaybackSource` and gives only the resulting common PCM WAVE ByteSource to the existing host MediaDataSource output adapter. Normal loads and gapless preload use the same library policy. Visualizer analysis borrows the same PCM resource, sharing the decoder/cache. Source-duration discovery also uses the library; the service no longer constructs a MediaPlayer for metadata decoding or decodes a complete track just to enrich metadata before playback. Cast conversion requests explicit PCM packing through the same library source/cache path, and HTTP requests borrow positional views. Remote Cast renderers still own their own output handling.
+The player service sends original encoded sources to `AudioProcessing.openPlaybackSource` and gives only the resulting common PCM WAVE ByteSource to the existing host MediaDataSource output adapter. Normal loads and gapless preload use the same library policy. Visualizer analysis borrows the same PCM resource, sharing the decoder/cache. Source-duration discovery also uses the library; the service no longer constructs a MediaPlayer for metadata decoding or decodes a complete track just to enrich metadata before playback. Tag probes use a 16 MiB/512-read cap and a cooperative time budget of 30 seconds for positional sources or 10 seconds for other sources. Failed queue metadata probes receive one deferred retry after the first pass over audio items. The elapsed-time check cannot interrupt a provider read already blocked in transport. Cast conversion requests explicit PCM packing through the same library source/cache path, and HTTP requests borrow positional views. Remote Cast renderers still own their own output handling.
 
 The library has portable MP3 via JLayer, AAC via its ADTS/MP4 parsers and JAAD synthesis, and its own FLAC and WAVE stream decoders. The Android composition registers MediaExtractor/MediaCodec behind `PcmDecoder`; players never select a native codec directly. `PLATFORM_FIRST`, `PORTABLE_FIRST` and `PORTABLE_ONLY` policy belongs to the library. Existing specialized formats retain their renderer priority and limits.
 
