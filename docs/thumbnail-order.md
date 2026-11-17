@@ -58,14 +58,14 @@ The optional fixture directory is runtime test input; it is not required to buil
 
 | Repository | Commit |
 | --- | --- |
-| infinimedia | [aea7644](https://github.com/gretchycat/infinimedia/commit/aea764464e3d3c092d4688d3d59ad93297736a2e) |
-| infiniscribe | [746855b](https://github.com/gretchycat/infiniscribe/commit/746855bf39d5a04daf275d6e82939aaebda59ece) |
-| infinifolder | [2651f71](https://github.com/gretchycat/infinifolder/commit/2651f71bf4d62e7b737fbe6ad8fc919806234c7b) |
-| libinfinicanvas | [c0b6c1e](https://github.com/gretchycat/libinfinicanvas/commit/c0b6c1ec7e5c3149c0ffb983fc1ae2a15c430a1a) |
-| libinfinicore | [0f98a0e](https://github.com/gretchycat/libinfinicore/commit/0f98a0e9c94e9de0133e4e1ab53a1274b0fd33d8) |
-| libinfiniui | [6072700](https://github.com/gretchycat/libinfiniui/commit/6072700abebbc7142120d78a44e544cfa958f8e7) |
-| libinfinistore | [c4c29cb](https://github.com/gretchycat/libinfinistore/commit/c4c29cb9f47bc7ef9e0ab722cab49fc83005cfb8) |
-| libinfinivault | [141ed43](https://github.com/gretchycat/libinfinivault/commit/141ed43d6d68ced92a313eb18f37ef378a124bea) |
+| infinimedia | [aea7644](https://github.com/infiniforge/infinimedia/commit/aea764464e3d3c092d4688d3d59ad93297736a2e) |
+| infiniscribe | [746855b](https://github.com/infiniforge/infiniscribe/commit/746855bf39d5a04daf275d6e82939aaebda59ece) |
+| infinifolder | [2651f71](https://github.com/infiniforge/infinifolder/commit/2651f71bf4d62e7b737fbe6ad8fc919806234c7b) |
+| libinfinicanvas | [c0b6c1e](https://github.com/infiniforge/libinfinicanvas/commit/c0b6c1ec7e5c3149c0ffb983fc1ae2a15c430a1a) |
+| libinfinicore | [0f98a0e](https://github.com/infiniforge/libinfinicore/commit/0f98a0e9c94e9de0133e4e1ab53a1274b0fd33d8) |
+| libinfiniui | [6072700](https://github.com/infiniforge/libinfiniui/commit/6072700abebbc7142120d78a44e544cfa958f8e7) |
+| libinfinistore | [c4c29cb](https://github.com/infiniforge/libinfinistore/commit/c4c29cb9f47bc7ef9e0ab722cab49fc83005cfb8) |
+| libinfinivault | [141ed43](https://github.com/infiniforge/libinfinivault/commit/141ed43d6d68ced92a313eb18f37ef378a124bea) |
 
 The optional original-SVGZ probe extension is recorded at Media 9eb030b; it changes test tooling only, not the built APK. Later documentation commits record this report. No published history was rewritten and no repositories were created.
 

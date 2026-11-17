@@ -35,7 +35,7 @@ player, playlist and bitmap chrome; this rule does not recolor skin artwork.
 
 ## Findings from project fixtures
 
-All four archives owned by [Infinimedia](https://github.com/gretchycat/infinimedia/tree/main/test-assets/skins) contain classic bitmap skins, despite the Winamp3, Winamp5 and Bento names. They contain both palette text files, main/title-bar bitmap sheets, and generic-window bitmap sheets. Base has green-on-black text and blue selection; Classified v3 has pale green text; Classified v5 has white text on a blue background; Bento has blue-gray text on near-black.
+All four archives owned by [Infinimedia](https://github.com/infiniforge/infinimedia/tree/main/test-assets/skins) contain classic bitmap skins, despite the Winamp3, Winamp5 and Bento names. They contain both palette text files, main/title-bar bitmap sheets, and generic-window bitmap sheets. Base has green-on-black text and blue selection; Classified v3 has pale green text; Classified v5 has white text on a blue background; Bento has blue-gray text on near-black.
 
 Previously the importer ignored all bitmap sheets, SelectedBG and Font, always marked imports dark/monospace, and could report success for unrelated ZIP files by generating a fabricated fallback theme. Copy failures could apply a theme that was not durably saved. File-card colors were also hardcoded, masking imported text colors.
 

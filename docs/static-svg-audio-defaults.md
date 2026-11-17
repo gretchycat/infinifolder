@@ -48,11 +48,11 @@ APK inspection confirms the removed SVG classes are absent from all three applic
 
 | Repository | Commit |
 | --- | --- |
-| infinimedia | [f3d7bea](https://github.com/gretchycat/infinimedia/commit/f3d7bea6ef61b7227e416edb7c717042320f8a51) |
-| infiniscribe | [6ac4aea](https://github.com/gretchycat/infiniscribe/commit/6ac4aea32580aaaa4d45675749e96717d37af398) |
-| infinifolder | [96fdbce](https://github.com/gretchycat/infinifolder/commit/96fdbce6ab75d73f8c9d3c257cadcf3b670393f7) |
-| libinfinicanvas | [1ae99a8](https://github.com/gretchycat/libinfinicanvas/commit/1ae99a8c5bc5a53cdda4d64fca6be55e143c126a) |
-| libinfiniui | [c68feac](https://github.com/gretchycat/libinfiniui/commit/c68feacbcbabf2d10d2a89f7e72d52af3c3c5887) |
+| infinimedia | [f3d7bea](https://github.com/infiniforge/infinimedia/commit/f3d7bea6ef61b7227e416edb7c717042320f8a51) |
+| infiniscribe | [6ac4aea](https://github.com/infiniforge/infiniscribe/commit/6ac4aea32580aaaa4d45675749e96717d37af398) |
+| infinifolder | [96fdbce](https://github.com/infiniforge/infinifolder/commit/96fdbce6ab75d73f8c9d3c257cadcf3b670393f7) |
+| libinfinicanvas | [1ae99a8](https://github.com/infiniforge/libinfinicanvas/commit/1ae99a8c5bc5a53cdda4d64fca6be55e143c126a) |
+| libinfiniui | [c68feac](https://github.com/infiniforge/libinfiniui/commit/c68feacbcbabf2d10d2a89f7e72d52af3c3c5887) |
 
 All five existing repositories were retained. No history was rewritten and no repositories were created. Documentation follow-up commits add this report and verification checkpoints.
 

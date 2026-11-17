@@ -20,13 +20,13 @@ Repository publication was verified at the earlier checkpoints. The checkpoint 3
 
 | Repository | Status | Pinned commit |
 | --- | --- | --- |
-| [libinfinistream](https://github.com/gretchycat/libinfinistream) | Created | `16409e81edc68813816c2640d27fbd1c55098f5f` |
-| [libinfinistore](https://github.com/gretchycat/libinfinistore) | Created | `b1befd7e464bd5bc8a20b2066185cf033fe10066` |
-| [libinfinivault](https://github.com/gretchycat/libinfinivault) | Created | `14a7908ffb8cd1af7d9a5400621d91ea1626f4f0` |
-| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Reused | `4b0f49f910f723dfd7cfb0c8acb0a5fda9c69907` |
-| [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Created | `c6f6d3927611ca391ad09eb29736d0889f9ceb17` |
-| [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Created | `2041c34c098fa8c4fa940d91e740291d3eecb9d1` |
-| [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Created | `091e10a6c06b73fb1828ba75348d09338ac89116` |
+| [libinfinistream](https://github.com/infiniforge/libinfinistream) | Created | `16409e81edc68813816c2640d27fbd1c55098f5f` |
+| [libinfinistore](https://github.com/infiniforge/libinfinistore) | Created | `b1befd7e464bd5bc8a20b2066185cf033fe10066` |
+| [libinfinivault](https://github.com/infiniforge/libinfinivault) | Created | `14a7908ffb8cd1af7d9a5400621d91ea1626f4f0` |
+| [libinfinisound](https://github.com/infiniforge/libinfinisound) | Reused | `4b0f49f910f723dfd7cfb0c8acb0a5fda9c69907` |
+| [libinfinicanvas](https://github.com/infiniforge/libinfinicanvas) | Created | `c6f6d3927611ca391ad09eb29736d0889f9ceb17` |
+| [libinfiniscribe](https://github.com/infiniforge/libinfiniscribe) | Created | `2041c34c098fa8c4fa940d91e740291d3eecb9d1` |
+| [libinfinivideo](https://github.com/infiniforge/libinfinivideo) | Created | `091e10a6c06b73fb1828ba75348d09338ac89116` |
 
 ```text
 Store -> Stream

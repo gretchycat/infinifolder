@@ -1,7 +1,7 @@
 # libinfiniselect storage boundary
 
 Updated 2026-11-13. Source and authoritative API documentation:
-[gretchycat/libinfiniselect](https://github.com/gretchycat/libinfiniselect).
+[gretchycat/libinfiniselect](https://github.com/infiniforge/libinfiniselect).
 This independently buildable Android library has no InfiniSuite implementation
 dependency. Storage access, references and permissions are its scope.
 
@@ -60,7 +60,7 @@ Directory metadata/navigation hints alone grant no sibling access.
 ## Standalone build and validation
 
 ```sh
-git clone https://github.com/gretchycat/libinfiniselect.git
+git clone https://github.com/infiniforge/libinfiniselect.git
 cd libinfiniselect
 ./gradlew :select-android:assembleDebug :select-android:assembleDebugAndroidTest
 ```

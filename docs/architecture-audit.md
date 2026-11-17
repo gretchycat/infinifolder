@@ -111,22 +111,22 @@ history were retained. **Infinimedia, libinfinicore and libinfiniui were created
 
 | Repository | Purpose | Application consumers |
 | --- | --- | --- |
-| [infinifolder](https://github.com/gretchycat/infinifolder) | File manager, advanced storage composition, hex/raw inspection and storage service; ID `com.infinifolder` | Application |
-| [infiniscribe](https://github.com/gretchycat/infiniscribe) | Document editing/viewing, ebooks, fonts, source and legacy mind maps; ID `com.infiniscribe` | Application |
-| [infinimedia](https://github.com/gretchycat/infinimedia) | Audio/video player UI, playlists, visualizations and casting; ID `com.infinimedia` | Application |
-| [infinikey-ime](https://github.com/gretchycat/infinikey-ime) | Keyboard, layouts and input helpers; ID `com.infinikey_ime` | Application |
-| [libinfinistream](https://github.com/gretchycat/libinfinistream) | Portable streams, positional I/O and processing contracts | Folder, Scribe, Media |
-| [libinfiniselect](https://github.com/gretchycat/libinfiniselect) | Android file/tree selection, content access, grants and capability helpers | Folder, Scribe, Media; third-party clients |
-| [libinfinicore](https://github.com/gretchycat/libinfinicore) | Resource/provider contracts, local/SAF adapters, guarded I/O, cache and generic support | Folder, Scribe, Media |
-| [libinfinistore](https://github.com/gretchycat/libinfinistore) | Advanced routing, remote clients, torrents, virtual and installed-app sources | Folder |
-| [libinfinivault](https://github.com/gretchycat/libinfinivault) | Archives, compressed containers, partitions, disk images and filesystems | Folder |
-| [libinfinicanvas](https://github.com/gretchycat/libinfinicanvas) | Image decoding/processing and Android bitmap adapters | Folder, Scribe, Media UI |
-| [libinfiniscribe](https://github.com/gretchycat/libinfiniscribe) | Document/text parsing, rendering/editing and resource expansion | Scribe; core/thumbnail subsets in Folder; core in Media UI |
-| [libinfinisound](https://github.com/gretchycat/libinfinisound) | Audio contracts, formats, metadata, synthesis, decoding and PCM | Media processing; Scribe soundbank inspection; Folder/Vault contracts |
-| [libinfinivideo](https://github.com/gretchycat/libinfinivideo) | Video contracts, platform playback and thumbnails | Media playback, Folder thumbnails |
-| [libinfinimeta](https://github.com/gretchycat/libinfinimeta) | Portable console/game/legacy metadata | Folder |
-| [libinfiniui](https://github.com/gretchycat/libinfiniui) | Shared Android UI/source support and optional image viewer | Folder, Scribe, Media |
-| [infini-icon-theme](https://github.com/gretchycat/infini-icon-theme) | Unchanged pinned artwork/theme repository, owned as a UI dependency | Transitive through UI |
+| [infinifolder](https://github.com/infiniforge/infinifolder) | File manager, advanced storage composition, hex/raw inspection and storage service; ID `com.infinifolder` | Application |
+| [infiniscribe](https://github.com/infiniforge/infiniscribe) | Document editing/viewing, ebooks, fonts, source and legacy mind maps; ID `com.infiniscribe` | Application |
+| [infinimedia](https://github.com/infiniforge/infinimedia) | Audio/video player UI, playlists, visualizations and casting; ID `com.infinimedia` | Application |
+| [infinikey-ime](https://github.com/infiniforge/infinikey-ime) | Keyboard, layouts and input helpers; ID `com.infinikey_ime` | Application |
+| [libinfinistream](https://github.com/infiniforge/libinfinistream) | Portable streams, positional I/O and processing contracts | Folder, Scribe, Media |
+| [libinfiniselect](https://github.com/infiniforge/libinfiniselect) | Android file/tree selection, content access, grants and capability helpers | Folder, Scribe, Media; third-party clients |
+| [libinfinicore](https://github.com/infiniforge/libinfinicore) | Resource/provider contracts, local/SAF adapters, guarded I/O, cache and generic support | Folder, Scribe, Media |
+| [libinfinistore](https://github.com/infiniforge/libinfinistore) | Advanced routing, remote clients, torrents, virtual and installed-app sources | Folder |
+| [libinfinivault](https://github.com/infiniforge/libinfinivault) | Archives, compressed containers, partitions, disk images and filesystems | Folder |
+| [libinfinicanvas](https://github.com/infiniforge/libinfinicanvas) | Image decoding/processing and Android bitmap adapters | Folder, Scribe, Media UI |
+| [libinfiniscribe](https://github.com/infiniforge/libinfiniscribe) | Document/text parsing, rendering/editing and resource expansion | Scribe; core/thumbnail subsets in Folder; core in Media UI |
+| [libinfinisound](https://github.com/infiniforge/libinfinisound) | Audio contracts, formats, metadata, synthesis, decoding and PCM | Media processing; Scribe soundbank inspection; Folder/Vault contracts |
+| [libinfinivideo](https://github.com/infiniforge/libinfinivideo) | Video contracts, platform playback and thumbnails | Media playback, Folder thumbnails |
+| [libinfinimeta](https://github.com/infiniforge/libinfinimeta) | Portable console/game/legacy metadata | Folder |
+| [libinfiniui](https://github.com/infiniforge/libinfiniui) | Shared Android UI/source support and optional image viewer | Folder, Scribe, Media |
+| [infini-icon-theme](https://github.com/infiniforge/infini-icon-theme) | Unchanged pinned artwork/theme repository, owned as a UI dependency | Transitive through UI |
 
 No applicable AGENTS.md files were found in the inspected repositories. At that audit snapshot, original-code licenses marked pending had not been replaced; the current decision is recorded in the licensing update at the top of this file. License and provenance records continue to preserve third-party terms.
 
@@ -323,10 +323,10 @@ Absence checks inspect class definitions rather than matching arbitrary strings.
 
 | App | Isolated Android debug APK | Unit cases | Failures/errors/skips | Verified commit |
 | --- | --- | --- | --- | --- |
-| Infinifolder | PASS | 143 | 0/0/0 | [`57de730`](https://github.com/gretchycat/infinifolder/commit/57de7306787ff19751128bf6ec9095394b586d06) |
-| Infiniscribe | PASS | 17 | 0/0/0 | [`859b68d`](https://github.com/gretchycat/infiniscribe/commit/859b68d1140a5b267ac015a4d753d0e4e97307e7) |
-| Infinimedia | PASS | 74 | 0/0/0 | [`839f3cb`](https://github.com/gretchycat/infinimedia/commit/839f3cba173d82352fba5d8130be0ad68ef5954e) |
-| Infinikey | PASS | 23 | 0/0/0 | [`1a2363b`](https://github.com/gretchycat/infinikey-ime/commit/1a2363ba386d7b95a8797bd30004789d92b38b0e) |
+| Infinifolder | PASS | 143 | 0/0/0 | [`57de730`](https://github.com/infiniforge/infinifolder/commit/57de7306787ff19751128bf6ec9095394b586d06) |
+| Infiniscribe | PASS | 17 | 0/0/0 | [`859b68d`](https://github.com/infiniforge/infiniscribe/commit/859b68d1140a5b267ac015a4d753d0e4e97307e7) |
+| Infinimedia | PASS | 74 | 0/0/0 | [`839f3cb`](https://github.com/infiniforge/infinimedia/commit/839f3cba173d82352fba5d8130be0ad68ef5954e) |
+| Infinikey | PASS | 23 | 0/0/0 | [`1a2363b`](https://github.com/infiniforge/infinikey-ime/commit/1a2363ba386d7b95a8797bd30004789d92b38b0e) |
 
 Folder's counts include app, hex and 91 cross-library storage integration cases.
 Its four new mode regressions validate read-only, write-only, read/write and
@@ -355,17 +355,17 @@ successes from the Folder host-JNI failure.
 
 | Library | Standalone result | Scope/evidence |
 | --- | --- | --- |
-| libinfinistream | PASS `0dcb1b1` | [Stream JVM tests and assemble](https://github.com/gretchycat/libinfinistream/actions/runs/43084088174) |
-| libinfiniselect | PASS `74bdacf` | [Android AAR and instrumentation APK; no JVM cases, instrumentation NOT run](https://github.com/gretchycat/libinfiniselect/actions/runs/43087306205) |
-| libinfinicore | PASS `1fb1c26` | [Android AAR and unit tests](https://github.com/gretchycat/libinfinicore/actions/runs/43084099694) |
-| libinfinistore | PASS `4f7a2f9` | [Android AAR and unit tests; live SFTP integration requires configuration](https://github.com/gretchycat/libinfinistore/actions/runs/43084128683) |
-| libinfinivault | PASS `a672ea7` | [Android AAR and unit tests](https://github.com/gretchycat/libinfinivault/actions/runs/43087336879) |
-| libinfinicanvas | PASS `ed3bf70` | [Android AAR and image unit tests](https://github.com/gretchycat/libinfinicanvas/actions/runs/43087311800) |
-| libinfiniscribe | PASS `f3a930c` | [Portable tests and Android/reparse/MOBI modules](https://github.com/gretchycat/libinfiniscribe/actions/runs/43084114203) |
-| libinfinisound | PASS `14b482e` | [API/core/GuitarPro tests, Android processing tests/build](https://github.com/gretchycat/libinfinisound/actions/runs/43087324237) |
-| libinfinivideo | PASS `22d234f` | [API/Android tests and Android AAR](https://github.com/gretchycat/libinfinivideo/actions/runs/43084123272) |
-| libinfinimeta | PASS `0459017` | [Portable module tests and assemble](https://github.com/gretchycat/libinfinimeta/actions/runs/43084108662) |
-| libinfiniui | PASS `ecf5086` | [Common/image unit tests and image AAR](https://github.com/gretchycat/libinfiniui/actions/runs/43087332490) |
+| libinfinistream | PASS `0dcb1b1` | [Stream JVM tests and assemble](https://github.com/infiniforge/libinfinistream/actions/runs/43084088174) |
+| libinfiniselect | PASS `74bdacf` | [Android AAR and instrumentation APK; no JVM cases, instrumentation NOT run](https://github.com/infiniforge/libinfiniselect/actions/runs/43087306205) |
+| libinfinicore | PASS `1fb1c26` | [Android AAR and unit tests](https://github.com/infiniforge/libinfinicore/actions/runs/43084099694) |
+| libinfinistore | PASS `4f7a2f9` | [Android AAR and unit tests; live SFTP integration requires configuration](https://github.com/infiniforge/libinfinistore/actions/runs/43084128683) |
+| libinfinivault | PASS `a672ea7` | [Android AAR and unit tests](https://github.com/infiniforge/libinfinivault/actions/runs/43087336879) |
+| libinfinicanvas | PASS `ed3bf70` | [Android AAR and image unit tests](https://github.com/infiniforge/libinfinicanvas/actions/runs/43087311800) |
+| libinfiniscribe | PASS `f3a930c` | [Portable tests and Android/reparse/MOBI modules](https://github.com/infiniforge/libinfiniscribe/actions/runs/43084114203) |
+| libinfinisound | PASS `14b482e` | [API/core/GuitarPro tests, Android processing tests/build](https://github.com/infiniforge/libinfinisound/actions/runs/43087324237) |
+| libinfinivideo | PASS `22d234f` | [API/Android tests and Android AAR](https://github.com/infiniforge/libinfinivideo/actions/runs/43084123272) |
+| libinfinimeta | PASS `0459017` | [Portable module tests and assemble](https://github.com/infiniforge/libinfinimeta/actions/runs/43084108662) |
+| libinfiniui | PASS `ecf5086` | [Common/image unit tests and image AAR](https://github.com/infiniforge/libinfiniui/actions/runs/43087332490) |
 
 The earlier local cross-library regression run also passed: Core 138 cases,
 Canvas 90, Scribe core/Office 150, UI 120 and Vault 48. Store had 120 cases,
@@ -411,21 +411,21 @@ The report's own documentation commit is separate and does not change APK inputs
 
 | Repository | Pushed implementation/script head |
 | --- | --- |
-| infinifolder | [`57de730`](https://github.com/gretchycat/infinifolder/commit/57de7306787ff19751128bf6ec9095394b586d06) |
-| infiniscribe | [`859b68d`](https://github.com/gretchycat/infiniscribe/commit/859b68d1140a5b267ac015a4d753d0e4e97307e7) |
-| infinimedia | [`839f3cb`](https://github.com/gretchycat/infinimedia/commit/839f3cba173d82352fba5d8130be0ad68ef5954e) |
-| infinikey-ime | [`1a2363b`](https://github.com/gretchycat/infinikey-ime/commit/1a2363ba386d7b95a8797bd30004789d92b38b0e) |
-| libinfinistream | [`0dcb1b1`](https://github.com/gretchycat/libinfinistream/commit/0dcb1b17b0450d900d0581f2fd2c13bf0dd32e4d) |
-| libinfiniselect | [`74bdacf`](https://github.com/gretchycat/libinfiniselect/commit/74bdacf5d88fcdcaa97eb50343b0b47b31c398ed) |
-| libinfinicore | [`1fb1c26`](https://github.com/gretchycat/libinfinicore/commit/1fb1c266ff037c6924571406af814ab638beb464) |
-| libinfinistore | [`4f7a2f9`](https://github.com/gretchycat/libinfinistore/commit/4f7a2f94500220c36e8e0dc8a46837f3ec0404ff) |
-| libinfinivault | [`a672ea7`](https://github.com/gretchycat/libinfinivault/commit/a672ea77e5dff258329d5ac6c9d702fd681dd368) |
-| libinfinicanvas | [`ed3bf70`](https://github.com/gretchycat/libinfinicanvas/commit/ed3bf70090b19f03e1935a976579d751f3c6a298) |
-| libinfiniscribe | [`f3a930c`](https://github.com/gretchycat/libinfiniscribe/commit/f3a930c9accffd363c05370a2e520856eb760f48) |
-| libinfinisound | [`14b482e`](https://github.com/gretchycat/libinfinisound/commit/14b482e314a661ebdbc346d111884b874bc42adf) |
-| libinfinivideo | [`22d234f`](https://github.com/gretchycat/libinfinivideo/commit/22d234fd3c525b6d920ff3072f428ca7d2897d0e) |
-| libinfinimeta | [`0459017`](https://github.com/gretchycat/libinfinimeta/commit/045901712b0e55d561f982a50e06185b587a6035) |
-| libinfiniui | [`ecf5086`](https://github.com/gretchycat/libinfiniui/commit/ecf508685c6bc02ca893d50a7219a6a99777a839) |
+| infinifolder | [`57de730`](https://github.com/infiniforge/infinifolder/commit/57de7306787ff19751128bf6ec9095394b586d06) |
+| infiniscribe | [`859b68d`](https://github.com/infiniforge/infiniscribe/commit/859b68d1140a5b267ac015a4d753d0e4e97307e7) |
+| infinimedia | [`839f3cb`](https://github.com/infiniforge/infinimedia/commit/839f3cba173d82352fba5d8130be0ad68ef5954e) |
+| infinikey-ime | [`1a2363b`](https://github.com/infiniforge/infinikey-ime/commit/1a2363ba386d7b95a8797bd30004789d92b38b0e) |
+| libinfinistream | [`0dcb1b1`](https://github.com/infiniforge/libinfinistream/commit/0dcb1b17b0450d900d0581f2fd2c13bf0dd32e4d) |
+| libinfiniselect | [`74bdacf`](https://github.com/infiniforge/libinfiniselect/commit/74bdacf5d88fcdcaa97eb50343b0b47b31c398ed) |
+| libinfinicore | [`1fb1c26`](https://github.com/infiniforge/libinfinicore/commit/1fb1c266ff037c6924571406af814ab638beb464) |
+| libinfinistore | [`4f7a2f9`](https://github.com/infiniforge/libinfinistore/commit/4f7a2f94500220c36e8e0dc8a46837f3ec0404ff) |
+| libinfinivault | [`a672ea7`](https://github.com/infiniforge/libinfinivault/commit/a672ea77e5dff258329d5ac6c9d702fd681dd368) |
+| libinfinicanvas | [`ed3bf70`](https://github.com/infiniforge/libinfinicanvas/commit/ed3bf70090b19f03e1935a976579d751f3c6a298) |
+| libinfiniscribe | [`f3a930c`](https://github.com/infiniforge/libinfiniscribe/commit/f3a930c9accffd363c05370a2e520856eb760f48) |
+| libinfinisound | [`14b482e`](https://github.com/infiniforge/libinfinisound/commit/14b482e314a661ebdbc346d111884b874bc42adf) |
+| libinfinivideo | [`22d234f`](https://github.com/infiniforge/libinfinivideo/commit/22d234fd3c525b6d920ff3072f428ca7d2897d0e) |
+| libinfinimeta | [`0459017`](https://github.com/infiniforge/libinfinimeta/commit/045901712b0e55d561f982a50e06185b587a6035) |
+| libinfiniui | [`ecf5086`](https://github.com/infiniforge/libinfiniui/commit/ecf508685c6bc02ca893d50a7219a6a99777a839) |
 
 Documentation now describes current repo ownership, eleven libraries, standalone
 build/test scripts, storage lifetimes, source/asset owners and acceptance limits.

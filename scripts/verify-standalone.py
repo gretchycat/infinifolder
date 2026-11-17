@@ -70,7 +70,7 @@ def main():
                     stdout=stream,stderr=subprocess.STDOUT,check=True)
             try:
                 print(name+': cloning into '+str(checkout),flush=True)
-                run(['git','clone','https://github.com/gretchycat/'+name+'.git',str(checkout)])
+                run(['git','clone','https://github.com/infiniforge/'+name+'.git',str(checkout)])
                 report['commit']=subprocess.check_output(['git','-C',str(checkout),'rev-parse','HEAD'],text=True).strip()
                 (checkout/'local.properties').write_text('sdk.dir='+str(Path(args.sdk).resolve())+'\n')
                 if (checkout/'dependencies.lock.json').exists():

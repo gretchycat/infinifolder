@@ -21,10 +21,10 @@ An Android file browser with interchangeable storage providers, browsable archiv
 - Shared 200 MiB disk cache, LRU eviction before capacity prompts, separate individual-file limit and six-hour idle expiry. Unfinished editor work is protected outside disposable cache.
 - Light/dark/system themes, configurable icons, previews and hidden-file display. Toolbar activity light: green reads, dim green load waits, red file work, amber verification. Tap for operation details.
 
-The four applications have separate repositories: [Infinifolder](https://github.com/gretchycat/infinifolder),
-[Infiniscribe](https://github.com/gretchycat/infiniscribe),
-[Infinimedia](https://github.com/gretchycat/infinimedia), and
-[Infinikey](https://github.com/gretchycat/infinikey-ime).
+The four applications have separate repositories: [Infinifolder](https://github.com/infiniforge/infinifolder),
+[Infiniscribe](https://github.com/infiniforge/infiniscribe),
+[Infinimedia](https://github.com/infiniforge/infinimedia), and
+[Infinikey](https://github.com/infiniforge/infinikey-ime).
 This repository fetches library dependencies only. See the
 [architecture audit and verification matrix](docs/architecture-audit.md).
 
@@ -36,7 +36,7 @@ NDK 27.2.12479018 and CMake 3.22.1. Set `ANDROID_HOME` or `sdk.dir` in this
 checkout's untracked `local.properties`.
 
 ```sh
-git clone https://github.com/gretchycat/infinifolder.git
+git clone https://github.com/infiniforge/infinifolder.git
 cd infinifolder
 ./build.sh --max-workers=1 --console=plain
 ```
@@ -68,7 +68,7 @@ deferred; Android APK cross-compilation remains separate. See the
 Infinifolder exposes advanced storage through the grant-checked Android
 DocumentsProvider at `com.infinifolder.documents`. Third-party applications can
 use standard SAF document/tree requests or the lightweight
-[libinfiniselect](https://github.com/gretchycat/libinfiniselect) library. Native
+[libinfiniselect](https://github.com/infiniforge/libinfiniselect) library. Native
 random access is retained through proxy descriptors where supported; sequential
 sources remain streams. Receiving apps do not include the storage engines.
 The floating picker and temporary relay references remain supported.

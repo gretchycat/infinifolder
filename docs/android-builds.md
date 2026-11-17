@@ -31,7 +31,7 @@ access; `--offline` is appropriate only after dependencies have been fetched.
 ### Infinifolder
 
 ```sh
-git clone https://github.com/gretchycat/infinifolder.git
+git clone https://github.com/infiniforge/infinifolder.git
 cd infinifolder
 ./build.sh --max-workers=1 --console=plain
 ```
@@ -46,7 +46,7 @@ cross-compilation with the NDK on desktop hosts.
 ### Infiniscribe
 
 ```sh
-git clone https://github.com/gretchycat/infiniscribe.git
+git clone https://github.com/infiniforge/infiniscribe.git
 cd infiniscribe
 ./build.sh --max-workers=1 --console=plain
 ```
@@ -57,7 +57,7 @@ APK: `build/outputs/apk/debug/InfiniScribe-debug.apk`.
 ### Infinimedia
 
 ```sh
-git clone https://github.com/gretchycat/infinimedia.git
+git clone https://github.com/infiniforge/infinimedia.git
 cd infinimedia
 ./build.sh --max-workers=1 --console=plain
 ```
@@ -68,7 +68,7 @@ APK: `build/outputs/apk/debug/InfiniMedia-debug.apk`.
 ### Infinikey
 
 ```sh
-git clone https://github.com/gretchycat/infinikey-ime.git
+git clone https://github.com/infiniforge/infinikey-ime.git
 cd infinikey-ime
 ./build.sh --max-workers=1 --console=plain
 ```

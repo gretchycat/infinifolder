@@ -7,7 +7,7 @@
 
 > [Current architecture](architecture.md) and [runtime discovery](runtime-capabilities.md) describe implemented ownership. [Migration checkpoints](infinistream-migration.md) retain dated evidence; format and data-safety limits still apply.
 
-Updated 2026-10-31; remote metadata follow-up added 2026-11-16. The independent [libinfinisound repository](https://github.com/gretchycat/libinfinisound) is pinned at `libraries/libinfinisound` and imported as a Gradle composite build. Both library-owned portable codecs and Android's codec adapter are selected inside the library.
+Updated 2026-10-31; remote metadata follow-up added 2026-11-16. The independent [libinfinisound repository](https://github.com/infiniforge/libinfinisound) is pinned at `libraries/libinfinisound` and imported as a Gradle composite build. Both library-owned portable codecs and Android's codec adapter are selected inside the library.
 
 ## Current modules and ownership
 
