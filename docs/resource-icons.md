@@ -110,7 +110,7 @@ appearance and navigation/theme acceptance remain unverified.
 
 The shared resolver uses embedded EPUB, MOBI/KF8 and FB2 cover images, and PDF
 first pages as content icons. The new MOBI/FB2 paths use the corresponding Scribe
-readers; see [document/ebook support and pending acceptance](document-and-ebook-readers.md).
+readers; see [document/ebook support and pending acceptance](https://github.com/infiniforge/infiniscribe/blob/main/docs/document-and-ebook-readers.md).
 No cover is fabricated for a book without usable artwork. Explicit per-file artwork stays first, and failed or
 unsupported covers fall back through the normal MIME override/theme/type icons.
 Mounted book roots resolve their backing file's artwork too, after any explicit
@@ -353,7 +353,7 @@ theme changes and list/tree/pin/overlay display remain device checks.
 
 The bundled theme supplies separate logical artwork for internal shared storage,
 USB, SD, other removable media, network storage, cloud roots, Application public,
-and Installed Applications. [Theme keys](../themes/default%20theme/README.md#storage-and-application-locations)
+and Installed Applications. [Theme keys](../libraries/libinfiniui/themes/icon-theme/default%20theme/README.md#storage-and-application-locations)
 are replaceable by imported themes. Shared root classification feeds the real
 resolver, so root links and tree/list/grid destinations inherit the role; nested
 folders retain their ordinary folder icons. Explicit icons and valid directory

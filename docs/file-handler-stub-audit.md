@@ -143,13 +143,13 @@ preserving upstream notices and known working decoding.
 
 ## 6. Other shipped scaffolding and limitations
 
-- **Legacy PCM output simulation:** [PcmAudioEngine.kt](../viewer-audio/src/main/java/com/infinifolder/audio/engine/PcmAudioEngine.kt),
+- **Legacy PCM output simulation:** [PcmAudioEngine.kt](https://github.com/infiniforge/infinifolder/blob/a5c0306565c20d5ee2e94f2b467fe9324eedd047/viewer-audio/src/main/java/com/infinifolder/audio/engine/PcmAudioEngine.kt),
   lines 87 and 134–149, reports playback and advances time with no AudioTrack;
   failed/zero writes can also advance frames. The only instantiation found is
   in the JVM diagnostics fixture test. The current player uses MediaPlayer over
   library PCM, so this simulation is not its playback path. Move simulation into
   test support or make hardware/write failure explicit before reusing this class.
-- **Inferred file permissions:** [PermissionHelper.kt](../libraries/libinfinistore/store-android/src/main/java/com/infinifolder/storage/PermissionHelper.kt),
+- **Inferred file permissions:** [PermissionHelper.kt](https://github.com/infiniforge/libinfinistore/blob/d4dfc7bcad70687f61624a89f321d71f1fb57e12/store-android/src/main/java/com/infinifolder/storage/PermissionHelper.kt),
   lines 220–243, invents a Unix mode and uses the app UID/GID after stat fails.
   File access checks do not establish actual owner/group/mode. Return unknown or
   label inference. This is conditional metadata behavior, not substituted content.

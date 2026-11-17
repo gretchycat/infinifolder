@@ -1,10 +1,13 @@
 # Project status
 
-Updated 2026-11-16. The suite now has four independent Android application
-repositories and eleven reusable library repositories. Source locks fetch only
-each application's declared library closure. Folder provides advanced storage
-through Android document/stream interfaces; Scribe and Media use Select/SAF
-without including Store/Vault. Key has no suite library dependency.
+Updated 2026-11-16. Four applications currently have independent Android
+builds: Infinifolder, Infinimedia, InfiniScribe and Infinikey. Five additional
+application repositories are planned placeholders, not buildable applications.
+Eleven reusable library repositories are pinned independently. Source locks
+fetch only each buildable application's declared library closure. Folder
+provides advanced storage through Android document/stream interfaces; Media and
+Scribe use libinfiniselect and SAF without including Store/Vault. Key shares the
+branding but has no suite-library or Folder storage dependency.
 
 Current repository inventory, exact commits, APK sizes and executed test results
 are in the [separation audit](architecture-audit.md). Use the

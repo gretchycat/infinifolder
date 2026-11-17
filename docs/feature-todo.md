@@ -68,7 +68,7 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 - [ ] Device-check repeated audio theme switches (including while playing),
   listener attachment/detachment, WMP Aero portrait/landscape and system insets,
   all transport/seek/volume/playlist controls, and restoring Winamp/Modern layouts.
-  See [WMP interface](winamp-skins.md#windows-media-player-audio-interface).
+  See [WMP interface](https://github.com/infiniforge/infinimedia/blob/main/docs/winamp-skins.md#windows-media-player-audio-interface).
 - [ ] Verify Cast Stop cast, Cancel and chooser dismissal return directly to the
   player, with no gray host screen or automatic second chooser; include system
   chooser and rotation/restoration paths. Existing receiver streaming checks remain.
@@ -78,7 +78,7 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
   opaque/transparent icons, list/grid/tree/pins/floating views, small sizes,
   theme changes, immediate toggling and preference restoration after restart.
   Include cold startup while theme artwork is pending after the empty-bitmap crash fix.
-  Main/standalone host build evidence: `build/docs-audit/appearance-shadows-build.log`
+  Pre-separation main/standalone-host build evidence: `build/docs-audit/appearance-shadows-build.log`
   and `build/docs-audit/icon-shadow-null-build.log` for the startup correction.
   No new automated tests or device UI checks were run for this appearance change.
 
@@ -121,7 +121,7 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 - [ ] Accept the mixed/all-unreadable and FluidR3 instrument fixtures on the handset, including their ZIP variants.
 - [ ] Extend existing optional GME/libVLC handlers and portable codecs; report unavailable backends and unsupported input honestly.
 - [ ] Accept updated remote/ZIP streaming startup and seeks, activity-shortcut return and the audible companion on the handset.
-- [ ] Accept libVLC video surfaces/sound, seeking, aspect/speed, embedded subtitles, playlists/repeat, PiP and rapid navigation from local/ZIP/live remote inputs. See [video checks](video-formats.md#handset-checks).
+- [ ] Accept libVLC video surfaces/sound, seeking, aspect/speed, embedded subtitles, playlists/repeat, PiP and rapid navigation from local/ZIP/live remote inputs. See [video checks](https://github.com/infiniforge/infinimedia/blob/main/docs/video-formats.md#handset-checks).
 - [ ] Continue converting legacy callers to metadata-driven composition before removing compatibility APIs or exported dependencies.
 - [ ] Extend automatic planning for arbitrary multi-input/track graphs; current multi-port processors use explicit bindings.
 - [ ] Verify live remote providers, Android playback/seek/gapless/route behavior and editor/container write acceptance after these checkpoints.
@@ -142,9 +142,9 @@ changes still need device checks. Ordinary copy/move undo excludes torrents.
 - [ ] Check unstyled EPUB XML/XHTML chapters render as prose with working images,
   CSS/anchors, encoding and reader controls; confirm encrypted chapter metadata
   produces a persistent unsupported-encryption message. See
-  [chapter fallback](document-and-ebook-readers.md#unstyled-chapters-and-encrypted-epubs).
+  [chapter fallback](https://github.com/infiniforge/infiniscribe/blob/main/docs/document-and-ebook-readers.md#unstyled-chapters-and-encrypted-epubs).
 - [ ] Add full PostScript/EPS document rendering and LaTeX typesetting behind Scribe interfaces; retain existing raster-preview support and explicit platform capabilities.
-- [ ] Broaden document checks to format variants, Unicode/images/worksheets/slides, read-only guards and provider/remote/cancellation paths. See [document readers](document-and-ebook-readers.md).
+- [ ] Broaden document checks to format variants, Unicode/images/worksheets/slides, read-only guards and provider/remote/cancellation paths. See [document readers](https://github.com/infiniforge/infiniscribe/blob/main/docs/document-and-ebook-readers.md).
 - [ ] Extend layout fidelity and format conformance beyond the new Word 97+/Excel/PowerPoint reading subset; evaluate encryption, calculations and editing separately. Keep unsupported cases explicit.
 
 ## ANSI music

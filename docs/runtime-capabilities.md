@@ -249,6 +249,6 @@ ADB reports no connected device. Icon/viewer/editor display, gestures, Android
 launch/long-press behavior, live SAF grants and remote credentials, and device
 native/audio/video playback are unverified for this increment. Previously confirmed
 handset workflows remain historical acceptance, not new runtime-discovery evidence.
-The regenerated [audio fixture report](audio-playback-authoritative-report.md) is
+The regenerated [audio fixture report](https://github.com/infiniforge/infinimedia/blob/main/docs/history/audio-playback-report-2026-11-10.md) is
 also JVM-only: 47/76 audio fixtures decode, 29 remain unavailable/unsupported there,
 and two playlists parse. It does not establish device codec availability.

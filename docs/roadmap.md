@@ -45,7 +45,7 @@ sources. Positional reads do not imply safe in-place mutation.
 JSON/XML/YAML/TOML reparsers are separate discoverable modules. Reparse is a
 view-only, debug-only control before wrapping; editing restores original source.
 Continue bounded preloading/indexing and global visual-row navigation without
-weakening complete-file save guards. See [text formats](text-and-document-formats.md).
+weakening complete-file save guards. See [text formats](https://github.com/infiniforge/infiniscribe/blob/main/docs/text-and-document-formats.md).
 
 ## Paged documents and Office formats
 
@@ -57,7 +57,7 @@ EPUB 3 NAV labels and lazy package serving remain follow-up work.
 
 Full PostScript/EPS and LaTeX rendering are future Scribe backends; existing limited
 raster previews remain. Reuse maintained libraries with bounded execution,
-explicit resources/fonts and honest format failures. See [document readers](document-and-ebook-readers.md).
+explicit resources/fonts and honest format failures. See [document readers](https://github.com/infiniforge/infiniscribe/blob/main/docs/document-and-ebook-readers.md).
 
 ## Media and animations
 

@@ -5,6 +5,8 @@ format handling, and integration boundaries.
 
 ## Start here
 
+- [Application description and implementation status](APPLICATION.md).
+
 - [Infinifolder architecture and storage ownership](architecture.md)
 - [Standalone build and test guide](android-builds.md)
 - [Companion applications and Android handoff](viewer-modules.md)

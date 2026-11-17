@@ -6,6 +6,13 @@ libinfiniselect returns both values, resolves authoritative locations lazily,
 and handles relative locations without requiring client-side backend parsing.
 The library has no InfiniSuite implementation dependency.
 
+The current libinfiniselect application clients are Infinifolder, Infinimedia
+and InfiniScribe. Infinimedia and Scribe can use local files and SAF without
+Infinifolder; installing Folder adds its optional provider and backend routing.
+Infinikey is not a client: its separate document provider serves its own
+keyboard layout/theme data, and it does not use libinfiniselect. Planned app
+directories are not included in current validation claims.
+
 ## Automated coverage
 
 The application unit tests exercise proxy read completion, EOF, stalled sources
@@ -71,10 +78,12 @@ resource in the 0.1.1 Scribe/Media clients to request a fresh grant.
 
 ## Required device acceptance
 
-Repeat on supported Android versions with both applications installed, then with
-Infinifolder absent/disabled. Use a third-party SAF client as well as InfiniScribe
-and InfiniMedia. The execution status of these checks belongs in the audit report;
-this checklist is not evidence of execution.
+Repeat on supported Android versions with Infinifolder and each current client
+installed, then with Infinifolder absent/disabled for Infinimedia and InfiniScribe.
+Use a third-party SAF client as well as InfiniScribe and Infinimedia. Infinifolder
+is both a provider and a libinfiniselect client, so its internal operations are
+not a substitute for cross-UID client checks. The execution status of these
+checks belongs in the audit report; this checklist is not evidence of execution.
 
 | Scenario | Expected behavior |
 | --- | --- |

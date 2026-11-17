@@ -1,149 +1,70 @@
-# InfiniSuite architecture
+# Infinifolder architecture and storage ownership
 
-Each application has its own repository, manifest, application ID and build root.
-Applications obtain pinned library sources inside their own checkout. No Gradle
-build includes another application's source. Git commit locks and Gradle composite
-substitution provide source builds without an unpublished Maven repository.
+Infinifolder is an independent Android file manager and storage provider. It owns
+its app UI, storage credentials, backend routing, file operations, and installed
+provider service. It builds from this checkout and its pinned library closure;
+Media, Scribe, Infinikey, and the planned apps are not Gradle dependencies.
 
-## Owners
+## App modules and libraries
 
-| Component | Responsibility |
+| Component | Ownership |
 | --- | --- |
-| Infinifolder | Browser UI, filesystem/storage integration and advanced storage composition |
-| Infiniscribe | Document, ebook, font, source and legacy mind-map viewing/editing UI |
-| Infinimedia | Audio/video player UI, queues, casting and visualizations |
-| Infinikey | IME, input settings, layouts, voice/input helpers |
-| libinfinistream | Portable streams, positional I/O and processing/capability contracts |
-| libinfiniselect | Lightweight Android selection and ContentResolver boundary; no suite implementation dependency |
-| libinfinicore | Resource/provider contracts, local/SAF adapters, guarded I/O/cache and generic support |
-| libinfinistore | Advanced routing, remote clients, torrents, virtual locations and installed-app sources |
-| libinfinivault | Archives, disk images, partitions and filesystem readers/writers |
-| libinfinicanvas | Image decoding/processing and Android bitmap adapters |
-| libinfiniscribe | Document/text parsing, rendering/editing backends and document resource expansion |
-| libinfinisound | Audio formats, metadata, synthesis, decoding and PCM processing |
-| libinfinivideo | Video contracts and platform playback/thumbnail adapters |
-| libinfinimeta | Portable game/console/legacy-image metadata modules |
-| libinfiniui | Shared Android UI/source adaptation and optional shared image viewer |
+| `app` | File browser, app-owned settings, public Android intents/provider endpoints, and user interaction |
+| `storage-engine` | Infinifolder-specific composition and integration of reusable storage APIs |
+| `viewer-hex` | Infinifolder's hex/raw-media inspection UI |
+| `libinfiniselect` | Public Android selection, grant, and content-source API used by this app and current clients |
+| `libinfinistore` | Reusable storage routing and remote-source clients |
+| `libinfinivault` | Reusable archive, disk-image, and filesystem operations |
+| `libinfinicore` / `libinfinistream` | Public resource, provider, stream, and I/O contracts |
+| `libinfinicanvas` / `libinfinimeta` | Reusable image and game-metadata processing |
+| `libinfiniscribe` / `libinfinisound` / `libinfinivideo` | Reusable document, audio, and video APIs used where declared |
+| `libinfiniui` | Shared Android UI and image presentation APIs |
 
-Existing package names are retained where practical. A `com.infinifolder.*`
-package name in a library denotes source/API compatibility; it does not establish
-an application dependency. Compilation from standalone library checkouts tests
-that distinction.
+Library source revisions and their transitive dependencies are pinned inside this
+checkout. Shared libraries may retain `com.infinifolder.*` package names for
+source/API compatibility; those names do not make the Infinifolder application a
+runtime or build dependency of a consumer.
 
-## Library dependency graph
+## Shared storage contract
 
-```mermaid
-graph TD
-  UI[libinfiniui] --> Core[libinfinicore]
-  UI --> Select[libinfiniselect]
-  UI --> Canvas[libinfinicanvas]
-  UI --> Scribe[libinfiniscribe]
-  UI --> Stream[libinfinistream]
-  Core --> Stream
-  Store[libinfinistore] --> Core
-  Store --> Stream
-  Vault[libinfinivault] --> Store
-  Vault --> Sound[libinfinisound:audio-api]
-  Vault --> Stream
-  Sound --> Stream
-  Canvas --> Stream
-  Scribe --> Stream
-  Video[libinfinivideo] --> Stream
-  Meta[libinfinimeta] --> Stream
-```
+`libinfiniselect` is the client-facing API. It preserves a resource's
+`authoritativeUri` separately from the current Android `contentUri`, handles
+Android grants, and can resolve supported authoritative locations through
+Infinifolder's provider. Infinifolder remains the owner of remote/container
+schemes, credentials, and backend implementation.
 
-The sound library's `audio-api` carries portable contracts; Vault does not package
-Sound's decoder/playback implementation. Likewise, linking `scribe-core` through
-the shared UI does not include the Office/PDF/MOBI backends. Source repositories
-can contain optional modules; Gradle compiles/packages the declared artifacts.
+Current `libinfiniselect` application consumers are Infinifolder, Infinimedia,
+and Infiniscribe. Media and Scribe also retain local-file and Android SAF
+workflows when Infinifolder is absent. Infinikey shares the suite branding only:
+it has no `libinfiniselect` dependency and its own DocumentsProvider exposes
+Infinikey-owned layout/theme files. The planned Canvas, Wave, Track, Launch, and
+Play directories do not yet implement storage clients.
 
-## Application dependency graph
+## Android provider and resource lifetime
 
-```mermaid
-graph TD
-  Folder[Infinifolder] --> UI[libinfiniui:ui-image]
-  Folder --> Select[libinfiniselect]
-  Folder --> Store[libinfinistore]
-  Folder --> Vault[libinfinivault]
-  Folder --> Meta[libinfinimeta]
-  Folder --> Scribe[libinfiniscribe:core/Android/MOBI thumbnail support]
-  Folder --> Video[libinfinivideo:thumbnail extraction]
-  Folder --> SoundAPI[libinfinisound:audio-api for raw inspection]
-  Writer[Infiniscribe] --> UI
-  Writer --> Select
-  Writer --> ScribeFull[libinfiniscribe:document backends]
-  Writer --> SoundCore[libinfinisound:audio-core for soundbank inspection]
-  Media[Infinimedia] --> UICore[libinfiniui:ui-android]
-  Media --> Select
-  Media --> Sound[libinfinisound:audio-processing]
-  Media --> Video
-  Key[Infinikey] --> Android[AndroidX/Material/Gson only]
-```
+Infinifolder exposes the standard DocumentsProvider authority
+`com.infinifolder.documents`, protected by Android document permissions and URI
+grants. Its separate `com.infinifolder.selection` provider implements the
+`libinfiniselect` resolution contract. Clients may keep an opaque authoritative
+URI, but only the public library and Infinifolder interpret Folder-specific
+locations; clients never read Folder-private files or credentials.
 
-Follow the library graph above for transitive edges. Infiniscribe and Infinimedia
-have no Store/Vault dependency. Infinikey has no InfiniSuite library dependency.
-The icon theme is a source submodule owned by libinfiniui, rather than an app.
+A relay `contentUri` is a temporary read-granted stream and is not a durable
+identity. Clients retain the authoritative URI and request a fresh access URI
+when needed. Standard SAF document/tree URIs remain valid according to their
+actual persisted grants. Directory hints alone do not grant sibling access;
+browsing requires an explicit tree grant.
 
-## Storage access
+Seekable provider sources use proxy descriptors where supported; sequential
+sources remain streams or reliable pipes. Errors and close operations cross the
+provider boundary. Consumers do not stage whole files to imitate seekability;
+individual decoders may stage data when their own APIs require it.
 
-The selection library returns distinct `authoritativeUri` and `contentUri`
-values for selected/resolved resources. Clients preserve the authoritative
-identity, including in playlists, and request current Android access lazily.
-Relative paths are resolved against the containing resource's authoritative
-location in the library. Single/multiple/document-tree requests remain supported.
-Infinifolder exposes a standard
-DocumentsProvider guarded by MANAGE_DOCUMENTS and Android URI grants. The
-floating selector remains a compatible read-selection route. Writable and tree
-requests use SAF, initially pointed at Infinifolder when its provider is present.
-Without Infinifolder, the same Android facilities remain usable.
+## Companion app handoff
 
-The floating relay keeps its authority-root resolver public and protects token
-paths with a signature permission. Clients receive individual Android URI grants
-rather than requesting that permission. This ensures Android records the grants
-which the relay checks explicitly. Backend opens then run under the provider's
-identity, after the client grant has been checked. See [storage validation](storage-validation.md).
-
-Native positional handles become proxy descriptors; sequential sources use
-reliable pipes. Unsupported seeking remains explicit. Handles are owned by the
-consumer until closed, and provider resources close when their descriptors or
-streams are released. The boundary does not stage whole files to imitate random
-access. Decoders/renderers can explicitly stage sources for APIs that require it.
-
-The shared UI defaults to local/SAF resource adapters. Infinifolder installs its
-advanced provider and archive consistency hooks before UI use. Shared libraries compile against
-provider/callback contracts rather than application implementation types. Backend credentials and private
-URI schemes remain behind Infinifolder's service.
-
-See [storage validation](storage-validation.md) for the required runtime cases and
-[the audit report](architecture-audit.md) for executed results and limitations.
-
-## Asset ownership
-
-Infinimedia owns the custom Infinimedia Default theme, the four original Winamp archives and the optional original SF3 bank. Only Infinimedia Default is packaged, generated deterministically from its theme directory. The older archives are compatibility fixtures in test-assets/skins, outside production assets. The bank lives in its `test-assets/soundfonts` with matching upstream license and provenance, outside APK source sets; current opt-in import behavior is preserved. The real archive/hash regression tests live in Media. The generic skin parser remains in shared UI with synthetic fixtures. Shared icon artwork remains in libinfiniui's pinned icon-theme submodule. Small generated codec fixtures remain with their owning processing libraries; storage integrity images remain with storage tests.
-
-## Theme image boundary
-
-Canvas owns format detection, image decoding, indexed IFF animation and static
-SVG/SVGZ rendering. Custom SVG cycling metadata is ignored. The shared UI owns skin archive
-validation, logical sprite-to-image mappings, optional same-canvas layers, bounded
-image caching and lifecycle animation scheduling. The Media application owns its
-default theme choice, artwork, theme metadata and player-specific frame geometry.
-The visual media pane combines VIDEO title artwork with GEN frame pieces; its
-content remains an independent 16:9 stage.
-
-`ImageAnimationPlayback` retains its package/API while moving from optional
-ui-image into ui-android. Both image viewers and skin hosts use it, without making
-Media depend on the full image-viewer screen. Existing explicit user theme choices
-remain preferred; missing old bundled archives fall back to the configured default.
-No storage library or application-to-application dependency was added.
-
-See [theme rendering and verification](theme-rendering.md) for interfaces and
-executed checks. The SVG-to-IFF authoring tool is documented [separately](svg-to-iff.md).
-
-SVG color-cycling playback was removed at the owner's request. Static SVG rendering and IFF cycling remain; image schedulers count rendering/publication within a 33 ms deadline. The SVG source and SVG-to-IFF authoring tool remain available. No dependency edge changed.
-
-Infinifolder migrates saved defaults for its removed audio/video players to installed Infinimedia. Explicit type-wide external-app choices replace extension defaults for the same MIME type so automatic companion defaults cannot override the user's newer choice. Local preferences and Android system defaults remain separate.
-
-## Image navigation and authoring thumbnail follow-up
-
-Core consults registered validators before generic compressed-container classification. Canvas recognizes authoring ZIP mimetypes, bounded SVGZ roots and application MIME aliases for thumbnails. Shared UI's private image-order snapshot preserves Folder's already sorted/filtered rows without large Intent payloads or cross-application grants. The image viewer consumes the snapshot for next/previous/slideshow. Dependency edges and storage ownership remain unchanged; see the [executed follow-up](thumbnail-order.md).
+Infinifolder bundles its image and hex inspectors. It sends supported documents
+to Infiniscribe and supported audio/video to Infinimedia through Android intents,
+content URIs, and grants. Those apps own their viewer/player activities and
+continue to work without Folder. See [companion application boundaries](viewer-modules.md),
+[the libinfiniselect boundary](libinfiniselect.md), and the
+[storage validation guide](storage-validation.md).

@@ -5,6 +5,12 @@ Updated 2026-11-13. Source and authoritative API documentation:
 This independently buildable Android library has no InfiniSuite implementation
 dependency. Storage access, references and permissions are its scope.
 
+Current application consumers are Infinifolder, Infinimedia and InfiniScribe.
+They use the library's public Android storage APIs; Infinifolder supplies the
+optional storage provider and backend resolution. Infinikey only shares the
+suite branding: it does not depend on libinfiniselect or Infinifolder. The other
+application directories are planned projects and are not current consumers.
+
 ## Selection and fallback
 
 - `InfiniSelect.open(Activity, OpenRequest, requestCode)` requests single or
@@ -28,7 +34,8 @@ dependency. Storage access, references and permissions are its scope.
   remains available without decoding media contents.
 
 Optional `FileSourceBackend`/`FileSourceRegistry` hooks are storage-source hooks,
-not general application integration. Media and document logic belongs elsewhere.
+not general application integration. Media and document logic belongs in the
+Media and Scribe applications or their libraries.
 
 ## Access and lifetime
 

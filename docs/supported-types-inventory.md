@@ -25,8 +25,8 @@ capability checks describe read/write restrictions. URI recognition is distinct
 from storage-provider availability.
 
 Format limits and fixture evidence are documented in [images](image-formats.md),
-[audio](audio-formats.md), [video](video-formats.md),
-[documents](text-and-document-formats.md) and [overall formats](file-formats.md).
+[audio](https://github.com/infiniforge/infinimedia/blob/main/docs/audio-formats.md), [video](https://github.com/infiniforge/infinimedia/blob/main/docs/video-formats.md),
+[documents](https://github.com/infiniforge/infiniscribe/blob/main/docs/text-and-document-formats.md) and [overall formats](file-formats.md).
 
 ## Installed handler catalog
 

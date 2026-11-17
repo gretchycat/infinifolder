@@ -153,7 +153,7 @@ Validation: 588 reported cases, 558 pass, the same 30 existing failures and no r
 
 ## Checkpoint 9: shared syntax and appearance descriptors
 
-Scribe now owns bounded lexical highlighting with TextMate scope names and reusable typed style/theme descriptors. Self-contained JSON themes use the VS Code tokenColors conventions, with a namespaced versioned extension for font family/size and partial emphasis inheritance. A schema and sample theme are included. The shared Android controller applies owned metric/style spans without replacing source text; it debounces edits/scrolls, bounds snapshots to 65,536 UTF-16 code units and 8,192 spans, cancels stale jobs, and preserves layout anchors. Text viewing/editing and HTML/Markdown source modes share controls, preferences and theme import/export. Text line labels use actual styled/wrapped baselines. Large-file editing and source-save guards remain as before. Scope selectors, lexical profiles and bounded-context limitations are described in [syntax highlighting](syntax-highlighting.md); this is not a full TextMate grammar/semantic engine. Gson 2.11.0 is a JVM dependency with its Apache license/notice bundled in the core and APK.
+Scribe now owns bounded lexical highlighting with TextMate scope names and reusable typed style/theme descriptors. Self-contained JSON themes use the VS Code tokenColors conventions, with a namespaced versioned extension for font family/size and partial emphasis inheritance. A schema and sample theme are included. The shared Android controller applies owned metric/style spans without replacing source text; it debounces edits/scrolls, bounds snapshots to 65,536 UTF-16 code units and 8,192 spans, cancels stale jobs, and preserves layout anchors. Text viewing/editing and HTML/Markdown source modes share controls, preferences and theme import/export. Text line labels use actual styled/wrapped baselines. Large-file editing and source-save guards remain as before. Scope selectors, lexical profiles and bounded-context limitations are described in [syntax highlighting](https://github.com/infiniforge/infiniscribe/blob/main/docs/syntax-highlighting.md); this is not a full TextMate grammar/semantic engine. Gson 2.11.0 is a JVM dependency with its Apache license/notice bundled in the core and APK.
 
 Validation: 608 reported cases, 578 pass and the same 30 known failures, with no regressions/skips/missing cases. All twenty new Scribe tests pass, covering theme conventions, inheritance, color alpha, descriptor round-trips/errors/bounds, token ranges, language detection, comments/strings/markup, continuation state, cancellation and budgets. Scribe's independent build, the full APK and independent text/HTML/Markdown host builds pass. The preceding 25 Android checks repeat successfully; two new checks verify actual descriptor round-trips and span updates preserving source, TextWatcher counts, selection and separate search spans, bringing non-rendering Android coverage to 27 checks. A separate headless TextPaint/typeface rendering attempt was killed (SIGKILL) after descriptor parsing; font rendering/widget layout and scrolling acceptance remain unverified on the handset. The successful span-data check does not retry font drawing or headless widget initialization. Evidence is retained under build/infinistream-migration, including syntax-runtime-probe.log and syntax-runtime-font-attempt.json. New synthetic source/theme samples live under filesystem-test-images/syntax; the edited CR-only document fixture remains outside this checkpoint.
 
@@ -473,7 +473,7 @@ Sound's exact prior runtime and loads both Sound and VLC in one native process.
 
 Nine fixture entries add original MP4/WebM/subtitled MKV, a silent six-minute
 seek file, invalid input, expected values and ZIP copies with a non-overwriting
-FFmpeg generator. See [video checks](video-formats.md#handset-checks).
+FFmpeg generator. See [video checks](https://github.com/infiniforge/infinimedia/blob/main/docs/video-formats.md#handset-checks).
 
 Verification: 798 JVM cases, 768 pass and the same 30 known failures; all eight
 new Video API cases pass (12 Video API cases in total). Seven native groups check
@@ -1034,7 +1034,7 @@ It includes 22 new font/MIME/GEN tests: 14 portable Scribe inspection cases, fou
 Store association/signature cases and four shared-viewer/registry cases, including
 the actual bundled CP437 font. No native glyph rendering or content-provider
 grant behavior is inferred from these JVM results. Owner-confirmed font controls
-and the remaining device cases are recorded in [font preview](font-viewer.md).
+and the remaining device cases are recorded in [font preview](https://github.com/infiniforge/infiniscribe/blob/main/docs/font-viewer.md).
 
 The run includes existing pending workspace changes, which were preserved.
 Missing dependency artifacts and a damaged Gradle transform cache were repaired

@@ -1,4 +1,8 @@
 # InfiniFolder
+InfiniFolder is InfiniForge's Android file manager, filesystem browser, and resource-navigation hub.
+It composes shared storage libraries and exposes documented Android provider contracts; media
+playback and broad document viewing belong to companion apps. See the [application scope and
+implementation status](docs/APPLICATION.md).
 
 Runtime handler discovery: [interfaces, dependency audit, processing chains and verification](docs/runtime-capabilities.md). Libraries and linked viewer modules publish their own capability providers; linked library dependencies remain explicit.
 
@@ -21,12 +25,15 @@ An Android file browser with interchangeable storage providers, browsable archiv
 - Shared 200 MiB disk cache, LRU eviction before capacity prompts, separate individual-file limit and six-hour idle expiry. Unfinished editor work is protected outside disposable cache.
 - Light/dark/system themes, configurable icons, previews and hidden-file display. Toolbar activity light: green reads, dim green load waits, red file work, amber verification. Tap for operation details.
 
-The four applications have separate repositories: [Infinifolder](https://github.com/infiniforge/infinifolder),
-[Infiniscribe](https://github.com/infiniforge/infiniscribe),
-[Infinimedia](https://github.com/infiniforge/infinimedia), and
-[Infinikey](https://github.com/infiniforge/infinikey-ime).
-This repository fetches library dependencies only. See the
-[architecture audit and verification matrix](docs/architecture-audit.md).
+Four applications currently have standalone builds: [Infinifolder](https://github.com/infiniforge/infinifolder),
+[Infinimedia](https://github.com/infiniforge/infinimedia),
+[InfiniScribe](https://github.com/infiniforge/infiniscribe), and
+[Infinikey](https://github.com/infiniforge/infinikey-ime). Canvas, Wave, Track,
+Launch and Play are planned placeholders. Each app owns its documentation; the
+[Folder documentation index](docs/README.md) links to companion guides. This
+repository fetches library dependencies only. The
+[architecture audit](docs/architecture-audit.md) retains suite-wide historical
+verification evidence.
 
 ## Standalone build
 
@@ -61,7 +68,7 @@ arm64; standard desktop builds use the NDK.
 For native filesystem regression tests on Termux, also run
 `./gradlew :storage-engine:testDebugUnitTest`. Their Linux host-JVM JNI setup is
 deferred; Android APK cross-compilation remains separate. See the
-[Android build and test guide](docs/android-builds.md) for all four applications.
+[Folder build guide](docs/android-builds.md); each companion README documents its own standalone build.
 
 ## Storage service
 
@@ -129,9 +136,9 @@ Run `python3 scripts/test-android-build-env.py` for the build entry point's isol
 
 On 2026-11-11, implementation commit `18c2481` produced the debug APK and passed 143 tests (including 91 native storage cases) in the user's independent Termux checkout. The documented build.sh ran with SDK environment variables unset and no local.properties, plus a guard rejecting project/source roots outside that checkout. APK inspection found no document-editor/player application classes, Winamp archives or SF3 bank. The 11 build-environment regression checks also passed. Full matrix, source pins, packaged libraries and runtime limits are in the [fresh-checkout follow-up](docs/validation/fresh-checkout-build-repair.json).
 
-The shared rendering follow-up at d4d2293 also passed all 143 app/native tests and 11 build-environment checks in the independent checkout. See the [current architectural breakdown](docs/theme-rendering.md), [full report](docs/architecture-audit.md) and [executed theme/build evidence](docs/validation/theme-rendering.json). Media owns the sole packaged Infinimedia Default theme; Folder has no player theme assets or Media application dependency.
+The shared rendering follow-up at d4d2293 also passed all 143 app/native tests and 11 build-environment checks in the independent checkout. See [Media's theme-rendering guide](https://github.com/infiniforge/infinimedia/blob/main/docs/theme-rendering.md), the [historical suite audit](docs/architecture-audit.md) and [executed theme/build evidence](docs/validation/theme-rendering.json). Media owns the sole packaged Infinimedia Default theme; Folder has no player theme assets or Media application dependency.
 
-SVG/SVGZ render as static artwork; experimental SVG color cycling has been removed. IFF cycling remains supported. Saved audio defaults now migrate to the separate Media app, and type-wide choices override older extension defaults. See [theme rendering](docs/theme-rendering.md) and the [architecture audit](docs/architecture-audit.md) for current boundaries and verification.
+SVG/SVGZ render as static artwork; experimental SVG color cycling has been removed. IFF cycling remains supported. Saved audio defaults now migrate to the separate Media app, and type-wide choices override older extension defaults. See [Media's theme-rendering guide](https://github.com/infiniforge/infinimedia/blob/main/docs/theme-rendering.md) and the [historical architecture audit](docs/architecture-audit.md) for ownership and revision-specific verification.
 
 Current follow-up: independent Folder verification passed 146 app/native tests and 11 environment checks. The [static SVG/audio-default report](docs/static-svg-audio-defaults.md) records the corrections, all affected build results and Android runtime limits.
 

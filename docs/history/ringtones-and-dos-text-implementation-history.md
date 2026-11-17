@@ -1,4 +1,6 @@
-# Ringtones and the CP437 text viewer
+# Historical audio, CP437 text, and icon integration notes
+
+> Historical implementation diary spanning multiple applications. Current ownership is documented in [InfiniMedia](https://github.com/infiniforge/infinimedia/tree/main/docs), [InfiniScribe](https://github.com/infiniforge/infiniscribe/tree/main/docs), and [Infinifolder icon artwork](../icon-artwork-follow-up.md). Historical build logs and checks below are not current build instructions.
 
 ## Audio
 

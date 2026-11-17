@@ -1,5 +1,10 @@
 # InfiniSuite architecture audit and separation
 
+> Historical suite-wide audit and revision-specific verification record. Current
+> app ownership and build instructions live in each application's README and
+> `docs/` directory. This report retains dated implementation evidence; it is
+> not the current source of app documentation.
+
 ## Current licensing update (2026-11-16)
 
 Original code in the four application repositories and eleven shared library repositories is licensed under MIT; each license limits its grant to original project code. Bundled third-party components retain their own licenses and notices. InfiniFolder’s combined APK still needs a distribution compatibility review because it includes lwext4 under GPL-2.0 alongside Apache-2.0 dependencies. The audit statements below remain dated evidence for their recorded revisions. These license and library-document changes are local and uncommitted; fresh checkouts remain on pinned revisions until the library changes are published and app dependency locks are updated.
@@ -53,7 +58,7 @@ The compressed skin payload dropped from 575,708 to 148,785 bytes: **426,923 byt
 
 Five existing repositories changed: Folder (converter, pins and reports), Media (default artwork/frame/fixtures/packaging), Scribe (shared pins/docs), Canvas (decoding/SVG) and UI (mapping/cache/scheduler). Implementation commits include Folder 8ae435e/0612f65/d4d2293, Media 0126bc3/9938277, Scribe a51efa5, Canvas bde2ecc/9e16942, and UI b93e477/c944041/f0c1691. No repository was created and no published history was rewritten. Original untracked theme sources were backed up before the user's checkout was fast-forwarded; unrelated authoring files were retained.
 
-See the [architectural breakdown and interfaces](theme-rendering.md), [executed evidence](validation/theme-rendering.json) and [updated tracked-file inventory](validation/theme-tracked-inventory.json). Earlier sections below are historical checkpoints; their former four-skin packaging description is superseded by this update.
+See the [architectural breakdown and interfaces](https://github.com/infiniforge/infinimedia/blob/main/docs/theme-rendering.md), [executed evidence](validation/theme-rendering.json) and [updated tracked-file inventory](validation/theme-tracked-inventory.json). Earlier sections below are historical checkpoints; their former four-skin packaging description is superseded by this update.
 
 ## Fresh-checkout and media-asset correction (2026-11-11)
 

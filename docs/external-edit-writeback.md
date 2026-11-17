@@ -279,8 +279,9 @@ dark themes.
 
 ### Open-with and same-folder follow-up — 2026-11-04
 
-The internal option/default repair and the same-directory copy picker change built
-in the main and combined standalone hosts. No new automated suites or device UI
+At the 2026-11-04 checkpoint, the internal option/default repair and same-directory
+copy picker change built in the then-current main and combined standalone hosts.
+That host layout was retired when the apps separated. No new automated suites or device UI
 checks were run for this follow-up. Check internal-first ordering, saved internal
 and external file/type rules, Open externally, Cancel without staging, remote/archive
 handoff, rotation and reopening before treating these interactions as accepted.
