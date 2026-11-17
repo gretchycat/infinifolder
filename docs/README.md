@@ -1,32 +1,30 @@
-# Documentation
+# Infinifolder documentation
 
-Current code licensing: original application and shared-library code is MIT-licensed; third-party components retain their own terms. See [InfiniFolder LICENSE.md](../LICENSE.md) and the individual application and library license files. The combined APK distribution review remains separate from the original-code license choice.
+These pages document Infinifolder's file manager, storage backend/provider,
+format handling, and integration boundaries.
 
-Start with the current separation records:
+## Start here
 
-- [Android build commands and current test owners](android-builds.md)
-- [Architecture, component ownership and dependency graphs](architecture.md)
-- [Architecture audit, repository inventory and executed verification](architecture-audit.md)
-- [Storage API behavior and device acceptance matrix](storage-validation.md)
-- [Production source/resource inventory](validation/separation-inventory.json)
-- [Executed app builds and APK inspection](validation/separation-app-builds.json)
-- [Build script verification](validation/separation-build-scripts.json)
-- [Android descriptor probe results](validation/separation-storage-runtime.json)
+- [Infinifolder architecture and storage ownership](architecture.md)
+- [Standalone build and test guide](android-builds.md)
+- [Companion applications and Android handoff](viewer-modules.md)
+- [libinfiniselect storage boundary](libinfiniselect.md)
+- [Storage validation and device acceptance](storage-validation.md)
+- [Runtime capability discovery](runtime-capabilities.md)
+- [Implemented file formats](file-formats.md)
 
-Build commands belong to each repository's README. The four applications are
-independent repositories; this checkout builds Infinifolder and its declared
-libraries only. The `scripts/verify-standalone.py` harness checks fresh GitHub
-checkouts in separate temporary parents and rejects project/source roots outside
-each checkout.
+## Companion app documentation
 
-Other feature documents describe format behavior, UI decisions and historical
-validation. [The stream migration record](infinistream-migration.md) preserves the
-older checkpoints and their exact limitations. Older paths and build counts in
-those historical records do not replace the current ownership/build instructions.
+Each application owns its detailed behavior and build instructions:
 
-Optional Android `app_process` integration probes remain under `scripts/`. Media
-and document probes accept explicitly supplied built artifacts through
-`INFINIMEDIA_APK`, `INFINIMEDIA_CLASSES_JAR`, `INFINIMEDIA_VIDEO_CLASSES_JAR`,
-`INFINISCRIBE_APK`, and the corresponding `INFINISCRIBE_*_CLASSES_JAR` variables.
-These integration probes are separate from standalone builds and require an
-Android runtime. They do not implicitly read another application's source tree.
+- [Infinimedia documentation](https://github.com/infiniforge/infinimedia/tree/main/docs)
+- [Infiniscribe documentation](https://github.com/infiniforge/infiniscribe/tree/main/docs)
+- [Infinikey documentation](https://github.com/infiniforge/infinikey-ime/tree/main/docs). It shares branding only and does not use `libinfiniselect` or Infinifolder's storage backend.
+
+Infinifolder's `docs/history/` and dated validation reports preserve historical
+implementation records. They do not replace current app-owned documentation or
+standalone build instructions.
+
+## Shared ecosystem documentation
+
+- [InfiniForge ecosystem map](ECOSYSTEM.md) — generated overview; synchronized from the organization manifest.
