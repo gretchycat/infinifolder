@@ -1871,12 +1871,49 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
 
-    /** Recursively queue playable files from an archive or browsable filesystem image. */
-    private fun playContainerAudioInMedia(entry: ResourceEntry, entryIsInsideArchive: Boolean) {
-        val loadingToken = beginEntryActionLoading("Finding audio in ${entry.metadata.name}…") ?: return
+    /** Queue every supported media item beside the selected file, placing cover art first. */
+    private fun queueAllMediaInFolder(folderUri: Uri) {
+        io.execute {
+            val siblings = runCatching { MediaSourceAdapter.listFolder(this@MainActivity, folderUri) }
+                .getOrElse { error ->
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity,
+                            "Could not read media from this folder: ${error.message ?: "unavailable"}", Toast.LENGTH_LONG).show()
+                    }
+                    return@execute
+                }
+            fun isSupportedMedia(resource: ResourceEntry): Boolean =
+                !resource.metadata.isDirectory && !resource.metadata.isSymbolicLink &&
+                    !resource.metadata.isBrokenLink && resource.metadata.canRead &&
+                    MediaTypeDetector.detect(resource.metadata.name, resource.metadata.mimeType) in
+                        setOf(MediaType.AUDIO, MediaType.VIDEO, MediaType.IMAGE)
+            fun isCoverImage(resource: ResourceEntry): Boolean =
+                resource.metadata.name.startsWith("cover.", ignoreCase = true) &&
+                    MediaTypeDetector.detect(resource.metadata.name, resource.metadata.mimeType) == MediaType.IMAGE
+            val ordered = siblings.filter(::isSupportedMedia).sortedWith(compareBy<ResourceEntry>(
+                { !isCoverImage(it) },
+                { it.metadata.name.lowercase(Locale.ROOT) },
+                { it.metadata.name },
+            ))
+            if (ordered.isEmpty()) {
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "No supported media found in this folder", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) launchMediaEntriesInInfiniMedia(ordered,
+                        "Media from ${folderUri.lastPathSegment.orEmpty()}")
+                }
+            }
+        }
+    }
+
+    /** Recursively queue supported media from a folder, archive, or browsable filesystem image. */
+    private fun playContainerMediaInMedia(entry: ResourceEntry, entryIsInsideArchive: Boolean) {
+        val loadingToken = beginEntryActionLoading("Finding media in ${entry.metadata.name}…") ?: return
         io.execute {
             var firstFailure: Throwable? = null
-            val tracks = mutableListOf<Pair<String, ResourceEntry>>()
+            val media = mutableListOf<Pair<String, ResourceEntry>>()
             try {
                 val rootUri = when {
                     entry.metadata.isDirectory -> entry.uri
@@ -1910,8 +1947,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 pending.add(child.uri to childPath)
                             }
                         } else if (!child.metadata.isSymbolicLink && !child.metadata.isBrokenLink && child.metadata.canRead &&
-                            MediaTypeDetector.detect(child.metadata.name, child.metadata.mimeType) == MediaType.AUDIO) {
-                            tracks.add(childPath to child)
+                            MediaTypeDetector.detect(child.metadata.name, child.metadata.mimeType) in
+                                setOf(MediaType.AUDIO, MediaType.VIDEO, MediaType.IMAGE)) {
+                            media.add(childPath to child)
                         }
                     }
                 }
@@ -1919,20 +1957,26 @@ class MainActivity : Activity(), DebugDumpObserver {
                 if (firstFailure == null) firstFailure = error
             }
 
-            val ordered = tracks.sortedWith(Comparator { left, right ->
-                val insensitive = left.first.compareTo(right.first, ignoreCase = true)
-                if (insensitive != 0) insensitive else left.first.compareTo(right.first)
-            }).map { it.second }
+            fun isCoverImage(resource: ResourceEntry): Boolean =
+                resource.metadata.name.startsWith("cover.", ignoreCase = true) &&
+                    MediaTypeDetector.detect(resource.metadata.name, resource.metadata.mimeType) == MediaType.IMAGE
+            val ordered = media.sortedWith(compareBy<Pair<String, ResourceEntry>>(
+                { it.first.substringBeforeLast('/', "").lowercase(Locale.ROOT) },
+                { it.first.substringBeforeLast('/', "") },
+                { !isCoverImage(it.second) },
+                { it.first.substringAfterLast('/').lowercase(Locale.ROOT) },
+                { it.first },
+            )).map { it.second }
             runOnUiThread {
                 finishEntryActionLoading(loadingToken)
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 if (ordered.isEmpty()) {
                     val detail = firstFailure?.message?.takeIf { it.isNotBlank() }
-                    val message = if (detail == null) "No audio files found in ${entry.metadata.name}"
-                        else "Could not read audio from ${entry.metadata.name}: $detail"
+                    val message = if (detail == null) "No supported media found in ${entry.metadata.name}"
+                        else "Could not read media from ${entry.metadata.name}: $detail"
                     Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
                 } else {
-                    launchMediaEntriesInInfiniMedia(ordered, "Audio from ${entry.metadata.name}")
+                    launchMediaEntriesInInfiniMedia(ordered, "Media from ${entry.metadata.name}")
                 }
             }
         }
@@ -1970,6 +2014,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                 type = if (entries.all { it.metadata.mimeType.startsWith("video/") }) "video/*" else "*/*"
                 putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
                 putExtra("displayName", title)
+                putStringArrayListExtra(FileSelectionContract.EXTRA_RESULT_NAMES,
+                    ArrayList(entries.map { it.metadata.name }))
+                putStringArrayListExtra(FileSelectionContract.EXTRA_RESULT_MIMES,
+                    ArrayList(entries.map { com.infinifolder.mime.MimeRegistry.effective(it.metadata.name, it.metadata.mimeType) }))
                 putStringArrayListExtra(FileSelectionContract.EXTRA_RESULT_AUTHORITATIVE_URIS,
                     ArrayList(entries.map { it.uri.toString() }))
             }
@@ -2945,7 +2993,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             else -> "🔗"
         }
         return HomeItem(icon, shortcut.displayNameOverride ?: entry.metadata.name.removeSuffix(ShortcutInfo.SHORTCUT_EXTENSION),
-            shortcut.targetPath ?: shortcut.targetUri, { openContainerLinkUri(target, shortcut.displayNameOverride, true, LinkNavigationOrigin.VIRTUAL_ROOT, knownDirectory = shortcut.targetIsDirectory) },
+            readableUri(Uri.parse(shortcut.targetUri)), { openContainerLinkUri(target, shortcut.displayNameOverride, true, LinkNavigationOrigin.VIRTUAL_ROOT, knownDirectory = shortcut.targetIsDirectory) },
             { showEntryMenu(entry) }, "root_link_${entry.uri}", target.takeIf { browsable }, browsable,
             linkEntry = entry)
     }
@@ -11693,7 +11741,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                     orientation = LinearLayout.VERTICAL
                 }
                 val tUriEdit = EditText(context).apply {
-                    setText(initialShortcut?.targetUri ?: "")
+                    setText(initialShortcut?.targetUri?.let { target ->
+                        val parsed = runCatching { Uri.parse(target) }.getOrNull()
+                        if (parsed != null && !ArchiveUri.isArchiveUri(parsed)) readableUri(parsed) else target
+                    }.orEmpty())
                     textSize = 14f
                     setTextColor(setTextColorForTheme())
                 }
@@ -11796,7 +11847,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 shortcutIsDirCheckbox = isDirCheck
                 layout.addView(isDirCheck)
             } else {
-                val roTargetUri = textValue(initialShortcut?.targetUri ?: "Loading…")
+                val roTargetUri = textValue(initialShortcut?.targetUri?.let { runCatching { Uri.parse(it) }.getOrNull()?.let { readableUri(it) } } ?: "Loading…")
                 propertyRow("Target URI", roTargetUri)
                 val roTargetPath = textValue(initialShortcut?.targetPath ?: "—")
                 propertyRow("Target Path", roTargetPath)
@@ -11843,7 +11894,11 @@ class MainActivity : Activity(), DebugDumpObserver {
                             if (!isCancelled) {
                                 shortcut = loaded
                                 refreshEmbeddedIconControls()
-                                shortcutTargetUriInput?.setText(loaded.targetUri)
+                                shortcutTargetUriInput?.setText(
+                                    runCatching { Uri.parse(loaded.targetUri) }.getOrNull()?.let { target ->
+                                        if (ArchiveUri.isArchiveUri(target)) loaded.targetUri else readableUri(target)
+                                    } ?: loaded.targetUri
+                                )
                                 shortcutTargetPathInput?.setText(loaded.targetPath ?: "")
                                 shortcutOverrideInput?.setText(loaded.displayNameOverride ?: "")
                                 shortcutIsDirCheckbox?.isChecked = loaded.targetIsDirectory
@@ -11931,7 +11986,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         // 5. URI
         var uriView: TextView? = null
         if (isSingle) {
-            uriView = textValue(currentEntry.uri.toString())
+            uriView = textValue(readableUri(currentEntry.uri))
             propertyRow("URI", uriView)
         }
 
@@ -12025,7 +12080,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     Toast.makeText(this, "Target URI cannot be empty.", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
-                val newUri = WebMetadataResolver.normalizeInputUri(rawNewUri)
+                val newUri = canonicalizeReadableUri(rawNewUri, shortcut?.targetUri)
                 val baseInfo = shortcut ?: ShortcutInfo(targetUri = newUri)
                 val updated = baseInfo.copy(
                     targetUri = newUri,
@@ -12340,16 +12395,27 @@ class MainActivity : Activity(), DebugDumpObserver {
                 list
             }
             detectedMediaType == MediaType.AUDIO -> {
-                val audioCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.AUDIO }
+                val mediaCount = entries.count { resource ->
+                    !resource.metadata.isDirectory && MediaTypeDetector.detect(resource.metadata.name, resource.metadata.mimeType) in
+                        setOf(MediaType.AUDIO, MediaType.VIDEO, MediaType.IMAGE)
+                }
                 val list = mutableListOf("Open")
-                if (audioCount > 1) list.add("Queue all audio ($audioCount)")
+                if (mediaCount > 1) list.add("Queue all media in InfiniMedia ($mediaCount)")
                 list.add("Open with…")
                 list
             }
-            detectedMediaType == MediaType.VIDEO -> {
-                val videoCount = entries.count { !it.metadata.isDirectory && MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.VIDEO }
+            detectedMediaType == MediaType.VIDEO || detectedMediaType == MediaType.IMAGE -> {
+                val mediaCount = entries.count { resource ->
+                    !resource.metadata.isDirectory && MediaTypeDetector.detect(resource.metadata.name, resource.metadata.mimeType) in
+                        setOf(MediaType.AUDIO, MediaType.VIDEO, MediaType.IMAGE)
+                }
                 val list = mutableListOf("Open")
-                if (videoCount > 1) list.add("Play all video ($videoCount)")
+                if (mediaCount > 1) list.add("Queue all media in InfiniMedia ($mediaCount)")
+                if (detectedMediaType == MediaType.VIDEO) {
+                    val videoCount = entries.count { !it.metadata.isDirectory &&
+                        MediaTypeDetector.detect(it.metadata.name, it.metadata.mimeType) == MediaType.VIDEO }
+                    if (videoCount > 1) list.add("Play all video ($videoCount)")
+                }
                 list.add("Open with…")
                 list
             }
@@ -12359,7 +12425,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         val canPlayContainerInMedia = infiniMediaInstalled &&
             (isArchive || (entry.metadata.isDirectory && !isApp && !isCategory))
         val openGroup = baseOpenGroup +
-            (if (canPlayContainerInMedia) listOf("Queue all audio in InfiniMedia") else emptyList()) +
+            (if (canPlayContainerInMedia) listOf("Queue all media in InfiniMedia") else emptyList()) +
             (if (canShowSourceAsText) listOf("Show as text") else emptyList()) +
             (if (!entry.metadata.isDirectory && !isApp && !isCategory && entry.metadata.canRead) listOf("Open in hex viewer") else emptyList()) +
             (if (canShowDeleted) listOf("Show deleted files") else emptyList())
@@ -12431,7 +12497,9 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             isCategory -> "Virtual Application Category"
             isShortcut -> {
-                val target = shortcut?.targetPath ?: shortcut?.targetUri
+                val targetUri = shortcut?.targetUri?.let { runCatching { Uri.parse(it) }.getOrNull() }
+                val target = if (targetUri != null && ContainerUris.networkType(targetUri) != null) readableUri(targetUri)
+                    else shortcut?.targetPath ?: targetUri?.let { readableUri(it) }
                 if (!target.isNullOrBlank()) "Link → $target" else "Link"
             }
             entry.metadata.isDirectory -> if (inArchive) "Folder in archive" else "Folder"
@@ -12462,6 +12530,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                 if (isContainerPinned(it)) "Unpin" else "Pin to top"
             }), allowedFileOps, propertiesGroup)
         ) { action ->
+            if (action.startsWith("Queue all media in InfiniMedia (")) {
+                queueAllMediaInFolder(current ?: entry.uri)
+                return@showGroupedMenuDialog
+            }
             if (action.startsWith("Queue all audio")) {
                 val folder = if (entry.metadata.isDirectory) entry.uri else (current ?: entry.uri)
                 val start = if (entry.metadata.isDirectory) null else entry
@@ -12520,7 +12592,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
                 "Browse archive", "Browse" -> if(ArchiveUri.isArchiveUri(entry.uri))browseNestedArchive(entry)
                     else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
-                "Queue all audio in InfiniMedia" -> playContainerAudioInMedia(entry, inArchive)
+                "Queue all media in InfiniMedia" -> playContainerMediaInMedia(entry, inArchive)
                 "Show as text" -> openEntryAsTextInInfiniScribe(entry)
                 "Open with…" -> open(entry, externalOnly = true, forceExternalChooser = true)
                 "Open in hex viewer" -> openHexEditor(entry)
@@ -13668,6 +13740,118 @@ class MainActivity : Activity(), DebugDumpObserver {
         return uri.lastPathSegment ?: uri.toString()
     }
 
+    /** Expand saved-connection IDs into the server address users recognize. */
+    private fun readableUri(uri: Uri, archiveDepth: Int = 0): String {
+        if (ArchiveUri.isArchiveUri(uri) && archiveDepth < 8) {
+            return runCatching {
+                val source = readableUri(ArchiveUri.getSourceUri(uri), archiveDepth + 1)
+                val path = ArchiveUri.getEntryPath(uri).trim('/')
+                val deleted = if (ArchiveUri.isDeletedView(uri)) " [deleted files]" else ""
+                "$source!/${path}$deleted"
+            }.getOrDefault(uri.toString())
+        }
+
+        val type = ContainerUris.networkType(uri)
+        if (type == null) return uri.withoutUriPassword().toString()
+
+        val connections = savedConnections()
+        val connection = ContainerUris.candidates(uri, connections).singleOrNull()
+            ?: return uri.withoutUriPassword().toString()
+        val options = connection.options
+        val configuredHost = options["host"]?.takeIf { it.isNotBlank() }
+        val endpoint = options["url"] ?: connection.endpoint.orEmpty()
+        val endpointUri = if (type == "webdav") runCatching { Uri.parse(endpoint) }.getOrNull() else null
+        val host = configuredHost ?: endpointUri?.host ?: uri.host ?: return uri.withoutUriPassword().toString()
+        val scheme = when (type) {
+            "ftp" -> if (options["useFtps"] == "true") "ftps" else "ftp"
+            "webdav" -> endpointUri?.scheme ?: if (options["tls"] == "false") "http" else "https"
+            "smb" -> "smb"
+            else -> "sftp"
+        }
+        val port = options["port"]?.toIntOrNull() ?: endpointUri?.port?.takeIf { it > 0 }
+            ?: uri.port.takeIf { it > 0 } ?: ContainerUris.defaultPort(uri)
+        val defaultPort = when (type) {
+            "sftp" -> 22
+            "ftp" -> 21
+            "smb" -> 445
+            else -> if (scheme == "https") 443 else 80
+        }
+        val safeHost = if (host.contains(':') && !host.startsWith('[')) "[$host]" else host
+        val hostPort = safeHost + if (port == defaultPort) "" else ":$port"
+        val username = options["username"]?.takeIf { it.isNotBlank() }
+        val authority = (username?.let { "${Uri.encode(it)}@" } ?: "") + hostPort
+
+        return if (type == "webdav" && endpointUri != null) {
+            val basePath = endpointUri.encodedPath.orEmpty().trimEnd('/')
+            val targetPath = uri.encodedPath.orEmpty().trim('/')
+            val fullPath = when {
+                targetPath.isEmpty() -> basePath.ifEmpty { "/" }
+                basePath.isEmpty() -> "/$targetPath"
+                else -> "$basePath/$targetPath"
+            }
+            endpointUri.buildUpon().encodedAuthority(authority).encodedPath(fullPath).build().toString()
+        } else {
+            uri.buildUpon().scheme(scheme).encodedAuthority(authority)
+                .encodedPath(uri.encodedPath?.takeIf { it.isNotEmpty() } ?: "/").build().toString()
+        }
+    }
+
+    private fun Uri.withoutUriPassword(): Uri {
+        val userInfo = userInfo ?: return this
+        if (!userInfo.contains(':')) return this
+        val host = host ?: return this
+        val safeHost = if (host.contains(':') && !host.startsWith('[')) "[$host]" else host
+        val safeUser = userInfo.substringBefore(':').takeIf { it.isNotBlank() }
+            ?.let { "${Uri.encode(it)}@" }.orEmpty()
+        val portPart = if (port > 0) ":$port" else ""
+        return buildUpon().encodedAuthority("$safeUser$safeHost$portPart").build()
+    }
+
+    /** Turn the human-readable URL back into the stable saved-connection URI on save. */
+    private fun canonicalizeReadableUri(raw: String, original: String?): String {
+        val normalized = WebMetadataResolver.normalizeInputUri(raw)
+        val originalUri = original?.let { runCatching { Uri.parse(it) }.getOrNull() }
+        if (originalUri != null && readableUri(originalUri) == normalized) return originalUri.toString()
+        val parsed = runCatching { Uri.parse(normalized) }.getOrNull() ?: return normalized
+        val originalType = originalUri?.let { ContainerUris.networkType(it) }
+        val connections = savedConnections()
+        val originalConnection = originalUri?.authority?.let { id ->
+            connections.firstOrNull { it.id == id && it.sourceTypeId == originalType }
+        }
+        fun chooseConnection(uri: Uri, type: String): ProviderConnection? {
+            val matches = ContainerUris.candidates(uri, connections).filter { it.sourceTypeId == type }
+            return matches.singleOrNull() ?: originalConnection?.takeIf { it in matches }
+        }
+        fun bind(uri: Uri, depth: Int = 0): Uri {
+            if (ArchiveUri.isArchiveUri(uri) && depth < 8) {
+                return runCatching {
+                    ArchiveUri.build(bind(ArchiveUri.getSourceUri(uri), depth + 1),
+                        ArchiveUri.getEntryPath(uri), ArchiveUri.isDeletedView(uri))
+                }.getOrDefault(uri)
+            }
+            if (originalType == "webdav" && uri.scheme in setOf("http", "https")) {
+                val publicDavUri = Uri.Builder().scheme("webdav").encodedAuthority(uri.encodedAuthority)
+                    .encodedPath(uri.encodedPath?.takeIf { it.isNotEmpty() } ?: "/").build()
+                val connection = chooseConnection(publicDavUri, "webdav") ?: return uri
+                val basePath = runCatching {
+                    Uri.parse(connection.options["url"] ?: connection.endpoint.orEmpty()).encodedPath.orEmpty().trimEnd('/')
+                }.getOrDefault("")
+                val fullPath = uri.encodedPath.orEmpty().trimEnd('/')
+                val relativePath = when {
+                    fullPath == basePath -> "/"
+                    basePath.isEmpty() -> fullPath.ifEmpty { "/" }
+                    fullPath.startsWith("$basePath/") -> fullPath.removePrefix(basePath).ifEmpty { "/" }
+                    else -> return uri
+                }
+                return Uri.Builder().scheme("webdav").authority(connection.id).encodedPath(relativePath).build()
+            }
+            val type = ContainerUris.networkType(uri) ?: return uri
+            val connection = chooseConnection(uri, type) ?: return uri
+            return ContainerUris.bind(uri, connection)
+        }
+        return bind(parsed).toString()
+    }
+
     private fun defaultWritableFolderUri(): Uri? {
         localProvider.rootUri.takeIf { localProvider.hasAccess() }?.let { return it }
         fun findWritable(nodes: List<TreeNode>): Uri? {
@@ -14753,9 +14937,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             val shortcut = shortcutCache.get(entry.uri.toString())
             val target = when {
                 shortcut == null -> "Target"
-                WebMetadataResolver.isWebUri(shortcut.targetUri) -> shortcut.targetUri
-                !shortcut.targetPath.isNullOrBlank() -> shortcut.targetPath
-                else -> shortcut.targetUri.trimEnd('/').substringAfterLast('/').ifEmpty { shortcut.targetUri }
+                else -> runCatching { readableUri(Uri.parse(shortcut.targetUri)) }.getOrDefault(shortcut.targetUri)
             }
             return "Shortcut ↗ · $target"
         }

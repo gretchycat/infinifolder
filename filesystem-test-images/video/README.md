@@ -7,7 +7,7 @@ The MKV adds two embedded SRT cues, including Unicode. The invalid MP4 has no
 movie data. JSON records expected dimensions, times and seek targets; ZIP files
 contain byte-identical copies. Existing fixtures are never overwritten.
 
-See ../../docs/video-formats.md for player controls and handset checks.
+See [Infinimedia's video-format guide](https://github.com/infiniforge/infinimedia/blob/main/docs/video-formats.md) for player controls and handset checks.
 Regeneration needs FFmpeg with libx264, libvpx, AAC and libvorbis encoders.
 
 `91-six-minute-audio-seek.mp4` adds a 440 Hz AAC tone to the silent 90 fixture,

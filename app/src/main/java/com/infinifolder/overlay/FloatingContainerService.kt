@@ -1475,7 +1475,7 @@ class FloatingContainerService : Service() {
         stopSelf()
     }
 
-    /** Long-pressing a folder in an audio multi-select request creates a recursive playlist. */
+    /** Long-pressing a folder in a multi-select request queues matching media recursively. */
     private fun createRecursiveAudioPlaylist(root: ResourceEntry) {
         if (!selectionMode || !selectionAllowMultiple || !selectionRecursiveAudioDirectories) return
         selectionScanning = true
@@ -1591,7 +1591,7 @@ class FloatingContainerService : Service() {
                 if (!selectionMode || selectionReceiver == null) return@onMain
                 if (found.isEmpty()) {
                     reportSelectionProgress(FileSelectionContract.RESULT_LOADING_FAILED,
-                        "No supported audio files were found", foldersRead, 0)
+                        "No supported media files were found", foldersRead, 0)
                     selectionScanning = false
                     finishSelection(FileSelectionContract.RESULT_CANCELLED, Bundle())
                     removeWindow()
