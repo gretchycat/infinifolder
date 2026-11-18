@@ -21,9 +21,9 @@ visual file under images/, including ORA archives with embedded IFF, FLI/FLC,
 GIF, APNG, WebP, and MNG layers, plus standalone files in those formats.
 ZIP bundles and fixture documentation/manifests are not rendered. Each fixture
 must produce visible pixels; animation samples must expose a playback renderer
-and custom frame renderers are sampled at two times. GIF fixtures must also
-contain colored poster and playback pixels so a black screen cannot pass as
-visible output. The intentionally malformed
+and custom frame renderers are sampled at two times. Animated GIF and WebP
+fixtures must also contain colored poster and playback pixels so a black screen
+cannot pass as visible output. The intentionally malformed
 invalid-metadata.jpg must be rejected. The current icon.svg and icon.svgz samples
 are reported as known unsupported until Canvas renders them; after adding support,
 remove them from that list to make them required passes.

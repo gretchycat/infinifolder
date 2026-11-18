@@ -83,9 +83,11 @@ public final class VisualMediaRuntimeCheck {
     private static final Set<String> COLOR_REQUIRED_FIXTURES = new HashSet<>(Arrays.asList(
         "animation/plain-animated.gif",
         "animation/motion-palette.gif",
+        "animation/motion-palette.webp",
         "animation/gif-transparency-disposal.gif",
         "animation/ora-embedded-gif.ora",
-        "animation/ora-embedded-gif-transparency.ora"
+        "animation/ora-embedded-gif-transparency.ora",
+        "animation/ora-embedded-webp.ora"
     ));
 
     private static int rendered;

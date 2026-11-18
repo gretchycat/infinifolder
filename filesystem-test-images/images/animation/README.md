@@ -49,6 +49,7 @@ timelines allow seeking, including while paused.
 It checks ordinary GIF poster decoding and continuous playback without relying
 on transparency, partial-frame updates, or disposal behavior. The Android
 render sweep checks that both its poster and sampled live frames contain color.
+The same color check covers standalone and ORA-embedded WebP animations.
 Editing freezes a still frame. Listing icons should remain still thumbnails.
 
 These are generated acceptance samples. Run
