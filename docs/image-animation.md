@@ -13,6 +13,7 @@ still images. No new codec dependency was added.
 | MNG | PNG-based streams: up to 256 stored objects, SHOW modes 0–7, MOVE, SAVE/SEEK states, DISC, FRAM modes 1–4, global palettes/color space, BACK color and TERM metadata. Dynamic `evNT` supports pointer enter/move/exit/down/up, rectangular/object/palette-index masks, and in-memory jumps to named states. This remains a subset of MNG. |
 | HEIF / AVIF sequences | Native animation is used only if Android actually returns an animated drawable. Otherwise the existing still-image path remains; sequence playback is not guaranteed. |
 | IFF ILBM / PBM | Existing [palette cycling](iff-color-cycling.md), using the shared bitmap animation scheduler. |
+| OpenRaster (`.ora`) | Flat visible `src-over` layers are decoded by their actual embedded media type. Supported animated layers, including IFF cycling and FLI/FLC, GIF, APNG, WebP and MNG, are composited in one lifecycle-controlled drawable. Static or unsupported layers use the merged-image preview. |
 
 MNG Delta-PNG/JNG, cloning/pasting, nested LOOP/ENDL,
 clipping/synchronization controls and intrapixel differencing are unsupported.
@@ -95,8 +96,13 @@ created in `filesystem-test-images/images/animation/`:
 - gif-transparency-disposal.gif: 18 transparent partial frames with uneven
   delays and GIF keep/background/previous disposal modes.
 - `ora-embedded-iff.ora`: OpenRaster with an embedded IFF palette-cycle layer
-  and static PNG base. The render sweep requires visible animated playback
-  through the ORA path.
+  and static PNG base.
+- `ora-embedded-fli.ora`, `ora-embedded-flc.ora`, `ora-embedded-gif.ora`,
+  `ora-embedded-gif-transparency.ora`, `ora-embedded-webp.ora`,
+  `ora-embedded-apng.ora`, `ora-embedded-apng-disposal.ora`, and
+  `ora-embedded-mng.ora`: standard ORA stacks whose layer sources are animated
+  media files under `data/`. The render sweep checks active playback and changing
+  output pixels through the outer ORA drawable.
 
 The local FFmpeg executable could not start because of a libplacebo/C++ runtime
 symbol mismatch. Fixture generation uses Pillow and the original container
@@ -122,8 +128,8 @@ on an Android device after building the debug app. The harness attempts every
 visual fixture under filesystem-test-images/images/ through Canvas, including
 ORA containers with embedded IFF, FLI/FLC, GIF, APNG, WebP, and MNG layers. It
 checks visible poster pixels and requires playback renderers for animated
-samples, then samples custom animations at two times. The malformed
-invalid-metadata.jpg fixture is checked for rejection. The corpus sweep also
+samples, then samples bitmap renderers and drawable playback at two times. The
+malformed invalid-metadata.jpg fixture is checked for rejection. The corpus sweep also
 reports the currently unsupported icon.svg and icon.svgz samples separately;
 these should become required passes when Canvas gains support. The detailed
 device log is build/visual-media-runtime/visual-media-runtime.log. On November

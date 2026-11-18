@@ -1,7 +1,10 @@
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.drawable.Animatable;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
+import android.os.Handler;
+import android.os.HandlerThread;
 import com.infinifolder.preview.BitmapAnimation;
 import com.infinifolder.preview.BitmapFrame;
 import com.infinifolder.preview.CanvasStreams;
@@ -117,13 +120,12 @@ public final class VisualMediaRuntimeCheck {
         return result;
     }
 
-    private static boolean isPlatformAnimated(Drawable drawable) {
-        return Build.VERSION.SDK_INT >= 28 && drawable != null &&
-            "android.graphics.drawable.AnimatedImageDrawable".equals(drawable.getClass().getName());
+    private static boolean isAnimatable(Drawable drawable) {
+        return drawable instanceof Animatable;
     }
 
     private static String renderer(BitmapFrame frame) {
-        if (isPlatformAnimated(frame.getAnimationDrawable())) return "android-drawable";
+        if (isAnimatable(frame.getAnimationDrawable())) return "animated-drawable";
         if (frame.getAnimation() != null) return "bitmap-animation";
         if (frame.getColorCycling() != null) return "iff-palette";
         return "still";
@@ -131,16 +133,41 @@ public final class VisualMediaRuntimeCheck {
 
     private static void renderDrawable(Drawable drawable, int width, int height, String name) {
         Bitmap output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        HandlerThread callbackThread = new HandlerThread("visual-media-animation-callbacks");
+        callbackThread.start();
+        Handler callbackHandler = new Handler(callbackThread.getLooper());
+        drawable.setCallback(new Drawable.Callback() {
+            @Override public void invalidateDrawable(Drawable who) { }
+            @Override public void scheduleDrawable(Drawable who, Runnable what, long when) {
+                callbackHandler.postAtTime(what, when);
+            }
+            @Override public void unscheduleDrawable(Drawable who, Runnable what) {
+                callbackHandler.removeCallbacks(what);
+            }
+        });
         try {
             drawable.setBounds(0, 0, width, height);
+            Animatable animation = (Animatable) drawable;
+            animation.start();
             drawable.draw(new Canvas(output));
-            check(visiblePixels(pixels(output)) > 0, "native drawable rendered no visible pixels: " + name);
-        } finally {
-            if (isPlatformAnimated(drawable)) {
-                try {
-                    drawable.getClass().getMethod("stop").invoke(drawable);
-                } catch (ReflectiveOperationException ignored) { }
+            int[] first = pixels(output);
+            check(visiblePixels(first) > 0, "animated drawable rendered no visible pixels: " + name);
+            try {
+                Thread.sleep(300L);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("interrupted while sampling animation: " + name, interrupted);
             }
+            output.eraseColor(0);
+            drawable.draw(new Canvas(output));
+            int[] later = pixels(output);
+            check(visiblePixels(later) > 0, "animated drawable emitted an empty frame: " + name);
+            if (MOVING_FIXTURES.contains(name))
+                check(!Arrays.equals(first, later), "animation frames did not change: " + name);
+        } finally {
+            if (drawable instanceof Animatable) ((Animatable) drawable).stop();
+            drawable.setCallback(null);
+            callbackThread.quitSafely();
             output.recycle();
         }
     }
@@ -182,7 +209,7 @@ public final class VisualMediaRuntimeCheck {
             BitmapAnimation animation = frame.getAnimation();
             if (animation == null) animation = frame.getColorCycling();
             Drawable drawable = frame.getAnimationDrawable();
-            boolean hasPlayback = animation != null || isPlatformAnimated(drawable);
+            boolean hasPlayback = animation != null || isAnimatable(drawable);
             boolean requiresPlayback = ANIMATED_FIXTURES.contains(name);
             boolean platformStillOnly = name.equals("animation/motion-palette.webp") && Build.VERSION.SDK_INT < 28;
             check(!requiresPlayback || hasPlayback || platformStillOnly,
@@ -200,7 +227,7 @@ public final class VisualMediaRuntimeCheck {
                 if (MOVING_FIXTURES.contains(name) && animation.getNeedsContinuousFrames())
                     check(!Arrays.equals(first, later), "animation frames did not change: " + name);
             }
-            if (isPlatformAnimated(drawable))
+            if (isAnimatable(drawable))
                 renderDrawable(drawable, bitmap.getWidth(), bitmap.getHeight(), name);
 
             rendered++;

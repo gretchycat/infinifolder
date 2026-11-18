@@ -245,7 +245,7 @@ def png_bytes(image):
 
 
 def ora_embedded_animation(output_name, media_name, width, height, poster_png):
-    """Wrap one animated media file as an extended OpenRaster layer source."""
+    """Wrap one animated media file as a standard OpenRaster layer source."""
     src = f'data/{media_name}'
     xml = (f'<?xml version="1.0" encoding="UTF-8"?>'
            f'<image version="0.0.3" w="{width}" h="{height}" name="Embedded {media_name}">'

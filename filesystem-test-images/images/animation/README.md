@@ -32,8 +32,9 @@ The generator also writes ORA layer-source cases for animated FLI, FLC, GIF,
 WebP, APNG, and MNG, plus transparent GIF/APNG disposal cases. Each archive
 contains the animation under `data/` and a static PNG poster. The render sweep
 requires the outer ORA decode to expose active playback and changing pixels for
-each embedded format, rather than accepting the poster alone. These extended
-layer sources are the acceptance cases for generalizing ORA beyond PNG layers.
+each embedded format, rather than accepting the poster alone. These standard
+ORA layer sources check that Canvas decodes embedded media rather than animating
+a generated PNG overlay.
 
 transparency-disposal.png is also animated despite its ordinary PNG extension.
 It exercises translucent composition and background/previous disposal. It

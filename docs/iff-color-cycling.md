@@ -1,7 +1,8 @@
 # IFF palette cycling
 
 The image viewer plays palette animation embedded in `.iff`, `.ilbm` and `.lbm`
-files containing FORM ILBM or packed FORM PBM. Canvas owns parsing, decoded
+files containing FORM ILBM or packed FORM PBM. OpenRaster layers that embed
+those files use the same decoder and cycle renderer. Canvas owns parsing, decoded
 indices and palette rendering; Android viewer code owns playback and controls.
 Normal icon thumbnails remain still images.
 
