@@ -111,6 +111,8 @@ class FloatingContainerService : Service() {
     private var selectionAllowMultiple = false
     private var selectionSaveMode = false
     private var selectionSaveFileName: String? = null
+    private var selectionNewFileMimeType: String? = null
+    private var selectionNewFileExtension: String? = null
     private var selectionRecursiveAudioDirectories = false
     private var selectionMimeTypes: List<String> = emptyList()
     private var selectionExtensions: List<String> = emptyList()
@@ -151,6 +153,8 @@ class FloatingContainerService : Service() {
         selectionAllowMultiple = intent?.getBooleanExtra(EXTRA_ALLOW_MULTIPLE, false) == true
         selectionSaveMode = intent?.getBooleanExtra(EXTRA_SELECTION_SAVE_MODE, false) == true
         selectionSaveFileName = intent?.getStringExtra(FileSelectionContract.EXTRA_SAVE_FILE_NAME)
+        selectionNewFileMimeType = intent?.getStringExtra(FileSelectionContract.EXTRA_NEW_FILE_MIME_TYPE)
+        selectionNewFileExtension = intent?.getStringExtra(FileSelectionContract.EXTRA_NEW_FILE_EXTENSION)
         selectionRecursiveAudioDirectories = intent?.getBooleanExtra(EXTRA_ALLOW_RECURSIVE_AUDIO_DIRECTORIES, false) == true
         selectionMimeTypes = intent?.getStringArrayListExtra(EXTRA_SELECTION_MIME_TYPES).orEmpty()
         selectionExtensions = intent?.getStringArrayListExtra(EXTRA_SELECTION_EXTENSIONS).orEmpty()
@@ -335,15 +339,8 @@ class FloatingContainerService : Service() {
                     item.card.getLocalVisibleRect(bounds) &&
                         bounds.contains((event.rawX - origin[0]).toInt(), (event.rawY - origin[1]).toInt())
                 }?.let { item ->
-                    if (selectionMode) {
-                        if (selectionAllowMultiple && item.entry.metadata.isDirectory && selectionRecursiveAudioDirectories) {
-                            createRecursiveAudioPlaylist(item.entry)
-                        } else if (selectionAllowMultiple && !item.entry.metadata.isDirectory &&
-                            com.infinifolder.storage.LinkResolver.kind(item.entry.metadata) == null) {
-                            toggleSelection(item.entry, item.card)
-                        }
-                        true
-                    } else startLauncherDrag(item)
+                    if (selectionMode) handleSelectionLongPress(item.entry, item.card)
+                    else startLauncherDrag(item)
                 } ?: selectionMode
             }
             // Empty-space holds still open this location in the full browser.
@@ -1190,13 +1187,8 @@ class FloatingContainerService : Service() {
                 else activate(entry)
             }
             card.container.setOnLongClickListener {
-                if (selectionMode) {
-                    if (selectionAllowMultiple && entry.metadata.isDirectory && selectionRecursiveAudioDirectories) {
-                        createRecursiveAudioPlaylist(entry)
-                    } else if (selectionAllowMultiple && !entry.metadata.isDirectory &&
-                        com.infinifolder.storage.LinkResolver.kind(entry.metadata) == null) toggleSelection(entry, card.container)
-                    true
-                } else startLauncherDrag(dragItem)
+                if (selectionMode) handleSelectionLongPress(entry, card.container)
+                else startLauncherDrag(dragItem)
             }
             card.container
         }
@@ -1218,6 +1210,29 @@ class FloatingContainerService : Service() {
             setTextColor(ThemeManager.activeTheme.textPrimary)
             setPadding(18, 28, 18, 12)
         })
+    }
+
+    private fun handleSelectionLongPress(entry: ResourceEntry, anchor: View): Boolean {
+        if (!selectionMode) return false
+        val mimeType = selectionNewFileMimeType
+        if (!selectionSaveMode && mimeType != null && entry.metadata.isDirectory &&
+            !entry.metadata.isSymbolicLink && !entry.metadata.isBrokenLink) {
+            val menu = android.widget.PopupMenu(this, anchor)
+            menu.menu.add("New")
+            menu.setOnMenuItemClickListener {
+                completeNewFileSelection(entry)
+                true
+            }
+            menu.show()
+            return true
+        }
+        if (selectionAllowMultiple && entry.metadata.isDirectory && selectionRecursiveAudioDirectories) {
+            createRecursiveAudioPlaylist(entry)
+        } else if (selectionAllowMultiple && !entry.metadata.isDirectory &&
+            com.infinifolder.storage.LinkResolver.kind(entry.metadata) == null) {
+            toggleSelection(entry, anchor)
+        }
+        return true
     }
 
     private fun startLauncherDrag(item: DragItem): Boolean {
@@ -1428,6 +1443,23 @@ class FloatingContainerService : Service() {
         }
         selectionDoneView?.contentDescription = if (selectionSaveMode) "Save in this directory" else "Finish selecting files"
         normalActionView?.visibility = if (selectionMode) View.GONE else View.VISIBLE
+    }
+
+    private fun completeNewFileSelection(directory: ResourceEntry) {
+        val mimeType = selectionNewFileMimeType ?: return
+        val result = Bundle().apply {
+            putBoolean(FileSelectionContract.EXTRA_RESULT_IS_NEW_FILE, true)
+            putString(FileSelectionContract.EXTRA_RESULT_DIRECTORY, directory.uri.toString())
+            putString(FileSelectionContract.EXTRA_RESULT_DIRECTORY_NAME, directory.metadata.name)
+            putString(FileSelectionContract.EXTRA_RESULT_NEW_FILE_MIME_TYPE, mimeType)
+            selectionNewFileExtension?.let {
+                putString(FileSelectionContract.EXTRA_RESULT_NEW_FILE_EXTENSION, it)
+            }
+            if (::scroll.isInitialized) putInt(FileSelectionContract.EXTRA_RESULT_SCROLL_Y, scroll.scrollY)
+        }
+        finishSelection(FileSelectionContract.RESULT_SELECTED, result)
+        removeWindow()
+        stopSelf()
     }
 
     private fun completeSaveSelection() {
@@ -1693,6 +1725,8 @@ class FloatingContainerService : Service() {
         selectionAllowMultiple = false
         selectionSaveMode = false
         selectionSaveFileName = null
+        selectionNewFileMimeType = null
+        selectionNewFileExtension = null
         selectionRecursiveAudioDirectories = false
         selectionMimeTypes = emptyList()
         selectionExtensions = emptyList()

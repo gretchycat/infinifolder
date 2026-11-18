@@ -72,6 +72,10 @@ class FileSelectionActivity : Activity() {
                 intent.getBooleanExtra(FileSelectionContract.EXTRA_HIDE_UNSUPPORTED, false))
             .putExtra(FloatingContainerService.EXTRA_ALLOW_RECURSIVE_AUDIO_DIRECTORIES,
                 intent.getBooleanExtra(FileSelectionContract.EXTRA_ALLOW_RECURSIVE_AUDIO_DIRECTORIES, false))
+            .putExtra(FileSelectionContract.EXTRA_NEW_FILE_MIME_TYPE,
+                intent.getStringExtra(FileSelectionContract.EXTRA_NEW_FILE_MIME_TYPE))
+            .putExtra(FileSelectionContract.EXTRA_NEW_FILE_EXTENSION,
+                intent.getStringExtra(FileSelectionContract.EXTRA_NEW_FILE_EXTENSION))
             .putExtra(FloatingContainerService.EXTRA_SELECTION_SCROLL_Y,
                 intent.getIntExtra(FileSelectionContract.EXTRA_INITIAL_SCROLL_Y, 0).coerceAtLeast(0))
             .putExtra(FloatingContainerService.EXTRA_SELECTION_RECEIVER, selectionResultReceiver)
@@ -219,7 +223,64 @@ class FileSelectionActivity : Activity() {
         finish()
     }
 
+    private fun deliverNewFile(data: Bundle) {
+        val recipientPackage = callingPackage ?: callingActivity?.packageName
+        val claimedRecipient = intent.getStringExtra(FileSelectionContract.EXTRA_REQUESTING_PACKAGE)
+        if (recipientPackage == null || (claimedRecipient != null && claimedRecipient != recipientPackage)) {
+            setResult(RESULT_CANCELED, Intent().putExtra(FileSelectionContract.EXTRA_FAILURE_MESSAGE,
+                "Could not verify the requesting application"))
+            finish()
+            return
+        }
+        val directorySource = data.getString(FileSelectionContract.EXTRA_RESULT_DIRECTORY)
+            ?.takeIf(String::isNotBlank)?.let(Uri::parse)
+        val mimeType = intent.getStringExtra(FileSelectionContract.EXTRA_NEW_FILE_MIME_TYPE)
+        if (directorySource == null || mimeType.isNullOrBlank()) {
+            setResult(RESULT_CANCELED, Intent().putExtra(FileSelectionContract.EXTRA_FAILURE_MESSAGE,
+                "The new-file request is incomplete"))
+            finish()
+            return
+        }
+        val directoryReference = publicDirectory(directorySource.toString())
+        val directoryAccess = runCatching {
+            StorageDocumentsProvider.reference(this, Uri.parse(directoryReference))
+        }.getOrElse { error ->
+            setResult(RESULT_CANCELED, Intent().putExtra(FileSelectionContract.EXTRA_FAILURE_MESSAGE,
+                error.message ?: "Could not share the selected directory"))
+            finish()
+            return
+        }
+        val grantFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        runCatching { grantUriPermission(recipientPackage, directoryAccess, grantFlags) }.onFailure { error ->
+            setResult(RESULT_CANCELED, Intent().putExtra(FileSelectionContract.EXTRA_FAILURE_MESSAGE,
+                error.message ?: "Could not grant access to the selected directory"))
+            finish()
+            return
+        }
+        val result = Intent().setData(directoryAccess).apply {
+            addFlags(grantFlags)
+            clipData = android.content.ClipData.newRawUri("New file directory", directoryAccess)
+            putExtra(FileSelectionContract.EXTRA_RESULT_IS_NEW_FILE, true)
+            putExtra(FileSelectionContract.EXTRA_RESULT_DIRECTORY, directoryAccess.toString())
+            putExtra(FileSelectionContract.EXTRA_RESULT_DIRECTORY_REFERENCE, directoryReference)
+            putExtra(FileSelectionContract.EXTRA_RESULT_DIRECTORY_NAME,
+                data.getString(FileSelectionContract.EXTRA_RESULT_DIRECTORY_NAME).orEmpty())
+            putExtra(FileSelectionContract.EXTRA_RESULT_NEW_FILE_MIME_TYPE, mimeType)
+            intent.getStringExtra(FileSelectionContract.EXTRA_NEW_FILE_EXTENSION)?.let {
+                putExtra(FileSelectionContract.EXTRA_RESULT_NEW_FILE_EXTENSION, it)
+            }
+            putExtra(FileSelectionContract.EXTRA_RESULT_SCROLL_Y,
+                data.getInt(FileSelectionContract.EXTRA_RESULT_SCROLL_Y, 0).coerceAtLeast(0))
+        }
+        setResult(RESULT_OK, result)
+        finish()
+    }
+
     private fun deliverSelection(data: Bundle) {
+        if (data.getBoolean(FileSelectionContract.EXTRA_RESULT_IS_NEW_FILE, false)) {
+            deliverNewFile(data)
+            return
+        }
         val recipientPackage = callingPackage ?: callingActivity?.packageName
         val claimedRecipient = intent.getStringExtra(FileSelectionContract.EXTRA_REQUESTING_PACKAGE)
         if (recipientPackage == null || (claimedRecipient != null && claimedRecipient != recipientPackage)) {

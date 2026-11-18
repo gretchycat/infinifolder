@@ -16,12 +16,20 @@ application directories are planned projects and are not current consumers.
 - `InfiniSelect.open(Activity, OpenRequest, requestCode)` requests single or
   multiple files. Read selection can use Folder's floating picker; absent or
   unavailable Folder falls back to Android SAF and registered storage sources.
+  An optional `NewFileType` enables a long-press **New** action on Folder
+  directories and returns the directory plus `SelectionResult.isNewFile` instead
+  of an existing item. The no-Folder path uses SAF to select a directory.
+  Writable requests offer the InfiniFolder new-file action alongside Android's
+  editable-document picker.
 - `OpenRequest(writable = true)` uses Android document selection with write
   flags. Folder's DocumentsProvider can be selected when installed.
 - `StorageAccess.selectDirectory(...)` / `directoryIntent(...)` requests a
   standard Android tree, initially pointing at Folder's provider when available.
 - `InfiniSelect.save(..., SaveRequest, ...)` requests a destination and copies
   the caller-authorized source; SAF create-document remains the fallback.
+  `createFileDocument(...)` exposes a caller-owned local output file as a
+  temporary read URI for this handoff; `SaveRequest.initialDirectory` can use
+  the authoritative directory from a new-file result.
 - `InfiniSelect.readResult(...)` returns each resource's separate content URI
   and authoritative URI, along with metadata. Multiple results use parallel
   arrays and ClipData for grantable access links.
