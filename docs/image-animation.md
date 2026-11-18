@@ -94,6 +94,9 @@ created in `filesystem-test-images/images/animation/`:
   normal quantization differences).
 - gif-transparency-disposal.gif: 18 transparent partial frames with uneven
   delays and GIF keep/background/previous disposal modes.
+- `ora-embedded-iff.ora`: OpenRaster with an embedded IFF palette-cycle layer
+  and static PNG base. The render sweep requires visible animated playback
+  through the ORA path.
 
 The local FFmpeg executable could not start because of a libplacebo/C++ runtime
 symbol mismatch. Fixture generation uses Pillow and the original container

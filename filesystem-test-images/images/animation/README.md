@@ -22,6 +22,12 @@ and all three GIF disposal methods (keep, background, previous). It is included
 in the whole-image-corpus Android render sweep described in
 [the image fixture guide](../README.md).
 
+`ora-embedded-iff.ora` is an OpenRaster stack with an embedded IFF palette-cycling
+layer at `data/rainbow-logo.iff` above a static PNG base. The render sweep requires
+the ORA viewer path to expose the IFF cycle and verifies that its rendered colors
+change over time. This exercises an animation embedded as an ORA layer, as well
+as standalone IFF and ORA still-image rendering.
+
 transparency-disposal.png is also animated despite its ordinary PNG extension.
 It exercises translucent composition and background/previous disposal. It
 stores a two-play count, which the player's default continuous looping overrides.
