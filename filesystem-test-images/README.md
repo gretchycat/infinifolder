@@ -199,6 +199,15 @@ Recovery safety fixtures are now in `filesystems/windows/recovery/safety/`: allo
 
 ## Image and audio format fixtures
 
+The image corpus and its on-device Canvas render sweep are documented in
+[images/README.md](images/README.md). Run the following from the Infinifolder
+repository root after building the debug app to exercise all image fixtures,
+including animations:
+
+~~~sh
+python3 scripts/verify-visual-media-runtime.py
+~~~
+
 `images/` (80 files) and `audio/` (75 files) contain samples covering both currently supported and unimplemented formats documented in [Image formats](../docs/image-formats.md) and [Infinimedia audio and sound formats](https://github.com/infiniforge/infinimedia/blob/main/docs/audio-formats.md):
 
 - **Images (`images/icon.<ext>`)**: Rendered from the InfiniFolder launcher icon (`app/src/main/res/mipmap-xxxhdpi/ic_launcher.png`) via ImageMagick (`magick`) and format-specific binary writers (including standard raster, `HEIC`/`AVIF`/`JXL`, `SVG`/`SVGZ`, `TGA`/`ICB`/`VDA`/`VST`, `TIFF`, `JP2`/`J2K`, `QOI`, `Netpbm`, `XBM`/`XPM`/`XWD`, `PCX`/`DCX`, `PSD`/`PSB`/`ORA`/`KRA`/`XCF`/`ASE`, Amiga `IFF`/`ILBM`/`LBM`, Atari ST `NEO`/`PI1`, ZX Spectrum `SCR`, C64 Koala `KLA`/`KOA`, Apple `ICNS`/`PICT`/`PNTG`/`MAC`, `HDR`/`EXR`/`DDS`/`KTX`/`FITS`/`DCM`/`DNG`, `PS`/`EPS`/`EPT`/`WMF`/`WMZ`, `SIXEL`, and CP437 24-bit `ANS` with `SAUCE00` metadata).

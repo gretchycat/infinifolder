@@ -209,6 +209,34 @@ def interactive_mng():
     return data + png_chunk(b'MEND', b'')
 
 
+def gif_transparency_disposal():
+    """Transparent partial-frame GIF with uneven delays and all disposal modes."""
+    width, height, count = 160, 120, 18
+    colors = [(0, 0, 0), (34, 50, 89), (69, 190, 225), (255, 205, 70),
+              (242, 91, 83), (158, 223, 120), (255, 255, 255)]
+    palette_data = [component for color in colors for component in color]
+    palette_data.extend([0] * (768 - len(palette_data)))
+    frames = []
+    for frame in range(count):
+        current = Image.new('P', (width, height), 0)
+        current.putpalette(palette_data)
+        draw = ImageDraw.Draw(current)
+        draw.rectangle((8, 8, width - 9, height - 9), outline=1, width=2)
+        draw.text((16, 16), 'GIF TRANSPARENCY', fill=6)
+        x = 12 + frame * 7
+        draw.ellipse((x, 48, x + 30, 78), fill=2 + frame % 4, outline=6, width=2)
+        if frame % 3 == 1:
+            draw.rectangle((112, 82, 137, 102), fill=4)
+        draw.text((16, 90), f'FRAME {frame + 1:02}/{count}', fill=6)
+        frames.append(current)
+
+    durations = [45, 80, 120, 60, 180, 70] * 3
+    disposal = [1, 2, 3] * 6
+    frames[0].save(OUT / 'gif-transparency-disposal.gif', save_all=True,
+                   append_images=frames[1:], duration=durations, loop=0,
+                   transparency=0, disposal=disposal, optimize=True)
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     images = [image(n) for n in range(COUNT)]
@@ -235,6 +263,7 @@ def main():
         patches.append(patch)
     patches[0].save(OUT / 'transparency-disposal.png', save_all=True, append_images=patches[1:], duration=100,
                     loop=2, disposal=[0] + [1 if n % 2 else 2 for n in range(1, 24)], blend=[0] + [1] * 23)
+    gif_transparency_disposal()
     images[14].convert('RGB').save(OUT / 'reference-frame-15.png')
     for path in sorted(OUT.glob('*')):
         if path.is_file():

@@ -92,6 +92,8 @@ created in `filesystem-test-images/images/animation/`:
   default, independently of its stored two-play count.
 - `reference-frame-15.png`: still visual reference (FLI's 6-bit palette has
   normal quantization differences).
+- gif-transparency-disposal.gif: 18 transparent partial frames with uneven
+  delays and GIF keep/background/previous disposal modes.
 
 The local FFmpeg executable could not start because of a libplacebo/C++ runtime
 symbol mismatch. Fixture generation uses Pillow and the original container
@@ -109,6 +111,21 @@ confirmed the playback/control follow-up below. Individual format variants,
 pause/backgrounding, rotation, zoom retention, still-frame editing and URI
 routing have not all been confirmed separately.
 The previous IFF color-cycling playback was confirmed by the owner.
+
+### Corpus render sweep
+
+Run python3 scripts/verify-visual-media-runtime.py from the repository root
+on an Android device after building the debug app. The harness attempts every
+visual fixture under filesystem-test-images/images/ through Canvas, checks
+visible poster pixels for supported files, requires playback renderers for animated
+samples, and samples custom animations at two times. The malformed
+invalid-metadata.jpg fixture is checked for rejection. The corpus sweep also
+reports the currently unsupported icon.svg and icon.svgz samples separately;
+these should become required passes when Canvas gains support. The detailed
+device log is build/visual-media-runtime/visual-media-runtime.log. On November
+17, 2026, an API 37 device rendered 116 fixtures, found 2 known unsupported SVG
+fixtures, and confirmed 1 expected invalid-input rejection with no harness
+failures. See [the image fixture guide](../filesystem-test-images/images/README.md).
 
 ### Playback/control follow-up
 

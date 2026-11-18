@@ -14,6 +14,7 @@ format handling, and integration boundaries.
 - [Storage validation and device acceptance](storage-validation.md)
 - [Runtime capability discovery](runtime-capabilities.md)
 - [Implemented file formats](file-formats.md)
+- [Visual media fixture corpus and Android render harness](../filesystem-test-images/images/README.md)
 
 ## Companion app documentation
 
