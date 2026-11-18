@@ -77,3 +77,8 @@ viewer app. The library thumbnail backend works without InfiniMesh installed.
 The `.ngc` suffix is shared with Neo Geo Pocket ROMs. It remains ambiguous in the
 runtime MIME registry: generic/text candidates can open as G-code, while an
 identified ROM MIME retains its normal route and icon.
+
+G-code thumbnails skip invalid text and malformed command blocks with the same
+tolerant decoder as InfiniMesh. Valid motion continues; skipped commands retain
+no partial parser state. Budget failures and files with no motion use the normal
+icon fallback.

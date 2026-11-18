@@ -12,7 +12,7 @@ The inventory contains 10 applications (5 with standalone builds and 5 planned p
 
 #### [infinifolder](https://github.com/infiniforge/infinifolder)
 
-**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.1.3`
+**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.1.4`
 
 **Purpose:** Android file manager and advanced storage companion. Owns the file manager UI and operations and composes libinfinicore, libinfinistore, and libinfinivault through its providers for local/SAF, remote, archive, and filesystem-image resources. It implements Android document/provider integration and remains optional to companion apps; shared backend code stays in the libraries.
 
@@ -138,7 +138,7 @@ The inventory contains 10 applications (5 with standalone builds and 5 planned p
 
 #### [infinimesh](https://github.com/infiniforge/infinimesh)
 
-**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.1.2`
+**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.1.3`
 
 **Purpose:** Standalone read-only Android 3D model and G-code viewer. Owns read-only model presentation, viewer controls, G-code playback clock, lifecycle and app preferences. Uses libinfiniselect for file selection, grant-aware reads and durable source resolution; shared mesh parsing and rendering belong to libinfinemesh. No editing, slicing or printer control.
 
@@ -308,7 +308,7 @@ The inventory contains 10 applications (5 with standalone builds and 5 planned p
 
 #### [libinfinemesh](https://github.com/infiniforge/libinfinemesh)
 
-**State:** active · **Build:** standalone library build · **Versions:** no published release verified; build declares `0.2.0`
+**State:** active · **Build:** standalone library build · **Versions:** no published release verified; build declares `0.2.1`
 
 **Purpose:** Reusable read-only model geometry, STL decoding, G-code simulation and Android 3D rendering. Owns portable geometry and normals, decoder registry, STL and tolerant G-code parsing, timed toolpaths, reusable GLES viewer surface and bounded transparent mesh/toolpath thumbnails through libinfinistream capabilities. Applications own URI access, lifecycle, playback clocks and settings. Texture support and other formats are planned.
 
