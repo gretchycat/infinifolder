@@ -238,6 +238,24 @@ def gif_transparency_disposal():
                    transparency=0, disposal=disposal, optimize=True)
 
 
+def plain_animated_gif():
+    """Small opaque full-frame GIF for the ordinary animated-GIF viewer path."""
+    width, height = 160, 120
+    colors = [(16, 24, 48), (250, 190, 45), (40, 205, 165), (235, 75, 105), (245, 245, 235)]
+    frames = []
+    for frame in range(4):
+        image = Image.new('RGB', (width, height), colors[0])
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((8, 8, width - 9, height - 9), outline=colors[4], width=2)
+        draw.text((18, 18), 'ANIMATED GIF', fill=colors[4])
+        x = 14 + frame * 32
+        draw.ellipse((x, 52, x + 28, 80), fill=colors[1 + frame % 3], outline=colors[4], width=2)
+        draw.text((18, 96), f'FRAME {frame + 1}/4', fill=colors[4])
+        frames.append(image)
+    frames[0].save(OUT / 'plain-animated.gif', save_all=True, append_images=frames[1:],
+                   duration=140, loop=0, disposal=1, optimize=False)
+
+
 def png_bytes(image):
     output = BytesIO()
     image.save(output, format='PNG')
@@ -314,6 +332,7 @@ def main():
         patches.append(patch)
     patches[0].save(OUT / 'transparency-disposal.png', save_all=True, append_images=patches[1:], duration=100,
                     loop=2, disposal=[0] + [1 if n % 2 else 2 for n in range(1, 24)], blend=[0] + [1] * 23)
+    plain_animated_gif()
     gif_transparency_disposal()
     images[14].convert('RGB').save(OUT / 'reference-frame-15.png')
     embedded_animation_fixtures()

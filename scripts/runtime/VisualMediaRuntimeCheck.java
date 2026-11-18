@@ -22,6 +22,7 @@ public final class VisualMediaRuntimeCheck {
     private static final int TARGET = 512;
     private static final Set<String> SKIP_EXTENSIONS = new HashSet<>(Arrays.asList("md", "json", "zip"));
     private static final Set<String> ANIMATED_FIXTURES = new HashSet<>(Arrays.asList(
+        "animation/plain-animated.gif",
         "animation/motion-palette.fli",
         "animation/motion-palette.flc",
         "animation/motion-palette.gif",
@@ -56,6 +57,7 @@ public final class VisualMediaRuntimeCheck {
     ));
     private static final Set<String> CHECKED_FIXTURES = new HashSet<>();
     private static final Set<String> MOVING_FIXTURES = new HashSet<>(Arrays.asList(
+        "animation/plain-animated.gif",
         "animation/motion-palette.fli",
         "animation/motion-palette.flc",
         "animation/motion-palette.gif",
@@ -76,6 +78,14 @@ public final class VisualMediaRuntimeCheck {
         "animation/ora-embedded-apng.ora",
         "animation/ora-embedded-apng-disposal.ora",
         "animation/ora-embedded-mng.ora"
+    ));
+
+    private static final Set<String> COLOR_REQUIRED_FIXTURES = new HashSet<>(Arrays.asList(
+        "animation/plain-animated.gif",
+        "animation/motion-palette.gif",
+        "animation/gif-transparency-disposal.gif",
+        "animation/ora-embedded-gif.ora",
+        "animation/ora-embedded-gif-transparency.ora"
     ));
 
     private static int rendered;
@@ -111,6 +121,12 @@ public final class VisualMediaRuntimeCheck {
     private static int visiblePixels(int[] pixels) {
         int count = 0;
         for (int pixel : pixels) if ((pixel >>> 24) != 0) count++;
+        return count;
+    }
+
+    private static int coloredPixels(int[] pixels) {
+        int count = 0;
+        for (int pixel : pixels) if ((pixel & 0x00ffffff) != 0) count++;
         return count;
     }
 
@@ -152,6 +168,8 @@ public final class VisualMediaRuntimeCheck {
             drawable.draw(new Canvas(output));
             int[] first = pixels(output);
             check(visiblePixels(first) > 0, "animated drawable rendered no visible pixels: " + name);
+            if (COLOR_REQUIRED_FIXTURES.contains(name))
+                check(coloredPixels(first) > 0, "animated drawable rendered only black pixels: " + name);
             try {
                 Thread.sleep(300L);
             } catch (InterruptedException interrupted) {
@@ -162,6 +180,8 @@ public final class VisualMediaRuntimeCheck {
             drawable.draw(new Canvas(output));
             int[] later = pixels(output);
             check(visiblePixels(later) > 0, "animated drawable emitted an empty frame: " + name);
+            if (COLOR_REQUIRED_FIXTURES.contains(name))
+                check(coloredPixels(later) > 0, "animated drawable emitted only black pixels: " + name);
             if (MOVING_FIXTURES.contains(name))
                 check(!Arrays.equals(first, later), "animation frames did not change: " + name);
         } finally {
@@ -205,6 +225,8 @@ public final class VisualMediaRuntimeCheck {
             check(bitmap.getWidth() > 0 && bitmap.getHeight() > 0, "invalid bitmap dimensions: " + name);
             int[] poster = pixels(bitmap);
             check(visiblePixels(poster) > 0, "rendered poster is fully transparent: " + name);
+            if (COLOR_REQUIRED_FIXTURES.contains(name))
+                check(coloredPixels(poster) > 0, "rendered poster contains only black pixels: " + name);
 
             BitmapAnimation animation = frame.getAnimation();
             if (animation == null) animation = frame.getColorCycling();
@@ -224,6 +246,9 @@ public final class VisualMediaRuntimeCheck {
                 check(animation.render(sample, later, true), "later animation frame did not render: " + name);
                 check(visiblePixels(first) > 0 && visiblePixels(later) > 0,
                     "animation emitted a fully transparent frame: " + name);
+                if (COLOR_REQUIRED_FIXTURES.contains(name))
+                    check(coloredPixels(first) > 0 && coloredPixels(later) > 0,
+                        "animation emitted only black pixels: " + name);
                 if (MOVING_FIXTURES.contains(name) && animation.getNeedsContinuousFrames())
                     check(!Arrays.equals(first, later), "animation frames did not change: " + name);
             }

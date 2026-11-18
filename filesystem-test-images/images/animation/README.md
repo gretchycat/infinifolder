@@ -44,6 +44,11 @@ reference-frame-15.png is a static reference.
 Try play/pause, the timeline, pinch zoom, background/foreground, rotation and
 swiping between files. GIF/WebP progress is read-only; custom animation
 timelines allow seeking, including while paused.
+
+`plain-animated.gif` is a small opaque four-frame GIF with full-canvas frames.
+It checks ordinary GIF poster decoding and continuous playback without relying
+on transparency, partial-frame updates, or disposal behavior. The Android
+render sweep checks that both its poster and sampled live frames contain color.
 Editing freezes a still frame. Listing icons should remain still thumbnails.
 
 These are generated acceptance samples. Run
