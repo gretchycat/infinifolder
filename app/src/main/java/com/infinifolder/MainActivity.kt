@@ -1,5 +1,7 @@
 package com.infinifolder
 
+import io.github.gretchycat.infinemesh.ModelFormats
+
 import io.github.gretchycat.infinistream.copy as copyStream
 import io.github.gretchycat.infinistream.readBytes as readStreamBytes
 import io.github.gretchycat.infinistream.CancellationToken as StreamCancellationToken
@@ -6400,6 +6402,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                     launchMediaEntriesInInfiniMedia(listOf(entry), entry.metadata.name)
                     return
                 }
+                CompanionViewerDefaults.installedMeshComponent(this) -> {
+                    launchEntryInInfiniMesh(entry, effectiveMime)
+                    return
+                }
                 CompanionViewerDefaults.installedScribeComponent(this) -> {
                     launchEntryInInfiniScribe(entry, effectiveMime)
                     return
@@ -12625,6 +12631,30 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
 
 
+    }
+
+    private fun launchEntryInInfiniMesh(entry: ResourceEntry, mimeType: String) {
+        val component = CompanionViewerDefaults.installedMeshComponent(this) ?: run {
+            Toast.makeText(this, "InfiniMesh is not installed", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val mime = ModelFormats.mimeType(entry.metadata.name, mimeType) ?: mimeType
+            val relay = FileSelectionRelayProvider.register(this, entry.uri, entry.metadata.name, mime, entry.metadata.sizeBytes)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(relay, mime)
+                setComponent(component)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                putExtra(FileSelectionContract.EXTRA_RESULT_NAME, entry.metadata.name)
+                putExtra(FileSelectionContract.EXTRA_RESULT_MIME, mime)
+                putExtra(FileSelectionContract.EXTRA_RESULT_AUTHORITATIVE_URI, entry.uri.toString())
+                clipData = ClipData.newRawUri(entry.metadata.name, relay)
+            }
+            grantUriPermission(component.packageName, relay, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startViewerActivity(intent)
+        } catch (error: Exception) {
+            Toast.makeText(this, "Could not open InfiniMesh: ${error.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun launchEntryInInfiniScribe(entry: ResourceEntry, mimeType: String,

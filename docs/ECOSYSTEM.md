@@ -1,26 +1,26 @@
 # InfiniForge ecosystem
 
-This file is generated from the authoritative [ecosystem manifest](https://github.com/infiniforge/.github/blob/main/ecosystem.json) (inventory checked 2026-11-17). Do not edit this copy; changes are synchronized from that repository through reviewable pull requests.
+This file is generated from the authoritative [ecosystem manifest](https://github.com/infiniforge/.github/blob/main/ecosystem.json) (inventory checked 2026-11-18). Do not edit this copy; changes are synchronized from that repository through reviewable pull requests.
 
 InfiniForge is a set of independently buildable and released Android applications and reusable library repositories. Each app owns its application identity, UI, lifecycle, settings, user data, permissions, and standalone build. Libraries provide reusable APIs and do not make one application depend on another.
 
 ## Component inventory
 
-The inventory contains 9 applications (4 with standalone builds and 5 planned placeholders), 11 shared libraries, and 1 canonical asset repository.
+The inventory contains 10 applications (5 with standalone builds and 5 planned placeholders), 12 shared libraries, and 1 canonical asset repository.
 
 ### Applications
 
 #### [infinifolder](https://github.com/infiniforge/infinifolder)
 
-**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.1.2`
+**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.1.3`
 
 **Purpose:** Android file manager and advanced storage companion. Owns the file manager UI and operations and composes libinfinicore, libinfinistore, and libinfinivault through its providers for local/SAF, remote, archive, and filesystem-image resources. It implements Android document/provider integration and remains optional to companion apps; shared backend code stays in the libraries.
 
-**Pinned source dependency closure:** [libinfinicanvas](https://github.com/infiniforge/libinfinicanvas), [libinfinicore](https://github.com/infiniforge/libinfinicore), [libinfinimeta](https://github.com/infiniforge/libinfinimeta), [libinfiniscribe](https://github.com/infiniforge/libinfiniscribe), [libinfiniselect](https://github.com/infiniforge/libinfiniselect), [libinfinisound](https://github.com/infiniforge/libinfinisound), [libinfinistore](https://github.com/infiniforge/libinfinistore), [libinfinistream](https://github.com/infiniforge/libinfinistream), [libinfiniui](https://github.com/infiniforge/libinfiniui), [libinfinivault](https://github.com/infiniforge/libinfinivault), [libinfinivideo](https://github.com/infiniforge/libinfinivideo)
+**Pinned source dependency closure:** [libinfinemesh](https://github.com/infiniforge/libinfinemesh), [libinfinicanvas](https://github.com/infiniforge/libinfinicanvas), [libinfinicore](https://github.com/infiniforge/libinfinicore), [libinfinimeta](https://github.com/infiniforge/libinfinimeta), [libinfiniscribe](https://github.com/infiniforge/libinfiniscribe), [libinfiniselect](https://github.com/infiniforge/libinfiniselect), [libinfinisound](https://github.com/infiniforge/libinfinisound), [libinfinistore](https://github.com/infiniforge/libinfinistore), [libinfinistream](https://github.com/infiniforge/libinfinistream), [libinfiniui](https://github.com/infiniforge/libinfiniui), [libinfinivault](https://github.com/infiniforge/libinfinivault), [libinfinivideo](https://github.com/infiniforge/libinfinivideo)
 
 **Exact dependency pins:** [dependencies.lock.json](https://github.com/infiniforge/infinifolder/blob/main/dependencies.lock.json)
 
-**Optional/runtime integrations:** None recorded
+**Optional/runtime integrations:** [infinimesh](https://github.com/infiniforge/infinimesh)
 
 **Public API and architecture documentation:** [architecture.md](https://github.com/infiniforge/infinifolder/blob/main/docs/architecture.md), [libinfiniselect.md](https://github.com/infiniforge/infinifolder/blob/main/docs/libinfiniselect.md), [runtime-capabilities.md](https://github.com/infiniforge/infinifolder/blob/main/docs/runtime-capabilities.md)
 
@@ -135,6 +135,20 @@ The inventory contains 9 applications (4 with standalone builds and 5 planned pl
 **Optional/runtime integrations:** None recorded
 
 **Public API and architecture documentation:** None published yet
+
+#### [infinimesh](https://github.com/infiniforge/infinimesh)
+
+**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.1.2`
+
+**Purpose:** Standalone read-only Android 3D model and G-code viewer. Owns read-only model presentation, viewer controls, G-code playback clock, lifecycle and app preferences. Uses libinfiniselect for file selection, grant-aware reads and durable source resolution; shared mesh parsing and rendering belong to libinfinemesh. No editing, slicing or printer control.
+
+**Pinned source dependency closure:** [libinfinemesh](https://github.com/infiniforge/libinfinemesh), [libinfiniselect](https://github.com/infiniforge/libinfiniselect), [libinfinistream](https://github.com/infiniforge/libinfinistream)
+
+**Exact dependency pins:** [dependencies.lock.json](https://github.com/infiniforge/infinimesh/blob/main/dependencies.lock.json)
+
+**Optional/runtime integrations:** [infinifolder](https://github.com/infiniforge/infinifolder)
+
+**Public API and architecture documentation:** [APPLICATION.md](https://github.com/infiniforge/infinimesh/blob/main/docs/APPLICATION.md), [architecture.md](https://github.com/infiniforge/infinimesh/blob/main/docs/architecture.md)
 
 ### Shared libraries
 
@@ -292,6 +306,20 @@ The inventory contains 9 applications (4 with standalone builds and 5 planned pl
 
 **Public API and architecture documentation:** [README.md](https://github.com/infiniforge/libinfinivideo/blob/main/README.md), [CAPABILITIES.md](https://github.com/infiniforge/libinfinivideo/blob/main/CAPABILITIES.md), [libvlc.md](https://github.com/infiniforge/libinfinivideo/blob/main/docs/libvlc.md)
 
+#### [libinfinemesh](https://github.com/infiniforge/libinfinemesh)
+
+**State:** active · **Build:** standalone library build · **Versions:** no published release verified; build declares `0.2.0`
+
+**Purpose:** Reusable read-only model geometry, STL decoding, G-code simulation and Android 3D rendering. Owns portable geometry and normals, decoder registry, STL and tolerant G-code parsing, timed toolpaths, reusable GLES viewer surface and bounded transparent mesh/toolpath thumbnails through libinfinistream capabilities. Applications own URI access, lifecycle, playback clocks and settings. Texture support and other formats are planned.
+
+**Pinned source dependency closure:** [libinfinistream](https://github.com/infiniforge/libinfinistream)
+
+**Exact dependency pins:** [dependencies.lock.json](https://github.com/infiniforge/libinfinemesh/blob/main/dependencies.lock.json)
+
+**Optional/runtime integrations:** None recorded
+
+**Public API and architecture documentation:** [API.md](https://github.com/infiniforge/libinfinemesh/blob/main/docs/API.md)
+
 ### Canonical assets
 
 #### [infini-icon-theme](https://github.com/infiniforge/infini-icon-theme)
@@ -329,7 +357,7 @@ The protocol versions below describe the current codebase. `null` means no Infin
 
 ### Android Storage Access Framework (SAF)
 
-**ID:** `android-saf` · **Protocol version:** `null` (platform-defined; no InfiniForge protocol version or negotiation is implemented) · **Implemented by:** [infinifolder](https://github.com/infiniforge/infinifolder), [infinikey-ime](https://github.com/infiniforge/infinikey-ime), [libinfiniselect](https://github.com/infiniforge/libinfiniselect)
+**ID:** `android-saf` · **Protocol version:** `null` (platform-defined; no InfiniForge protocol version or negotiation is implemented) · **Implemented by:** [infinifolder](https://github.com/infiniforge/infinifolder), [infinikey-ime](https://github.com/infiniforge/infinikey-ime), [libinfiniselect](https://github.com/infiniforge/libinfiniselect), [infinimesh](https://github.com/infiniforge/infinimesh)
 
 - **Resource identity:** A provider's document or tree content URI is opaque. Preserve the URI and Android grants; do not decode document IDs or assume they are filesystem paths.
 - **Request:** Clients use Android DocumentsContract/ContentResolver and ACTION_OPEN_DOCUMENT, ACTION_OPEN_DOCUMENT_TREE, or ACTION_CREATE_DOCUMENT. Requested read/write access is expressed through Android URI permission flags.
@@ -365,7 +393,7 @@ The protocol versions below describe the current codebase. `null` means no Infin
 
 ### Android Intent and content-URI handoff
 
-**ID:** `android-uri-handoff` · **Protocol version:** `null` (platform-defined; no InfiniForge protocol version or negotiation is implemented) · **Implemented by:** [infinifolder](https://github.com/infiniforge/infinifolder), [infinimedia](https://github.com/infiniforge/infinimedia), [infiniscribe](https://github.com/infiniforge/infiniscribe), [libinfiniui](https://github.com/infiniforge/libinfiniui), [libinfiniselect](https://github.com/infiniforge/libinfiniselect)
+**ID:** `android-uri-handoff` · **Protocol version:** `null` (platform-defined; no InfiniForge protocol version or negotiation is implemented) · **Implemented by:** [infinifolder](https://github.com/infiniforge/infinifolder), [infinimedia](https://github.com/infiniforge/infinimedia), [infiniscribe](https://github.com/infiniforge/infiniscribe), [libinfiniui](https://github.com/infiniforge/libinfiniui), [libinfiniselect](https://github.com/infiniforge/libinfiniselect), [infinimesh](https://github.com/infiniforge/infinimesh)
 
 - **Resource identity:** The content URI in data, EXTRA_STREAM, or ClipData identifies the current Android access path and is usable only with the attached URI grant. Where a separate authoritative URI is available, keep that for later reopening.
 - **Request:** Applications use Android ACTION_VIEW/send-style intents, MIME types, data/EXTRA_STREAM, ClipData, and read/write/persistable grant flags as appropriate to the operation.

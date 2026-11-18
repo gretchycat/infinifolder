@@ -60,3 +60,20 @@ Provider and format coverage can grow through shared libraries and their capabil
 - Incomplete: there was no concise application-level summary bringing together the app's role, capabilities, companion boundaries, and limitations; this document adds that index-level description.
 - Unverified: broad remote/provider and device behavior still has acceptance gaps; the docs do not treat historical build tests as proof of every backend.
 - Reconciliation: “universal storage” describes the direction, not every provider, archive, filesystem, recovery operation, or write mode.
+
+
+STL and G-code previews come from pinned libinfinemesh, through the runtime
+thumbnail capability pipeline. Mesh thumbnails use transparent flat-lit geometry;
+G-code thumbnails show the complete travel/extrusion path. Decode and raster
+budgets prevent large models from monopolizing icon workers; failed thumbnails
+fall back to the file type icon. No source files are changed.
+
+When InfiniMesh is installed, supported model filenames/MIME aliases receive a
+local companion-viewer default, preserving saved user choices. Explicit read-only
+relay handoffs retain the authoritative source identity and selection metadata,
+including archive and remote resources. InfiniFolder does not embed the model
+viewer app. The library thumbnail backend works without InfiniMesh installed.
+
+The `.ngc` suffix is shared with Neo Geo Pocket ROMs. It remains ambiguous in the
+runtime MIME registry: generic/text candidates can open as G-code, while an
+identified ROM MIME retains its normal route and icon.

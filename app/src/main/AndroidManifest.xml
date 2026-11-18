@@ -17,6 +17,7 @@
     <queries>
         <package android:name="com.infinimedia" />
         <package android:name="com.infiniscribe" />
+        <package android:name="com.infinimesh" />
         <intent>
             <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
         </intent>

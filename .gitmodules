@@ -40,3 +40,6 @@ url = https://github.com/infiniforge/libinfinimeta.git
 [submodule "libraries/libinfiniui"]
 	path = libraries/libinfiniui
 	url = https://github.com/infiniforge/libinfiniui.git
+[submodule "libraries/libinfinemesh"]
+	path = libraries/libinfinemesh
+	url = https://github.com/infiniforge/libinfinemesh.git

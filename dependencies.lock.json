@@ -1,6 +1,10 @@
 {
   "directory": "libraries",
   "repositories": {
+    "libinfinemesh": {
+      "url": "https://github.com/infiniforge/libinfinemesh.git",
+      "commit": "8a2bab500ab025c1a0fee35e7d307252c84db95f"
+    },
     "libinfinicanvas": {
       "url": "https://github.com/infiniforge/libinfinicanvas.git",
       "commit": "e68b9de2b91a71ea7bfd89c4c6ae2bf98bab8538"

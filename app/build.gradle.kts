@@ -22,6 +22,7 @@ dependencies {
     implementation(project(":storage-engine"))
     implementation("io.github.gretchycat.libinfiniui:ui-image:0.1.0")
     // Thumbnail extraction remains reusable; the media-player Activity belongs to InfiniMedia.
+    implementation("io.github.gretchycat.libinfinemesh:mesh-android:0.2.0")
     implementation("io.github.gretchycat.libinfinivideo:video-android:0.1.0")
     implementation("io.github.gretchycat.libinfinimeta:meta-sega:0.1.0")
     implementation("io.github.gretchycat.libinfinimeta:meta-nintendo:0.1.0")
@@ -44,8 +45,8 @@ android {
         applicationId = "com.infinifolder"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
         testInstrumentationRunner = "com.infinifolder.IconRepairInstrumentation"
         targetAbiFilters?.let { filters -> ndk { abiFilters.addAll(filters) } }
     }

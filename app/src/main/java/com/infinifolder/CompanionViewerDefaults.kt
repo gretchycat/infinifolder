@@ -17,14 +17,16 @@ import io.github.gretchycat.infinistream.Operations
 import io.github.gretchycat.infinistream.RuntimeCapabilities
 import io.github.gretchycat.infinistream.ViewerTarget
 import io.github.gretchycat.infiniscribe.ScribeTextFormats
+import io.github.gretchycat.infinemesh.ModelFormats
 
-/** Local routing defaults for the separately installed media and document apps. */
+/** Local routing defaults for the separately installed media, document and model apps. */
 internal object CompanionViewerDefaults {
     private data class Target(val packageName: String, val activityName: String)
-    private data class InitializationSnapshot(val media: ComponentName?, val scribe: ComponentName?, val capabilities: Long)
+    private data class InitializationSnapshot(val media: ComponentName?, val scribe: ComponentName?, val mesh: ComponentName?, val capabilities: Long)
 
     private val media = Target("com.infinimedia", "com.infinimedia.InfiniMediaActivity")
     private val scribe = Target("com.infiniscribe", "com.infiniscribe.InfiniScribeActivity")
+    private val mesh = Target("com.infinimesh", "com.infinimesh.MeshActivity")
     private val removedMediaViewers = setOf(
         "com.infinifolder.viewer.AudioPlayerActivity",
         "com.infinifolder.viewer.VideoPlayerActivity",
@@ -52,12 +54,13 @@ internal object CompanionViewerDefaults {
         val defaults = ExternalAppDefaults(app)
         val mediaComponent = installedComponent(app, media)
         val scribeComponent = installedComponent(app, scribe)
-        val snapshot = InitializationSnapshot(mediaComponent, scribeComponent,
+        val snapshot = InitializationSnapshot(mediaComponent, scribeComponent, installedComponent(app, mesh),
             io.github.gretchycat.infinistream.RuntimeCapabilities.installed().revision)
         if (initializedSnapshot == snapshot) return
         val components = mapOfNotNull(
             media to mediaComponent,
             scribe to scribeComponent,
+            mesh to snapshot.mesh,
         )
         if (components.isEmpty()) {
             initializedSnapshot = snapshot
@@ -79,6 +82,7 @@ internal object CompanionViewerDefaults {
         // Extensionless source files can still be classified as text or audio
         // from their MIME or validated content signature.
         val typeMimes = (ScribeTextFormats.TEXT_MIME_TYPES + setOf("text/plain") +
+            ModelFormats.STL_MIMES + ModelFormats.GCODE_MIMES +
             MimeRegistry.associations().values.filter { targetFor("document", it) == scribe } +
             MimeRegistry.associations().values.filter { AudioIconFormats.isAudio(it) || ArchiveFormats.isPlaylist("", it) })
             .map(MimeRegistry::normalize).toSortedSet()
@@ -139,6 +143,9 @@ internal object CompanionViewerDefaults {
     fun installedScribeComponent(context: Context): ComponentName? =
         installedComponent(context.applicationContext, scribe)
 
+    fun installedMeshComponent(context: Context): ComponentName? =
+        installedComponent(context.applicationContext, mesh)
+
     internal fun defaultPackageFor(name: String, mime: String): String? = targetFor(name, mime)?.packageName
 
     internal fun prefersFolderImage(name: String, mime: String): Boolean {
@@ -163,11 +170,18 @@ internal object CompanionViewerDefaults {
         handler.viewerTarget() == ViewerTarget.INFINISCRIBE && handler.describe().attributes["sourceMode"] == "ansi"
     }
 
-    /** Both companions are launched explicitly after checking their exported entry point. */
+    /** Ecosystem companions are launched explicitly after checking their exported entry point. */
     internal fun mayAssociateWithoutIntentFilter(packageName: String): Boolean =
-        packageName == media.packageName || packageName == scribe.packageName
+        packageName == media.packageName || packageName == scribe.packageName || packageName == mesh.packageName
+
+    /** A suffix is a candidate; keep specific identities such as .ngc ROMs authoritative. */
+    internal fun isMeshType(name: String, mime: String): Boolean =
+        ModelFormats.supports(null, mime) ||
+            (ModelFormats.supports(name, null) &&
+                (MimeRegistry.isUnspecified(mime) || MimeRegistry.normalize(mime) == "text/plain"))
 
     private fun targetFor(name: String, mime: String): Target? {
+        if (isMeshType(name, mime)) return mesh
         val targets = matchingHandlers(name, mime).mapNotNull { it.viewerTarget() }.toSet()
         val type = MediaTypeDetector.detect(name, mime)
         // A visual image parser outranks a source-text capability. Infinifolder

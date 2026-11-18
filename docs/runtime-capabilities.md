@@ -252,3 +252,10 @@ handset workflows remain historical acceptance, not new runtime-discovery eviden
 The regenerated [audio fixture report](https://github.com/infiniforge/infinimedia/blob/main/docs/history/audio-playback-report-2026-11-10.md) is
 also JVM-only: 47/76 audio fixtures decode, 29 remain unavailable/unsupported there,
 and two playlists parse. It does not establish device codec availability.
+
+
+The libinfinemesh provider declares canonical STL/G-code suffix associations,
+MIME aliases and `EncodedImageExtractor` thumbnail service. Extension matches are
+candidates; full bounded parsing occurs only when a thumbnail is requested. The
+catalog generator can discover descriptors on the JVM without initializing
+Android Bitmap or GLES. PNG creation runs only on Android thumbnail workers.

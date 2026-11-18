@@ -264,7 +264,8 @@ class ResourceIconResolver(context: Context) {
         // glyph. Once identity validation says this is a renderable image or
         // animation, always prefer its actual content thumbnail; a failed
         // render still falls through to the effective MIME icon below.
-        val record=if(ImageFormats.isRenderableMime(resolvedIdentity.mimeType))
+        val modelThumbnail=CompanionViewerDefaults.isMeshType(meta.name,resolvedIdentity.mimeType)
+        val record=if(ImageFormats.isRenderableMime(resolvedIdentity.mimeType) || modelThumbnail)
             storedRecord.copy(isImage=true,overrideImageIcon=false) else storedRecord
         var artworkPending=false
         if(AudioIconFormats.isAudio(resolvedIdentity.mimeType) && !ArchiveFormats.isPlaylist(meta.name,resolvedIdentity.mimeType)) {
@@ -279,8 +280,12 @@ class ResourceIconResolver(context: Context) {
         for(step in IconPolicy.steps(record,genericArchive)) {
             if(Thread.currentThread().isInterrupted)break
             val bitmap:Bitmap?=when(step) {
-                IconPolicy.Step.THUMBNAIL -> parserValidatedImage ?: com.infinifolder.preview.LibraryThumbnails.render(appContext.contentResolver,
-                    com.infinifolder.storage.ProviderStreams.resource(runtime.provider,entry.ref,meta),size)
+                IconPolicy.Step.THUMBNAIL -> parserValidatedImage ?: (if(modelThumbnail)
+                    IconWork.bounded(2000,lane="thumbnail:${entry.ref.providerId}") {
+                        com.infinifolder.preview.LibraryThumbnails.render(appContext.contentResolver,
+                            com.infinifolder.storage.ProviderStreams.resource(runtime.provider,entry.ref,meta),size)
+                    } else com.infinifolder.preview.LibraryThumbnails.render(appContext.contentResolver,
+                        com.infinifolder.storage.ProviderStreams.resource(runtime.provider,entry.ref,meta),size))
                     ?: if(resolvedIdentity.mimeType in BookArtworkResolver.MIME_TYPES)
                     bookArtwork.resolve(entry.copy(metadata=meta),size)
                 else IconWork.bounded(2000,lane="thumbnail:${entry.ref.providerId}") {

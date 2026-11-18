@@ -7,6 +7,33 @@ import com.infinifolder.mime.MimeRegistry
 import com.infinifolder.preview.AudioIconFormats
 
 class CompanionViewerDefaultsTest {
+    @Test fun modelsUseMeshEvenWhenProvidersReportTextOrGenericMime() {
+        for (extension in io.github.gretchycat.infinemesh.ModelFormats.GCODE_EXTENSIONS + "stl") {
+            for (mime in listOf("text/plain", "application/octet-stream")) {
+                assertEquals(extension, "com.infinimesh", CompanionViewerDefaults.defaultPackageFor("part.v2.${extension.uppercase()}", mime))
+            }
+        }
+        assertNotEquals("com.infinimesh", CompanionViewerDefaults.defaultPackageFor("game.ngc", "application/x-snk-neo-geo-pocket-rom"))
+        assertFalse(CompanionViewerDefaults.isMeshType("game.ngc", "application/x-snk-neo-geo-pocket-rom"))
+        assertEquals("com.infinimesh", CompanionViewerDefaults.defaultPackageFor("part", "application/x-gcode"))
+        assertEquals("com.infinimesh", CompanionViewerDefaults.defaultPackageFor("part", "model/stl"))
+        assertTrue(CompanionViewerDefaults.mayAssociateWithoutIntentFilter("com.infinimesh"))
+        assertEquals("com.infiniscribe", CompanionViewerDefaults.defaultPackageFor("notes.txt", "text/plain"))
+    }
+    @Test fun meshFormatsEnterTheRuntimeMimeAndThumbnailCatalog() {
+        val associations = MimeRegistry.associations()
+        for (extension in io.github.gretchycat.infinemesh.ModelFormats.GCODE_EXTENSIONS) {
+            assertTrue(extension, "text/x-gcode" in MimeRegistry.runtimeAssociations()[extension].orEmpty())
+            if (extension != "ngc") assertEquals(extension, "text/x-gcode", associations[extension])
+        }
+        // NGC is shared with Neo Geo Pocket ROMs and must remain ambiguous without content evidence.
+        assertNull(associations["ngc"])
+        assertEquals("model/stl", associations["stl"])
+        val handler = io.github.gretchycat.infinistream.RuntimeCapabilities.installed().query()
+            .first { it.descriptor.library == "libinfinemesh" }.handler
+        assertTrue(io.github.gretchycat.infinistream.Operations.THUMBNAIL in handler.describe().operations)
+        assertEquals("true", handler.describe().attributes["encodedImageExtractor"])
+    }
     @Test fun audioWithoutAnExtensionOrWithAGenericMimeStillTargetsMedia() {
         assertEquals("com.infinimedia", CompanionViewerDefaults.defaultPackageFor("track", "audio/mpeg"))
         assertEquals("com.infinimedia", CompanionViewerDefaults.defaultPackageFor("track.flac", "application/octet-stream"))

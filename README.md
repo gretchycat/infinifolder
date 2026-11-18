@@ -16,6 +16,7 @@ An Android file browser with interchangeable storage providers, browsable archiv
 - Grid/list browsing, navigation tree, breadcrumbs, persistent pinned targets, hold-to-drag files/selected sets and hover navigation. Same-device drops move; different/unknown devices copy. Drops onto pinned containers default to copy; empty pin-board space creates one link per drop. Two-finger rectangle selection leaves one finger available for scrolling.
 - Shared nested File/Edit/View/Select/Settings menus; wildcard/regex selection; name/MIME/size/date sorting in either direction; supported new-document/archive templates.
 - MIME-driven icons, application-package opening and explicit Browse for packaged containers such as APK/LOVE. Native links and .iflink shortcuts share resolution protections.
+- STL and G-code files have model/toolpath thumbnails from libinfinemesh and open in the separate InfiniMesh viewer when installed.
 - InfiniFolder bundles image and hex/raw-media inspectors. Text, Markdown, HTML, PDF, CSV, EPUB/document and font viewing is handled by the separate InfiniScribe application; audio/video playback is handled by InfiniMedia. From a directory or supported container, **Queue all media in InfiniMedia** recursively adds supported audio, video and image items, placing each directory’s `cover.*` image first. InfiniFolder forwards supported resources to the matching companion app when installed, or uses the user's external-app choice.
 - Image animation includes IFF color cycling, indexed FLI/FLC, PNG-based MNG/APNG and platform GIF/WebP playback, with shared thumbnail decoding. Format subsets and device checks are documented in [image animation](docs/image-animation.md).
 - Unidentified binary data opens in the hex explorer; valid raw-media sidecars restore PIC/WAVE configuration. Known formats retain their viewer/container routes. See [hex and raw-media behavior](docs/hex-editor.md).
@@ -25,9 +26,10 @@ An Android file browser with interchangeable storage providers, browsable archiv
 - Shared 200 MiB disk cache, LRU eviction before capacity prompts, separate individual-file limit and six-hour idle expiry. Unfinished editor work is protected outside disposable cache.
 - Light/dark/system themes, configurable icons, previews and hidden-file display. Toolbar activity light: green reads, dim green load waits, red file work, amber verification. Tap for operation details.
 
-Four applications currently have standalone builds: [Infinifolder](https://github.com/infiniforge/infinifolder),
+Five applications currently have standalone builds: [Infinifolder](https://github.com/infiniforge/infinifolder),
 [Infinimedia](https://github.com/infiniforge/infinimedia),
-[InfiniScribe](https://github.com/infiniforge/infiniscribe), and
+[InfiniScribe](https://github.com/infiniforge/infiniscribe),
+[InfiniMesh](https://github.com/infiniforge/infinimesh), and
 [Infinikey](https://github.com/infiniforge/infinikey-ime). Canvas, Wave, Track,
 Launch and Play are planned placeholders. Each app owns its documentation; the
 [Folder documentation index](docs/README.md) links to companion guides. This

@@ -68,3 +68,12 @@ content URIs, and grants. Those apps own their viewer/player activities and
 continue to work without Folder. See [companion application boundaries](viewer-modules.md),
 [the libinfiniselect boundary](libinfiniselect.md), and the
 [storage validation guide](storage-validation.md).
+
+
+`libinfinemesh:mesh-android` contributes STL/G-code format and encoded PNG
+thumbnail capabilities. `ResourceIconResolver` requests these via
+`LibraryThumbnails` and provider-owned stream resources; `CompanionViewerDefaults`
+routes supported models to the separately installed `com.infinimesh.MeshActivity`.
+The direct handoff uses `FileSelectionRelayProvider` with read permission,
+`ClipData`, name/MIME hints, and the authoritative source URI. Thumbnail generation
+and companion selection never require an application project dependency.
