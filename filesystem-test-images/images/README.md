@@ -17,7 +17,8 @@ python3 scripts/verify-visual-media-runtime.py
 
 The harness runs Canvas in Android app_process, so it uses the platform codecs
 and the same pinned Canvas/Stream byte decoder as the app. It attempts every
-visual file under images/, including ORA, FLI/FLC, GIF, APNG, WebP, and MNG.
+visual file under images/, including ORA archives with embedded IFF, FLI/FLC,
+GIF, APNG, WebP, and MNG layers, plus standalone files in those formats.
 ZIP bundles and fixture documentation/manifests are not rendered. Each fixture
 must produce visible pixels; animation samples must expose a playback renderer
 and custom frame renderers are sampled at two times. The intentionally malformed

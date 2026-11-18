@@ -33,7 +33,15 @@ public final class VisualMediaRuntimeCheck {
         "animation/specular.flc",
         "animation/transparency-disposal.png",
         "animation/transparency-disposal (2).png",
-        "animation/ora-embedded-iff.ora"
+        "animation/ora-embedded-iff.ora",
+        "animation/ora-embedded-fli.ora",
+        "animation/ora-embedded-flc.ora",
+        "animation/ora-embedded-gif.ora",
+        "animation/ora-embedded-gif-transparency.ora",
+        "animation/ora-embedded-webp.ora",
+        "animation/ora-embedded-apng.ora",
+        "animation/ora-embedded-apng-disposal.ora",
+        "animation/ora-embedded-mng.ora"
     ));
     private static final Set<String> EXPECTED_REJECTIONS = new HashSet<>(Arrays.asList(
         "invalid-metadata.jpg"
@@ -56,7 +64,15 @@ public final class VisualMediaRuntimeCheck {
         "animation/transparency-disposal.png",
         "animation/transparency-disposal (2).png",
         "animation/gif-transparency-disposal.gif",
-        "animation/ora-embedded-iff.ora"
+        "animation/ora-embedded-iff.ora",
+        "animation/ora-embedded-fli.ora",
+        "animation/ora-embedded-flc.ora",
+        "animation/ora-embedded-gif.ora",
+        "animation/ora-embedded-gif-transparency.ora",
+        "animation/ora-embedded-webp.ora",
+        "animation/ora-embedded-apng.ora",
+        "animation/ora-embedded-apng-disposal.ora",
+        "animation/ora-embedded-mng.ora"
     ));
 
     private static int rendered;

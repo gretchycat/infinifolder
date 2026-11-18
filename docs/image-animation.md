@@ -119,9 +119,10 @@ The previous IFF color-cycling playback was confirmed by the owner.
 
 Run python3 scripts/verify-visual-media-runtime.py from the repository root
 on an Android device after building the debug app. The harness attempts every
-visual fixture under filesystem-test-images/images/ through Canvas, checks
-visible poster pixels for supported files, requires playback renderers for animated
-samples, and samples custom animations at two times. The malformed
+visual fixture under filesystem-test-images/images/ through Canvas, including
+ORA containers with embedded IFF, FLI/FLC, GIF, APNG, WebP, and MNG layers. It
+checks visible poster pixels and requires playback renderers for animated
+samples, then samples custom animations at two times. The malformed
 invalid-metadata.jpg fixture is checked for rejection. The corpus sweep also
 reports the currently unsupported icon.svg and icon.svgz samples separately;
 these should become required passes when Canvas gains support. The detailed

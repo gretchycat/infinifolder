@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Generate original visual acceptance samples. Requires Pillow (including WebP).
 
-FLI/FLC and MNG containers are written here so no external encoder is required.
+FLI/FLC, MNG, and extended ORA containers are written here without external encoders.
 Re-run from any directory; output goes into filesystem-test-images/images/animation.
 """
 from io import BytesIO
 from pathlib import Path
 import colorsys
 import struct
+import zipfile
 import zlib
 from PIL import Image, ImageDraw
 
@@ -237,6 +238,56 @@ def gif_transparency_disposal():
                    transparency=0, disposal=disposal, optimize=True)
 
 
+def png_bytes(image):
+    output = BytesIO()
+    image.save(output, format='PNG')
+    return output.getvalue()
+
+
+def ora_embedded_animation(output_name, media_name, width, height, poster_png):
+    """Wrap one animated media file as an extended OpenRaster layer source."""
+    src = f'data/{media_name}'
+    xml = (f'<?xml version="1.0" encoding="UTF-8"?>'
+           f'<image version="0.0.3" w="{width}" h="{height}" name="Embedded {media_name}">'
+           f'<stack><layer name="Embedded animation: {media_name}" src="{src}" '
+           f'x="0" y="0" opacity="1.0" visibility="visible" '
+           f'composite-op="svg:src-over" /></stack></image>')
+    output = OUT / output_name
+    def add_entry(archive, name, data, compression=zipfile.ZIP_DEFLATED):
+        info = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+        info.compress_type = compression
+        info.external_attr = 0o600 << 16
+        archive.writestr(info, data)
+
+    with zipfile.ZipFile(output, 'w') as archive:
+        add_entry(archive, 'mimetype', b'image/openraster', zipfile.ZIP_STORED)
+        add_entry(archive, 'stack.xml', xml.encode('utf-8'))
+        add_entry(archive, 'mergedimage.png', poster_png)
+        add_entry(archive, 'Thumbnails/thumbnail.png', poster_png)
+        add_entry(archive, src, (OUT / media_name).read_bytes())
+    return output
+
+
+def embedded_animation_fixtures():
+    poster = (OUT / 'reference-frame-15.png').read_bytes()
+    for ext in ('fli', 'flc', 'gif', 'webp', 'apng', 'mng'):
+        ora_embedded_animation(f'ora-embedded-{ext}.ora', f'motion-palette.{ext}', W, H, poster)
+
+    with Image.open(OUT / 'gif-transparency-disposal.gif') as image_file:
+        image_file.seek(0)
+        poster = png_bytes(image_file.convert('RGBA'))
+        width, height = image_file.size
+    ora_embedded_animation('ora-embedded-gif-transparency.ora',
+                           'gif-transparency-disposal.gif', width, height, poster)
+
+    with Image.open(OUT / 'transparency-disposal.png') as image_file:
+        image_file.seek(0)
+        poster = png_bytes(image_file.convert('RGBA'))
+        width, height = image_file.size
+    ora_embedded_animation('ora-embedded-apng-disposal.ora',
+                           'transparency-disposal.png', width, height, poster)
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     images = [image(n) for n in range(COUNT)]
@@ -265,6 +316,7 @@ def main():
                     loop=2, disposal=[0] + [1 if n % 2 else 2 for n in range(1, 24)], blend=[0] + [1] * 23)
     gif_transparency_disposal()
     images[14].convert('RGB').save(OUT / 'reference-frame-15.png')
+    embedded_animation_fixtures()
     for path in sorted(OUT.glob('*')):
         if path.is_file():
             print(f'{path.relative_to(ROOT)}: {path.stat().st_size:,} bytes')
