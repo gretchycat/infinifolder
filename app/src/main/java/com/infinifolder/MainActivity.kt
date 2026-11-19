@@ -11492,7 +11492,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             setTextIsSelectable(true)
         }
 
-        var isCancelled = false
+        val isCancelled = java.util.concurrent.atomic.AtomicBoolean(false)
 
         // Top Header: Current Icon in Top-Left + Name in Larger Font Next to It
         val headerRow = LinearLayout(context).apply {
@@ -11561,7 +11561,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 val resolved=resourceIconResolver.resolve(currentEntry,dp(64))
                 val preview=CustomIconStore.decodeBase64Bitmap(embeddedIcon) ?: resolved.bitmap
                 runOnUiThread {
-                    if(!isCancelled && !isFinishing && !isDestroyed && generation == headerIconGeneration) {
+                    if(!isCancelled.get() && !isFinishing && !isDestroyed && generation == headerIconGeneration) {
                         iconImage.setImageBitmap(preview);iconImage.tag=resolved
                         iconPlaceholder.visibility=if(preview==null)View.VISIBLE else View.GONE
                     }
@@ -11796,7 +11796,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         imageIo.execute {
                             val meta = WebMetadataResolver.fetchWebMetadata(normalized, dp(128))
                             runOnUiThread {
-                                if (isCancelled || isFinishing || isDestroyed) return@runOnUiThread
+                                if (isCancelled.get() || isFinishing || isDestroyed) return@runOnUiThread
                                 if (!meta.title.isNullOrBlank()) {
                                     shortcutOverrideInput?.setText(meta.title)
                                 }
@@ -11895,9 +11895,9 @@ class MainActivity : Activity(), DebugDumpObserver {
             if (initialShortcut == null) {
                 io.execute {
                     val loaded = readShortcutInfo(currentEntry)
-                    if (loaded != null && !isCancelled) {
+                    if (loaded != null && !isCancelled.get()) {
                         runOnUiThread {
-                            if (!isCancelled) {
+                            if (!isCancelled.get()) {
                                 shortcut = loaded
                                 refreshEmbeddedIconControls()
                                 shortcutTargetUriInput?.setText(
@@ -11940,7 +11940,7 @@ class MainActivity : Activity(), DebugDumpObserver {
             io.execute {
                 val info = (provider.fileSystemInfo(folderRef) as? ProviderResult.Success)?.value
                 runOnUiThread {
-                    if (!isCancelled && !isFinishing && !isDestroyed) {
+                    if (!isCancelled.get() && !isFinishing && !isDestroyed) {
                         fsTypeView.text = info?.displayName ?: "Not reported by this storage provider"
                         fsLimitView.text = info?.limitDescription ?: "Not reported"
                         fsNameView.text = info?.nameDescription ?: "Not reported"
@@ -12007,6 +12007,9 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             propertyRow("Link Status", textValue(status))
         }
+
+        val folderStatsError = textValue("")
+        val folderStatsErrorRow = propertyRow("Folder scan", folderStatsError).apply { visibility = View.GONE }
 
         // 6. Permissions
         if (isSingle) {
@@ -12116,7 +12119,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
 
         activePropertiesIconRefresh = {
-            if (!isCancelled && dialog.isShowing) {
+            if (!isCancelled.get() && !isFinishing && !isDestroyed && dialog.isShowing) {
                 if (isShortcut) shortcutCache.get(currentEntry.uri.toString())?.let { shortcut = it }
                 refreshEmbeddedIconControls()
                 loadHeaderIcon()
@@ -12124,19 +12127,19 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
 
         dialog.setOnDismissListener {
-            isCancelled = true
+            isCancelled.set(true)
             activePropertiesIconRefresh = null
         }
 
         if ((isDirectory || !isSingle) && !isShortcut) {
             io.execute {
-                val stats = FileOperations.calculateFolderStats(
+                val outcome = FolderPropertiesStats.load(
                     entries = items,
                     provider = provider,
-                    isCancelled = { isCancelled || isFinishing || isDestroyed },
+                    isCancelled = { isCancelled.get() || isFinishing || isDestroyed },
                     onProgress = { currentStats ->
                         runOnUiThread {
-                            if (!isCancelled && dialog.isShowing) {
+                            if (!isCancelled.get() && !isFinishing && !isDestroyed && dialog.isShowing) {
                                 val curFormatted = android.text.format.Formatter.formatShortFileSize(this, currentStats.totalBytes)
                                 sizeView.text = "Calculating… ($curFormatted)"
                                 containsView?.text = "${currentStats.fileCount} files, ${currentStats.directoryCount} folders"
@@ -12144,14 +12147,26 @@ class MainActivity : Activity(), DebugDumpObserver {
                         }
                     }
                 )
-                if (!isCancelled) {
-                    runOnUiThread {
-                        if (dialog.isShowing) {
+                if (outcome is FolderPropertiesStats.Outcome.Unavailable) {
+                    com.infinifolder.storage.DiagnosticLog.record("properties.folder-stats.failed", error = outcome.error)
+                }
+                runOnUiThread {
+                    if (isCancelled.get() || isFinishing || isDestroyed || !dialog.isShowing) return@runOnUiThread
+                    when (outcome) {
+                        is FolderPropertiesStats.Outcome.Complete -> {
+                            val stats = outcome.stats
                             val formatted = android.text.format.Formatter.formatShortFileSize(this, stats.totalBytes)
                             val exact = java.text.NumberFormat.getNumberInstance().format(stats.totalBytes)
                             sizeView.text = "$formatted ($exact bytes)"
                             containsView?.text = "${stats.fileCount} files, ${stats.directoryCount} folders"
                         }
+                        is FolderPropertiesStats.Outcome.Unavailable -> {
+                            sizeView.text = "Unavailable — could not read all folder contents"
+                            containsView?.text = "Unavailable"
+                            folderStatsError.text = outcome.error.message?.takeIf { it.isNotBlank() } ?: "Folder contents could not be read"
+                            folderStatsErrorRow.visibility = View.VISIBLE
+                        }
+                        FolderPropertiesStats.Outcome.Cancelled -> Unit
                     }
                 }
             }
@@ -12188,7 +12203,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                     metadataInspectionCache[metadataCacheKey] = it
                     if (metadataInspectionCache.size > 128) metadataInspectionCache.clear()
                 }
-                if (inspection != null && !isCancelled) runOnUiThread {
+                if (inspection != null && !isCancelled.get()) runOnUiThread {
                     if (dialog.isShowing && !isFinishing && !isDestroyed) {
                         val details = buildList {
                             inspection.metadata.forEach { finding ->

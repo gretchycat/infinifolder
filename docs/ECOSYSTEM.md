@@ -6,13 +6,13 @@ InfiniForge is a set of independently buildable and released Android application
 
 ## Component inventory
 
-The inventory contains 10 applications (5 with standalone builds and 5 planned placeholders), 12 shared libraries, and 1 canonical asset repository.
+The inventory contains 10 applications (6 with standalone builds and 4 planned placeholders), 13 shared libraries, and 1 canonical asset repository.
 
 ### Applications
 
 #### [infinifolder](https://github.com/infiniforge/infinifolder)
 
-**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.1.4`
+**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.1.5`
 
 **Purpose:** Android file manager and advanced storage companion. Owns the file manager UI and operations and composes libinfinicore, libinfinistore, and libinfinivault through its providers for local/SAF, remote, archive, and filesystem-image resources. It implements Android document/provider integration and remains optional to companion apps; shared backend code stays in the libraries.
 
@@ -22,7 +22,7 @@ The inventory contains 10 applications (5 with standalone builds and 5 planned p
 
 **Optional/runtime integrations:** [infinimesh](https://github.com/infiniforge/infinimesh)
 
-**Public API and architecture documentation:** [architecture.md](https://github.com/infiniforge/infinifolder/blob/main/docs/architecture.md), [libinfiniselect.md](https://github.com/infiniforge/infinifolder/blob/main/docs/libinfiniselect.md), [runtime-capabilities.md](https://github.com/infiniforge/infinifolder/blob/main/docs/runtime-capabilities.md)
+**Public API and architecture documentation:** [architecture.md](https://github.com/infiniforge/infinifolder/blob/main/docs/architecture.md), [libinfiniselect.md](https://github.com/infiniforge/infinifolder/blob/main/docs/libinfiniselect.md), [runtime-capabilities.md](https://github.com/infiniforge/infinifolder/blob/main/docs/runtime-capabilities.md), [directory-properties.md](https://github.com/infiniforge/infinifolder/blob/main/docs/directory-properties.md)
 
 #### [infinimedia](https://github.com/infiniforge/infinimedia)
 
@@ -82,17 +82,17 @@ The inventory contains 10 applications (5 with standalone builds and 5 planned p
 
 #### [infiniwave](https://github.com/infiniforge/infiniwave)
 
-**State:** planned placeholder · **Build:** no build yet · **Versions:** no published release verified; not versioned yet
+**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.4.1`
 
-**Purpose:** Planned Android audio synthesis, instrument-creation, and sound-design environment. Placeholder only; no application source or standalone build is present. Future synthesis workflows and app-owned instrument/project state belong here; InfiniTrack owns composition and arrangement. Placeholder only; no application source or standalone build is present. Future editing workflows and project state belong here.
+**Purpose:** Standalone Android multitrack audio editor and parameter-based sound-design workspace inspired by Audacity. Owns multitrack waveform editing, compact toolbars and navigable tool dialogs, selection deletion, anchored workspace pinch zoom across tracks, explicit single-track edit controls, chosen-channel split/recombine and mono mixing, continuous playback with live mute/solo, immutable projects and history, recovery, versioned JSON synthesis profiles and SAF exports. Uses libinfinisound for portable decoding and PCM effects (polarity, peak/DC normalization, filters and gating), and libinfinisynth for synthesis. Infinifolder remains optional. Recording, plugin effects, spectral denoising, automation and complete Audacity parity remain planned.
 
-**Pinned source dependency closure:** None declared
+**Pinned source dependency closure:** [libinfiniselect](https://github.com/infiniforge/libinfiniselect), [libinfinisound](https://github.com/infiniforge/libinfinisound), [libinfinistream](https://github.com/infiniforge/libinfinistream), [libinfinisynth](https://github.com/infiniforge/libinfinisynth)
 
-**Exact dependency pins:** Use the component's Gradle/package metadata; no ecosystem source lock is declared.
+**Exact dependency pins:** [dependencies.lock.json](https://github.com/infiniforge/infiniwave/blob/main/dependencies.lock.json)
 
-**Optional/runtime integrations:** None recorded
+**Optional/runtime integrations:** [infinifolder](https://github.com/infiniforge/infinifolder)
 
-**Public API and architecture documentation:** None published yet
+**Public API and architecture documentation:** [APPLICATION.md](https://github.com/infiniforge/infiniwave/blob/main/docs/APPLICATION.md), [architecture.md](https://github.com/infiniforge/infiniwave/blob/main/docs/architecture.md), [storage.md](https://github.com/infiniforge/infiniwave/blob/main/docs/storage.md), [profiles.md](https://github.com/infiniforge/infiniwave/blob/main/docs/profiles.md), [editing.md](https://github.com/infiniforge/infiniwave/blob/main/docs/editing.md), [validation.md](https://github.com/infiniforge/infiniwave/blob/main/docs/validation.md)
 
 #### [infinitrack](https://github.com/infiniforge/infinitrack)
 
@@ -224,9 +224,9 @@ The inventory contains 10 applications (5 with standalone builds and 5 planned p
 
 #### [libinfinisound](https://github.com/infiniforge/libinfinisound)
 
-**State:** active · **Build:** standalone library build · **Versions:** no published release verified; build declares `0.2.0`
+**State:** active · **Build:** standalone library build · **Versions:** no published release verified; build declares `0.2.1`
 
-**Purpose:** Reusable audio parsing, decoding, synthesis, metadata, playlists, and signal processing. Owns shared audio processing and PCM APIs, portable decoders and synthesis, Android media adapters, and audio capability discovery. Consuming applications own playback UI, queues, and app state.
+**Purpose:** Reusable audio parsing, decoding, synthesis, metadata, playlists, and signal processing. Owns shared audio processing and PCM APIs, portable decoders and synthesis, Android media adapters, and audio capability discovery. Consuming applications own playback UI, queues, and app state. Portable PcmEffects exposes immutable selection polarity/normalization, low/high-pass and notch filtering, and linked noise gating; hosts own editing/history/selection UI.
 
 **Pinned source dependency closure:** [libinfinistream](https://github.com/infiniforge/libinfinistream)
 
@@ -234,7 +234,7 @@ The inventory contains 10 applications (5 with standalone builds and 5 planned p
 
 **Optional/runtime integrations:** None recorded
 
-**Public API and architecture documentation:** [README.md](https://github.com/infiniforge/libinfinisound/blob/main/README.md), [CAPABILITIES.md](https://github.com/infiniforge/libinfinisound/blob/main/CAPABILITIES.md), [architecture.md](https://github.com/infiniforge/libinfinisound/blob/main/docs/architecture.md), [third-party.md](https://github.com/infiniforge/libinfinisound/blob/main/docs/third-party.md)
+**Public API and architecture documentation:** [README.md](https://github.com/infiniforge/libinfinisound/blob/main/README.md), [CAPABILITIES.md](https://github.com/infiniforge/libinfinisound/blob/main/CAPABILITIES.md), [architecture.md](https://github.com/infiniforge/libinfinisound/blob/main/docs/architecture.md), [third-party.md](https://github.com/infiniforge/libinfinisound/blob/main/docs/third-party.md), [pcm-effects.md](https://github.com/infiniforge/libinfinisound/blob/main/docs/pcm-effects.md)
 
 #### [libinfinistore](https://github.com/infiniforge/libinfinistore)
 
@@ -320,6 +320,20 @@ The inventory contains 10 applications (5 with standalone builds and 5 planned p
 
 **Public API and architecture documentation:** [API.md](https://github.com/infiniforge/libinfinemesh/blob/main/docs/API.md)
 
+#### [libinfinisynth](https://github.com/infiniforge/libinfinisynth)
+
+**State:** active · **Build:** standalone library build · **Versions:** no published release verified; build declares `0.1.0`
+
+**Purpose:** Reusable offline sound generation, FM synthesis, SF2 sample extraction and native sound-chip rendering. Owns immutable float PCM, DAHDSR envelopes, 1–8-operator FM matrices, sample pitch/loop rendering, bounded mono/stereo 16/24-bit SF2 sample pools, Nuked-OPL3, chips m6581 SID 6581 and dual SAA1099 CMS cores with patch/register APIs. Hosts own storage, audio devices, mixing/editing, project/profile persistence and sequencing. No instrument bank is bundled.
+
+**Pinned source dependency closure:** None declared
+
+**Exact dependency pins:** Use the component's Gradle/package metadata; no ecosystem source lock is declared.
+
+**Optional/runtime integrations:** None recorded
+
+**Public API and architecture documentation:** [API.md](https://github.com/infiniforge/libinfinisynth/blob/main/docs/API.md), [THIRD_PARTY.md](https://github.com/infiniforge/libinfinisynth/blob/main/docs/THIRD_PARTY.md)
+
 ### Canonical assets
 
 #### [infini-icon-theme](https://github.com/infiniforge/infini-icon-theme)
@@ -357,7 +371,7 @@ The protocol versions below describe the current codebase. `null` means no Infin
 
 ### Android Storage Access Framework (SAF)
 
-**ID:** `android-saf` · **Protocol version:** `null` (platform-defined; no InfiniForge protocol version or negotiation is implemented) · **Implemented by:** [infinifolder](https://github.com/infiniforge/infinifolder), [infinikey-ime](https://github.com/infiniforge/infinikey-ime), [libinfiniselect](https://github.com/infiniforge/libinfiniselect), [infinimesh](https://github.com/infiniforge/infinimesh)
+**ID:** `android-saf` · **Protocol version:** `null` (platform-defined; no InfiniForge protocol version or negotiation is implemented) · **Implemented by:** [infinifolder](https://github.com/infiniforge/infinifolder), [infinikey-ime](https://github.com/infiniforge/infinikey-ime), [libinfiniselect](https://github.com/infiniforge/libinfiniselect), [infinimesh](https://github.com/infiniforge/infinimesh), [infiniwave](https://github.com/infiniforge/infiniwave)
 
 - **Resource identity:** A provider's document or tree content URI is opaque. Preserve the URI and Android grants; do not decode document IDs or assume they are filesystem paths.
 - **Request:** Clients use Android DocumentsContract/ContentResolver and ACTION_OPEN_DOCUMENT, ACTION_OPEN_DOCUMENT_TREE, or ACTION_CREATE_DOCUMENT. Requested read/write access is expressed through Android URI permission flags.
@@ -369,7 +383,7 @@ The protocol versions below describe the current codebase. `null` means no Infin
 
 ### libinfiniselect open/save Activity contract
 
-**ID:** `infini-select-intents` · **Protocol version:** `null` (unversioned; no compatibility handshake is implemented) · **Implemented by:** [libinfiniselect](https://github.com/infiniforge/libinfiniselect), [infinifolder](https://github.com/infiniforge/infinifolder)
+**ID:** `infini-select-intents` · **Protocol version:** `null` (unversioned; no compatibility handshake is implemented) · **Implemented by:** [libinfiniselect](https://github.com/infiniforge/libinfiniselect), [infinifolder](https://github.com/infiniforge/infinifolder), [infiniwave](https://github.com/infiniforge/infiniwave)
 
 - **Resource identity:** A result can carry a current grantable content URI and a separate authoritative URI. Persist the authoritative URI when it is supplied; a Folder relay is a temporary access handle.
 - **Request:** FileSelectionContract defines ACTION_SELECT and ACTION_SAVE plus request extras for client identity, MIME/extensions, multiplicity, initial directory, and save options. Requests are sent to the optional Infinifolder selector when present.
@@ -381,7 +395,7 @@ The protocol versions below describe the current codebase. `null` means no Infin
 
 ### Infinifolder resource-resolution ContentProvider calls
 
-**ID:** `folder-resource-resolution` · **Protocol version:** `null` (unversioned; no compatibility handshake is implemented) · **Implemented by:** [infinifolder](https://github.com/infiniforge/infinifolder), [libinfiniselect](https://github.com/infiniforge/libinfiniselect)
+**ID:** `folder-resource-resolution` · **Protocol version:** `null` (unversioned; no compatibility handshake is implemented) · **Implemented by:** [infinifolder](https://github.com/infiniforge/infinifolder), [libinfiniselect](https://github.com/infiniforge/libinfiniselect), [infiniwave](https://github.com/infiniforge/infiniwave)
 
 - **Resource identity:** Requests use authoritative source URIs, which may identify local, SAF, remote, archive-member, or filesystem-image resources. Document IDs are opaque. Returned content URIs are access handles and may be short-lived.
 - **Request:** libinfiniselect calls ContentResolver.call on com.infinifolder.selection. Methods include RESOLVE_SOURCE, RESOLVE_RELATIVE_ARCHIVE, DESCRIBE_ARCHIVE, and CANONICALIZE_SOURCE. Requests use the STORAGE_* Bundle keys in FileSelectionContract; relative archive resolution takes an authoritative base URI and relative path.
@@ -393,7 +407,7 @@ The protocol versions below describe the current codebase. `null` means no Infin
 
 ### Android Intent and content-URI handoff
 
-**ID:** `android-uri-handoff` · **Protocol version:** `null` (platform-defined; no InfiniForge protocol version or negotiation is implemented) · **Implemented by:** [infinifolder](https://github.com/infiniforge/infinifolder), [infinimedia](https://github.com/infiniforge/infinimedia), [infiniscribe](https://github.com/infiniforge/infiniscribe), [libinfiniui](https://github.com/infiniforge/libinfiniui), [libinfiniselect](https://github.com/infiniforge/libinfiniselect), [infinimesh](https://github.com/infiniforge/infinimesh)
+**ID:** `android-uri-handoff` · **Protocol version:** `null` (platform-defined; no InfiniForge protocol version or negotiation is implemented) · **Implemented by:** [infinifolder](https://github.com/infiniforge/infinifolder), [infinimedia](https://github.com/infiniforge/infinimedia), [infiniscribe](https://github.com/infiniforge/infiniscribe), [libinfiniui](https://github.com/infiniforge/libinfiniui), [libinfiniselect](https://github.com/infiniforge/libinfiniselect), [infinimesh](https://github.com/infiniforge/infinimesh), [infiniwave](https://github.com/infiniforge/infiniwave)
 
 - **Resource identity:** The content URI in data, EXTRA_STREAM, or ClipData identifies the current Android access path and is usable only with the attached URI grant. Where a separate authoritative URI is available, keep that for later reopening.
 - **Request:** Applications use Android ACTION_VIEW/send-style intents, MIME types, data/EXTRA_STREAM, ClipData, and read/write/persistable grant flags as appropriate to the operation.

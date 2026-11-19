@@ -77,3 +77,13 @@ routes supported models to the separately installed `com.infinimesh.MeshActivity
 The direct handoff uses `FileSelectionRelayProvider` with read permission,
 `ClipData`, name/MIME hints, and the authoritative source URI. Thumbnail generation
 and companion selection never require an application project dependency.
+
+## Directory Properties scan lifetime
+
+The app-owned FolderPropertiesStats boundary calls libinfinicore's strict recursive
+statistics API and returns complete, unavailable or cancelled outcomes. Provider
+listing exceptions remain failure results in the Properties UI instead of escaping
+an executor and terminating the process. Loading/partial listings cannot become
+completed totals. A shared atomic dismissal flag and Activity/dialog checks guard
+progress and completion. Storage library traversal and operation safety semantics
+are unchanged. See [behavior and regression checks](directory-properties.md).

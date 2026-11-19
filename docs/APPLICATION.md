@@ -82,3 +82,8 @@ G-code thumbnails skip invalid text and malformed command blocks with the same
 tolerant decoder as InfiniMesh. Valid motion continues; skipped commands retain
 no partial parser state. Budget failures and files with no motion use the normal
 icon fallback.
+
+Directory Properties handles failed, incomplete and permission-denied recursive
+size/count scans without closing the app. It marks totals unavailable, displays
+the provider reason, and retains the other metadata. Closing the dialog cancels
+background scanning. See [directory Properties validation](directory-properties.md).

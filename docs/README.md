@@ -12,6 +12,7 @@ format handling, and integration boundaries.
 - [Companion applications and Android handoff](viewer-modules.md)
 - [libinfiniselect storage boundary](libinfiniselect.md)
 - [Storage validation and device acceptance](storage-validation.md)
+- [Directory Properties failures and validation](directory-properties.md)
 - [Runtime capability discovery](runtime-capabilities.md)
 - [Implemented file formats](file-formats.md)
 - [Visual media fixture corpus and Android render harness](../filesystem-test-images/images/README.md)

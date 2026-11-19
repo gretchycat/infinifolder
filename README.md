@@ -14,6 +14,7 @@ An Android file browser with interchangeable storage providers, browsable archiv
 
 - Local shared/removable storage, user-granted SAF sources, SFTP, FTP/FTPS, SMB and WebDAV. Virtual root supports editable container links, with credentials stored separately; saved network links show readable scheme, username (when available), host, port and path without exposing the password.
 - Grid/list browsing, navigation tree, breadcrumbs, persistent pinned targets, hold-to-drag files/selected sets and hover navigation. Same-device drops move; different/unknown devices copy. Drops onto pinned containers default to copy; empty pin-board space creates one link per drop. Two-finger rectangle selection leaves one finger available for scrolling.
+- Directory Properties keeps metadata visible when Android or a provider denies a recursive folder scan. Size/count totals show Unavailable with the reason; closing the dialog cancels the scan. See [behavior and validation](docs/directory-properties.md).
 - Shared nested File/Edit/View/Select/Settings menus; wildcard/regex selection; name/MIME/size/date sorting in either direction; supported new-document/archive templates.
 - MIME-driven icons, application-package opening and explicit Browse for packaged containers such as APK/LOVE. Native links and .iflink shortcuts share resolution protections.
 - STL and G-code files have model/toolpath thumbnails from libinfinemesh and open in the separate InfiniMesh viewer when installed.
