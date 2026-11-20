@@ -373,3 +373,5 @@ selected sort settings.
 The app debug build passes. No automated tests were added or run; root/expanded
 ordering, partial remote listings, duplicate/case-varied names, picker creation and
 selection/expansion retention remain device checks.
+
+Callers can pass `preferredViewMode` (`LIST` or `ICON`) to set the floating browser's initial view; a missing/unknown flag uses its stored preference. The toggle remains available.

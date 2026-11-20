@@ -151,6 +151,9 @@ class FloatingContainerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        iconMode=io.github.gretchycat.infiniselect.FileViewMode.initialIconMode(
+            io.github.gretchycat.infiniselect.FileViewMode.fromWire(intent?.getStringExtra(FileSelectionContract.EXTRA_PREFERRED_VIEW_MODE)),
+            getSharedPreferences("floating_window",MODE_PRIVATE).getBoolean("icon_mode",true))
         selectionScanning = false
         selectionMode = intent?.getBooleanExtra(EXTRA_SELECTION_MODE, false) == true
         selectionAllowMultiple = intent?.getBooleanExtra(EXTRA_ALLOW_MULTIPLE, false) == true
@@ -1869,5 +1872,7 @@ class FloatingContainerService : Service() {
         fun intent(context: android.content.Context, uri: Uri) = Intent(context, FloatingContainerService::class.java).setData(uri)
         fun intent(context: android.content.Context, uri: Uri, displayName: String?) = intent(context, uri)
             .putExtra(EXTRA_DISPLAY_NAME, displayName)
+        fun intent(context: android.content.Context, uri: Uri, displayName: String?, preferredViewMode: io.github.gretchycat.infiniselect.FileViewMode) =
+            intent(context,uri,displayName).putExtra(FileSelectionContract.EXTRA_PREFERRED_VIEW_MODE,preferredViewMode.name)
     }
 }

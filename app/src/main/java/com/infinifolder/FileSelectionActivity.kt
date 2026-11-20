@@ -60,6 +60,7 @@ class FileSelectionActivity : Activity() {
         val startName = if (initialDirectory == null) "Virtual root" else null
         val start = FloatingContainerService.intent(this, startUri, startName)
             .putExtra(FloatingContainerService.EXTRA_SELECTION_MODE, true)
+            .putExtra(FileSelectionContract.EXTRA_PREFERRED_VIEW_MODE,intent.getStringExtra(FileSelectionContract.EXTRA_PREFERRED_VIEW_MODE))
             .putStringArrayListExtra(FileSelectionContract.EXTRA_FILE_ACTION_IDS,
                 intent.getStringArrayListExtra(FileSelectionContract.EXTRA_FILE_ACTION_IDS))
             .putStringArrayListExtra(FileSelectionContract.EXTRA_FILE_ACTION_LABELS,

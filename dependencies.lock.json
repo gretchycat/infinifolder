@@ -23,7 +23,7 @@
     },
     "libinfiniselect": {
       "url": "https://github.com/infiniforge/libinfiniselect.git",
-      "commit": "5e0ec618d45b2cacb7b3351de86b94942caa2267"
+      "commit": "cda868db5d37c08e28bf87d0c5469216c1a18b0c"
     },
     "libinfinisound": {
       "url": "https://github.com/infiniforge/libinfinisound.git",
