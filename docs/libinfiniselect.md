@@ -89,7 +89,7 @@ compilation, descriptor smoke tests and cross-application device validation.
 
 ## Embedded clients and caller actions
 
-InfiniSelect 0.2.3 embeds Folder's complete browser, running inside Folder. The
+InfiniSelect 0.2.4 embeds Folder's complete browser, running inside Folder. The
 same FolderBrowserController drives its floating and embedded views, including
 breadcrumbs and navigation. The library owns transport, not a directory browser
 or extracted file-card renderer. Surface hosting requires Android 11+ and updated
@@ -147,3 +147,17 @@ The 0.1.11 standalone APK build, signature verification and all 185
 app/storage/hex tests pass. Five new target-routing tests cover network/local/SAF
 folders, archives, arbitrary URI dispatch, apps and original game-link metadata.
 Actual network and external-handler UI acceptance still needs device checks.
+
+InfiniFolder 0.1.12 uses Store 0.1.1's component-aware SFTP URI construction:
+spaces in the actual filename become `%20` in the resource URI, while the
+connection ID, directory structure and display filename retain their meaning.
+Reserved filename characters and Unicode are encoded once. Select 0.2.4 also
+reads legacy provider addresses containing raw spaces without treating them as
+strict java.net.URI input or rewriting their identity during JSON transport.
+
+The final 0.1.12 APK build and signature verification pass, as do 185
+app/storage/hex tests. Store's standalone AAR build and 124 JVM tests pass; the
+SFTP regressions check the reported filename, `%20` spaces, `%21` exclamation
+marks, Unicode spelling, literal plus/percent characters and parent navigation.
+Select's standalone AAR/instrumentation compilation and 26 JVM tests pass.
+Actual import from the user's SFTP server remains a device acceptance check.
