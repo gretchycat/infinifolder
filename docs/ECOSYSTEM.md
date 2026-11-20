@@ -12,7 +12,7 @@ The inventory contains 10 applications (7 with standalone builds and 3 planned p
 
 #### [infinifolder](https://github.com/infiniforge/infinifolder)
 
-**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.1.10`
+**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.1.11`
 
 **Purpose:** Android file manager and advanced storage companion. Owns the complete file manager UI, browser views, breadcrumbs, directory navigation, gestures, menus and artwork. The existing FolderBrowserController is hosted by floating windows and cross-app embedded sessions; InfiniSelect is the public gateway. Composes libinfinicore, libinfinistore and libinfinivault for local/SAF, remote, archive and filesystem-image storage. Provides grant-aware Android document/selection integration, non-UI JSON listings and caller-scoped shortcut collections. Storage permissions and credentials remain in Folder. Companion apps retain ordinary selection fallback when embedding is unavailable.
 
@@ -124,7 +124,7 @@ The inventory contains 10 applications (7 with standalone builds and 3 planned p
 
 #### [infiniplay](https://github.com/infiniforge/infiniplay)
 
-**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.2.5`
+**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.2.6`
 
 **Purpose:** Standalone Android emulator frontend running Libretro cores inside the application. Owns the game library, controller layouts and USB input, session lifecycle, source imports, firmware launch gates and per-game saves. Compiled core bundle covers selected systems through the SNES era including Sega add-ons and Neo Geo; later systems are import-only profiles. Emulation remains in independently pinned third-party cores. Main UI embeds InfiniSelect with Recents/Favorites/Open, hamburger setup, automatic system dispatch and immediate View/Share launch. Shared .iflink collections live under internal storage/infini/play; native working copies and saves stay private. Declares no broad storage permissions: listings and shared collection writes go through the InfiniSelect/Folder relay; absent Folder, local app-private link collections and normal Android file selection remain available.
 
@@ -210,7 +210,7 @@ The inventory contains 10 applications (7 with standalone builds and 3 planned p
 
 #### [libinfiniselect](https://github.com/infiniforge/libinfiniselect)
 
-**State:** active · **Build:** standalone library build · **Versions:** no published release verified; build declares `0.2.2`
+**State:** active · **Build:** standalone library build · **Versions:** no published release verified; build declares `0.2.3`
 
 **Purpose:** Reusable Android file open/save selection and resource-resolution client APIs. Owns optional InfiniFolder picker integration, Android SAF fallback, grant-aware results and authoritative/access URI resolution. EmbeddedFileBrowser is only a SurfaceControlViewHost gateway to the complete Folder-owned browser, with caller actions and configuration; it implements no file views, breadcrumbs or directory navigation. Provides interoperable .iflink serialization, scoped shortcut collection requests and non-UI paged JSON directory listing requests. Folder owns storage permissions and the entire browser. Optional preferredViewMode initializes LIST/ICON in floating and embedded hosts. Playlist generation migration to InfiniMedia is deferred.
 

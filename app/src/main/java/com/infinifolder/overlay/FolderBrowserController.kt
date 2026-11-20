@@ -2057,18 +2057,27 @@ internal class FolderBrowserController(
                                 targetEntry?.let { actual ->
                                     actual.copy(metadata = actual.metadata.copy(name = targetName))
                                 }
-                            when {
-                                namedTarget == null ->
-                                    Toast.makeText(
-                                            this,
-                                            "This link does not resolve to a readable file",
-                                            Toast.LENGTH_SHORT,
+                            when (SelectionLinkRouting.action(target.uri, targetEntry)) {
+                                SelectionLinkRouting.Action.URI_HANDLER -> openLinkedUri(target.uri)
+                                SelectionLinkRouting.Action.DIRECTORY ->
+                                    show(requireNotNull(namedTarget).uri, targetName)
+                                SelectionLinkRouting.Action.ARCHIVE ->
+                                    browseArchive(requireNotNull(targetEntry), targetName) {
+                                        Toast.makeText(
+                                                this,
+                                                "This archive cannot be browsed here",
+                                                Toast.LENGTH_SHORT,
+                                            )
+                                            .show()
+                                    }
+                                SelectionLinkRouting.Action.FILE ->
+                                    selectEntry(
+                                        SelectionLinkRouting.selectedFile(
+                                            entry,
+                                            requireNotNull(namedTarget),
+                                            embedded && selectLinkDocuments,
                                         )
-                                        .show()
-                                namedTarget.metadata.isDirectory ->
-                                    show(namedTarget.uri, targetName)
-                                browseArchive(namedTarget) { selectEntry(namedTarget) } -> Unit
-                                else -> selectEntry(namedTarget)
+                                    )
                             }
                         }
                         is ProviderResult.Failure ->
@@ -2131,18 +2140,6 @@ internal class FolderBrowserController(
                 }
             )
                 Unit
-            else if (
-                embedded &&
-                    selectLinkDocuments &&
-                    // Virtual root links are navigation entries (including saved network drives),
-                    // not game-link documents to return to the embedding application.
-                    entry.ref.providerId != runtime.containerLinks.id &&
-                    com.infinifolder.shortcut.ShortcutInfo.isShortcut(
-                        entry.metadata.name,
-                        entry.metadata.mimeType,
-                    )
-            )
-                selectEntry(entry)
             else if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null) {
                 activateSelectionLink(entry)
             } else selectEntry(entry)
@@ -2158,7 +2155,11 @@ internal class FolderBrowserController(
     /**
      * Opens a supported container in this browser without making callers understand archive URIs.
      */
-    private fun browseArchive(entry: ResourceEntry, onUnavailable: () -> Unit): Boolean {
+    private fun browseArchive(
+        entry: ResourceEntry,
+        displayName: String = entry.metadata.name,
+        onUnavailable: () -> Unit,
+    ): Boolean {
         if (
             !ArchiveNavigationPolicy.shouldBrowse(
                 name = entry.metadata.name,
@@ -2169,7 +2170,7 @@ internal class FolderBrowserController(
             return false
 
         val mounted = ArchiveUri.toArchiveUri(entry.uri)
-        if (runtime.provider.refForUri(mounted) != null) show(mounted, entry.metadata.name)
+        if (runtime.provider.refForUri(mounted) != null) show(mounted, displayName)
         else onUnavailable()
         return true
     }
@@ -2676,6 +2677,26 @@ internal class FolderBrowserController(
         )
         removeWindow()
         closeRequested()
+    }
+
+    private fun openLinkedUri(uri: Uri) {
+        try {
+            // Reuse Folder's dispatcher for web, apps, commands and arbitrary registered URIs.
+            startActivity(
+                HomeItemActivity.intent(this, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (error: Exception) {
+            com.infinifolder.storage.DiagnosticLog.record(
+                "selector.link.dispatch-failed",
+                error = error,
+            )
+            Toast.makeText(
+                    this,
+                    error.message ?: "No application can open this link",
+                    Toast.LENGTH_LONG,
+                )
+                .show()
+        }
     }
 
     private fun launchInMain(uri: Uri, inApp: Boolean = false) {

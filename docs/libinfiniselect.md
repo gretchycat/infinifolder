@@ -89,7 +89,7 @@ compilation, descriptor smoke tests and cross-application device validation.
 
 ## Embedded clients and caller actions
 
-InfiniSelect 0.2.2 embeds Folder's complete browser, running inside Folder. The
+InfiniSelect 0.2.3 embeds Folder's complete browser, running inside Folder. The
 same FolderBrowserController drives its floating and embedded views, including
 breadcrumbs and navigation. The library owns transport, not a directory browser
 or extracted file-card renderer. Surface hosting requires Android 11+ and updated
@@ -132,3 +132,18 @@ migrated into this container-link provider, so selecting their link now resolves
 and browses the target with Folder's existing provider graph and credentials.
 The option still returns ordinary game .iflink documents for Play to read its
 system metadata. Direct archive browsing keeps its existing activation path.
+
+InfiniFolder 0.1.11 resolves every activated shortcut before routing its target;
+its storage location does not determine whether it can navigate. Directory and
+archive targets browse in Folder. App, web, command and other URI targets use
+Folder's existing URI dispatcher, including unavailable-handler feedback. The
+embedded session stays available when dispatching a URI. For regular-file
+targets, `selectLinkDocuments` can still return the original .iflink so Play can
+read its optional system hint. Archive classification uses the actual target
+metadata, preserving independent shortcut display labels. InfiniSelect 0.2.3
+represents directory targets without treating them as invalid file links.
+
+The 0.1.11 standalone APK build, signature verification and all 185
+app/storage/hex tests pass. Five new target-routing tests cover network/local/SAF
+folders, archives, arbitrary URI dispatch, apps and original game-link metadata.
+Actual network and external-handler UI acceptance still needs device checks.
