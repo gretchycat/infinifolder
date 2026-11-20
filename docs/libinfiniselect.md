@@ -89,7 +89,7 @@ compilation, descriptor smoke tests and cross-application device validation.
 
 ## Embedded clients and caller actions
 
-InfiniSelect 0.2.0 embeds Folder's complete browser, running inside Folder. The
+InfiniSelect 0.2.2 embeds Folder's complete browser, running inside Folder. The
 same FolderBrowserController drives its floating and embedded views, including
 breadcrumbs and navigation. The library owns transport, not a directory browser
 or extracted file-card renderer. Surface hosting requires Android 11+ and updated
@@ -111,3 +111,17 @@ metadata and SHORTCUT_COLLECTION for caller-scoped directory/link operations.
 These are independent non-UI APIs; the embedded browser does not use JSON to
 rebuild a viewer. Folder owns storage permissions, credentials, file listing and
 artwork. The listing API remains available for the deferred playlist work.
+
+InfiniFolder 0.1.9 accepts the optional embedded `lockRoot` flag supplied by
+InfiniSelect's `open(directory, label, lockToDirectory = true)`. The configured
+directory becomes the breadcrumb/Back anchor and the load-error recovery
+location. Child browsing and opaque surface-state restoration retain that
+anchor; unlocked Open/Browse continues through Virtual root. This is navigation
+configuration, not an access-control boundary. Embedded roots have no floating
+frame padding or elevation, preventing shadow surface insets from shifting the
+rendered view; floating hosts retain their normal frame and placement.
+
+The 0.1.9 standalone APK build and 180 app/storage/hex tests pass, including
+locked-root snapshot anchors and error-recovery policy. The APK signature
+verifies. Physical touch/offset and cross-app root-lock acceptance tests compile
+in the selector's instrumentation APK; they still need device execution.

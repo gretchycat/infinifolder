@@ -27,7 +27,7 @@ dependencies {
     implementation("io.github.gretchycat.libinfinimeta:meta-sega:0.1.0")
     implementation("io.github.gretchycat.libinfinimeta:meta-nintendo:0.1.0")
     implementation("io.github.gretchycat.libinfinimeta:meta-consoles:0.1.0")
-    implementation("io.github.gretchycat.libinfiniselect:select-android:0.2.0")
+    implementation("io.github.gretchycat.libinfiniselect:select-android:0.2.2")
     implementation("io.github.gretchycat.libinfiniscribe:scribe-android:0.1.0")
     implementation("io.github.gretchycat.libinfiniscribe:scribe-mobi-android:0.1.0")
 
@@ -45,8 +45,8 @@ android {
         applicationId = "com.infinifolder"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.1.8"
+        versionCode = 10
+        versionName = "0.1.9"
         testInstrumentationRunner = "com.infinifolder.IconRepairInstrumentation"
         targetAbiFilters?.let { filters -> ndk { abiFilters.addAll(filters) } }
     }

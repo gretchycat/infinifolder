@@ -93,6 +93,15 @@ internal class FolderBrowserController(
 
     private val trail = mutableListOf<Crumb>()
     private var selectionStartUri: String? = null
+    private var lockedSelectionRoot: Uri? = null
+    private var lockedSelectionRootName = ""
+
+    private fun selectionRootUri(): Uri =
+        lockedSelectionRoot ?: com.infinifolder.storage.ContainerLinksProvider.ROOT
+
+    private fun selectionRootName(): String =
+        if (lockedSelectionRoot != null) lockedSelectionRootName else "Virtual root"
+
     private val selectionBreadcrumbsKey = "floating_selector_breadcrumbs_v1"
     private var breadcrumbGeneration = 0L
     private var iconMode = true
@@ -294,6 +303,11 @@ internal class FolderBrowserController(
             closeRequested()
             return
         }
+        lockedSelectionRoot =
+            if (selectionMode && intent?.getBooleanExtra("lockRoot", false) == true) uri else null
+        lockedSelectionRootName =
+            intent?.getStringExtra(EXTRA_DISPLAY_NAME)?.takeIf { it.isNotBlank() }
+                ?: containerName(uri)
         try {
             if (windowView == null) createWindow()
             toolbar?.visibility = if (breadcrumbsEnabled) View.VISIBLE else View.GONE
@@ -301,7 +315,7 @@ internal class FolderBrowserController(
             val displayName = intent?.getStringExtra(EXTRA_DISPLAY_NAME)
             if (selectionMode) {
                 selectionStartUri = uri.toString()
-                val rootUri = com.infinifolder.storage.ContainerLinksProvider.ROOT
+                val rootUri = selectionRootUri()
                 val restored =
                     SelectionBreadcrumbState.decode(
                         if (embedded) embeddedState?.getString("route")
@@ -401,9 +415,17 @@ internal class FolderBrowserController(
                     }
                 }
                 .apply {
-                    this.background = ThemeManager.createFloatingFrameDrawable(theme, density)
-                    setPadding(dp(3), dp(3), dp(3), dp(3))
-                    elevation = dp(12).toFloat()
+                    if (embedded) {
+                        // A root elevation creates window surface insets, shifting embedded
+                        // content.
+                        setBackgroundColor(background)
+                        setPadding(0, 0, 0, 0)
+                        elevation = 0f
+                    } else {
+                        this.background = ThemeManager.createFloatingFrameDrawable(theme, density)
+                        setPadding(dp(3), dp(3), dp(3), dp(3))
+                        elevation = dp(12).toFloat()
+                    }
                     setOnDragListener { _, event ->
                         if (launcherDrag == null) false
                         else
@@ -610,6 +632,10 @@ internal class FolderBrowserController(
         if (embedded) {
             params.width = embeddedWidth
             params.height = embeddedHeight
+            params.x = 0
+            params.y = 0
+            params.type = WindowManager.LayoutParams.TYPE_APPLICATION
+            params.flags = 0
         } else restoreWindowPlacement()
         windowView = root
         root.isFocusable = true
@@ -854,12 +880,12 @@ internal class FolderBrowserController(
         }
 
     private fun show(uri: Uri, displayName: String? = null, resetRoot: Boolean = false) {
-        val virtualRoot = com.infinifolder.storage.ContainerLinksProvider.ROOT
-        if (selectionMode && !resetRoot && trail.firstOrNull()?.uri != virtualRoot) {
+        val navigationRoot = selectionRootUri()
+        if (selectionMode && !resetRoot && trail.firstOrNull()?.uri != navigationRoot) {
             com.infinifolder.storage.DiagnosticLog.record(
                 "floating.selector.breadcrumb-root-missing"
             )
-            show(virtualRoot, "Virtual root", resetRoot = true)
+            show(navigationRoot, selectionRootName(), resetRoot = true)
             return
         }
         current = uri
@@ -869,8 +895,8 @@ internal class FolderBrowserController(
         if (resetRoot) {
             trail.clear()
             if (selectionMode) {
-                trail.add(Crumb(virtualRoot, "Virtual root"))
-                if (uri != virtualRoot) trail.add(Crumb(uri, headerName))
+                trail.add(Crumb(navigationRoot, selectionRootName()))
+                if (uri != navigationRoot) trail.add(Crumb(uri, headerName))
                 resolveSelectionBreadcrumbs(uri, headerName, breadcrumbToken)
             } else trail.add(Crumb(uri, headerName))
         } else {
@@ -982,19 +1008,19 @@ internal class FolderBrowserController(
                     )
                     onMain {
                         if (generation == loadGeneration) {
-                            val virtualRoot = com.infinifolder.storage.ContainerLinksProvider.ROOT
+                            val navigationRoot = selectionRootUri()
                             if (
-                                SelectionLocationFallback.shouldReturnToVirtualRoot(
+                                SelectionLocationFallback.shouldReturnToRoot(
                                     selectionMode = selectionMode,
                                     location = uri.toString(),
-                                    virtualRoot = virtualRoot.toString(),
+                                    root = navigationRoot.toString(),
                                 )
                             ) {
                                 com.infinifolder.storage.DiagnosticLog.record(
-                                    "floating.selector.location.reset-to-virtual-root",
+                                    "floating.selector.location.reset-to-navigation-root",
                                     "failedLocation=$uri",
                                 )
-                                show(virtualRoot, "Virtual root", resetRoot = true)
+                                show(navigationRoot, selectionRootName(), resetRoot = true)
                                 return@onMain
                             }
                             scroll.isRefreshing = false
@@ -1015,6 +1041,8 @@ internal class FolderBrowserController(
 
     /** Add the physical/provider ancestors behind a remembered starting folder. */
     private fun resolveSelectionBreadcrumbs(uri: Uri, displayName: String, token: Long) {
+        // Locked roots use the existing visit trail, without adding physical ancestors.
+        if (lockedSelectionRoot != null) return
         Thread(
                 {
                     val route =
@@ -1031,6 +1059,7 @@ internal class FolderBrowserController(
                     onMain {
                         if (
                             token != breadcrumbGeneration ||
+                                lockedSelectionRoot != null ||
                                 !selectionMode ||
                                 current != uri ||
                                 windowView == null
@@ -1072,7 +1101,7 @@ internal class FolderBrowserController(
         if (embedded) return
         if (!selectionMode) return
         val startUri = selectionStartUri ?: return
-        val rootUri = com.infinifolder.storage.ContainerLinksProvider.ROOT
+        val rootUri = selectionRootUri()
         val encoded =
             SelectionBreadcrumbState.encode(
                 startUri,
@@ -1092,7 +1121,7 @@ internal class FolderBrowserController(
     }
 
     private fun buildSelectionBreadcrumbs(uri: Uri, displayName: String): List<Crumb> {
-        val rootUri = com.infinifolder.storage.ContainerLinksProvider.ROOT
+        val rootUri = selectionRootUri()
         val virtualRoot = Crumb(rootUri, "Virtual root")
         if (uri == rootUri) return listOf(virtualRoot)
         if (BrowserLocations.find(uri) != null) return listOf(virtualRoot, Crumb(uri, displayName))
@@ -2724,7 +2753,7 @@ internal class FolderBrowserController(
                 SelectionBreadcrumbState.encode(
                     start,
                     trail.map { SelectionBreadcrumb(it.uri.toString(), it.name) },
-                    com.infinifolder.storage.ContainerLinksProvider.ROOT.toString(),
+                    selectionRootUri().toString(),
                 ),
             )
             if (::scroll.isInitialized) putInt("scroll", scroll.scrollY)

@@ -291,6 +291,7 @@ internal class EmbeddedBrowserSessions(private val app: Context) {
             putExtra(FloatingContainerService.EXTRA_SELECTION_MODE, true)
             putExtra(P.STATE, args.getBundle(P.STATE))
             putExtra("breadcrumbs", args.getBoolean(P.BREADCRUMBS, true))
+            putExtra(P.LOCK_ROOT, args.getBoolean(P.LOCK_ROOT))
             putExtra("sortModified", args.getBoolean(P.SORT_MODIFIED))
             putExtra("selectLinkDocuments", args.getBoolean(P.SELECT_LINK_DOCUMENTS))
             putExtra(F.EXTRA_PREFERRED_VIEW_MODE, args.getString(F.EXTRA_PREFERRED_VIEW_MODE))
