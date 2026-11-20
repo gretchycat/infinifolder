@@ -89,15 +89,19 @@ compilation, descriptor smoke tests and cross-application device validation.
 
 ## Embedded clients and caller actions
 
-InfiniSelect 0.1.1 includes a reusable EmbeddedFileBrowser View over local and grant-checked SAF/Folder storage, list/icon modes and .iflink serialization. Folder remains an optional storage provider. Single-file floating requests may attach `fileActions` labels/IDs; FileSelectionActivity forwards only requested action IDs with its normal URI grant and authoritative-identity result. The calling application performs Favorites/metadata/etc. Standard folder New and multi-selection behavior is preserved. See the library's `docs/embedded-browser.md` API.
+InfiniSelect 0.2.0 embeds Folder's complete browser, running inside Folder. The
+same FolderBrowserController drives its floating and embedded views, including
+breadcrumbs and navigation. The library owns transport, not a directory browser
+or extracted file-card renderer. Surface hosting requires Android 11+ and updated
+Folder; clients keep ordinary selection as their fallback. The embedding protocol
+verifies Binder UID/session ownership and returns read-granted selected-file
+relays with authoritative identities. Folder renders caller file-action menus;
+clients handle the selected action. See the library's docs/embedded-browser.md.
 
-## Relayed listings and collections (InfiniSelect 0.1.2)
+## Relayed listings and collections
 
-The public selection provider implements LIST_DIRECTORY with bounded/paged JSON metadata and SHORTCUT_COLLECTION for caller-scoped directory/link creation and link removal. Clients need no shared-storage permission or Folder tree grant. Source byte access remains a separately granted selected-file relay. Storage operations run under Folder's own identity; collection namespaces use the verified Binder caller package. Cross-client paths, traversal and symlink escapes are rejected. The floating selector forwards the optional preferredViewMode LIST/ICON flag; absence preserves saved preferences. See the library's docs/relay-storage.md for the wire contract.
-
-
-The selector also owns the common normal/floating/embedded file presentation.
-Folder's file card/grid/viewport files are metadata/theme/diagnostic adapters, not
-separate renderers. BROWSER_APPEARANCE and BROWSER_ARTWORK provider calls supply
-active appearance and bounded PNGs from the normal ResourceIconResolver. Install
-an updated Folder with embedded clients to receive its themes and thumbnails.
+The public selection provider retains LIST_DIRECTORY for bounded/paged JSON
+metadata and SHORTCUT_COLLECTION for caller-scoped directory/link operations.
+These are independent non-UI APIs; the embedded browser does not use JSON to
+rebuild a viewer. Folder owns storage permissions, credentials, file listing and
+artwork. The listing API remains available for the deferred playlist work.

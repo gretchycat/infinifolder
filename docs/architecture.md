@@ -88,19 +88,34 @@ completed totals. A shared atomic dismissal flag and Activity/dialog checks guar
 progress and completion. Storage library traversal and operation safety semantics
 are unchanged. See [behavior and regression checks](directory-properties.md).
 
-## Shared file browser presentation
+## Complete browser embedding
 
-The normal and floating file renderers use libinfiniselect's public `browser`
-components: FileEntryCard, SmartFileNameTextView, FileViewGrid and
-VirtualizedEntrySurface. These are the original Folder presentation code extracted
-into the owning library. App adapters retain provider metadata, sorting, network
-badges, theme selection, gestures and operations. Embedded clients use the same
-components. SelectionStorageBroker exposes active colors/font settings and bounded
-PNG artwork from the existing ResourceIconResolver; no client storage permission
-or application source dependency is needed. See the pinned selector's
-[embedded browser API](../libraries/libinfiniselect/docs/embedded-browser.md).
+FolderBrowserController contains the existing working floating browser, moved
+from FloatingContainerService without a second implementation. The service is
+its floating-window host. EmbeddedBrowserSessions is its SurfaceControlViewHost
+host, with separate owned sessions in Folder's process. Both use the same
+breadcrumb trail, navigation, source/shortcut/archive handling, cards, gestures,
+artwork and selection actions. Presentation classes remain app-owned; the partial
+extraction into InfiniSelect was undone.
 
-Validation: Folder's standalone build and existing tests pass with the pinned
-shared renderer; the selector's standalone build and 24 JVM tests pass separately.
-Both APK signatures verify. Cross-app appearance/artwork calls and list/icon
-interaction still require device acceptance; no attached device was available.
+InfiniSelect is only a surface/command/result gateway. The selection provider
+checks Binder caller identity and each opaque session's owning UID. Session
+creation/commands run on Folder's UI thread; source operations and granted relay
+registration use Folder's existing storage graph. Session lifetime is bounded by
+explicit close, host Binder death and provider connection lifetime. There is no
+overlay permission for embedded content. The floating service preserves its
+existing overlay permission and window lifecycle. Hosted long-press menus stay
+within the same Folder surface, avoiding an unrelated external popup window.
+See the pinned selector's [gateway API](../libraries/libinfiniselect/docs/embedded-browser.md).
+
+Folder owns the opaque route/scroll snapshot used when Android re-creates the
+surface after a game or background transition. The gateway carries that Bundle
+without parsing it; Folder reuses SelectionBreadcrumbState validation and its
+existing scroll restoration. Explicit open requests reset the prior snapshot.
+
+Validation: the standalone Folder build passes all 174 app/storage/hex JVM tests;
+the selector AAR, its 19 JVM tests and its Android test APK build separately.
+Play's build, 42 portable checks and thirteen native-core probes pass. APK
+signatures verify. EmbeddedBrowserDeviceTest is compiled but not executed because
+no ADB device is attached. Cross-app rendering/input and lifecycle acceptance
+remain pending on Android 11+ hardware with both updated APKs installed.

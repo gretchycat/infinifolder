@@ -36,3 +36,8 @@ Infinifolder is Infiniforge's central file manager and advanced storage layer. I
 - `docs/architecture.md` — public API and architecture documentation; read before changing interfaces or behavior.
 - `docs/libinfiniselect.md` — public API and architecture documentation; read before changing interfaces or behavior.
 - `docs/runtime-capabilities.md` — public API and architecture documentation; read before changing interfaces or behavior.
+
+Complete file browsing stays in FolderBrowserController and Folder's views.
+Floating and embedded hosts reuse that same implementation. InfiniSelect is only
+the public surface/command/result gateway; never rebuild the file viewer,
+breadcrumb trail or directory navigation in clients or in the selector library.

@@ -15,10 +15,7 @@ import java.io.FileNotFoundException
 import org.json.JSONArray
 
 /** Folder-owned storage operations for permission-free InfiniSelect clients. */
-internal class SelectionStorageBroker(
-    private val app: Context,
-    private val icons: () -> ResourceIconResolver,
-) {
+internal class SelectionStorageBroker(private val app: Context) {
     private val runtime
         get() = StorageRuntime.get(app)
 
@@ -30,50 +27,6 @@ internal class SelectionStorageBroker(
             is ProviderResult.Unsupported ->
                 throw FileNotFoundException("Unsupported storage operation: $capability")
         }
-
-    fun appearance(): Bundle =
-        Bundle().apply {
-            com.infinifolder.theme.ThemeManager.init(app)
-            putInt("version", 1)
-            putBundle("style", browserCardStyle().toBundle())
-        }
-
-    /** Same resolver as Folder's normal/floating views; no source grant is returned here. */
-    fun artwork(args: Bundle): Bundle {
-        val uri = Uri.parse(requireNotNull(args.getString("uri")))
-        val source =
-            StorageDocumentsProvider.resolveReference(app, uri)
-                ?: throw FileNotFoundException("Storage location unavailable")
-        val ref =
-            runtime.provider.refForUri(source)
-                ?: throw FileNotFoundException("Storage source unavailable")
-        val entry = runtime.provider.stat(ref).value()
-        val size = args.getInt("size", 96).coerceIn(16, 256)
-        val resolver = icons()
-        val art = resolver.cached(entry, size) ?: resolver.resolve(entry, size)
-        return Bundle().apply {
-            putInt("version", 1)
-            putString("label", art.label)
-            putBoolean("directory", art.directory)
-            art.bitmap?.let { original ->
-                val bitmap =
-                    if (original.width > 256 || original.height > 256)
-                        android.graphics.Bitmap.createScaledBitmap(original, size, size, true)
-                    else original
-                try {
-                    val bytes =
-                        java.io.ByteArrayOutputStream().use {
-                            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
-                            it.toByteArray()
-                        }
-                    require(bytes.size <= 256 * 1024) { "Artwork reply too large" }
-                    putByteArray("png", bytes)
-                } finally {
-                    if (bitmap !== original) bitmap.recycle()
-                }
-            }
-        }
-    }
 
     fun list(args: Bundle): Bundle {
         val directory = args.getString("directory")?.let(Uri::parse)

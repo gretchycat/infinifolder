@@ -33,7 +33,7 @@ class FileSelectionRelayProvider : ContentProvider() {
 
     private val preferences by lazy { requireNotNull(context).getSharedPreferences(PREFS, 0) }
 
-    private val browserIcons by lazy { ResourceIconResolver(requireNotNull(context).applicationContext) }
+    private val embeddedBrowsers by lazy { com.infinifolder.overlay.EmbeddedBrowserSessions(requireNotNull(context).applicationContext) }
 
     override fun onCreate() = true
 
@@ -43,22 +43,26 @@ class FileSelectionRelayProvider : ContentProvider() {
      * credentials and provider implementations stay inside InfiniFolder.
      */
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
-        if(method in setOf(io.github.gretchycat.infiniselect.FolderStorage.LIST,
-            io.github.gretchycat.infiniselect.FolderStorage.COLLECTION,
-            io.github.gretchycat.infiniselect.FolderStorage.APPEARANCE,
-            io.github.gretchycat.infiniselect.FolderStorage.ARTWORK)) {
+        if (method == io.github.gretchycat.infiniselect.EmbeddedBrowserProtocol.METHOD) {
+            check(android.os.Build.VERSION.SDK_INT >= 30) { "Embedded Folder views require Android 11 or newer" }
+            val app = requireNotNull(context)
+            val uid = Binder.getCallingUid()
+            val caller = callingPackage ?: app.packageManager.getPackagesForUid(uid)?.singleOrNull()
+                ?: throw SecurityException("Cannot identify the browser host")
+            require(app.packageManager.getPackagesForUid(uid)?.contains(caller) == true)
+            val identity = Binder.clearCallingIdentity()
+            try { return embeddedBrowsers.call(uid, caller, extras ?: Bundle()) }
+            finally { Binder.restoreCallingIdentity(identity) }
+        }
+        if(method==io.github.gretchycat.infiniselect.FolderStorage.LIST || method==io.github.gretchycat.infiniselect.FolderStorage.COLLECTION) {
             val app=requireNotNull(context)
             val caller=callingPackage ?: app.packageManager.getPackagesForUid(Binder.getCallingUid())?.singleOrNull()
                 ?: throw SecurityException("Cannot identify the requesting application")
             val identity=Binder.clearCallingIdentity()
             try {
-                val broker=SelectionStorageBroker(app) { browserIcons }
-                return when(method) {
-                    io.github.gretchycat.infiniselect.FolderStorage.LIST -> broker.list(extras?:Bundle())
-                    io.github.gretchycat.infiniselect.FolderStorage.APPEARANCE -> broker.appearance()
-                    io.github.gretchycat.infiniselect.FolderStorage.ARTWORK -> broker.artwork(extras?:Bundle())
-                    else -> broker.collection(extras?:Bundle(),caller)
-                }
+                val broker=SelectionStorageBroker(app)
+                return if(method==io.github.gretchycat.infiniselect.FolderStorage.LIST)broker.list(extras?:Bundle())
+                    else broker.collection(extras?:Bundle(),caller)
             } finally { Binder.restoreCallingIdentity(identity) }
         }
         if (method == METHOD_RESOLVE_RELATIVE_ARCHIVE) return resolveArchiveRelative(extras)
