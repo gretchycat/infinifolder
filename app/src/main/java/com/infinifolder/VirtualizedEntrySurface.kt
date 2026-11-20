@@ -4,7 +4,7 @@ import android.content.Context
 import android.view.View
 import android.view.ViewGroup
 import com.infinifolder.model.ResourceEntry
-import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 /**
  * A fixed-geometry file grid that creates cards only around the scroll viewport.
@@ -14,11 +14,15 @@ import kotlin.math.ceil
 internal class VirtualizedEntrySurface(
     context: Context,
     private val entries: List<ResourceEntry>,
-    private val columns: Int,
+    columns: Int,
     private val cellHeightPx: Int,
     private val makeCard: (ResourceEntry) -> View,
-    private val onCardRemoved: (ResourceEntry, View) -> Unit
+    private val onCardRemoved: (ResourceEntry, View) -> Unit,
+    private val staggered: Boolean = false,
+    private val iconSizeDp: Int = 56,
+    onEmptyAreaLongPress: (() -> Boolean)? = null,
 ) : ViewGroup(context) {
+    private var columns = columns.coerceAtLeast(1)
     private val attachedCards = LinkedHashMap<Int, View>()
     private var requestedScrollY = 0
     private var requestedViewportHeight = 0
@@ -42,6 +46,8 @@ internal class VirtualizedEntrySurface(
         clipToPadding = false
         isFocusable = false
         isFocusableInTouchMode = false
+        isLongClickable = onEmptyAreaLongPress != null
+        if (onEmptyAreaLongPress != null) setOnLongClickListener { onEmptyAreaLongPress() }
     }
 
     /** Coalesced with drawing so a fling does not repeatedly rebuild the same rows. */
@@ -55,15 +61,16 @@ internal class VirtualizedEntrySurface(
 
     private fun updateAttachedCards() {
         if (!isAttachedToWindow || entries.isEmpty()) return
-        val rowCount = ceil(entries.size / columns.toDouble()).toInt()
+        val rowCount = FileViewGrid.rowCount(entries.size, columns, staggered)
         val viewportHeight = requestedViewportHeight.coerceAtLeast(cellHeightPx)
         val overscanPx = maxOf(cellHeightPx * 2, viewportHeight / 2)
         val firstRow = ((requestedScrollY - overscanPx).coerceAtLeast(0) / cellHeightPx)
             .coerceAtMost((rowCount - 1).coerceAtLeast(0))
         val lastRow = (((requestedScrollY + viewportHeight + overscanPx).coerceAtLeast(0) / cellHeightPx) + 1)
             .coerceAtMost(rowCount)
-        val firstIndex = firstRow * columns
-        val endIndex = (lastRow * columns).coerceAtMost(entries.size)
+        val firstIndex = FileViewGrid.rowStart(firstRow, entries.size, columns, staggered)
+        val endIndex = if (lastRow >= rowCount) entries.size
+            else FileViewGrid.rowStart(lastRow, entries.size, columns, staggered)
         val range = firstIndex to endIndex
         if (range != lastLoggedRange) {
             lastLoggedRange = range
@@ -83,9 +90,12 @@ internal class VirtualizedEntrySurface(
         }
         // Draw the visible rows first. Offscreen overscan must not delay the
         // first icons, and a large viewport must not monopolize one UI frame.
-        val visibleFirst = (requestedScrollY / cellHeightPx * columns).coerceIn(firstIndex, endIndex)
-        val visibleEnd = (((requestedScrollY + viewportHeight) / cellHeightPx + 1) * columns)
-            .coerceIn(visibleFirst, endIndex)
+        val visibleFirstRow = (requestedScrollY / cellHeightPx).coerceIn(firstRow, (rowCount - 1).coerceAtLeast(firstRow))
+        val visibleEndRow = ((requestedScrollY + viewportHeight) / cellHeightPx + 1).coerceAtMost(rowCount)
+        val visibleFirst = FileViewGrid.rowStart(visibleFirstRow, entries.size, columns, staggered)
+            .coerceIn(firstIndex, endIndex)
+        val visibleEnd = if (visibleEndRow >= rowCount) endIndex else
+            FileViewGrid.rowStart(visibleEndRow, entries.size, columns, staggered).coerceIn(visibleFirst, endIndex)
         val prioritized = sequenceOf(visibleFirst until visibleEnd, firstIndex until visibleFirst, visibleEnd until endIndex)
             .flatMap { it.asSequence() }
         val batchStarted = android.os.SystemClock.uptimeMillis()
@@ -134,14 +144,23 @@ internal class VirtualizedEntrySurface(
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val measuredWidth = MeasureSpec.getSize(widthMeasureSpec)
-        val rowCount = if (entries.isEmpty()) 0 else (entries.size + columns - 1) / columns
+        if (staggered && measuredWidth > 0) {
+            val nextColumns = FileViewGrid.columns(
+                (measuredWidth / resources.displayMetrics.density).roundToInt(),
+                iconSizeDp,
+            )
+            if (nextColumns != columns) columns = nextColumns
+        }
+        val rowCount = FileViewGrid.rowCount(entries.size, columns, staggered)
         val contentHeight = (rowCount.toLong() * cellHeightPx).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val measuredHeight = resolveSize(contentHeight, heightMeasureSpec)
         setMeasuredDimension(measuredWidth, measuredHeight)
 
         val cellWidth = (measuredWidth / columns).coerceAtLeast(1)
         attachedCards.forEach { (index, card) ->
-            val width = if (index % columns == columns - 1) measuredWidth - cellWidth * (columns - 1) else cellWidth
+            val position = FileViewGrid.position(index, columns, staggered)
+            val width = if (position.column == columns - 1 && !position.staggered)
+                measuredWidth - cellWidth * (columns - 1) else cellWidth
             card.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(cellHeightPx, MeasureSpec.EXACTLY))
         }
@@ -150,11 +169,10 @@ internal class VirtualizedEntrySurface(
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         val cellWidth = (width / columns).coerceAtLeast(1)
         attachedCards.forEach { (index, card) ->
-            val column = index % columns
-            val row = index / columns
-            val x = column * cellWidth
-            val itemWidth = if (column == columns - 1) width - x else cellWidth
-            val y = row * cellHeightPx
+            val position = FileViewGrid.position(index, columns, staggered)
+            val x = position.column * cellWidth + if (position.staggered) cellWidth / 2 else 0
+            val itemWidth = if (position.column == columns - 1 && !position.staggered) width - x else cellWidth
+            val y = position.row * cellHeightPx
             card.layout(x, y, x + itemWidth, y + cellHeightPx)
         }
         updateViewport(requestedScrollY, requestedViewportHeight)

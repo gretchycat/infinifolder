@@ -96,7 +96,10 @@ or extracted file-card renderer. Surface hosting requires Android 11+ and update
 Folder; clients keep ordinary selection as their fallback. The embedding protocol
 verifies Binder UID/session ownership and returns read-granted selected-file
 relays with authoritative identities. Folder renders caller file-action menus;
-clients handle the selected action. See the library's docs/embedded-browser.md.
+clients handle the selected action. Folder's hosted browser includes List, Grid,
+and Staggered Icons. Its view control remains available when an embedded host
+hides breadcrumbs; clients do not implement a second file viewer. See the
+library's docs/embedded-browser.md.
 
 Embedded setup failures preserve the failing step and exception message across
 the UI executor and Binder response. Folder's diagnostic log records the cause

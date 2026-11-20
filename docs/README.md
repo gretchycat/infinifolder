@@ -13,7 +13,7 @@ format handling, and integration boundaries.
 - [libinfiniselect storage boundary](libinfiniselect.md)
 - [Storage validation and device acceptance](storage-validation.md)
 - [Directory Properties failures and validation](directory-properties.md)
-- [Navigation, menus, selection and disk usage](navigation-menus-disk-usage.md)
+- [Navigation, browser view modes, menus, selection and disk usage](navigation-menus-disk-usage.md)
 - [Breadcrumb disk space profile](breadcrumb-space-profile.md)
 - [Floating browser controls and backdrop](floating-launcher-shortcuts.md)
 - [Runtime capability discovery](runtime-capabilities.md)

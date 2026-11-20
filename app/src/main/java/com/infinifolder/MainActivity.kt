@@ -348,6 +348,7 @@ class MainActivity : Activity(), DebugDumpObserver {
     private lateinit var providerRegistry: StorageProviderRegistry
     private lateinit var root: LinearLayout
     private lateinit var toolbar: LinearLayout
+    private var viewModeButton: TextView? = null
     private lateinit var createButton: TextView
     private lateinit var createLinkButton: TextView
     private lateinit var floatingModeButton: TextView
@@ -402,7 +403,8 @@ class MainActivity : Activity(), DebugDumpObserver {
     private var entryActionPreviousStatus = ""
     private var listingNotice: String? = null
     private var listingError: String? = null
-    private var grid = true
+    private var viewMode = BrowserViewMode.GRID
+    private val grid: Boolean get() = viewMode.showsIcons
     private var dark = false
     private var sortByName = true
     private var sortKey = "name"
@@ -620,7 +622,8 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (!shared.getBoolean("pin_board_directory_migrated", false))
             pinnedContainers.addAll(PinnedContainerPreferences(shared).load())
         isOperationWindowHidden = savedInstanceState?.getBoolean("operation_window_hidden", false) ?: false
-        grid = shared.getBoolean("grid", true); sortByName = shared.getBoolean("sort_name", true)
+        viewMode = BrowserViewMode.fromPreference(shared.getString("view_mode", null), shared.getBoolean("grid", true))
+        sortByName = shared.getBoolean("sort_name", true)
         sortKey = shared.getString("sort_key", if (sortByName) "name" else "modified") ?: "name"
         sortDescending = shared.getBoolean("sort_descending", !sortByName)
         showHidden = shared.getBoolean("show_hidden", false)
@@ -1254,7 +1257,13 @@ class MainActivity : Activity(), DebugDumpObserver {
         createButton = button("＋", toolbarFg) { onCreateAction() }
         createLinkButton = button("🔗+", toolbarFg) { showCreateUriLinkDialog() }
         button("↻", toolbarFg) { refreshCurrentLocation() }
-        button(if (grid) "☷" else "▦", toolbarFg) { grid = !grid; shared.edit().putBoolean("grid", grid).apply(); renderCurrentContents() }
+        viewModeButton = button(viewModeGlyph(viewMode), toolbarFg) {
+            setBrowserViewMode(viewMode.next())
+            renderCurrentContents()
+        }.apply {
+            contentDescription = viewModeNextDescription(viewMode)
+            tooltipText = contentDescription
+        }
         floatingModeButton = button("▣", toolbarFg) { showCurrentDirectoryFloating() }.apply {
             contentDescription = "Open current directory in floating window"
             tooltipText = contentDescription
@@ -1406,22 +1415,20 @@ class MainActivity : Activity(), DebugDumpObserver {
                             }
                         } else if (targetSize < 24 && !didSwitch) {
                             didSwitch = true
-                            grid = false
-                            shared.edit().putBoolean("grid", false).apply()
+                            setBrowserViewMode(BrowserViewMode.LIST)
                             renderCurrentContents()
                             showPinchIndicator("List view")
                         }
                     } else {
                         if (accumulatedScale > 1.25f && !didSwitch) {
                             didSwitch = true
-                            grid = true
+                            setBrowserViewMode(BrowserViewMode.GRID)
                             iconSizeDp = 44
                             startSizeDp = 44f
                             accumulatedScale = 1f
-                            shared.edit().putBoolean("grid", true).apply()
                             shared.edit().putInt("icon_size_dp", iconSizeDp).apply()
                             renderCurrentContents()
-                            showPinchIndicator("Grid view: ${iconSizeDp} dp")
+                            showPinchIndicator("${viewMode.displayName} view: ${iconSizeDp} dp")
                         }
                     }
                     return true
@@ -5275,7 +5282,11 @@ class MainActivity : Activity(), DebugDumpObserver {
                     (resources.configuration.screenWidthDp - if (treeVisible) 220 else 32).coerceAtLeast(iconSizeDp)
                 }
                 val columns = if (grid) gridColumns(availableWidth) else 1
-                val cellHeight = dp(if (grid) iconSizeDp + 48 else 88)
+                val cellHeight = when {
+                    !grid -> dp(88)
+                    viewMode == BrowserViewMode.STAGGERED -> FileViewGrid.staggeredRowHeightPx(iconSizeDp, resources.displayMetrics.density)
+                    else -> dp(iconSizeDp + 48)
+                }
                 val surface = VirtualizedEntrySurface(
                     this,
                     rows,
@@ -5288,7 +5299,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                         entryArtworkRefreshers.remove(entry.uri)
                         pendingCardProbes.removeAll { it.view === card }
                         visibleArtworkUris = visibleArtworkUris - entry.uri
-                    }
+                    },
+                    staggered = viewMode == BrowserViewMode.STAGGERED,
+                    iconSizeDp = iconSizeDp,
+                    onEmptyAreaLongPress = ::onEmptyAreaLongPress,
                 ).apply {
                     isLongClickable = true
                     setOnLongClickListener { onEmptyAreaLongPress() }
@@ -5300,6 +5314,19 @@ class MainActivity : Activity(), DebugDumpObserver {
                     "ui.render-entries.virtualized",
                     "elapsedMs=${SystemClock.uptimeMillis() - renderStartedAt} entries=${rows.size} columns=$columns rowHeightPx=$cellHeight"
                 )
+            } else if (viewMode == BrowserViewMode.STAGGERED) {
+                val surface = FileViewGrid.buildStaggered(
+                    this,
+                    rows.map { entryCard(it, true) },
+                    iconSizeDp,
+                    FileViewGrid.staggeredRowHeightPx(iconSizeDp, resources.displayMetrics.density),
+                    ::onEmptyAreaLongPress,
+                ).apply {
+                    isLongClickable = true
+                    setOnLongClickListener { onEmptyAreaLongPress() }
+                }
+                largeEntrySurface = null
+                content.addView(surface, LinearLayout.LayoutParams(-1, -2))
             } else if (grid) {
                 val containerPx = if (content.width > 0) content.width else if (fileScroll.width > 0) fileScroll.width else 0
                 val availableWidth = if (containerPx > 0) {
@@ -5383,6 +5410,33 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun renderCurrentContents() { if (homeMode) renderHomeItems() else renderEntries() }
     private fun iconTextSizeDp(asGrid: Boolean): Float = if (asGrid) (iconSizeDp * 0.72f) else 28f
     private fun gridColumns(availableWidthDp: Int): Int = FileViewGrid.columns(availableWidthDp, iconSizeDp)
+
+    private fun setBrowserViewMode(mode: BrowserViewMode) {
+        viewMode = mode
+        viewModeButton?.apply {
+            text = viewModeGlyph(mode)
+            contentDescription = viewModeNextDescription(mode)
+            tooltipText = contentDescription
+        }
+        if (::shared.isInitialized) {
+            shared.edit()
+                .putString("view_mode", mode.name)
+                .putBoolean("grid", mode.showsIcons)
+                .apply()
+        }
+    }
+
+    private fun viewModeGlyph(mode: BrowserViewMode): String = when (mode) {
+        BrowserViewMode.LIST -> "▦"
+        BrowserViewMode.GRID -> "▧"
+        BrowserViewMode.STAGGERED -> "☷"
+    }
+
+    private fun viewModeNextDescription(mode: BrowserViewMode): String = when (mode.next()) {
+        BrowserViewMode.LIST -> "Switch to List view"
+        BrowserViewMode.GRID -> "Switch to Grid view"
+        BrowserViewMode.STAGGERED -> "Switch to Staggered Icons view"
+    }
     private fun buildFileIconView(
         entry: ResourceEntry,
         meta: ResourceMetadata,
@@ -5553,7 +5607,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         } else {
             entry.metadata.name
         }
-        val gridCellMaxWidthPx = if (asGrid) {
+        val gridCellMaxWidthPx = if (asGrid && viewMode != BrowserViewMode.STAGGERED) {
             val availableWidthDp = (resources.configuration.screenWidthDp - if (treeVisible) 220 else 32).coerceAtLeast(iconSizeDp)
             val columns = gridColumns(availableWidthDp)
             val actualContainerWidthPx = content.width.takeIf { it > 0 } ?: dp(availableWidthDp)
@@ -7162,7 +7216,16 @@ class MainActivity : Activity(), DebugDumpObserver {
             })
         }
         if (visibleItems.isEmpty()) return
-        if (grid) {
+        if (viewMode == BrowserViewMode.STAGGERED) {
+            content.addView(
+                FileViewGrid.buildStaggered(
+                    this,
+                    visibleItems.map { homeItemCard(it, true) },
+                    iconSizeDp,
+                    dp(iconSizeDp + 48),
+                )
+            )
+        } else if (grid) {
             val containerPx = if (content.width > 0) content.width else if (fileScroll.width > 0) fileScroll.width else 0
             val availableWidth = if (containerPx > 0) {
                 (containerPx / resources.displayMetrics.density).roundToInt()
@@ -10242,9 +10305,17 @@ class MainActivity : Activity(), DebugDumpObserver {
                     rebuildTreeRoots()
                 },
                 action(if (treeVisible) "Show files" else "Show tree") { showSidebar() },
-                action(if (grid) "List / details view" else "Grid view") {
-                    grid = !grid; shared.edit().putBoolean("grid", grid).apply(); renderCurrentContents()
-                },
+                submenu("Layout", listOf(
+                    action((if (viewMode == BrowserViewMode.LIST) "✓  " else "") + "List") {
+                        setBrowserViewMode(BrowserViewMode.LIST); renderCurrentContents()
+                    },
+                    action((if (viewMode == BrowserViewMode.GRID) "✓  " else "") + "Grid") {
+                        setBrowserViewMode(BrowserViewMode.GRID); renderCurrentContents()
+                    },
+                    action((if (viewMode == BrowserViewMode.STAGGERED) "✓  " else "") + "Staggered Icons") {
+                        setBrowserViewMode(BrowserViewMode.STAGGERED); renderCurrentContents()
+                    }
+                )),
                 action(if (showHidden) "Hide hidden files" else "Show hidden files") {
                     showHidden = !showHidden; shared.edit().putBoolean("show_hidden", showHidden).apply()
                     if (!homeMode) updateListingStatus()

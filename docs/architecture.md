@@ -98,6 +98,15 @@ breadcrumb trail, navigation, source/shortcut/archive handling, cards, gestures,
 artwork and selection actions. Presentation classes remain app-owned; the partial
 extraction into InfiniSelect was undone.
 
+Folder, floating, and embedded presentations share the List, Grid, and Staggered
+Icons view choice. The staggered surface uses the existing sorted entries and
+file cards. It offsets alternating rows by half a cell, reduces the shifted row's
+capacity by one, and remeasures its columns when its host width changes. Folder's
+large-directory virtualized surface uses the same row geometry so visible item
+bounds remain the hit targets for selection and drag/drop. Each owning browser
+stores the view choice; InfiniSelect remains a surface and command gateway. See
+[browser view modes](navigation-menus-disk-usage.md#browser-view-modes).
+
 The active breadcrumb also displays a small disk space profile when its provider
 reports total and available capacity. MainActivity and FolderBrowserController
 format the same `FileSystemInfo` values; the shared floating and embedded hosts

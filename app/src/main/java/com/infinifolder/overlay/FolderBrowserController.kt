@@ -36,6 +36,7 @@ import com.infinifolder.BrowserLocations
 import com.infinifolder.FileEntryCard
 import com.infinifolder.FileIconView
 import com.infinifolder.FileViewGrid
+import com.infinifolder.BrowserViewMode
 import com.infinifolder.HomeItemActivity
 import com.infinifolder.HomeShortcutDragActivity
 import com.infinifolder.HomeShortcuts
@@ -88,6 +89,7 @@ internal class FolderBrowserController(
     private lateinit var scroll: PullToRefreshScrollView
     private var largeEntrySurface: VirtualizedEntrySurface? = null
     private var toolbar: View? = null
+    private var viewModeToggle: View? = null
     private var breadcrumbsEnabled = true
     private var sortByModified = false
     private var selectLinkDocuments = false
@@ -113,7 +115,8 @@ internal class FolderBrowserController(
 
     private val selectionBreadcrumbsKey = "floating_selector_breadcrumbs_v1"
     private var breadcrumbGeneration = 0L
-    private var iconMode = true
+    private var viewMode = BrowserViewMode.GRID
+    private val iconMode: Boolean get() = viewMode.showsIcons
     private var iconDp = 56
     private var currentListingComplete = true
     private val refreshArtwork = Runnable {
@@ -214,8 +217,7 @@ internal class FolderBrowserController(
             getSharedPreferences("floating_window", MODE_PRIVATE)
                 .getInt("icon_size_dp", defaultIconDp)
                 .coerceIn(32, 120)
-        iconMode =
-            getSharedPreferences("floating_window", MODE_PRIVATE).getBoolean("icon_mode", true)
+        viewMode = savedViewMode()
         windows = getSystemService(WINDOW_SERVICE) as WindowManager
         if (!embedded) {
             ContextCompat.registerReceiver(
@@ -228,17 +230,52 @@ internal class FolderBrowserController(
         }
     }
 
+    private fun savedViewMode(): BrowserViewMode {
+        val preferences = getSharedPreferences("floating_window", MODE_PRIVATE)
+        return BrowserViewMode.fromPreference(
+            preferences.getString("view_mode", null),
+            preferences.getBoolean("icon_mode", true),
+        )
+    }
+
+    private fun setViewMode(mode: BrowserViewMode) {
+        viewMode = mode
+        updateViewModeToggleLabel()
+        getSharedPreferences("floating_window", MODE_PRIVATE)
+            .edit()
+            .putString("view_mode", mode.name)
+            .putBoolean("icon_mode", mode.showsIcons)
+            .apply()
+    }
+
+    private fun updateViewModeToggleLabel() {
+        val toggle = viewModeToggle as? TextView ?: return
+        toggle.text = when (viewMode) {
+            BrowserViewMode.LIST -> "▦"
+            BrowserViewMode.GRID -> "▧"
+            BrowserViewMode.STAGGERED -> "☷"
+        }
+        toggle.contentDescription = when (viewMode.next()) {
+            BrowserViewMode.LIST -> "Switch to List view"
+            BrowserViewMode.GRID -> "Switch to Grid view"
+            BrowserViewMode.STAGGERED -> "Switch to Staggered Icons view"
+        }
+        toggle.tooltipText = toggle.contentDescription
+    }
+
     fun open(intent: Intent?) {
         breadcrumbsEnabled = intent?.getBooleanExtra("breadcrumbs", true) ?: true
         sortByModified = intent?.getBooleanExtra("sortModified", false) ?: false
         selectLinkDocuments = intent?.getBooleanExtra("selectLinkDocuments", false) ?: false
-        iconMode =
-            io.github.gretchycat.infiniselect.FileViewMode.initialIconMode(
-                io.github.gretchycat.infiniselect.FileViewMode.fromWire(
-                    intent?.getStringExtra(FileSelectionContract.EXTRA_PREFERRED_VIEW_MODE)
-                ),
-                getSharedPreferences("floating_window", MODE_PRIVATE).getBoolean("icon_mode", true),
-            )
+        val preferredView = io.github.gretchycat.infiniselect.FileViewMode.fromWire(
+            intent?.getStringExtra(FileSelectionContract.EXTRA_PREFERRED_VIEW_MODE)
+        )
+        viewMode = when (preferredView) {
+            io.github.gretchycat.infiniselect.FileViewMode.LIST -> BrowserViewMode.LIST
+            io.github.gretchycat.infiniselect.FileViewMode.ICON -> BrowserViewMode.GRID
+            null -> savedViewMode()
+        }
+        updateViewModeToggleLabel()
         selectionScanning = false
         selectionMode = intent?.getBooleanExtra(EXTRA_SELECTION_MODE, false) == true
         selectionAllowMultiple = intent?.getBooleanExtra(EXTRA_ALLOW_MULTIPLE, false) == true
@@ -325,7 +362,7 @@ internal class FolderBrowserController(
                 ?: containerName(uri)
         try {
             if (windowView == null) createWindow()
-            toolbar?.visibility = if (breadcrumbsEnabled) View.VISIBLE else View.GONE
+            applyToolbarVisibility()
             updateSelectionControls()
             val displayName = intent?.getStringExtra(EXTRA_DISPLAY_NAME)
             if (selectionMode) {
@@ -537,23 +574,15 @@ internal class FolderBrowserController(
                 setTextColor(theme.toolbarText)
                 minWidth = dp(48)
                 minimumHeight = dp(48)
-                fun updateLabel() {
-                    text = if (iconMode) "☷" else "▦"
-                    contentDescription =
-                        if (iconMode) "Switch to list view" else "Switch to icon view"
-                    tooltipText = contentDescription
-                }
-                updateLabel()
                 setOnClickListener {
-                    iconMode = !iconMode
-                    getSharedPreferences("floating_window", MODE_PRIVATE)
-                        .edit()
-                        .putBoolean("icon_mode", iconMode)
-                        .apply()
-                    updateLabel()
+                    val oldScroll = scroll.scrollY
+                    setViewMode(viewMode.next())
                     render(currentEntries)
+                    scroll.post { scroll.scrollTo(0, oldScroll) }
                 }
             }
+        viewModeToggle = viewToggle
+        updateViewModeToggleLabel()
         installTitleBarFallbackDrag(viewToggle)
         installTitleBarFallbackDrag(openFull)
         selectionDoneView?.let(::installTitleBarFallbackDrag)
@@ -629,6 +658,7 @@ internal class FolderBrowserController(
                 addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
             }
         root.addView(content, FrameLayout.LayoutParams(-1, -1))
+        applyToolbarVisibility()
         if (!embedded) {
             addResizeHandle(left = true)
             addResizeHandle(left = false)
@@ -1791,6 +1821,12 @@ internal class FolderBrowserController(
         val density = resources.displayMetrics.density
         val columns =
             if (iconMode) FileViewGrid.columns((params.width / density).roundToInt(), iconDp) else 1
+        val staggered = viewMode == BrowserViewMode.STAGGERED
+        val cellHeight = when {
+            !iconMode -> (64 * density).roundToInt()
+            staggered -> FileViewGrid.staggeredRowHeightPx(iconDp, density)
+            else -> ((iconDp + 48) * density).roundToInt()
+        }
         val cellWidth = params.width / columns
         val preferences = getSharedPreferences("browser", MODE_PRIVATE)
         val sortByName = preferences.getBoolean("sort_name", true)
@@ -1824,7 +1860,7 @@ internal class FolderBrowserController(
             card.addLabels(
                 entry.metadata.name,
                 entry.metadata.isDirectory,
-                (cellWidth - 4 * density).roundToInt().coerceAtLeast(36),
+                if (staggered) 0 else (cellWidth - 4 * density).roundToInt().coerceAtLeast(36),
                 "",
             )
             val pixelSize = ((if (iconMode) iconDp else 44) * density).roundToInt()
@@ -1972,14 +2008,23 @@ internal class FolderBrowserController(
                         this,
                         rows,
                         columns,
-                        ((if (iconMode) iconDp + 48 else 64) * density).roundToInt(),
+                        cellHeight,
                         makeCard,
                         onCardRemoved = { _, card ->
                             pendingIcons.removeAll { it.first === card }
                             dragItems.removeAll { it.card === card }
                         },
+                        staggered = staggered,
+                        iconSizeDp = iconDp,
                     )
                     .also { largeEntrySurface = it }
+            else if (staggered)
+                FileViewGrid.buildStaggered(
+                    this,
+                    rows.map(makeCard),
+                    iconDp,
+                    cellHeight,
+                )
             else FileViewGrid.build(this, rows, columns, card = makeCard)
         grid.addView(table)
         grid.post {
@@ -3020,8 +3065,16 @@ internal class FolderBrowserController(
         sortByModified = modified
         selectLinkDocuments = links
         callerFileActions = actions
-        toolbar?.visibility = if (breadcrumbs) View.VISIBLE else View.GONE
+        applyToolbarVisibility()
         if (listingReady) render(currentEntries)
+    }
+
+    private fun applyToolbarVisibility() {
+        toolbar?.visibility = if (viewModeToggle != null) View.VISIBLE else View.GONE
+        containerIcon.visibility = if (breadcrumbsEnabled) View.VISIBLE else View.GONE
+        breadcrumbScroll.visibility = if (breadcrumbsEnabled) View.VISIBLE else View.GONE
+        viewModeToggle?.visibility = View.VISIBLE
+        normalActionView?.visibility = if (breadcrumbsEnabled) View.VISIBLE else View.GONE
     }
 
     private fun showEmbeddedActions(actions: List<Pair<String, () -> Unit>>) {

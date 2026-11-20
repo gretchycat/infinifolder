@@ -9,13 +9,45 @@
 
 Updated 2026-11-04. See [current status](project-status.md) for acceptance distinctions.
 
-## Floating window views
+## Browser view modes
 
-The floating browser and floating file selector have a list/icon toggle beside the breadcrumb trail. It changes the current listing without changing the location or selection and persists its mode in floating-window preferences. List rows use the shared file-card layout; icon sizing and pinch gestures remain available. This control lives in the breadcrumb toolbar. For single-file selection, calling apps may supply validated `OpenRequest.fileActions` labels/IDs. Long-pressing a file displays them and returns a normal granted selection plus the chosen action ID; the calling app performs the action. InfiniFolder contains no InfiniPlay Favorites logic.
+In the main Folder view, the toolbar view button cycles through List, Grid, and
+Staggered Icons. **View → Layout** selects a named mode directly. The choice is
+saved in the browser preferences. Switching modes keeps the current directory,
+selection, and sort order.
+
+Floating windows use the view button beside the breadcrumb trail to cycle the
+same three modes. They save the choice in floating-window preferences. If a
+floating request hides breadcrumbs, the toolbar keeps the view button available.
+Existing `preferredViewMode` requests still initialize List or Grid; the user can
+switch to Staggered Icons in the browser.
+
+Embedded views use the same FolderBrowserController surface and the same view
+button in its title bar. The choice persists with the floating browser setting.
+When an embedded host disables breadcrumbs, Folder hides the breadcrumb and
+open-in-Folder controls while keeping the view button visible. Clients do not
+draw or manage file cards. Existing `preferredViewMode` initializes List or Grid;
+the hosted browser can switch among all three modes.
+
+List retains its detail rows. Grid retains its regular square-cell icon layout.
+Staggered Icons keeps those icon cards, sizes, labels, highlights, selection and
+file actions, and offsets alternating rows by half a cell. Shifted rows hold one
+fewer item, leaving a half-cell margin at the far edge; a one-column layout turns
+the offset off so narrow hosts never clip icons or scroll horizontally. Items
+keep the existing sorted order from left to right and top to bottom. Staggered
+rows use a tighter vertical stride than Grid, and each host recomputes columns
+from its measured width, including floating resize and embedded host relayout.
+Vertical scrolling and directory scroll restoration remain active. Filenames
+keep Grid's single-line ellipsis behavior.
+
+Floating single-file selection also retains its validated `OpenRequest.fileActions`
+labels/IDs. Long-pressing a file displays them and returns a normal granted
+selection plus the chosen action ID; the calling app performs the action.
+InfiniFolder contains no InfiniPlay Favorites logic.
 
 ## Menus and navigation
 
-Hamburger and overflow open the same nested File/Edit/View/Select/Settings menu, with right-aligned submenu triangles. The Tree/Files toolbar label switches panes. File → New contains folder, link, external storage connection links and supported document/archive templates. Link creation offers a protocol dropdown for custom URI, SFTP/SSH, SMB/Samba, WebDAV and FTP/FTPS, with saved-connection selection or the matching setup form. The same choices are available when adding container links at Virtual root. Unsupported archive writers are disabled explicitly. View exposes hidden files, sorting and themes; Settings manages default viewers/apps; Select offers mode and wildcard/regex matching in the current folder. Most-used sorting remains future work.
+Hamburger and overflow open the same nested File/Edit/View/Select/Settings menu, with right-aligned submenu triangles. The Tree/Files toolbar label switches panes. File → New contains folder, link, external storage connection links and supported document/archive templates. Link creation offers a protocol dropdown for custom URI, SFTP/SSH, SMB/Samba, WebDAV and FTP/FTPS, with saved-connection selection or the matching setup form. The same choices are available when adding container links at Virtual root. Unsupported archive writers are disabled explicitly. View → Layout selects List, Grid, or Staggered Icons; View also exposes hidden files, sorting and themes. Settings manages default viewers/apps; Select offers mode and wildcard/regex matching in the current folder. Most-used sorting remains future work.
 
 Persistent half-size pins sit between toolbar and breadcrumbs; the row disappears when empty except during a drag. Pin to top/Unpin are long-press actions. Empty pin-board space creates a link; dropping onto a pinned container copies into its destination. Other breadcrumbs, containers and visible tree nodes accept transfers and linger navigation. The navigation tree has no long-press actions and uses the common theme without a separate green tint.
 
