@@ -94,3 +94,10 @@ InfiniSelect 0.1.1 includes a reusable EmbeddedFileBrowser View over local and g
 ## Relayed listings and collections (InfiniSelect 0.1.2)
 
 The public selection provider implements LIST_DIRECTORY with bounded/paged JSON metadata and SHORTCUT_COLLECTION for caller-scoped directory/link creation and link removal. Clients need no shared-storage permission or Folder tree grant. Source byte access remains a separately granted selected-file relay. Storage operations run under Folder's own identity; collection namespaces use the verified Binder caller package. Cross-client paths, traversal and symlink escapes are rejected. The floating selector forwards the optional preferredViewMode LIST/ICON flag; absence preserves saved preferences. See the library's docs/relay-storage.md for the wire contract.
+
+
+The selector also owns the common normal/floating/embedded file presentation.
+Folder's file card/grid/viewport files are metadata/theme/diagnostic adapters, not
+separate renderers. BROWSER_APPEARANCE and BROWSER_ARTWORK provider calls supply
+active appearance and bounded PNGs from the normal ResourceIconResolver. Install
+an updated Folder with embedded clients to receive its themes and thumbnails.

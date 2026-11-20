@@ -87,3 +87,20 @@ an executor and terminating the process. Loading/partial listings cannot become
 completed totals. A shared atomic dismissal flag and Activity/dialog checks guard
 progress and completion. Storage library traversal and operation safety semantics
 are unchanged. See [behavior and regression checks](directory-properties.md).
+
+## Shared file browser presentation
+
+The normal and floating file renderers use libinfiniselect's public `browser`
+components: FileEntryCard, SmartFileNameTextView, FileViewGrid and
+VirtualizedEntrySurface. These are the original Folder presentation code extracted
+into the owning library. App adapters retain provider metadata, sorting, network
+badges, theme selection, gestures and operations. Embedded clients use the same
+components. SelectionStorageBroker exposes active colors/font settings and bounded
+PNG artwork from the existing ResourceIconResolver; no client storage permission
+or application source dependency is needed. See the pinned selector's
+[embedded browser API](../libraries/libinfiniselect/docs/embedded-browser.md).
+
+Validation: Folder's standalone build and existing tests pass with the pinned
+shared renderer; the selector's standalone build and 24 JVM tests pass separately.
+Both APK signatures verify. Cross-app appearance/artwork calls and list/icon
+interaction still require device acceptance; no attached device was available.
