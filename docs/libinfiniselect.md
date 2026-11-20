@@ -86,3 +86,7 @@ command; run `:select-android:connectedDebugAndroidTest` only on an attached
 Android device. See the [storage acceptance matrix](storage-validation.md) and
 [executed audit evidence](architecture-audit.md) for the distinction between
 compilation, descriptor smoke tests and cross-application device validation.
+
+## Embedded clients and caller actions
+
+InfiniSelect 0.1.1 includes a reusable EmbeddedFileBrowser View over local and grant-checked SAF/Folder storage, list/icon modes and .iflink serialization. Folder remains an optional storage provider. Single-file floating requests may attach `fileActions` labels/IDs; FileSelectionActivity forwards only requested action IDs with its normal URI grant and authoritative-identity result. The calling application performs Favorites/metadata/etc. Standard folder New and multi-selection behavior is preserved. See the library's `docs/embedded-browser.md` API.

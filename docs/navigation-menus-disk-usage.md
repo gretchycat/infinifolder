@@ -9,6 +9,10 @@
 
 Updated 2026-11-04. See [current status](project-status.md) for acceptance distinctions.
 
+## Floating window views
+
+The floating browser and floating file selector have a list/icon toggle beside the breadcrumb trail. It changes the current listing without changing the location or selection and persists its mode in floating-window preferences. List rows use the shared file-card layout; icon sizing and pinch gestures remain available. This control lives in the breadcrumb toolbar. For single-file selection, calling apps may supply validated `OpenRequest.fileActions` labels/IDs. Long-pressing a file displays them and returns a normal granted selection plus the chosen action ID; the calling app performs the action. InfiniFolder contains no InfiniPlay Favorites logic.
+
 ## Menus and navigation
 
 Hamburger and overflow open the same nested File/Edit/View/Select/Settings menu, with right-aligned submenu triangles. The Tree/Files toolbar label switches panes. File → New contains folder, link, external storage connection links and supported document/archive templates. Link creation offers a protocol dropdown for custom URI, SFTP/SSH, SMB/Samba, WebDAV and FTP/FTPS, with saved-connection selection or the matching setup form. The same choices are available when adding container links at Virtual root. Unsupported archive writers are disabled explicitly. View exposes hidden files, sorting and themes; Settings manages default viewers/apps; Select offers mode and wildcard/regex matching in the current folder. Most-used sorting remains future work.

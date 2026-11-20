@@ -78,6 +78,7 @@ class FloatingContainerService : Service() {
     private var selectionStartUri: String? = null
     private val selectionBreadcrumbsKey = "floating_selector_breadcrumbs_v1"
     private var breadcrumbGeneration = 0L
+    private var iconMode = true
     private var iconDp = 56
     private var currentListingComplete=true
     private val refreshArtwork=Runnable { if(windowView!=null) {iconCache.evictAll();render(currentEntries)} }
@@ -116,6 +117,7 @@ class FloatingContainerService : Service() {
     private var selectionRecursiveAudioDirectories = false
     private var selectionMimeTypes: List<String> = emptyList()
     private var selectionExtensions: List<String> = emptyList()
+    private var callerFileActions: List<io.github.gretchycat.infiniselect.SelectionAction> = emptyList()
     private var hideUnsupportedSelectionFiles = false
     private var selectionRestoreScrollY: Int? = null
     private var selectionReceiver: ResultReceiver? = null
@@ -141,6 +143,7 @@ class FloatingContainerService : Service() {
         val defaultIconDp = getSharedPreferences("browser", MODE_PRIVATE).getInt("icon_size_dp", 56)
         iconDp = getSharedPreferences("floating_window", MODE_PRIVATE)
             .getInt("icon_size_dp", defaultIconDp).coerceIn(32, 120)
+        iconMode = getSharedPreferences("floating_window", MODE_PRIVATE).getBoolean("icon_mode", true)
         windows = getSystemService(WINDOW_SERVICE) as WindowManager
         ContextCompat.registerReceiver(this, systemDialogs,
             IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS), ContextCompat.RECEIVER_EXPORTED)
@@ -158,6 +161,9 @@ class FloatingContainerService : Service() {
         selectionRecursiveAudioDirectories = intent?.getBooleanExtra(EXTRA_ALLOW_RECURSIVE_AUDIO_DIRECTORIES, false) == true
         selectionMimeTypes = intent?.getStringArrayListExtra(EXTRA_SELECTION_MIME_TYPES).orEmpty()
         selectionExtensions = intent?.getStringArrayListExtra(EXTRA_SELECTION_EXTENSIONS).orEmpty()
+        callerFileActions = runCatching { io.github.gretchycat.infiniselect.SelectionAction.fromWire(
+            intent?.getStringArrayListExtra(FileSelectionContract.EXTRA_FILE_ACTION_IDS).orEmpty(),
+            intent?.getStringArrayListExtra(FileSelectionContract.EXTRA_FILE_ACTION_LABELS).orEmpty()) }.getOrDefault(emptyList())
         hideUnsupportedSelectionFiles = intent?.getBooleanExtra(EXTRA_HIDE_UNSUPPORTED, false) == true
         selectionRestoreScrollY = intent?.getIntExtra(EXTRA_SELECTION_SCROLL_Y, 0)?.coerceAtLeast(0)
         selectedEntries.clear()
@@ -319,7 +325,26 @@ class FloatingContainerService : Service() {
                 if (selectionSaveMode) completeSaveSelection() else completeMultipleSelection()
             }
         }
-        bar.addView(containerIcon); bar.addView(breadcrumbScroll); bar.addView(openFull); bar.addView(selectionDoneView)
+        val viewToggle = TextView(this).apply {
+            gravity = Gravity.CENTER
+            textSize = 21f
+            setTextColor(theme.toolbarText)
+            minWidth = dp(48)
+            minimumHeight = dp(48)
+            fun updateLabel() {
+                text = if (iconMode) "☷" else "▦"
+                contentDescription = if (iconMode) "Switch to list view" else "Switch to icon view"
+                tooltipText = contentDescription
+            }
+            updateLabel()
+            setOnClickListener {
+                iconMode = !iconMode
+                getSharedPreferences("floating_window", MODE_PRIVATE).edit().putBoolean("icon_mode", iconMode).apply()
+                updateLabel()
+                render(currentEntries)
+            }
+        }
+        bar.addView(containerIcon); bar.addView(breadcrumbScroll); bar.addView(viewToggle); bar.addView(openFull); bar.addView(selectionDoneView)
         grid = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -1094,7 +1119,7 @@ class FloatingContainerService : Service() {
         largeEntrySurface = null
         grid.removeAllViews()
         val density = resources.displayMetrics.density
-        val columns = FileViewGrid.columns((params.width / density).roundToInt(), iconDp)
+        val columns = if (iconMode) FileViewGrid.columns((params.width / density).roundToInt(), iconDp) else 1
         val cellWidth = params.width / columns
         val preferences = getSharedPreferences("browser", MODE_PRIVATE)
         val sortByName = preferences.getBoolean("sort_name", true)
@@ -1110,11 +1135,11 @@ class FloatingContainerService : Service() {
             visibleRows.filter(::isVisibleInFilteredSelection)
             else visibleRows
         val makeCard: (ResourceEntry) -> View = { entry ->
-            val card = FileEntryCard(this, entry, true, iconDp, ThemeManager.activeTheme.isDark)
-            val icon = card.attachIcon(FileIconView.createDefault(this, entry, entry.metadata, true, iconDp))
+            val card = FileEntryCard(this, entry, iconMode, iconDp, ThemeManager.activeTheme.isDark)
+            val icon = card.attachIcon(FileIconView.createDefault(this, entry, entry.metadata, iconMode, iconDp))
             card.addLabels(entry.metadata.name, entry.metadata.isDirectory,
                 (cellWidth - 4 * density).roundToInt().coerceAtLeast(36), "")
-            val pixelSize = (iconDp * density).roundToInt()
+            val pixelSize = ((if (iconMode) iconDp else 44) * density).roundToInt()
             fun applyArtwork(resolved: ResourceIconResolver.Icon) {
                 icon.removeViewAt(0)
                 icon.tag=resolved
@@ -1125,7 +1150,7 @@ class FloatingContainerService : Service() {
                     }
                 } ?: TextView(this).apply {
                     text = resolved.fallback
-                    textSize = iconDp * .72f
+                    textSize = (if (iconMode) iconDp else 44) * .72f
                     gravity = Gravity.CENTER
                     includeFontPadding = false
                 }
@@ -1193,7 +1218,7 @@ class FloatingContainerService : Service() {
             card.container
         }
         val table = if (rows.size > 48) VirtualizedEntrySurface(
-            this, rows, columns, ((iconDp + 48) * density).roundToInt(), makeCard,
+            this, rows, columns, ((if (iconMode) iconDp + 48 else 64) * density).roundToInt(), makeCard,
             onCardRemoved = { _, card ->
                 pendingIcons.removeAll { it.first === card }
                 dragItems.removeAll { it.card === card }
@@ -1214,6 +1239,16 @@ class FloatingContainerService : Service() {
 
     private fun handleSelectionLongPress(entry: ResourceEntry, anchor: View): Boolean {
         if (!selectionMode) return false
+        if(!selectionSaveMode && !selectionAllowMultiple && !entry.metadata.isDirectory && callerFileActions.isNotEmpty()) {
+            val menu=android.widget.PopupMenu(this,anchor)
+            callerFileActions.forEachIndexed { index,action -> menu.menu.add(0,index,index,action.label) }
+            menu.setOnMenuItemClickListener { item ->
+                callerFileActions.getOrNull(item.itemId)?.let { selectEntry(entry,it.id) }
+                true
+            }
+            menu.show()
+            return true
+        }
         val mimeType = selectionNewFileMimeType
         if (!selectionSaveMode && mimeType != null && entry.metadata.isDirectory &&
             !entry.metadata.isSymbolicLink && !entry.metadata.isBrokenLink) {
@@ -1404,7 +1439,7 @@ class FloatingContainerService : Service() {
         return true
     }
 
-    private fun selectEntry(entry: ResourceEntry) {
+    private fun selectEntry(entry: ResourceEntry, actionId: String? = null) {
         val mime = com.infinifolder.mime.MimeRegistry.effective(
             entry.metadata.name, entry.metadata.mimeType.ifBlank { "application/octet-stream" })
         if (!matchesSelectionFormat(entry, mime)) {
@@ -1417,6 +1452,7 @@ class FloatingContainerService : Service() {
             return
         }
         val result = Bundle().apply {
+            actionId?.let { putString(FileSelectionContract.EXTRA_RESULT_FILE_ACTION,it) }
             putString(FileSelectionContract.EXTRA_RESULT_URI, entry.uri.toString())
             putString(FileSelectionContract.EXTRA_RESULT_NAME, entry.metadata.name)
             putString(FileSelectionContract.EXTRA_RESULT_MIME, mime)

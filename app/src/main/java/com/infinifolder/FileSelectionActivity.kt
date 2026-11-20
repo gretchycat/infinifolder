@@ -60,6 +60,10 @@ class FileSelectionActivity : Activity() {
         val startName = if (initialDirectory == null) "Virtual root" else null
         val start = FloatingContainerService.intent(this, startUri, startName)
             .putExtra(FloatingContainerService.EXTRA_SELECTION_MODE, true)
+            .putStringArrayListExtra(FileSelectionContract.EXTRA_FILE_ACTION_IDS,
+                intent.getStringArrayListExtra(FileSelectionContract.EXTRA_FILE_ACTION_IDS))
+            .putStringArrayListExtra(FileSelectionContract.EXTRA_FILE_ACTION_LABELS,
+                intent.getStringArrayListExtra(FileSelectionContract.EXTRA_FILE_ACTION_LABELS))
             .putExtra(FloatingContainerService.EXTRA_SELECTION_SAVE_MODE, saveMode)
             .putExtra(FileSelectionContract.EXTRA_SAVE_FILE_NAME,
                 intent.getStringExtra(FileSelectionContract.EXTRA_SAVE_FILE_NAME))
@@ -407,6 +411,10 @@ class FileSelectionActivity : Activity() {
             putExtra(FileSelectionContract.EXTRA_RESULT_URI, relays.first().toString())
             putExtra(FileSelectionContract.EXTRA_RESULT_AUTHORITATIVE_URI, sourceReferences.first())
             putExtra(FileSelectionContract.EXTRA_RESULT_NAME, name)
+            data.getString(FileSelectionContract.EXTRA_RESULT_FILE_ACTION)?.let { action ->
+                if(action in intent.getStringArrayListExtra(FileSelectionContract.EXTRA_FILE_ACTION_IDS).orEmpty())
+                    putExtra(FileSelectionContract.EXTRA_RESULT_FILE_ACTION,action)
+            }
             putExtra(FileSelectionContract.EXTRA_RESULT_MIME, mime)
             putExtra(FileSelectionContract.EXTRA_RESULT_SIZE, sizes.firstOrNull() ?: -1L)
             data.getString(FileSelectionContract.EXTRA_RESULT_DIRECTORY)?.let {

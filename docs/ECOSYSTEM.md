@@ -1,12 +1,12 @@
 # InfiniForge ecosystem
 
-This file is generated from the authoritative [ecosystem manifest](https://github.com/infiniforge/.github/blob/main/ecosystem.json) (inventory checked 2026-11-18). Do not edit this copy; changes are synchronized from that repository through reviewable pull requests.
+This file is generated from the authoritative [ecosystem manifest](https://github.com/infiniforge/.github/blob/main/ecosystem.json) (inventory checked 2026-11-19). Do not edit this copy; changes are synchronized from that repository through reviewable pull requests.
 
 InfiniForge is a set of independently buildable and released Android applications and reusable library repositories. Each app owns its application identity, UI, lifecycle, settings, user data, permissions, and standalone build. Libraries provide reusable APIs and do not make one application depend on another.
 
 ## Component inventory
 
-The inventory contains 10 applications (6 with standalone builds and 4 planned placeholders), 13 shared libraries, and 1 canonical asset repository.
+The inventory contains 10 applications (7 with standalone builds and 3 planned placeholders), 13 shared libraries, and 1 canonical asset repository.
 
 ### Applications
 
@@ -124,17 +124,17 @@ The inventory contains 10 applications (6 with standalone builds and 4 planned p
 
 #### [infiniplay](https://github.com/infiniforge/infiniplay)
 
-**State:** planned placeholder · **Build:** no build yet · **Versions:** no published release verified; not versioned yet
+**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.2.0`
 
-**Purpose:** Planned universal-emulator frontend using the Libretro app as its backend. Placeholder only; no application source or standalone build is present. The intended integration is through the backend's supported public Android interfaces, not imported source or private files.
+**Purpose:** Standalone Android emulator frontend running Libretro cores inside the application. Owns the game library, controller layouts and USB input, session lifecycle, source imports, firmware launch gates and per-game saves. Compiled core bundle covers selected systems through the SNES era including Sega add-ons and Neo Geo; later systems are import-only profiles. Emulation remains in independently pinned third-party cores. Main UI embeds InfiniSelect with Recents/Favorites/Open, hamburger setup, automatic system dispatch and immediate View/Share launch. Shared .iflink collections live under internal storage/infini/play; native working copies and saves stay private.
 
-**Pinned source dependency closure:** None declared
+**Pinned source dependency closure:** [libinfiniselect](https://github.com/infiniforge/libinfiniselect), [libinfinistream](https://github.com/infiniforge/libinfinistream)
 
-**Exact dependency pins:** Use the component's Gradle/package metadata; no ecosystem source lock is declared.
+**Exact dependency pins:** [dependencies.lock.json](https://github.com/infiniforge/infiniplay/blob/main/dependencies.lock.json)
 
-**Optional/runtime integrations:** None recorded
+**Optional/runtime integrations:** [infinifolder](https://github.com/infiniforge/infinifolder)
 
-**Public API and architecture documentation:** None published yet
+**Public API and architecture documentation:** [APPLICATION.md](https://github.com/infiniforge/infiniplay/blob/main/docs/APPLICATION.md), [systems.md](https://github.com/infiniforge/infiniplay/blob/main/docs/systems.md), [architecture.md](https://github.com/infiniforge/infiniplay/blob/main/docs/architecture.md), [storage.md](https://github.com/infiniforge/infiniplay/blob/main/docs/storage.md), [validation.md](https://github.com/infiniforge/infiniplay/blob/main/docs/validation.md), [third-party.md](https://github.com/infiniforge/infiniplay/blob/main/docs/third-party.md), [browser.md](https://github.com/infiniforge/infiniplay/blob/main/docs/browser.md)
 
 #### [infinimesh](https://github.com/infiniforge/infinimesh)
 
@@ -210,9 +210,9 @@ The inventory contains 10 applications (6 with standalone builds and 4 planned p
 
 #### [libinfiniselect](https://github.com/infiniforge/libinfiniselect)
 
-**State:** active · **Build:** standalone library build · **Versions:** no published release verified; build declares `0.1.0`
+**State:** active · **Build:** standalone library build · **Versions:** no published release verified; build declares `0.1.1`
 
-**Purpose:** Reusable Android file open/save selection and resource-resolution client APIs. Owns the optional InfiniFolder picker integration, Android SAF fallback, grant-aware result parsing, distinction between authoritative resource references and current access URIs, and relative playlist resource resolution. It does not depend on the Infinifolder application.
+**Purpose:** Reusable Android file open/save selection and resource-resolution client APIs. Owns the optional InfiniFolder picker integration, Android SAF fallback, grant-aware result parsing, distinction between authoritative resource references and current access URIs, and relative playlist resource resolution. It does not depend on the Infinifolder application. Owns the reusable embedded browser View for local/SAF and optional InfiniFolder sources, persistent list/icon and breadcrumb preferences, and interoperable bounded .iflink serialization and identity deduplication. Caller-defined file action hooks render long-press options in embedded and updated floating single-file selectors; callers perform the selected action.
 
 **Pinned source dependency closure:** None declared
 
@@ -220,7 +220,7 @@ The inventory contains 10 applications (6 with standalone builds and 4 planned p
 
 **Optional/runtime integrations:** [infinifolder](https://github.com/infiniforge/infinifolder)
 
-**Public API and architecture documentation:** [README.md](https://github.com/infiniforge/libinfiniselect/blob/main/README.md)
+**Public API and architecture documentation:** [README.md](https://github.com/infiniforge/libinfiniselect/blob/main/README.md), [embedded-browser.md](https://github.com/infiniforge/libinfiniselect/blob/main/docs/embedded-browser.md)
 
 #### [libinfinisound](https://github.com/infiniforge/libinfinisound)
 
