@@ -98,6 +98,12 @@ verifies Binder UID/session ownership and returns read-granted selected-file
 relays with authoritative identities. Folder renders caller file-action menus;
 clients handle the selected action. See the library's docs/embedded-browser.md.
 
+Embedded setup failures preserve the failing step and exception message across
+the UI executor and Binder response. Folder's diagnostic log records the cause
+chain. An immediate setup error is distinct from the 10-second dispatch timeout;
+failed sessions release their host without replacing the original error during
+cleanup. Cross-app surface acceptance still requires a device test.
+
 ## Relayed listings and collections
 
 The public selection provider retains LIST_DIRECTORY for bounded/paged JSON

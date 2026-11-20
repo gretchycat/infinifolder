@@ -10,6 +10,7 @@ import android.view.SurfaceControlViewHost
 import com.infinifolder.FileSelectionRelayProvider
 import com.infinifolder.StorageDocumentsProvider
 import com.infinifolder.storage.ContainerLinksProvider
+import com.infinifolder.storage.DiagnosticLog
 import io.github.gretchycat.infiniselect.EmbeddedBrowserProtocol as P
 import io.github.gretchycat.infiniselect.FileSelectionContract as F
 import io.github.gretchycat.infiniselect.SelectionAction
@@ -36,7 +37,13 @@ internal class EmbeddedBrowserSessions(private val app: Context) {
     private val selectionWorker = Executors.newSingleThreadExecutor()
 
     fun call(uid: Int, caller: String, args: Bundle): Bundle {
-        if (Looper.myLooper() == Looper.getMainLooper()) return execute(uid, caller, args)
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            try {
+                return execute(uid, caller, args)
+            } catch (error: Exception) {
+                throw reportFailure(args, error)
+            }
+        }
         val created = java.util.concurrent.atomic.AtomicReference<String?>()
         val task = FutureTask {
             execute(uid, caller, args).also {
@@ -49,9 +56,33 @@ internal class EmbeddedBrowserSessions(private val app: Context) {
         } catch (error: Exception) {
             task.cancel(false)
             main.post { created.get()?.let(::close) }
-            throw IllegalStateException("Folder browser request failed", error)
+            throw reportFailure(args, error)
         }
     }
+
+    private fun reportFailure(args: Bundle, error: Exception): IllegalStateException {
+        val failure = browserRequestFailure(error)
+        DiagnosticLog.record(
+            "embedded.browser.request-failed",
+            args.getString(P.ACTION).orEmpty(),
+            failure,
+        )
+        // Binder transports this message; its cause chain remains in Folder's diagnostic log.
+        return IllegalStateException(
+            DiagnosticLog.sanitize(failure.message.orEmpty()),
+            failure.cause,
+        )
+    }
+
+    private inline fun <T> setupStep(name: String, block: () -> T): T =
+        try {
+            block()
+        } catch (error: Exception) {
+            throw IllegalStateException(
+                "Folder browser $name failed (${error.javaClass.simpleName}): ${error.message.orEmpty()}",
+                error,
+            )
+        }
 
     private fun execute(uid: Int, caller: String, args: Bundle): Bundle {
         if (args.getString(P.ACTION) == P.CREATE) return create(uid, caller, args)
@@ -106,23 +137,38 @@ internal class EmbeddedBrowserSessions(private val app: Context) {
             "Too many embedded browsers"
         }
         val (width, height) = dimensions(args)
-        val lifetime = requireNotNull(args.getBinder(P.LIFETIME))
-        val token = requireNotNull(args.getBinder(P.HOST_TOKEN))
+        val lifetime =
+            requireNotNull(args.getBinder(P.LIFETIME)) {
+                "Folder browser requires a client lifetime binder"
+            }
+        val token =
+            requireNotNull(args.getBinder(P.HOST_TOKEN)) {
+                "Folder browser requires an attached host surface"
+            }
         @Suppress("DEPRECATION")
-        val receiver = requireNotNull(args.getParcelable<ResultReceiver>(P.RECEIVER))
+        val receiver =
+            requireNotNull(args.getParcelable<ResultReceiver>(P.RECEIVER)) {
+                "Folder browser requires a result receiver"
+            }
         val display =
             requireNotNull(
                 app.getSystemService(DisplayManager::class.java).getDisplay(args.getInt(P.DISPLAY))
-            )
+            ) {
+                "Folder browser display is unavailable"
+            }
         val context = app.createDisplayContext(display)
-        @Suppress("DEPRECATION") val host = SurfaceControlViewHost(context, display, token)
+        @Suppress("DEPRECATION")
+        val host =
+            setupStep("surface host creation") { SurfaceControlViewHost(context, display, token) }
         val id = UUID.randomUUID().toString()
         val death = IBinder.DeathRecipient { main.post { close(id) } }
         val browser =
             FolderBrowserController(
                 context,
                 embedded = true,
-                attachView = { view, params -> host.setView(view, params.width, params.height) },
+                attachView = { view, params ->
+                    setupStep("view attachment") { host.setView(view, params.width, params.height) }
+                },
                 detachView = {},
                 closeRequested = { main.post { close(id) } },
                 locationChanged = { directory, back ->
@@ -138,9 +184,9 @@ internal class EmbeddedBrowserSessions(private val app: Context) {
         sessions[id] = Session(uid, lifetime, death, host, browser)
         try {
             lifetime.linkToDeath(death, 0)
-            browser.initialize()
+            setupStep("initialization") { browser.initialize() }
             browser.resize(width, height)
-            val request = openIntent(args)
+            val request = setupStep("directory resolution") { openIntent(args) }
             request.putExtra(
                 FloatingContainerService.EXTRA_SELECTION_RECEIVER,
                 object : ResultReceiver(main) {
@@ -212,7 +258,7 @@ internal class EmbeddedBrowserSessions(private val app: Context) {
                     }
                 },
             )
-            browser.open(request)
+            setupStep("opening") { browser.open(request) }
             val pkg =
                 requireNotNull(host.surfacePackage) {
                     "Folder could not create its browser surface"
@@ -225,7 +271,11 @@ internal class EmbeddedBrowserSessions(private val app: Context) {
                 putParcelable(P.SURFACE, pkg)
             }
         } catch (error: Exception) {
-            close(id)
+            try {
+                close(id)
+            } catch (cleanup: Exception) {
+                error.addSuppressed(cleanup)
+            }
             throw error
         }
     }
@@ -262,8 +312,11 @@ internal class EmbeddedBrowserSessions(private val app: Context) {
         try {
             session.browser.destroy()
         } finally {
-            session.surface?.release()
-            session.host.release()
+            try {
+                session.surface?.release()
+            } finally {
+                session.host.release()
+            }
         }
     }
 }

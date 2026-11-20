@@ -113,11 +113,12 @@ internal class FolderBrowserController(
             )
                 onMain { refreshArtwork.run() }
         }
-    private val iconResolver by lazy {
+    private val iconResolverDelegate = lazy {
         ResourceIconResolver(applicationContext).apply {
             onArtworkChanged = { onMain { refreshArtwork.run() } }
         }
     }
+    private val iconResolver by iconResolverDelegate
     private val iconCache =
         object : android.util.LruCache<String, ResourceIconResolver.Icon>(8 * 1024) {
             override fun sizeOf(key: String, value: ResourceIconResolver.Icon) =
@@ -328,6 +329,8 @@ internal class FolderBrowserController(
                 "floating.selector.initialize-failed",
                 error = error,
             )
+            // Embedded setup is synchronous; its session owner releases the view and host.
+            if (embedded) throw error
             if (selectionMode)
                 finishSelection(
                     FileSelectionContract.RESULT_FALLBACK,
@@ -2709,7 +2712,7 @@ internal class FolderBrowserController(
         registrySubscription?.close()
         getSharedPreferences("browser", MODE_PRIVATE)
             .unregisterOnSharedPreferenceChangeListener(iconPreferencesListener)
-        iconResolver.close()
+        if (iconResolverDelegate.isInitialized()) iconResolver.close()
     }
 
     /** Opaque to the gateway: only Folder interprets and validates this browser state. */
