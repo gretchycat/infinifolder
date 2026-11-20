@@ -1,27 +1,96 @@
 package com.infinifolder.overlay
 
 import android.app.Service
+import android.app.Dialog
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.IBinder
+import android.view.MotionEvent
 import android.view.WindowManager
+import com.infinifolder.R
+import com.infinifolder.theme.ThemeManager
 import io.github.gretchycat.infiniselect.FileSelectionContract
 
 /** Floating host for Folder's complete browser, also hosted by embedded sessions. */
 class FloatingContainerService : Service() {
     private lateinit var browser: FolderBrowserController
+    private var floatingDialog: Dialog? = null
+    private var floatingWindowReceivedFocus = false
 
     override fun onCreate() {
         super.onCreate()
-        val windows = getSystemService(WINDOW_SERVICE) as WindowManager
         browser =
             FolderBrowserController(
                 this,
-                attachView = { view, params -> windows.addView(view, params) },
-                detachView = { view -> windows.removeView(view) },
+                attachView = ::attachFloatingWindow,
+                detachView = {
+                    val dialog = floatingDialog
+                    floatingDialog = null
+                    floatingWindowReceivedFocus = false
+                    dialog?.dismiss()
+                },
                 closeRequested = { stopSelf() },
+                updateAttachedWindow = { _, params ->
+                    floatingDialog?.window?.let { window ->
+                        val attributes = WindowManager.LayoutParams().apply {
+                            copyFrom(params)
+                            flags = flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND.inv() and
+                                WindowManager.LayoutParams.FLAG_BLUR_BEHIND.inv()
+                            dimAmount = 0f
+                        }
+                        window.attributes = attributes
+                    }
+                },
+                setWindowBackgroundBlurRadius = { radius ->
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        floatingDialog?.window?.setBackgroundBlurRadius(radius)
+                    }
+                },
             )
         browser.initialize()
+    }
+
+    private fun attachFloatingWindow(view: android.view.View, params: WindowManager.LayoutParams) {
+        val theme =
+            if (ThemeManager.activeTheme.isDark) R.style.FloatingOverlayDialogDark
+            else R.style.FloatingOverlayDialog
+        val dialog = Dialog(this, theme).apply {
+            setCancelable(false)
+            setCanceledOnTouchOutside(false)
+            setContentView(view)
+        }
+        val window = requireNotNull(dialog.window) { "Floating browser dialog has no window" }
+        window.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        val attributes = WindowManager.LayoutParams().apply {
+            copyFrom(params)
+            flags = flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND.inv() and
+                WindowManager.LayoutParams.FLAG_BLUR_BEHIND.inv()
+            dimAmount = 0f
+        }
+        window.attributes = attributes
+        floatingDialog = dialog
+        dialog.show()
+        // Dialog.show() can normalize some attributes; reapply the overlay geometry after attach.
+        window.attributes = attributes
+        val decor = window.decorView
+        floatingWindowReceivedFocus = decor.hasWindowFocus()
+        decor.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                browser.dismissFromHost()
+                true
+            } else false
+        }
+        decor.viewTreeObserver.addOnWindowFocusChangeListener { hasWindowFocus ->
+            if (hasWindowFocus) {
+                floatingWindowReceivedFocus = true
+            } else if (floatingWindowReceivedFocus) {
+                browser.dismissFromHost()
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

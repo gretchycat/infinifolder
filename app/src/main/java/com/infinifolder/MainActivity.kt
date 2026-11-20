@@ -360,6 +360,8 @@ class MainActivity : Activity(), DebugDumpObserver {
     private lateinit var treeContent: LinearLayout
     private lateinit var treeScrollView: ScrollView
     private lateinit var breadcrumb: LinearLayout
+    private var currentBreadcrumbSpaceView: FrameLayout? = null
+    private var breadcrumbSpaceGeneration = 0L
     private var browserPanePagerGestureInProgress = false
     private var browserPaneTransitionInProgress = false
     private var browserPaneTransitionGeneration = 0
@@ -1352,7 +1354,12 @@ class MainActivity : Activity(), DebugDumpObserver {
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             isLongClickable = true
-            setOnLongClickListener { onEmptyAreaLongPress() }
+            setOnLongClickListener {
+                if (!homeMode && !grid) {
+                    showCurrentDirectoryMenu()
+                    true
+                } else onEmptyAreaLongPress()
+            }
         }
         fileScroll = PullToRefreshScrollView(this).apply {
             isFillViewport = true
@@ -4685,6 +4692,8 @@ class MainActivity : Activity(), DebugDumpObserver {
     private fun renderLocation() {
         updateFloatingModeAction()
         try {
+            val spaceGeneration = ++breadcrumbSpaceGeneration
+            currentBreadcrumbSpaceView = null
             if (!homeMode && current == ContainerLinksProvider.ROOT) { showHomeRoot(); return }
             // Virtual root is rendered separately, never as a folder-history entry.
             // Also repair history restored from builds that included the tree root.
@@ -4748,17 +4757,72 @@ class MainActivity : Activity(), DebugDumpObserver {
             }
             historyNames.forEachIndexed { index, name ->
                 if (index > 0) breadcrumb.addView(crumbText("›", setTextColorForTheme(), false))
-                val crumb = crumbText(name, setTextColorForTheme(), index == historyNames.lastIndex) { selectLocation(index) }
-                history.getOrNull(index)?.let { destination ->
-                    installBreadcrumbDropTarget(crumb, destination, name, onNavigate = { selectLocation(index) })
+                val currentCrumb = index == historyNames.lastIndex
+                val destination = history.getOrNull(index)
+                if (currentCrumb) {
+                    val outlineColor = if (com.infinifolder.theme.ThemeManager.activeTheme.isDark)
+                        android.graphics.Color.WHITE else android.graphics.Color.BLACK
+                    val profile = DiskSpaceProfile.createView(this, outlineColor)
+                    val crumb = LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        isClickable = true
+                        isFocusable = true
+                        minimumHeight = dp(48)
+                        setPadding(dp(6), dp(4), dp(6), dp(4))
+                        contentDescription = "Current folder: $name"
+                        setOnClickListener { selectLocation(index) }
+                        addView(TextView(this@MainActivity).apply {
+                            text = name
+                            textSize = 14f
+                            setTextColor(setTextColorForTheme())
+                            setTypeface(typeface, android.graphics.Typeface.BOLD)
+                            includeFontPadding = false
+                            maxLines = 1
+                            maxEms = 22
+                            ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                        })
+                        addView(profile)
+                    }
+                    currentBreadcrumbSpaceView = profile
+                    destination?.let {
+                        installBreadcrumbDropTarget(crumb, it, name, onNavigate = { selectLocation(index) })
+                        requestBreadcrumbSpaceProfile(it, profile, spaceGeneration)
+                    }
+                    breadcrumb.addView(crumb)
+                } else {
+                    val crumb = crumbText(name, setTextColorForTheme(), false) { selectLocation(index) }
+                    destination?.let {
+                        installBreadcrumbDropTarget(crumb, it, name, onNavigate = { selectLocation(index) })
+                    }
+                    breadcrumb.addView(crumb)
                 }
-                breadcrumb.addView(crumb)
             }
             breadcrumb.post { (breadcrumb.parent as? HorizontalScrollView)?.fullScroll(View.FOCUS_RIGHT) }
             renderTree()
         } catch (t: Throwable) {
             android.util.Log.e("InfiniFolder", "Error rendering location", t)
             com.infinifolder.storage.DiagnosticLog.record("browser.failure", error = t)
+        }
+    }
+
+    private fun requestBreadcrumbSpaceProfile(uri: Uri, view: FrameLayout, generation: Long) {
+        val ref = provider.refForUri(uri) ?: return
+        io.execute {
+            if (isFinishing || isDestroyed || generation != breadcrumbSpaceGeneration || current != uri) return@execute
+            val info = runCatching { (provider.fileSystemInfo(ref) as? ProviderResult.Success)?.value }.getOrNull()
+            val badge = DiskSpaceProfile.create(this, info)
+            runOnUiThread {
+                if (isFinishing || isDestroyed || generation != breadcrumbSpaceGeneration ||
+                    current != uri || currentBreadcrumbSpaceView !== view) return@runOnUiThread
+                if (badge == null) {
+                    view.visibility = View.GONE
+                } else {
+                    DiskSpaceProfile.apply(view, badge)
+                    view.visibility = View.VISIBLE
+                }
+            }
         }
     }
     private fun selectLocation(index: Int) {
@@ -5356,6 +5420,14 @@ class MainActivity : Activity(), DebugDumpObserver {
         val isSelected = selectedUris.contains(entry.uri)
         val card = FileEntryCard(this, entry, asGrid, iconSizeDp, dark, isSelected, ::onEmptyAreaLongPress)
         val box = card.container
+        if (!asGrid) {
+            // List rows must span the pane so blank row space remains part of the
+            // item's long-press source and folder drop target.
+            box.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
         val sideDp = if (asGrid) iconSizeDp else 44
         val sidePx = dp(sideDp)
         val isShortcut = ShortcutInfo.isShortcut(entry.metadata.name, entry.metadata.mimeType)
@@ -5537,6 +5609,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 private var dragAttempted = false
                 private var holding = false
                 private var target: View? = null
+                private var downOnEntryContent = true
                 private fun traceEntryTouch(phase: String, detail: String = "") {
                     val source = when (target) {
                         icon -> "icon"
@@ -5554,7 +5627,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         armed = true
                         browserEntryHoldArmed = true
                         traceEntryTouch("armed", "trigger=pointer-event")
-                        indicator.progress = 1f
+                        indicator.progress = if (downOnEntryContent) 1f else -1f
                         target?.parent?.requestDisallowInterceptTouchEvent(true)
                     }
                 }
@@ -5563,7 +5636,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                         val view = target ?: return
                         if (!holding || moved || dragStarted) return
                         val progress = ((SystemClock.uptimeMillis() - downAt).toFloat() / holdTimeout).coerceIn(0f, 1f)
-                        indicator.progress = progress
+                        indicator.progress = if (downOnEntryContent) progress else -1f
                         if (progress >= 1f) {
                             armed = true
                             browserEntryHoldArmed = true
@@ -5581,13 +5654,15 @@ class MainActivity : Activity(), DebugDumpObserver {
                             downY = event.y
                             downAt = SystemClock.uptimeMillis()
                             gestureId = event.downTime
+                            downOnEntryContent = asGrid || view === icon ||
+                                isEntryContentHit(box, entry, event.x, event.y)
                             armed = false
                             moved = false
                             dragStarted = false
                             dragAttempted = false
                             holding = true
-                            traceEntryTouch("down")
-                            indicator.progress = 0f
+                            traceEntryTouch("down", "entryContent=$downOnEntryContent")
+                            indicator.progress = if (downOnEntryContent) 0f else -1f
                             view.postOnAnimation(updateHold)
                         }
                         MotionEvent.ACTION_MOVE -> {
@@ -5600,11 +5675,14 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 holding = false
                                 view.removeCallbacks(updateHold)
                                 if (!armed) view.parent?.requestDisallowInterceptTouchEvent(false)
-                                if (armed && !dragAttempted) {
+                                if (armed && !dragAttempted && downOnEntryContent) {
                                     dragAttempted = true
                                     indicator.progress = -1f
                                     dragStarted = startEntryDrag(view, icon, entry)
                                     traceEntryTouch("drag-attempt", "accepted=$dragStarted")
+                                } else if (armed && !dragAttempted) {
+                                    dragAttempted = true
+                                    traceEntryTouch("drag-attempt", "ignored=empty-row-space")
                                 }
                                 indicator.progress = -1f
                                 if (dragStarted) view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -5634,14 +5712,15 @@ class MainActivity : Activity(), DebugDumpObserver {
                                 )
                             } else when {
                                 armed && !moved && !dragStarted -> {
-                                    if (selectionMode) {
+                                    if (!downOnEntryContent) showCurrentDirectoryMenu()
+                                    else if (selectionMode) {
                                         if (entry.uri !in selectedUris) selectedUris.add(entry.uri)
                                         renderEntries()
                                         updateListingStatus()
                                         showBatchActionMenu()
                                     } else showEntryMenu(entry)
                                 }
-                                !moved && !dragStarted -> onEntryClick.onClick(view)
+                                !moved && !dragStarted -> if (downOnEntryContent) onEntryClick.onClick(view)
                             }
                             target = null
                         }
@@ -8010,12 +8089,45 @@ class MainActivity : Activity(), DebugDumpObserver {
         val (x, y) = dragEventScreenPosition(view, event)
         val bounds = android.graphics.Rect()
         if (!fileScrollContainer.getGlobalVisibleRect(bounds) || !bounds.contains(x.toInt(), y.toInt())) return false
-        val destination = if (homeMode && homePage == "root") ContainerLinksProvider.ROOT
-            else current?.takeUnless { homeMode } ?: return false
+        val location = current?.takeUnless { homeMode }
+        val historySnapshot = history.mapIndexedNotNull { index, uri ->
+            historyNames.getOrNull(index)?.let { uri to it }
+        }
+        val listParent = if (location != null && !grid)
+            resolveParentLocationFromHistory(location, historySnapshot) else null
+        if (location != null && !grid && listParent == null) {
+            activeDragDropHandled = true
+            io.execute {
+                val result = runCatching { resolveParentLocation(location, historySnapshot) }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || current != location) return@runOnUiThread
+                    val parent = result.getOrNull()
+                    if (parent == null) {
+                        Toast.makeText(this,
+                            result.exceptionOrNull()?.message ?: "This folder has no accessible parent directory",
+                            Toast.LENGTH_LONG).show()
+                        return@runOnUiThread
+                    }
+                    startBatchTransfer(payload.entries, false, parent.first, createLinks = true,
+                        refreshLocationAfterTransfer = parent.first, restoreScrollYAfterTransfer = fileScroll.scrollY,
+                        refreshLocationDisplayName = parent.second)
+                    com.infinifolder.storage.DiagnosticLog.record(
+                        "browser.drag.breadcrumb-link", "source=${payload.entries.firstOrNull()?.uri} destination=${parent.first}")
+                }
+            }
+            return true
+        }
+        val destination = when {
+            homeMode && homePage == "root" -> ContainerLinksProvider.ROOT
+            location == null -> return false
+            !grid -> listParent?.first ?: return false
+            else -> location
+        }
+        val destinationName = if (!grid) listParent?.second else historyNames.lastOrNull()
         activeDragDropHandled = true
         startBatchTransfer(payload.entries, false, destination, createLinks = true,
             refreshLocationAfterTransfer = destination, restoreScrollYAfterTransfer = fileScroll.scrollY,
-            refreshLocationDisplayName = historyNames.lastOrNull())
+            refreshLocationDisplayName = destinationName)
         com.infinifolder.storage.DiagnosticLog.record("browser.drag.breadcrumb-link", "source=${payload.entries.firstOrNull()?.uri} destination=$destination")
         return true
     }
@@ -8766,15 +8878,57 @@ class MainActivity : Activity(), DebugDumpObserver {
         }
     }
 
+    /** A list row only belongs to its file where the icon or visible text is drawn. */
+    private fun isEntryContentHit(card: View, entry: ResourceEntry, x: Float, y: Float): Boolean {
+        if (grid) return true
+        val row = card as? ViewGroup ?: return false
+        val icon = entryIconViews[entry.uri] ?: return false
+        val iconBounds = android.graphics.Rect(0, 0, icon.width, icon.height)
+        row.offsetDescendantRectToMyCoords(icon, iconBounds)
+        if (iconBounds.contains(x.toInt(), y.toInt())) return true
+
+        val labels = row.getChildAt(1) as? ViewGroup ?: return false
+        fun hitsVisibleText(view: View?): Boolean {
+            val text = view as? TextView ?: return false
+            if (text.text.isNullOrEmpty() || text.layout == null) return false
+            val bounds = android.graphics.Rect(0, 0, text.width, text.height)
+            row.offsetDescendantRectToMyCoords(text, bounds)
+            val layout = text.layout
+            var lineLeft = Float.POSITIVE_INFINITY
+            var lineRight = Float.NEGATIVE_INFINITY
+            for (line in 0 until layout.lineCount) {
+                lineLeft = minOf(lineLeft, layout.getLineLeft(line))
+                lineRight = maxOf(lineRight, layout.getLineRight(line))
+            }
+            if (!lineLeft.isFinite() || !lineRight.isFinite() || lineRight <= lineLeft) return false
+            val slop = dp(3)
+            val left = bounds.left + text.compoundPaddingLeft + lineLeft - slop
+            val right = bounds.left + text.compoundPaddingLeft + lineRight + slop
+            val top = bounds.top + text.compoundPaddingTop - slop
+            val bottom = bounds.top + text.compoundPaddingTop + layout.height + slop
+            return x >= left && x <= right && y >= top && y <= bottom
+        }
+
+        return hitsVisibleText(labels.getChildAt(0)) || hitsVisibleText(labels.getChildAt(1))
+    }
+
     private fun dragCardAtScreen(x: Float, y: Float): Pair<View, ResourceEntry>? {
-        fun contains(view: View): Boolean {
-            if (!view.isShown || !view.isAttachedToWindow) return false
+        fun screenPosition(view: View): IntArray? {
+            if (!view.isShown || !view.isAttachedToWindow) return null
             val position = IntArray(2)
             view.getLocationOnScreen(position)
-            return x >= position[0] && x < position[0] + view.width && y >= position[1] && y < position[1] + view.height
+            return position
         }
-        if (!contains(fileScroll)) return null
-        return dragContainerCards.entries.firstOrNull { contains(it.key) }?.let { it.key to it.value }
+        val scrollPosition = screenPosition(fileScroll) ?: return null
+        if (x < scrollPosition[0] || x >= scrollPosition[0] + fileScroll.width ||
+            y < scrollPosition[1] || y >= scrollPosition[1] + fileScroll.height) return null
+        return dragContainerCards.entries.firstOrNull { (card, entry) ->
+            val position = screenPosition(card) ?: return@firstOrNull false
+            val localX = x - position[0]
+            val localY = y - position[1]
+            localX >= 0f && localX < card.width && localY >= 0f && localY < card.height &&
+                isEntryContentHit(card, entry, localX, localY)
+        }?.let { it.key to it.value }
     }
 
     private fun dragNavigationAtScreen(x: Float, y: Float): Pair<View, DragNavigationTarget>? {
@@ -8865,14 +9019,88 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (!fileScroll.getGlobalVisibleRect(bounds) || !bounds.contains(x.toInt(), y.toInt())) return false
         // Icon/navigation targets retain priority over the background destination.
         if (dragNavigationAtScreen(x, y) != null || dragCardAtScreen(x, y) != null) return false
-        val destination = if (homeMode && homePage == "root") ContainerLinksProvider.ROOT
-            else current?.takeUnless { homeMode } ?: return false
+        val location = current?.takeUnless { homeMode }
+        val listParent = if (location != null && !grid) {
+            resolveParentLocationFromHistory(location, history.mapIndexedNotNull { index, uri ->
+                historyNames.getOrNull(index)?.let { uri to it }
+            })
+        } else null
+        if (location != null && !grid && listParent == null) {
+            val historySnapshot = history.mapIndexedNotNull { index, uri ->
+                historyNames.getOrNull(index)?.let { uri to it }
+            }
+            activeDragDropHandled = true
+            cancelDragContainerHover()
+            io.execute {
+                val result = runCatching { resolveParentLocation(location, historySnapshot) }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || current != location) return@runOnUiThread
+                    val parent = result.getOrNull()
+                    if (parent == null) {
+                        val message = result.exceptionOrNull()?.message ?: "This folder has no accessible parent directory"
+                        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                        return@runOnUiThread
+                    }
+                    logAndPerformBackgroundDrop(payload, parent.first, parent.second)
+                }
+            }
+            return true
+        }
+        val destination = when {
+            homeMode && homePage == "root" -> ContainerLinksProvider.ROOT
+            location == null -> return false
+            !grid -> listParent?.first ?: return false
+            else -> location
+        }
         cancelDragContainerHover()
         activeDragDropHandled = true
+        logAndPerformBackgroundDrop(payload, destination, if (!grid) listParent?.second ?: "parent folder" else historyNames.lastOrNull() ?: "current folder")
+        return true
+    }
+
+    private fun logAndPerformBackgroundDrop(payload: BrowserDragPayload, destination: Uri, targetName: String) {
         com.infinifolder.storage.DiagnosticLog.record("browser.drag.background-drop",
             "items=${payload.entries.size} destinationProvider=${resourceRef(destination).providerId}")
-        performBrowserDrop(payload, destination, historyNames.lastOrNull() ?: "current folder")
-        return true
+        performBrowserDrop(payload, destination, targetName)
+    }
+
+    private fun resolveParentLocationFromHistory(
+        location: Uri,
+        historySnapshot: List<Pair<Uri, String>>
+    ): Pair<Uri, String>? {
+        val index = historySnapshot.indexOfLast { sameResourceUri(it.first, location) }
+        return historySnapshot.getOrNull(index - 1)
+    }
+
+    private fun resolveParentLocation(
+        location: Uri,
+        historySnapshot: List<Pair<Uri, String>>
+    ): Pair<Uri, String>? {
+        resolveParentLocationFromHistory(location, historySnapshot)?.let { return it }
+        if (ArchiveUri.isArchiveUri(location) && ArchiveUri.getEntryPath(location).isNotEmpty()) {
+            val parentPath = ArchiveUri.getEntryPath(location).substringBeforeLast('/', "")
+            val source = ArchiveUri.getSourceUri(location)
+            val parentUri = ArchiveUri.build(source, parentPath, deleted = ArchiveUri.isDeletedView(location))
+            val index = historySnapshot.indexOfLast { sameResourceUri(it.first, parentUri) }
+            val parentName = historySnapshot.getOrNull(index)?.second ?: parentPath.substringAfterLast('/').ifEmpty {
+                source.lastPathSegment?.substringAfterLast('/') ?: "Container"
+            }
+            return parentUri to parentName
+        }
+        val resource = if (ArchiveUri.isArchiveUri(location) && ArchiveUri.getEntryPath(location).isEmpty())
+            ArchiveUri.getSourceUri(location) else location
+        val knownParent = knownResourceParents[resource]
+        val parentRef = when (val resolved = provider.parent(resourceRef(resource))) {
+            is ProviderResult.Success -> resolved.value ?: return null
+            is ProviderResult.Unsupported -> knownParent?.let(::resourceRef) ?: return null
+            is ProviderResult.Failure -> throw java.io.IOException(resolved.message, resolved.cause)
+        }
+        val parent = when (val stat = provider.stat(parentRef)) {
+            is ProviderResult.Success -> stat.value
+            is ProviderResult.Failure -> throw java.io.IOException(stat.message, stat.cause)
+            is ProviderResult.Unsupported -> throw java.io.IOException("Cannot inspect the parent folder")
+        }
+        return parent.uri to parent.metadata.name
     }
 
     private fun dispatchEntryDropAtScreen(view: View, event: android.view.DragEvent): Boolean {
@@ -8937,7 +9165,13 @@ class MainActivity : Activity(), DebugDumpObserver {
             when (event.action) {
                 android.view.DragEvent.ACTION_DRAG_STARTED -> enabled
                 android.view.DragEvent.ACTION_DRAG_ENTERED -> {
-                    if (enabled) setEntryDropHighlight(view, true, asGrid)
+                    if (enabled && (asGrid || isEntryContentHit(view, entry, event.x, event.y)))
+                        setEntryDropHighlight(view, true, asGrid)
+                    enabled
+                }
+                android.view.DragEvent.ACTION_DRAG_LOCATION -> {
+                    if (enabled && !asGrid)
+                        setEntryDropHighlight(view, isEntryContentHit(view, entry, event.x, event.y), false)
                     enabled
                 }
                 android.view.DragEvent.ACTION_DRAG_EXITED -> {
@@ -8949,7 +9183,9 @@ class MainActivity : Activity(), DebugDumpObserver {
                     cancelDragContainerHover()
                     setEntryDropHighlight(view, false, asGrid)
                     if (enabled && payload != null) {
-                        dispatchEntryDrop(entry, payload)
+                        if (!asGrid && !isEntryContentHit(view, entry, event.x, event.y))
+                            dispatchFilePaneDropAtScreen(view, event)
+                        else dispatchEntryDrop(entry, payload)
                     }
                     enabled
                 }
@@ -15226,6 +15462,10 @@ class MainActivity : Activity(), DebugDumpObserver {
             else -> showHomeRoot()
         } else current?.let {
             if (AppsUri.isAppsUri(it)) appsProvider.invalidateCache()
+            currentBreadcrumbSpaceView?.let { view ->
+                val generation = ++breadcrumbSpaceGeneration
+                requestBreadcrumbSpaceProfile(it, view, generation)
+            }
             load(it)
         }
     }

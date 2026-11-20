@@ -10,6 +10,7 @@ import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
@@ -46,6 +47,7 @@ import com.infinifolder.SelectionBreadcrumb
 import com.infinifolder.SelectionBreadcrumbState
 import com.infinifolder.SelectionLocationFallback
 import com.infinifolder.VirtualizedEntrySurface
+import com.infinifolder.DiskSpaceProfile
 import com.infinifolder.archive.ArchiveFormats
 import com.infinifolder.archive.ArchiveUri
 import com.infinifolder.model.ProviderResult
@@ -54,8 +56,10 @@ import com.infinifolder.model.ResourceMetadata
 import com.infinifolder.model.ResourceRef
 import com.infinifolder.storage.StorageRuntime
 import com.infinifolder.theme.ThemeManager
+import com.infinifolder.theme.ThemeColors
 import io.github.gretchycat.infiniselect.FileSelectionContract
 import java.io.IOException
+import java.util.function.Consumer
 import kotlin.math.roundToInt
 
 /**
@@ -69,11 +73,14 @@ internal class FolderBrowserController(
     private val detachView: (View) -> Unit,
     private val closeRequested: () -> Unit,
     private val locationChanged: (Uri?, Boolean) -> Unit = { _, _ -> },
+    private val updateAttachedWindow: ((View, WindowManager.LayoutParams) -> Unit)? = null,
+    private val setWindowBackgroundBlurRadius: ((Int) -> Unit)? = null,
 ) : ContextWrapper(context) {
     private lateinit var windows: WindowManager
     private lateinit var runtime: StorageRuntime
     private lateinit var params: WindowManager.LayoutParams
     private lateinit var root: FrameLayout
+    private var blurEnabledListener: Consumer<Boolean>? = null
     private lateinit var containerIcon: android.widget.FrameLayout
     private lateinit var breadcrumbs: LinearLayout
     private lateinit var breadcrumbScroll: HorizontalScrollView
@@ -88,6 +95,8 @@ internal class FolderBrowserController(
     private var embeddedHeight = 1
     private var current: Uri? = null
     private var currentDisplayName: String? = null
+    private var currentSpaceProfileView: FrameLayout? = null
+    private var spaceProfileGeneration = 0L
 
     private data class Crumb(val uri: Uri, val name: String)
 
@@ -142,7 +151,13 @@ internal class FolderBrowserController(
     private var listingReady = false
     private var resizeReflowScheduled = false
 
-    private data class DragItem(val card: View, val icon: View, val entry: ResourceEntry)
+    private data class DragItem(
+        val card: View,
+        val icon: View,
+        val entry: ResourceEntry,
+        val name: TextView,
+        val metadata: TextView?,
+    )
 
     private data class LauncherDrag(val token: String, var observer: ResultReceiver? = null)
 
@@ -376,6 +391,11 @@ internal class FolderBrowserController(
         val theme = ThemeManager.activeTheme
         val background = theme.background
         val foreground = theme.textPrimary
+        val blurAvailable = !embedded && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            runCatching { windows.isCrossWindowBlurEnabled }.getOrDefault(false)
+        val floatingBackdropTheme = if (blurAvailable) theme.copy(
+            background = if (theme.isDark) 0x80000000.toInt() else 0x80FFFFFF.toInt()
+        ) else theme
         root =
             object : FrameLayout(this) {
                     private var receivedFocus = false
@@ -422,7 +442,8 @@ internal class FolderBrowserController(
                         setPadding(0, 0, 0, 0)
                         elevation = 0f
                     } else {
-                        this.background = ThemeManager.createFloatingFrameDrawable(theme, density)
+                        this.background =
+                            ThemeManager.createFloatingFrameDrawable(floatingBackdropTheme, density)
                         setPadding(dp(3), dp(3), dp(3), dp(3))
                         elevation = dp(12).toFloat()
                     }
@@ -471,8 +492,8 @@ internal class FolderBrowserController(
                 layoutParams = LinearLayout.LayoutParams(0, -1, 1f)
                 addView(breadcrumbs, ViewGroup.LayoutParams(-2, -1))
             }
-        // Keep taps and horizontal scrolling on breadcrumb buttons intact. Only blank
-        // title-bar space is claimed as a move surface.
+        // Keep breadcrumb taps and scrolling intact. Blank title space and the current
+        // breadcrumb's right half remain available as window move surfaces.
         val titleDrag = windowDragTouchListener()
         bar.setOnTouchListener(titleDrag)
         containerIcon.setOnTouchListener(windowDragTouchListener())
@@ -533,6 +554,9 @@ internal class FolderBrowserController(
                     render(currentEntries)
                 }
             }
+        installTitleBarFallbackDrag(viewToggle)
+        installTitleBarFallbackDrag(openFull)
+        selectionDoneView?.let(::installTitleBarFallbackDrag)
         bar.addView(containerIcon)
         bar.addView(breadcrumbScroll)
         bar.addView(viewToggle)
@@ -554,23 +578,18 @@ internal class FolderBrowserController(
                     dragItems
                         .lastOrNull { item ->
                             item.card.getLocationOnScreen(origin)
+                            val localX = (event.rawX - origin[0]).toInt()
+                            val localY = (event.rawY - origin[1]).toInt()
                             item.card.getLocalVisibleRect(bounds) &&
-                                bounds.contains(
-                                    (event.rawX - origin[0]).toInt(),
-                                    (event.rawY - origin[1]).toInt(),
-                                )
+                                bounds.contains(localX, localY) &&
+                                (iconMode || isCardContentHit(item, localX.toFloat(), localY.toFloat()))
                         }
                         ?.let { item ->
                             if (selectionMode) handleSelectionLongPress(item.entry, item.card)
                             else startLauncherDrag(item)
-                        } ?: selectionMode
+                        } ?: if (!selectionMode && !embedded) true else selectionMode
                 }
-                // Empty-space holds still open this location in the full browser.
-                onGridLongPress = {
-                    if (!selectionMode) {
-                        current?.let { launchInMain(it, inApp = true) }
-                    }
-                }
+                onGridLongPress = { /* Blank-space holds have no action in the floating window. */ }
                 onRefreshListener = { current?.let { show(it, currentDisplayName) } }
                 addView(grid, android.widget.FrameLayout.LayoutParams(-1, -1))
                 setOnScaleGestureListener(
@@ -642,7 +661,55 @@ internal class FolderBrowserController(
         root.isFocusableInTouchMode = true
         attachView(root, params)
         root.requestFocus()
-        if (!embedded) registerFloatingBackCallback(root)
+        if (!embedded) {
+            registerFloatingBackCallback(root)
+            registerCrossWindowBlurListener(theme, density)
+        }
+    }
+
+    @android.annotation.TargetApi(Build.VERSION_CODES.S)
+    private fun registerCrossWindowBlurListener(theme: ThemeColors, density: Float) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val listener = Consumer<Boolean> { enabled -> applyFloatingBlur(theme, density, enabled) }
+        blurEnabledListener = listener
+        runCatching { windows.addCrossWindowBlurEnabledListener(listener) }
+            .onFailure {
+                blurEnabledListener = null
+                applyFloatingBlur(theme, density, false)
+            }
+    }
+
+    @android.annotation.TargetApi(Build.VERSION_CODES.S)
+    private fun applyFloatingBlur(theme: ThemeColors, density: Float, enabled: Boolean) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || windowView == null) return
+        val useBlur = enabled && !embedded
+        val backdropTheme =
+            if (useBlur) {
+                theme.copy(
+                    background = if (theme.isDark) 0x80000000.toInt() else 0x80FFFFFF.toInt()
+                )
+            } else theme
+        root.background = ThemeManager.createFloatingFrameDrawable(backdropTheme, density)
+        setWindowBackgroundBlurRadius?.invoke(
+            if (useBlur) (FLOATING_BLUR_RADIUS_DP * density).roundToInt() else 0
+        )
+        root.invalidate()
+        runCatching { updateWindowLayout() }
+    }
+
+    private fun updateWindowLayout() {
+        val updater = updateAttachedWindow
+        if (updater == null) windows.updateViewLayout(root, params) else updater(root, params)
+    }
+
+    @android.annotation.TargetApi(Build.VERSION_CODES.S)
+    private fun unregisterCrossWindowBlurListener() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            blurEnabledListener?.let { listener ->
+                runCatching { windows.removeCrossWindowBlurEnabledListener(listener) }
+            }
+        }
+        blurEnabledListener = null
     }
 
     /** Gesture Back uses the window dispatcher on Android 13+ instead of KEYCODE_BACK. */
@@ -738,7 +805,7 @@ internal class FolderBrowserController(
                                 minimumHeight.coerceIn(1, availableHeight),
                                 availableHeight,
                             )
-                        runCatching { windows.updateViewLayout(root, params) }
+                        runCatching { updateWindowLayout() }
                         // Rebase at limits so reversing direction responds immediately.
                         windowX = params.x
                         windowY = params.y
@@ -1190,6 +1257,8 @@ internal class FolderBrowserController(
         root.findViewWithTag<View>("embedded-actions")?.let(root::removeView)
         locationChanged(current, trail.size > 1)
         breadcrumbs.removeAllViews()
+        currentSpaceProfileView = null
+        val profileGeneration = ++spaceProfileGeneration
         val theme = ThemeManager.activeTheme
         val density = resources.displayMetrics.density
         fun dp(value: Int) = (value * density).roundToInt()
@@ -1206,33 +1275,77 @@ internal class FolderBrowserController(
                     LinearLayout.LayoutParams(dp(14), -1),
                 )
             val currentCrumb = index == trail.lastIndex
-            breadcrumbs.addView(
-                TextView(this).apply {
-                    text = crumb.name
-                    textSize = TOOLBAR_HEIGHT_DP * .38f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+            if (currentCrumb) {
+                val outlineColor = if (theme.isDark) Color.WHITE else Color.BLACK
+                val profile = DiskSpaceProfile.createView(this, outlineColor)
+                val crumbView = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER_VERTICAL
-                    includeFontPadding = false
-                    maxLines = 1
-                    maxEms = 22
-                    ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
-                    setPadding(dp(5), 0, dp(5), 0)
-                    setTextColor(theme.toolbarText)
-                    isSelected = currentCrumb
-                    contentDescription =
-                        when {
-                            index == 0 -> "Root container: ${crumb.name}"
-                            currentCrumb -> "Current folder: ${crumb.name}"
-                            else -> "Go to ${crumb.name}"
-                        }
-                    tooltipText = crumb.name
+                    isClickable = true
+                    isFocusable = true
+                    setPadding(dp(5), dp(2), dp(5), dp(2))
+                    contentDescription = "Current folder: ${crumb.name}"
+                    addView(TextView(this@FolderBrowserController).apply {
+                        text = crumb.name
+                        textSize = TOOLBAR_HEIGHT_DP * .38f
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        gravity = Gravity.CENTER_VERTICAL
+                        includeFontPadding = false
+                        maxLines = 1
+                        maxEms = 22
+                        ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                        setTextColor(theme.toolbarText)
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    })
+                    addView(profile)
                     setOnClickListener { show(crumb.uri, crumb.name) }
-                    if (currentCrumb) setOnTouchListener(windowDragTouchListener(clickOnTap = true))
-                },
-                LinearLayout.LayoutParams(-2, -1),
-            )
+                }
+                installTitleBarFallbackDrag(crumbView, currentCrumbHandle = true)
+                currentSpaceProfileView = profile
+                breadcrumbs.addView(crumbView, LinearLayout.LayoutParams(-2, -1))
+                loadSpaceProfile(crumb.uri, profile, profileGeneration)
+            } else {
+                val ancestorCrumb = TextView(this).apply {
+                        text = crumb.name
+                        textSize = TOOLBAR_HEIGHT_DP * .38f
+                        gravity = Gravity.CENTER_VERTICAL
+                        includeFontPadding = false
+                        maxLines = 1
+                        maxEms = 22
+                        ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                        setPadding(dp(5), 0, dp(5), 0)
+                        setTextColor(theme.toolbarText)
+                        contentDescription =
+                            if (index == 0) "Root container: ${crumb.name}" else "Go to ${crumb.name}"
+                        tooltipText = crumb.name
+                        setOnClickListener { show(crumb.uri, crumb.name) }
+                    }
+                installTitleBarFallbackDrag(ancestorCrumb)
+                breadcrumbs.addView(ancestorCrumb, LinearLayout.LayoutParams(-2, -1))
+            }
         }
         breadcrumbScroll.post { breadcrumbScroll.fullScroll(View.FOCUS_RIGHT) }
+    }
+
+    private fun loadSpaceProfile(uri: Uri, view: FrameLayout, generation: Long) {
+        val ref = runtime.provider.refForUri(uri) ?: return
+        Thread {
+            if (generation != spaceProfileGeneration || current != uri || windowView == null) return@Thread
+            val info = runCatching {
+                (runtime.provider.fileSystemInfo(ref) as? ProviderResult.Success)?.value
+            }.getOrNull()
+            val badge = DiskSpaceProfile.create(this, info)
+            onMain {
+                if (generation != spaceProfileGeneration || current != uri ||
+                    currentSpaceProfileView !== view || windowView == null) return@onMain
+                if (badge == null) {
+                    view.visibility = View.GONE
+                } else {
+                    DiskSpaceProfile.apply(view, badge)
+                    view.visibility = View.VISIBLE
+                }
+            }
+        }.start()
     }
 
     private fun windowDragTouchListener(
@@ -1283,7 +1396,7 @@ internal class FolderBrowserController(
                                 0,
                                 (bounds.height() - root.height).coerceAtLeast(0),
                             )
-                        runCatching { windows.updateViewLayout(root, params) }
+                        runCatching { updateWindowLayout() }
                             .onFailure { error ->
                                 com.infinifolder.storage.DiagnosticLog.record(
                                     "floating.window.move-failed",
@@ -1306,6 +1419,39 @@ internal class FolderBrowserController(
                 else -> active
             }
         }
+    }
+
+    /** Expand the short current-crumb drag area into the title bar's right side when needed. */
+    private fun installTitleBarFallbackDrag(view: View, currentCrumbHandle: Boolean = false) {
+        view.setOnTouchListener(
+            windowDragTouchListener(
+                acceptDown = { handle, event ->
+                    (currentCrumbHandle && event.x >= handle.width / 2f) ||
+                        (currentCrumbDragHandleIsNarrow() && isInTitleBarRightHalf(handle, event))
+                },
+                clickOnTap = true,
+            )
+        )
+    }
+
+    private fun isInTitleBarRightHalf(view: View, event: MotionEvent): Boolean {
+        val titleBar = toolbar ?: return false
+        val viewPosition = IntArray(2)
+        val titlePosition = IntArray(2)
+        view.getLocationOnScreen(viewPosition)
+        titleBar.getLocationOnScreen(titlePosition)
+        return viewPosition[0] + event.x - titlePosition[0] >= titleBar.width / 2f
+    }
+
+    private fun currentCrumbDragHandleIsNarrow(): Boolean {
+        if (!::breadcrumbs.isInitialized || !::root.isInitialized) return false
+        val currentCrumb =
+            (breadcrumbs.childCount - 1 downTo 0)
+                .map(breadcrumbs::getChildAt)
+                .firstOrNull { it.isClickable } ?: return false
+        val windowWidth = root.width.takeIf { it > 0 } ?: params.width
+        val currentCrumbDragWidth = currentCrumb.width.takeIf { it > 0 }?.div(2) ?: 0
+        return currentCrumbDragWidth < windowWidth / 2
     }
 
     /**
@@ -1779,7 +1925,7 @@ internal class FolderBrowserController(
                         }
                     }
             )
-            val dragItem = DragItem(card.container, icon, entry)
+            val dragItem = DragItem(card.container, icon, entry, card.nameView, card.metaView)
             dragItems += dragItem
             val entryKey = entry.uri.toString()
             card.container.alpha = if (entryKey in selectedEntries) 0.58f else 1f
@@ -1799,6 +1945,24 @@ internal class FolderBrowserController(
             card.container.setOnLongClickListener {
                 if (selectionMode) handleSelectionLongPress(entry, card.container)
                 else startLauncherDrag(dragItem)
+            }
+            var blankRowTouch = false
+            card.container.setOnTouchListener { _, event ->
+                if (iconMode) {
+                    blankRowTouch = false
+                    false
+                } else when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        blankRowTouch = !isCardContentHit(dragItem, event.x, event.y)
+                        blankRowTouch
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        val handled = blankRowTouch
+                        blankRowTouch = false
+                        handled
+                    }
+                    else -> blankRowTouch
+                }
             }
             card.container
         }
@@ -1830,6 +1994,36 @@ internal class FolderBrowserController(
                     setPadding(18, 28, 18, 12)
                 }
             )
+    }
+
+    private fun isCardContentHit(item: DragItem, x: Float, y: Float): Boolean {
+        if (iconMode) return true
+        val row = item.card as? ViewGroup ?: return false
+        val iconBounds = android.graphics.Rect(0, 0, item.icon.width, item.icon.height)
+        row.offsetDescendantRectToMyCoords(item.icon, iconBounds)
+        if (iconBounds.contains(x.toInt(), y.toInt())) return true
+
+        fun hitsVisibleText(text: TextView?): Boolean {
+            if (text == null || text.text.isNullOrEmpty()) return false
+            val layout = text.layout ?: return false
+            val bounds = android.graphics.Rect(0, 0, text.width, text.height)
+            row.offsetDescendantRectToMyCoords(text, bounds)
+            var lineLeft = Float.POSITIVE_INFINITY
+            var lineRight = Float.NEGATIVE_INFINITY
+            for (line in 0 until layout.lineCount) {
+                lineLeft = minOf(lineLeft, layout.getLineLeft(line))
+                lineRight = maxOf(lineRight, layout.getLineRight(line))
+            }
+            if (!lineLeft.isFinite() || !lineRight.isFinite() || lineRight <= lineLeft) return false
+            val slop = (3 * resources.displayMetrics.density).roundToInt()
+            val left = bounds.left + text.compoundPaddingLeft + lineLeft - slop
+            val right = bounds.left + text.compoundPaddingLeft + lineRight + slop
+            val top = bounds.top + text.compoundPaddingTop - slop
+            val bottom = bounds.top + text.compoundPaddingTop + layout.height + slop
+            return x >= left && x <= right && y >= top && y <= bottom
+        }
+
+        return hitsVisibleText(item.name) || hitsVisibleText(item.metadata)
     }
 
     private fun handleSelectionLongPress(entry: ResourceEntry, anchor: View): Boolean {
@@ -1982,7 +2176,7 @@ internal class FolderBrowserController(
                 params.flags or
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-            windows.updateViewLayout(root, params)
+            updateWindowLayout()
         } catch (error: Exception) {
             com.infinifolder.storage.DiagnosticLog.record(
                 "home.shortcut.drag-failed",
@@ -2742,6 +2936,10 @@ internal class FolderBrowserController(
 
     private fun removeWindow() {
         val view = windowView ?: return
+        unregisterCrossWindowBlurListener()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            setWindowBackgroundBlurRadius?.invoke(0)
+        }
         unregisterFloatingBackCallback()
         if (!embedded) saveWindowPlacement()
         // Invalidate work before detaching: removal can deliver focus callbacks.
@@ -2807,6 +3005,11 @@ internal class FolderBrowserController(
         current?.let { show(it, currentDisplayName) }
     }
 
+    /** Lets the floating window host route outside taps and focus loss through Folder's cleanup. */
+    fun dismissFromHost() {
+        dismissWindow()
+    }
+
     fun configure(
         breadcrumbs: Boolean,
         modified: Boolean,
@@ -2863,6 +3066,7 @@ internal class FolderBrowserController(
 
     companion object {
         private const val TOOLBAR_HEIGHT_DP = 39
+        private const val FLOATING_BLUR_RADIUS_DP = 28
         private const val MAX_SELECTION_LIST_ATTEMPTS = 8
         const val EXTRA_URI = "com.infinifolder.overlay.URI"
         const val EXTRA_DISPLAY_NAME = "com.infinifolder.overlay.DISPLAY_NAME"

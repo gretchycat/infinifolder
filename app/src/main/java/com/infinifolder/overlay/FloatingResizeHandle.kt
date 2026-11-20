@@ -33,6 +33,7 @@ internal class FloatingResizeHandle(context: Context, private val left: Boolean)
         super.onDraw(canvas)
         val density = resources.displayMetrics.density
         val theme = ThemeManager.activeTheme
+        val handleColor = if (theme.isDark) 0xFF555555.toInt() else 0xFFD0D0D0.toInt()
         val w = minOf(width.toFloat(), 32f * density)
         val h = minOf(height.toFloat(), 32f * density)
         val saved = canvas.save()
@@ -45,14 +46,14 @@ internal class FloatingResizeHandle(context: Context, private val left: Boolean)
         }
         triangle.close()
         paint.style = Paint.Style.FILL
-        paint.color = ColorUtils.setAlphaComponent(theme.accent, 220)
+        paint.color = ColorUtils.setAlphaComponent(handleColor, 26)
         canvas.drawPath(triangle, paint)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = density
-        paint.color = ColorUtils.setAlphaComponent(theme.textPrimary, 220)
+        paint.color = ColorUtils.setAlphaComponent(theme.textPrimary, 128)
         canvas.drawPath(triangle, paint)
-        paint.color = if (ColorUtils.calculateLuminance(theme.accent) > .45) Color.BLACK else Color.WHITE
-        paint.alpha = 220
+        paint.color = if (ColorUtils.calculateLuminance(handleColor) > .45) Color.BLACK else Color.WHITE
+        paint.alpha = 128
         paint.strokeWidth = 1.5f * density
         paint.strokeCap = Paint.Cap.ROUND
         for (index in 1..3) {

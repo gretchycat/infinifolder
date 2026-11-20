@@ -22,8 +22,9 @@ Overlay permission still uses the existing prompt and full-browser fallback.
 Office/EPUB/APK and other recognized package documents keep their existing open
 routes rather than becoming folders merely because they contain an archive.
 
-Item holds now belong to shortcut dragging. Holding empty grid space still opens
-the current directory in the full browser. Scrolling, pinch zoom, title-bar movement
+Item holds now belong to shortcut dragging. In list view, holds on the icon or
+visible name start an item drag. Holds and taps in blank row space, and holds in
+empty space outside rows, have no action. Scrolling, pinch zoom, title-bar movement
 and corner resizing retain their existing native gesture paths.
 
 ## Android integration and limits
@@ -154,9 +155,23 @@ display name when supplied. Entering child folders or nested archives appends
 their names; tapping an ancestor trims the trail back to that location. Refresh
 keeps the same trail. There is no parent-navigation entry above the opened root.
 
-The trail scrolls horizontally when it exceeds the title area. The header's
-container icon remains the window drag handle; breadcrumb taps navigate and
-horizontal swipes scroll the trail. No extra toolbar row consumes file space.
+The trail scrolls horizontally when it exceeds the title area. The container
+icon and empty title-bar space drag the window. The right half of the current
+breadcrumb is also a drag surface; taps there still navigate. Breadcrumb labels
+and the current crumb's left half remain available for horizontal trail scrolling.
+If that crumb handle is narrower than half the window, drags starting in the
+title bar's right half also move the window; taps still navigate or activate
+controls, and the left side remains available for horizontal trail scrolling.
+No extra toolbar row consumes file space.
+
+## Floating-window backdrop
+
+On Android 12 and newer, the floating browser uses window-background blur within
+its own bounds when cross-window blur is supported and enabled. Its translucent
+frame is tinted pure black in dark mode and pure white in light mode. The system
+may disable blur for device or runtime reasons; when unavailable, the frame
+returns to its normal opaque themed background. Android versions before 12 keep
+that opaque background.
 
 The requested identical embedded widget is deferred by agreement: Android
 [Home-screen widgets](https://developer.android.com/develop/ui/views/appwidgets/overview#limitations)

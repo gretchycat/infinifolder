@@ -44,6 +44,8 @@ class DiskUsageExplorer(
     private val cancelled = AtomicBoolean(false)
     private val handler = Handler(Looper.getMainLooper())
     private var worker: Thread? = null
+    private var capacityWorker: Thread? = null
+    private var capacityGeneration = 0
     @Volatile private var scanGeneration = 0
     private var backRegistration: java.io.Closeable? = null
     private var root: Node? = null
@@ -57,6 +59,7 @@ class DiskUsageExplorer(
     private lateinit var graph: UsageMap
     private lateinit var status: TextView
     private lateinit var path: TextView
+    private lateinit var freeSpace: TextView
     private lateinit var up: Button
 
     fun show() {
@@ -74,8 +77,29 @@ class DiskUsageExplorer(
             text = "Disk usage explorer"; textSize = 20f; setTextColor(theme.textPrimary)
         }, LinearLayout.LayoutParams(0, -2, 1f))
         column.addView(heading)
-        path = TextView(context).apply { text = rootEntry.metadata.name; textSize = 15f; setTextColor(theme.textPrimary); setPadding(0, dp(8), 0, dp(4)) }
-        column.addView(path)
+        val location = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(8), 0, dp(4))
+        }
+        path = TextView(context).apply {
+            text = rootEntry.metadata.name
+            textSize = 15f
+            setTextColor(theme.textPrimary)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+        }
+        location.addView(path, LinearLayout.LayoutParams(0, -2, 1f))
+        freeSpace = TextView(context).apply {
+            textSize = 12f
+            setTextColor(theme.textSecondary)
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            maxLines = 1
+            visibility = View.GONE
+            contentDescription = "Free disk space"
+        }
+        location.addView(freeSpace, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+        column.addView(location)
         status = TextView(context).apply { text = "Scanning folders…"; textSize = 13f; setTextColor(theme.textSecondary); minLines = 2 }
         column.addView(status)
         val controls = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
@@ -105,7 +129,7 @@ class DiskUsageExplorer(
             } else false
         }
         dialog.setOnDismissListener {
-            cancelled.set(true); worker?.interrupt(); handler.removeCallbacksAndMessages(null)
+            cancelled.set(true); worker?.interrupt(); capacityGeneration++; capacityWorker?.interrupt(); handler.removeCallbacksAndMessages(null)
             graph.stopAnimation(); backRegistration?.close(); backRegistration = null
         }
         dialog.show()
@@ -115,6 +139,7 @@ class DiskUsageExplorer(
             dialog.onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback)
             backRegistration = java.io.Closeable { dialog.onBackInvokedDispatcher.unregisterOnBackInvokedCallback(callback) }
         }
+        refreshFreeSpace()
         startScan()
     }
 
@@ -165,6 +190,7 @@ class DiskUsageExplorer(
                             root = null
                             graph.reset()
                             path.text = parent.metadata.name
+                            refreshFreeSpace()
                             startScan()
                         }
                     }.onFailure { error ->
@@ -184,6 +210,35 @@ class DiskUsageExplorer(
         status.text = if (root == null) "Scanning folders…" else "Refreshing disk usage…"
         worker?.interrupt()
         worker = Thread({ scan(generation, preferred) }, "DiskUsageScan").apply { start() }
+    }
+
+    private fun refreshFreeSpace() {
+        if (!::freeSpace.isInitialized || cancelled.get()) return
+        val generation = ++capacityGeneration
+        val ref = rootEntry.ref
+        freeSpace.visibility = View.GONE
+        capacityWorker?.interrupt()
+        capacityWorker = Thread({
+            val available = runCatching {
+                when (val result = provider.fileSystemInfo(ref)) {
+                    is ProviderResult.Success -> result.value.availableBytes
+                    else -> null
+                }
+            }.getOrNull()?.takeIf { it >= 0L }
+            handler.post {
+                if (cancelled.get() || activity.isDestroyed || generation != capacityGeneration || rootEntry.ref != ref)
+                    return@post
+                if (available == null) {
+                    freeSpace.visibility = View.GONE
+                } else {
+                    freeSpace.text = "${android.text.format.Formatter.formatShortFileSize(activity, available)} free"
+                    freeSpace.visibility = View.VISIBLE
+                }
+            }
+        }, "DiskUsageCapacity").apply {
+            isDaemon = true
+            start()
+        }
     }
 
     private fun scan(generation: Int, preferred: ResourceRef?) {
@@ -292,6 +347,7 @@ class DiskUsageExplorer(
                     graph.reset()
                     graph.isEnabled = true
                     showNode(nodes.firstOrNull { it.entry.ref == wanted } ?: top)
+                    refreshFreeSpace()
                 }
             }
         } catch (error: Exception) {
@@ -504,6 +560,13 @@ class DiskUsageExplorer(
                     val text = tile.node.label + if (tile.node.entry.metadata.isDirectory) "/" else ""
                     val count = paint.breakText(text, true, (area.width() - dp(8)).coerceAtLeast(0f), null)
                     canvas.drawText(text.take(count), area.left + dp(4), area.top + dp(14), paint)
+                    if (area.height() > dp(34)) {
+                        paint.textSize = 10f * density
+                        val size = (if (tile.node.incomplete) "≥ " else "") +
+                            android.text.format.Formatter.formatShortFileSize(activity, tile.node.bytes)
+                        val sizeCount = paint.breakText(size, true, (area.width() - dp(8)).coerceAtLeast(0f), null)
+                        canvas.drawText(size.take(sizeCount), area.left + dp(4), area.top + dp(28), paint)
+                    }
                     canvas.restore()
                 }
             }

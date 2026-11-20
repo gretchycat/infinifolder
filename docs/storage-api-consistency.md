@@ -175,6 +175,10 @@ is consumed as a no-op, avoiding duplicate copies or collision-name changes.
 Blank-space hit testing is limited to the visible file viewport and excludes the
 hidden portrait file pane when the tree is selected. Virtual root still accepts
 container links only. Breadcrumb link-creation drags keep their existing behavior.
+In list view, each row spans the file pane, while icon and visible-name hits remain
+attached to the item. A long press in blank row space opens the current directory's
+menu; a plain tap has no action, and drops in blank row space target the parent
+directory.
 
 Diagnostic events: `browser.drag.background-drop`, `browser.drag.file-parent-drop`
 and `browser.drag.no-op`. Debug APK build succeeded in 17 seconds and opened with

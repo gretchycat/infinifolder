@@ -330,6 +330,8 @@ Two-finger dragging draws a selection rectangle in ordinary or selection modes, 
 
 Properties on a directory opens the explorer. Recursive scans compute folder logical-byte totals, but the graph displays **only immediate children** of the current focus. There are no nested descendant rectangles. Directories have thick outlines; archives/packages/disk images remain leaf files at stored length. Explicitly browsed mounted directories can still be scanned.
 
+Each visible item region shows its name and logical size on separate lines; incomplete totals are prefixed with `≥`. The path header shows available filesystem space beside the explored location when the provider reports it. This capacity value describes the filesystem, while treemap sizes describe the scanned folder contents.
+
 Tap a folder to animate into its contents (450 ms). Large lists use navigable Other groups; synthetic groups cannot move/delete. Direct files show size. Partial immutable scan snapshots arrive roughly every 750 ms between completed listings and are labeled incomplete. Navigation works during scanning; final results preserve focus. Move/delete wait for scan completion.
 
 Parent folder zooms to an in-memory parent or resolves/scans the provider parent above the initial scan root. A true storage root reports no parent. Header Back, Browse folder and system Back return to the file view in the focused folder. Long press actual nodes offers Browse/Move/Delete; deletion keeps the explorer open and rescans the surviving focus.

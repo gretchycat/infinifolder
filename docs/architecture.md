@@ -98,6 +98,13 @@ breadcrumb trail, navigation, source/shortcut/archive handling, cards, gestures,
 artwork and selection actions. Presentation classes remain app-owned; the partial
 extraction into InfiniSelect was undone.
 
+The active breadcrumb also displays a small disk space profile when its provider
+reports total and available capacity. MainActivity and FolderBrowserController
+format the same `FileSystemInfo` values; the shared floating and embedded hosts
+therefore keep the path and its capacity line together. The profile is loaded
+asynchronously and is omitted when a backend does not report both values. See
+[breadcrumb capacity behavior](breadcrumb-space-profile.md).
+
 InfiniSelect is only a surface/command/result gateway. The selection provider
 checks Binder caller identity and each opaque session's owning UID. Session
 creation/commands run on Folder's UI thread; source operations and granted relay
