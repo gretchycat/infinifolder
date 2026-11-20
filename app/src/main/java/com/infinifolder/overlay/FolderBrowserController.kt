@@ -2063,12 +2063,13 @@ internal class FolderBrowserController(
                                     show(requireNotNull(namedTarget).uri, targetName)
                                 SelectionLinkRouting.Action.ARCHIVE ->
                                     browseArchive(requireNotNull(targetEntry), targetName) {
-                                        Toast.makeText(
-                                                this,
-                                                "This archive cannot be browsed here",
-                                                Toast.LENGTH_SHORT,
+                                        selectEntry(
+                                            SelectionLinkRouting.selectedFile(
+                                                entry,
+                                                requireNotNull(namedTarget),
+                                                embedded && selectLinkDocuments,
                                             )
-                                            .show()
+                                        )
                                     }
                                 SelectionLinkRouting.Action.FILE ->
                                     selectEntry(
@@ -2133,13 +2134,7 @@ internal class FolderBrowserController(
                         else selectEntry(entry)
                 }
             } else if (entry.metadata.isDirectory) show(entry.uri, entry.metadata.name)
-            else if (
-                browseArchive(entry) {
-                    Toast.makeText(this, "This archive cannot be browsed here", Toast.LENGTH_SHORT)
-                        .show()
-                }
-            )
-                Unit
+            else if (browseArchive(entry) { selectEntry(entry) }) Unit
             else if (com.infinifolder.storage.LinkResolver.kind(entry.metadata) != null) {
                 activateSelectionLink(entry)
             } else selectEntry(entry)
@@ -2169,9 +2164,17 @@ internal class FolderBrowserController(
         )
             return false
 
-        val mounted = ArchiveUri.toArchiveUri(entry.uri)
-        if (runtime.provider.refForUri(mounted) != null) show(mounted, displayName)
-        else onUnavailable()
+        val generation = loadGeneration
+        Thread {
+                val verified = com.infinifolder.ContainerNavigation.verify(runtime, entry)
+                onMain {
+                    if (windowView == null || generation != loadGeneration) return@onMain
+                    if (verified) show(ArchiveUri.toArchiveUri(entry.uri), displayName)
+                    else onUnavailable()
+                }
+            }
+            .apply { name = "FolderContainerVerify" }
+            .start()
         return true
     }
 

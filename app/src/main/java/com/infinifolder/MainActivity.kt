@@ -117,6 +117,7 @@ import com.infinifolder.storage.StorageAction
 import com.infinifolder.storage.StorageActionPolicy
 import com.infinifolder.storage.DestinationAssessment
 import com.infinifolder.storage.StorageProviderRegistry
+import com.infinifolder.storage.StorageRuntime
 import com.infinifolder.storage.FileMagicDetector
 import com.infinifolder.storage.FileMagicResult
 import com.infinifolder.storage.SafProviderFactory
@@ -957,6 +958,10 @@ class MainActivity : Activity(), DebugDumpObserver {
                 val extensionUnknownBinary = extensionIdentityMismatch && com.infinifolder.mime.MimeRegistry.isUnspecified(mime)
                 val entry = original.copy(metadata = original.metadata.copy(mimeType = mime))
                 val type = com.infinifolder.viewer.MediaTypeDetector.detect(name, mime)
+                val verifiedContainer = !entry.metadata.isDirectory &&
+                    !ArchiveFormats.isPackagedFormat(name, mime) &&
+                    (ArchiveFormats.isDefaultBrowsableArchive(name, mime) || magic?.isArchiveOrDiscImage == true) &&
+                    ContainerNavigation.verify(StorageRuntime.get(this), entry)
                 val hasRawMetadata=!entry.metadata.isDirectory&&com.infinifolder.viewer.RawMediaConfigStore.hasSidecar(applicationContext,entry)
                 runOnUiThread {
                     if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
@@ -967,9 +972,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                             revealBrowserAfterExternalLaunch()
                             navigateToAbsoluteLocation(uri, itemRoute ?: listOf(ContainerLinksProvider.ROOT to "Virtual root", uri to name), name)
                         }
-                        (!extensionIdentityMismatch && ArchiveFormats.isDefaultBrowsableArchive(name, mime)) ||
-                            (magic?.isArchiveOrDiscImage == true &&
-                                !( !extensionIdentityMismatch && ArchiveFormats.isPackagedFormat(name, mime))) -> {
+                        verifiedContainer -> {
                             externalViewerLaunchPending = false
                             // A launched archive is a child of its real containing folder.
                             // Opaque content URIs without a discoverable parent start at the
@@ -3055,13 +3058,15 @@ class MainActivity : Activity(), DebugDumpObserver {
                         else -> throw java.io.IOException("This provider cannot inspect the link target")
                     }
                     var destination: Uri? = if (entry.metadata.isDirectory) entry.uri else entryBrowseDestination(entry)
+                    if (destination?.let(ArchiveUri::isArchiveUri) == true &&
+                        !ContainerNavigation.verify(StorageRuntime.get(this), entry)) destination = null
                     if (destination == null && requireContainer) {
                         val magic = if (localProvider.owns(entry.uri)) FileMagicDetector.detect(localProvider.fileFor(entry.uri), true)
                             else when (val opened = provider.openSeekable(entry.ref)) {
                                 is ProviderResult.Success -> opened.value.use { dev -> FileMagicDetector.detectFromBytes(dev.readBytes(0, minOf(dev.size, 69632L).toInt())) }
                                 else -> null
                             }
-                        if (magic?.isArchiveOrDiscImage == true) destination = ArchiveUri.toArchiveUri(entry.uri)
+                        if (magic?.isArchiveOrDiscImage == true && ContainerNavigation.verify(StorageRuntime.get(this), entry)) destination = ArchiveUri.toArchiveUri(entry.uri)
                         else throw java.io.IOException("This link points to a regular file, not a browsable container")
                     }
                     val resolvedDestination = destination
@@ -6194,7 +6199,7 @@ class MainActivity : Activity(), DebugDumpObserver {
 
     private fun open(entry: ResourceEntry, externalOnly: Boolean = false, confirmCommands: Boolean = false,
         forceExternalChooser: Boolean = false, skipRawMetadata: Boolean = false, skipMagic:Boolean=false,
-        validatedMimeOverride: String? = null) {
+        validatedMimeOverride: String? = null, skipContainer: Boolean = false) {
         if (!entry.metadata.isDirectory && entry.metadata.name.endsWith(".incomplete", true) && !externalOnly) {
             resumeIncompleteDownload(entry.ref)
             return
@@ -6370,7 +6375,7 @@ class MainActivity : Activity(), DebugDumpObserver {
         if (validatedMime != null && statedMime != com.infinifolder.mime.MimeRegistry.normalize(validatedMime)) {
             open(entry.copy(metadata = entry.metadata.copy(mimeType = validatedMime)), externalOnly,
                 confirmCommands, forceExternalChooser, skipRawMetadata = skipRawMetadata, skipMagic = true,
-                validatedMimeOverride = validatedMime)
+                validatedMimeOverride = validatedMime, skipContainer = skipContainer)
             return
         }
         val effectiveMime = validatedMime ?: com.infinifolder.mime.MimeRegistry.effective(
@@ -6451,9 +6456,22 @@ class MainActivity : Activity(), DebugDumpObserver {
         val specificViewer=com.infinifolder.viewer.ViewerComponents.resolve(
             entry.copy(metadata=entry.metadata.copy(mimeType=effectiveMime)))?.describe()?.attributes?.get("viewerKind")
             ?.let {it!="hex"}==true
-        if (isArchiveOrDisc && !specificViewer && !isPkg && !externalOnly && !hasExternalDefault && !hasStaleOpenChoice) {
-            if(ArchiveUri.isArchiveUri(entry.uri))browseNestedArchive(entry)
-            else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
+        if (!skipContainer && isArchiveOrDisc && !specificViewer && !isPkg && !externalOnly && !hasExternalDefault && !hasStaleOpenChoice) {
+            val loadingToken = beginEntryActionLoading("Checking container…") ?: return
+            val generation = ++browserNavigationGeneration
+            io.execute {
+                val verified = ContainerNavigation.verify(StorageRuntime.get(this), entry)
+                runOnUiThread {
+                    finishEntryActionLoading(loadingToken)
+                    if (isFinishing || isDestroyed || generation != browserNavigationGeneration) return@runOnUiThread
+                    if (verified) {
+                        if (ArchiveUri.isArchiveUri(entry.uri)) browseNestedArchive(entry)
+                        else navigate(ArchiveUri.toArchiveUri(entry.uri), displayName = entry.metadata.name)
+                    } else open(entry, externalOnly, confirmCommands, forceExternalChooser,
+                        skipRawMetadata = true, skipMagic = true,
+                        validatedMimeOverride = "application/octet-stream", skipContainer = true)
+                }
+            }
             return
         }
         if (!externalOnly && !hasExternalDefault && !hasStaleOpenChoice) {

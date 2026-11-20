@@ -73,6 +73,10 @@ class HomeItemActivity : Activity(), com.infinifolder.viewer.StartupDispatcher {
                     }
                 }
                 val result = entry
+                val verifiedContainer = result != null && !result.metadata.isDirectory &&
+                    !ArchiveFormats.isPackagedFormat(result.metadata.name, result.metadata.mimeType) &&
+                    ArchiveFormats.isDefaultBrowsableArchive(result.metadata.name, result.metadata.mimeType) &&
+                    ContainerNavigation.verify(StorageRuntime.get(this), result)
                 val containerName = displayName?.takeIf { it.isNotBlank() } ?: result?.metadata?.name
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
@@ -89,10 +93,7 @@ class HomeItemActivity : Activity(), com.infinifolder.viewer.StartupDispatcher {
                             finish()
                         }
                         HomeItemRouting.opensExternally(target, result != null) -> openExternal(target)
-                        result != null && (result.metadata.isDirectory ||
-                            (!ArchiveFormats.isPackagedFormat(result.metadata.name, result.metadata.mimeType) &&
-                                (ArchiveFormats.isArchive(result.metadata.name, result.metadata.mimeType) ||
-                                    ArchiveFormats.isDiscImage(result.metadata.name, result.metadata.mimeType)))) -> {
+                        result != null && (result.metadata.isDirectory || verifiedContainer) -> {
                             val container = if (result.metadata.isDirectory) result.uri else ArchiveUri.toArchiveUri(result.uri)
                             openContainer(container, containerName)
                         }

@@ -11,7 +11,7 @@
     },
     "libinfinicore": {
       "url": "https://github.com/infiniforge/libinfinicore.git",
-      "commit": "bb60e8e10de4b3b888981883eecf595f3a8418fb"
+      "commit": "1fffba61d7332558184198ee55cd7c9a1c9fe811"
     },
     "libinfinimeta": {
       "url": "https://github.com/infiniforge/libinfinimeta.git",

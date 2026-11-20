@@ -161,3 +161,10 @@ SFTP regressions check the reported filename, `%20` spaces, `%21` exclamation
 marks, Unicode spelling, literal plus/percent characters and parent navigation.
 Select's standalone AAR/instrumentation compilation and 26 JVM tests pass.
 Actual import from the user's SFTP server remains a device acceptance check.
+
+Automatic container navigation verifies content with the shared detectors and
+opens the actual Vault reader before changing location. Filename suffixes and
+provider MIME types are only candidates. Firmware `.img` and ROM `.a26`, `.a52`,
+`.a78` files that fail container verification follow ordinary file selection,
+including resolved `.iflink` targets; successful archive/image reads remain
+browsable. Verification runs off the UI thread and discards stale results.
