@@ -125,3 +125,10 @@ The 0.1.9 standalone APK build and 180 app/storage/hex tests pass, including
 locked-root snapshot anchors and error-recovery policy. The APK signature
 verifies. Physical touch/offset and cross-app root-lock acceptance tests compile
 in the selector's instrumentation APK; they still need device execution.
+
+InfiniFolder 0.1.10 keeps Virtual root container links navigable even when an
+embedded caller requests `selectLinkDocuments`. Saved network connections are
+migrated into this container-link provider, so selecting their link now resolves
+and browses the target with Folder's existing provider graph and credentials.
+The option still returns ordinary game .iflink documents for Play to read its
+system metadata. Direct archive browsing keeps its existing activation path.

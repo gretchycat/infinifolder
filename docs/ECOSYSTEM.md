@@ -12,7 +12,7 @@ The inventory contains 10 applications (7 with standalone builds and 3 planned p
 
 #### [infinifolder](https://github.com/infiniforge/infinifolder)
 
-**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.1.9`
+**State:** active · **Build:** standalone app build · **Versions:** no published release verified; build declares `0.1.10`
 
 **Purpose:** Android file manager and advanced storage companion. Owns the complete file manager UI, browser views, breadcrumbs, directory navigation, gestures, menus and artwork. The existing FolderBrowserController is hosted by floating windows and cross-app embedded sessions; InfiniSelect is the public gateway. Composes libinfinicore, libinfinistore and libinfinivault for local/SAF, remote, archive and filesystem-image storage. Provides grant-aware Android document/selection integration, non-UI JSON listings and caller-scoped shortcut collections. Storage permissions and credentials remain in Folder. Companion apps retain ordinary selection fallback when embedding is unavailable.
 

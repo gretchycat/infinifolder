@@ -2134,6 +2134,9 @@ internal class FolderBrowserController(
             else if (
                 embedded &&
                     selectLinkDocuments &&
+                    // Virtual root links are navigation entries (including saved network drives),
+                    // not game-link documents to return to the embedding application.
+                    entry.ref.providerId != runtime.containerLinks.id &&
                     com.infinifolder.shortcut.ShortcutInfo.isShortcut(
                         entry.metadata.name,
                         entry.metadata.mimeType,
