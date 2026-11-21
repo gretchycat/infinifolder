@@ -145,7 +145,7 @@ internal class VirtualizedEntrySurface(
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val measuredWidth = MeasureSpec.getSize(widthMeasureSpec)
         if (staggered && measuredWidth > 0) {
-            val nextColumns = FileViewGrid.columns(
+            val nextColumns = FileViewGrid.staggeredColumns(
                 (measuredWidth / resources.displayMetrics.density).roundToInt(),
                 iconSizeDp,
             )

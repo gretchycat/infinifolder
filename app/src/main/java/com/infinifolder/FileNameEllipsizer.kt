@@ -21,10 +21,12 @@ object FileNameEllipsizer {
         fullName: String,
         isDirectory: Boolean,
         maxWidthPx: Float,
-        measureText: (String) -> Float
+        measureText: (String) -> Float,
+        nearFitTolerancePx: Float = 4f,
     ): String {
         if (fullName.isEmpty() || maxWidthPx <= 0f) return fullName
-        if (measureText(fullName) <= maxWidthPx) return fullName
+        val fullNameWidth = measureText(fullName)
+        if (fullNameWidth <= maxWidthPx) return fullName
 
         val hasShortcutBadge = fullName.endsWith(SHORTCUT_BADGE)
         val badge = if (hasShortcutBadge) SHORTCUT_BADGE else ""
@@ -33,32 +35,34 @@ object FileNameEllipsizer {
         val (stem, ext) = splitStemAndExtension(core, isDirectory)
         val tail = "$ELLIPSIS$ext$badge"
 
-        // If even a 1-char stem + tail doesn't fit, fall back to plain prefix + ellipsis
+        // If even a 1-char stem + tail doesn't fit, fall back to plain prefix + ellipsis.
         val minStemEnd = safeCharPrefixIndex(stem, 1)
-        if (stem.isEmpty() || minStemEnd == 0 || measureText(stem.substring(0, minStemEnd) + tail) > maxWidthPx) {
-            return ellipsizePlain(core, badge, maxWidthPx, measureText)
+        val fitted = if (stem.isEmpty() || minStemEnd == 0 || measureText(stem.substring(0, minStemEnd) + tail) > maxWidthPx) {
+            ellipsizePlain(core, badge, maxWidthPx, measureText)
+        } else {
+            var low = 1
+            var high = stem.length
+            var best = minStemEnd
+            while (low <= high) {
+                val mid = (low + high) ushr 1
+                val safeMid = safeCharPrefixIndex(stem, mid)
+                if (safeMid == 0) {
+                    low = mid + 1
+                    continue
+                }
+                val candidate = stem.substring(0, safeMid).trimEnd() + tail
+                if (measureText(candidate) <= maxWidthPx) {
+                    best = safeMid
+                    low = mid + 1
+                } else {
+                    high = mid - 1
+                }
+            }
+            stem.substring(0, best).trimEnd() + tail
         }
 
-        var low = 1
-        var high = stem.length
-        var best = minStemEnd
-        while (low <= high) {
-            val mid = (low + high) ushr 1
-            val safeMid = safeCharPrefixIndex(stem, mid)
-            if (safeMid == 0) {
-                low = mid + 1
-                continue
-            }
-            val candidate = stem.substring(0, safeMid).trimEnd() + tail
-            if (measureText(candidate) <= maxWidthPx) {
-                best = safeMid
-                low = mid + 1
-            } else {
-                high = mid - 1
-            }
-        }
-
-        return stem.substring(0, best).trimEnd() + tail
+        val widthDifference = fullNameWidth - measureText(fitted)
+        return if (widthDifference >= 0f && widthDifference <= nearFitTolerancePx.coerceAtLeast(0f)) fullName else fitted
     }
 
     internal fun splitStemAndExtension(coreName: String, isDirectory: Boolean): Pair<String, String> {
@@ -161,9 +165,13 @@ class SmartFileNameTextView(context: Context) : TextView(context) {
         if (effectiveMaxViewWidth > 0 && rawFileName.isNotEmpty()) {
             val availTextWidth = (effectiveMaxViewWidth - compoundPaddingLeft - compoundPaddingRight).toFloat()
             if (availTextWidth > 0f) {
-                val fitted = FileNameEllipsizer.ellipsize(rawFileName, isDirectoryEntry, availTextWidth) {
-                    paint.measureText(it)
-                }
+                val fitted = FileNameEllipsizer.ellipsize(
+                    rawFileName,
+                    isDirectoryEntry,
+                    availTextWidth,
+                    measureText = { paint.measureText(it) },
+                    nearFitTolerancePx = 4f * resources.displayMetrics.density,
+                )
                 if (text?.toString() != fitted) {
                     super.setText(fitted, BufferType.NORMAL)
                 }

@@ -39,7 +39,7 @@
     },
     "libinfiniui": {
       "url": "https://github.com/infiniforge/libinfiniui.git",
-      "commit": "69b7428e2c5e460e264c2fc5fd70791736b2e1be"
+      "commit": "41cc50e3e280a277be890734f37b1cbc5dcd5c06"
     },
     "libinfinivault": {
       "url": "https://github.com/infiniforge/libinfinivault.git",

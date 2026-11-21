@@ -140,11 +140,23 @@ class FileEntryCard(
     var metaView: TextView? = null
         private set
 
-    fun addLabels(displayName: String, logicalDirectory: Boolean, maxWidthPx: Int, metadata: String) = with(context) {
+    fun addLabels(
+        displayName: String,
+        logicalDirectory: Boolean,
+        maxWidthPx: Int,
+        metadata: String,
+        labelWidthPx: Int = 0,
+    ) = with(context) {
+        val expandedLabelWidthPx = labelWidthPx.takeIf { asGrid && it > 0 } ?: 0
         val labels = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             if (asGrid) {
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                clipChildren = false
+                clipToPadding = false
+                layoutParams = LinearLayout.LayoutParams(
+                    expandedLabelWidthPx.takeIf { it > 0 } ?: LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
                     gravity = Gravity.CENTER_HORIZONTAL
                 }
                 gravity = Gravity.CENTER_HORIZONTAL
@@ -156,10 +168,13 @@ class FileEntryCard(
             textSize = 14f
             setTextColor(fg)
             typeface = if (cardTheme.fontMonospace) android.graphics.Typeface.MONOSPACE else android.graphics.Typeface.DEFAULT
-            maxAllowedWidthPx = maxWidthPx
+            maxAllowedWidthPx = expandedLabelWidthPx.takeIf { it > 0 } ?: maxWidthPx
             setFileName(displayName, logicalDirectory)
             if (asGrid) {
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    if (expandedLabelWidthPx > 0) LinearLayout.LayoutParams.MATCH_PARENT else LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
                     gravity = Gravity.CENTER_HORIZONTAL
                 }
                 setPadding(dp(4), dp(2), dp(4), dp(2))

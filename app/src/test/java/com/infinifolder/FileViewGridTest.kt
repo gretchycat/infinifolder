@@ -47,6 +47,25 @@ class FileViewGridTest {
     }
 
     @Test
+    fun staggeredLabelsMatchIconPitchMinusMarginWithoutChangingColumns() {
+        val widthDp = 420
+        val iconDp = 56
+        val gridColumns = FileViewGrid.columns(widthDp, iconDp)
+        val staggeredColumns = FileViewGrid.staggeredColumns(widthDp, iconDp)
+        assertEquals(6, gridColumns)
+        assertEquals(gridColumns, staggeredColumns)
+        val viewportPx = 420
+        val cellWidthPx = viewportPx / staggeredColumns
+        val labelWidthPx = FileViewGrid.staggeredLabelWidthPx(viewportPx, staggeredColumns, density = 1f)
+        assertEquals(cellWidthPx - 4, labelWidthPx)
+        for (width in 1..2_000) {
+            val columns = FileViewGrid.staggeredColumns(width, iconDp)
+            assertEquals(FileViewGrid.columns(width, iconDp), columns)
+            assertTrue(FileViewGrid.staggeredLabelWidthPx(width, columns, density = 1f) <= width / columns)
+        }
+    }
+
+    @Test
     fun legacyIconPreferenceMigratesToGridAndModeCycleIncludesStaggered() {
         assertEquals(BrowserViewMode.GRID, BrowserViewMode.fromPreference(null, legacyIcons = true))
         assertEquals(BrowserViewMode.LIST, BrowserViewMode.fromPreference(null, legacyIcons = false))

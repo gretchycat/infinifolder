@@ -37,6 +37,10 @@ the offset off so narrow hosts never clip icons or scroll horizontally. Items
 keep the existing sorted order from left to right and top to bottom. Staggered
 rows use a tighter vertical stride than Grid, and each host recomputes columns
 from its measured width, including floating resize and embedded host relayout.
+Staggered keeps Grid's icon spacing and sizes each filename label to the width
+between icon centers, minus a small margin. This does not change icon positions
+or the number of icons per row. Names that are only a few pixels wider than
+their ellipsized form are shown in full.
 Vertical scrolling and directory scroll restoration remain active. Filenames
 keep Grid's single-line ellipsis behavior.
 

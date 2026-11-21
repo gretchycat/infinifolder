@@ -13,6 +13,7 @@ import kotlin.math.roundToInt
 object FileViewGrid {
     private const val ICON_ROW_HEIGHT_EXTRA_DP = 48
     private const val STAGGERED_ROW_TIGHTENING_DP = 16
+    private const val STAGGERED_LABEL_MARGIN_DP = 4
 
     fun sortedEntries(entries: List<ResourceEntry>, showHidden: Boolean, sortKey: String, descending: Boolean): List<ResourceEntry> {
         val byName = compareBy<ResourceEntry> { it.metadata.name.lowercase(java.util.Locale.ROOT) }.thenBy { it.metadata.name }
@@ -28,6 +29,19 @@ object FileViewGrid {
 
     fun columns(availableWidthDp: Int, iconSizeDp: Int): Int =
         Math.round(availableWidthDp / (iconSizeDp * 1.35f).coerceAtLeast(36f)).coerceIn(1, 14)
+
+    fun columns(availableWidthDp: Int, iconSizeDp: Int, staggered: Boolean): Int =
+        if (staggered) staggeredColumns(availableWidthDp, iconSizeDp)
+        else columns(availableWidthDp, iconSizeDp)
+
+    internal fun staggeredColumns(availableWidthDp: Int, iconSizeDp: Int): Int =
+        columns(availableWidthDp, iconSizeDp)
+
+    internal fun staggeredLabelWidthPx(availableWidthPx: Int, columns: Int, density: Float): Int {
+        val cellWidth = (availableWidthPx / columns.coerceAtLeast(1)).coerceAtLeast(1)
+        val marginPx = (STAGGERED_LABEL_MARGIN_DP * density).roundToInt()
+        return (cellWidth - marginPx).coerceAtLeast(1)
+    }
 
     internal fun staggeredRowHeightPx(iconSizeDp: Int, density: Float): Int =
         ((iconSizeDp + ICON_ROW_HEIGHT_EXTRA_DP - STAGGERED_ROW_TIGHTENING_DP) * density).roundToInt()
@@ -150,7 +164,7 @@ internal class StaggeredIconLayout(
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val measuredWidth = MeasureSpec.getSize(widthMeasureSpec)
         val density = resources.displayMetrics.density
-        columns = FileViewGrid.columns((measuredWidth / density).roundToInt(), iconSizeDp)
+        columns = FileViewGrid.staggeredColumns((measuredWidth / density).roundToInt(), iconSizeDp)
         val rows = FileViewGrid.rowCount(childCount, columns, staggered = true)
         val contentHeight = (rows.toLong() * cellHeightPx).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val measuredHeight = resolveSize(contentHeight, heightMeasureSpec)

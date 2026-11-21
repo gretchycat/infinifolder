@@ -5281,7 +5281,7 @@ class MainActivity : Activity(), DebugDumpObserver {
                 } else {
                     (resources.configuration.screenWidthDp - if (treeVisible) 220 else 32).coerceAtLeast(iconSizeDp)
                 }
-                val columns = if (grid) gridColumns(availableWidth) else 1
+                val columns = if (grid) FileViewGrid.columns(availableWidth, iconSizeDp, viewMode == BrowserViewMode.STAGGERED) else 1
                 val cellHeight = when {
                     !grid -> dp(88)
                     viewMode == BrowserViewMode.STAGGERED -> FileViewGrid.staggeredRowHeightPx(iconSizeDp, resources.displayMetrics.density)
@@ -5613,8 +5613,19 @@ class MainActivity : Activity(), DebugDumpObserver {
             val actualContainerWidthPx = content.width.takeIf { it > 0 } ?: dp(availableWidthDp)
             (actualContainerWidthPx / columns - dp(4)).coerceAtLeast(dp(36))
         } else 0
+        val staggeredLabelWidthPx = if (asGrid && viewMode == BrowserViewMode.STAGGERED) {
+            val availableWidthPx = content.width.takeIf { it > 0 }
+                ?: fileScroll.width.takeIf { it > 0 }
+                ?: dp((resources.configuration.screenWidthDp - if (treeVisible) 220 else 32).coerceAtLeast(iconSizeDp))
+            val availableWidthDp = (availableWidthPx / resources.displayMetrics.density).roundToInt()
+            FileViewGrid.staggeredLabelWidthPx(
+                availableWidthPx,
+                FileViewGrid.columns(availableWidthDp, iconSizeDp),
+                resources.displayMetrics.density,
+            )
+        } else 0
         val isLogicalDir = if (isShortcut && shortcut != null) shortcut.targetIsDirectory else entry.metadata.isDirectory
-        card.addLabels(displayName, isLogicalDir, gridCellMaxWidthPx, if (asGrid) "" else metadataLine(entry))
+        card.addLabels(displayName, isLogicalDir, gridCellMaxWidthPx, if (asGrid) "" else metadataLine(entry), staggeredLabelWidthPx)
         val nameView = card.nameView
         val metaView = card.metaView
         entryIconViews[entry.uri] = icon
@@ -7341,8 +7352,24 @@ class MainActivity : Activity(), DebugDumpObserver {
         box.addView(iconFrame)
         val labels = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            val staggeredLabelWidthPx = if (asGrid && viewMode == BrowserViewMode.STAGGERED) {
+                val availableWidthPx = content.width.takeIf { it > 0 }
+                    ?: fileScroll.width.takeIf { it > 0 }
+                    ?: dp((resources.configuration.screenWidthDp - if (treeVisible) 220 else 32).coerceAtLeast(iconSizeDp))
+                val availableWidthDp = (availableWidthPx / resources.displayMetrics.density).roundToInt()
+                FileViewGrid.staggeredLabelWidthPx(
+                    availableWidthPx,
+                    FileViewGrid.columns(availableWidthDp, iconSizeDp),
+                    resources.displayMetrics.density,
+                )
+            } else 0
             if (asGrid) {
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                clipChildren = false
+                clipToPadding = false
+                layoutParams = LinearLayout.LayoutParams(
+                    staggeredLabelWidthPx.takeIf { it > 0 } ?: LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
                     gravity = Gravity.CENTER_HORIZONTAL
                 }
                 gravity = Gravity.CENTER_HORIZONTAL

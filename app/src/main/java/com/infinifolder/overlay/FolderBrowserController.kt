@@ -811,7 +811,7 @@ internal class FolderBrowserController(
                         val dx = (event.rawX - pointerX).roundToInt()
                         val dy = (event.rawY - pointerY).roundToInt()
                         val oldColumns =
-                            FileViewGrid.columns((params.width / density).roundToInt(), iconDp)
+                            FileViewGrid.columns((params.width / density).roundToInt(), iconDp, viewMode == BrowserViewMode.STAGGERED)
                         val top = windowY.coerceIn(0, (bounds.height() - 1).coerceAtLeast(0))
                         val right =
                             (windowX + windowWidth).coerceIn(1, bounds.width().coerceAtLeast(1))
@@ -844,7 +844,7 @@ internal class FolderBrowserController(
                         pointerX = event.rawX
                         pointerY = event.rawY
                         val newColumns =
-                            FileViewGrid.columns((params.width / density).roundToInt(), iconDp)
+                            FileViewGrid.columns((params.width / density).roundToInt(), iconDp, viewMode == BrowserViewMode.STAGGERED)
                         if (newColumns != oldColumns) reflowAfterResize()
                     }
                     true
@@ -1820,8 +1820,10 @@ internal class FolderBrowserController(
         grid.removeAllViews()
         val density = resources.displayMetrics.density
         val columns =
-            if (iconMode) FileViewGrid.columns((params.width / density).roundToInt(), iconDp) else 1
+            if (iconMode) FileViewGrid.columns((params.width / density).roundToInt(), iconDp, viewMode == BrowserViewMode.STAGGERED) else 1
         val staggered = viewMode == BrowserViewMode.STAGGERED
+        val staggeredLabelWidthPx =
+            if (staggered) FileViewGrid.staggeredLabelWidthPx(params.width, columns, density) else 0
         val cellHeight = when {
             !iconMode -> (64 * density).roundToInt()
             staggered -> FileViewGrid.staggeredRowHeightPx(iconDp, density)
@@ -1862,6 +1864,7 @@ internal class FolderBrowserController(
                 entry.metadata.isDirectory,
                 if (staggered) 0 else (cellWidth - 4 * density).roundToInt().coerceAtLeast(36),
                 "",
+                staggeredLabelWidthPx,
             )
             val pixelSize = ((if (iconMode) iconDp else 44) * density).roundToInt()
             fun applyArtwork(resolved: ResourceIconResolver.Icon) {

@@ -66,8 +66,9 @@ reference needs a new file-specific choice. Different extensions sharing a MIME
 type share the type-wide default.
 
 **Open with…** can replace either scope. Saving a new type-wide choice also clears
-the current file's exception, so it applies to the file being opened; exceptions
-for other files remain. Supported files use internal viewing by default.
+the current file's exception and older extension rules for the current extension,
+so the new choice applies to the file being opened; other files' explicit
+preferences remain. Supported files use internal viewing by default.
 An explicit saved external choice takes priority. Internal viewing can also be saved
 for this file or MIME type, restoring that route after an external association was
 saved. Saved internal choices take priority over Termux fallback. Dedicated theme imports,

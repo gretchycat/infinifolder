@@ -16,6 +16,32 @@ class FileNameEllipsizerTest {
     }
 
     @Test
+    fun keepsOriginalNameWhenOnlyAFewPixelsWiderThanEllipsizedName() {
+        val measure: (String) -> Float = { if (it == "abcdef") 44f else it.length * 10f }
+        val result = FileNameEllipsizer.ellipsize(
+            fullName = "abcdef",
+            isDirectory = true,
+            maxWidthPx = 40f,
+            measureText = measure,
+            nearFitTolerancePx = 4f,
+        )
+        assertEquals("abcdef", result)
+    }
+
+    @Test
+    fun truncatesOriginalNameWhenItExceedsToleranceAgainstEllipsizedName() {
+        val measure: (String) -> Float = { if (it == "abcdef") 45f else it.length * 10f }
+        val result = FileNameEllipsizer.ellipsize(
+            fullName = "abcdef",
+            isDirectory = true,
+            maxWidthPx = 40f,
+            measureText = measure,
+            nearFitTolerancePx = 4f,
+        )
+        assertEquals("abc…", result)
+    }
+
+    @Test
     fun testSimpleExtensionTruncation() {
         // 140px = 14 chars max -> "very_long_…pdf" (10 chars stem + 1 ellipsis + 3 ext = 14 chars)
         val result = FileNameEllipsizer.ellipsize(
